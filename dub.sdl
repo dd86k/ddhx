@@ -1,0 +1,5 @@
+name "ddhx"
+description "DD's hexadecimal File Viewer"
+authors "dd86k"
+copyright "Copyright © 2017 dd86k"
+license "MIT"
