@@ -10,14 +10,24 @@ enum OffsetType {
 	Hexadecimal, Decimal, Octal
 }
 
-File CurrentFile;
-OffsetType CurrentOffset;
-ushort BytesPerRow = 16;
-ubyte[] Buffer;
-long CurrentPosition;
-int LastErrorCode;
-bool UsingApp = true;
+/*
+ * User settings
+ */
 
+ushort BytesPerRow = 16;
+OffsetType CurrentOffset;
+
+/*
+ * Internal
+ */
+
+File CurrentFile;
+int LastErrorCode;
+private long CurrentPosition;
+private ubyte[] Buffer;
+private bool UsingApp = true;
+
+/// Main ddhx entry point past CLI.
 void Start()
 {
 	InitConsole();
