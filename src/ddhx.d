@@ -287,8 +287,10 @@ char FormatChar(ubyte c) pure @safe @nogc
 void UpdatePositionBar()
 {
     SetPos(0, WindowHeight - 1);
-    writef(" HEX:%08X | DEC:%08d | OCT:%08o",
-        CurrentPosition, CurrentPosition, CurrentPosition);
+    long pos = CurrentPosition;
+    float cpos = ((pos + Buffer.length) / CurrentFile.size) * 100;
+    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %1.3f%%",
+        pos, pos, pos, cpos);
 }
 
 void RefreshDisplay()
