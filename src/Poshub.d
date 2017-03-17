@@ -28,9 +28,9 @@ void InitConsole()
     {
         hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         hIn = GetStdHandle(STD_INPUT_HANDLE);
-        if (SetConsoleCP(65001) == 0) {
+        /*if (SetConsoleCP(65001) == 0) {
             sys ("chcp 65001");
-        }
+        }*/
     }
 }
 
@@ -286,7 +286,7 @@ KeyInfo ReadKey(bool echo = false)
         return k;
     }
     else version (Posix)
-    {
+    { //TODO: Readkey (Posix)
         KeyInfo k;
 
 
@@ -331,7 +331,7 @@ RawEvent ReadGlobal()
         return r;
     }
     else version (Posix)
-    {
+    { //TODO: RawEvent (Posix)
         RawEvent r;
 
         return r;
@@ -354,31 +354,31 @@ struct RawEvent
 // ala C#
 struct KeyInfo
 {
-    ///
+    /// UTF-8 Character.
     char keyChar;
-    ///
+    /// Key code.
     ushort keyCode;
-    ///
+    /// Scan code.
     ushort scanCode;
-    ///
+    /// If either CTRL was held down.
     bool ctrl;
-    ///
+    /// If either ALT was held down.
     bool alt;
-    ///
+    /// If SHIFT was held down.
     bool shift;
 }
 
-enum MouseButton : ushort {
+enum MouseButton : ushort { // Windows compilant
     Left = 1, Right = 2, Middle = 4, Mouse4 = 8, Mouse5 = 16
 }
 
-enum MouseState : ushort {
+enum MouseState : ushort { // Windows compilant
     RightAlt = 1, LeftAlt = 2, RightCtrl = 4,
     LeftCtrl = 8, Shift = 0x10, NumLock = 0x20,
     ScrollLock = 0x40, CapsLock = 0x80, EnhancedKey = 0x100
 }
 
-enum MouseEventType {
+enum MouseEventType { // Windows compilant
     Moved = 1, DoubleClick = 2, Wheel = 4, HorizontalWheel = 8
 }
 
@@ -396,7 +396,7 @@ struct WindowSize
     ushort Width, Height;
 }
 
-/// 
+/// Key codes mapping.
 enum Key : ushort {
     Backspace = 8,
     Tab = 9,
@@ -555,6 +555,6 @@ enum Key : ushort {
  */
 
 void SetCtrlHandler(void function() f)
-{
+{ //TODO: Ctrl handler
 
 }

@@ -12,7 +12,10 @@ private static MenuItem[] MenuItems = [
     new MenuItem("File",
         [ new MenuItem("msg hi", { ShowAbout; } ),
           new MenuItem("haha") ]
-    )
+    ),
+    new MenuItem("Search"),
+    new MenuItem("View"),
+    new MenuItem("?"),
 ];
 private static bool InMenu;
 private static ushort X, Y;
