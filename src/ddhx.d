@@ -3,8 +3,8 @@ module ddhx;
 import std.stdio, std.file : exists;
 import std.format : format;
 import std.conv : parse, ConvException;
-import Poshub;
 import Menu;
+import Poshub;
 
 enum OffsetType {
 	Hexadecimal, Decimal, Octal
@@ -16,11 +16,13 @@ enum OffsetType {
 
 ushort BytesPerRow = 16;
 OffsetType CurrentOffset;
+bool Base10;
 
 /*
  * Internal
  */
 
+string Filepath;
 File CurrentFile;
 int LastErrorCode;
 private long CurrentPosition;
@@ -54,7 +56,7 @@ void Start()
                 if (CurrentPosition - BytesPerRow >= 0)
                     Goto(CurrentPosition - BytesPerRow);
                 else
-                   Goto(0);
+                    Goto(0);
                 break;
 			case Key.DownArrow:
                 if (CurrentPosition + bs + BytesPerRow <= fs)
@@ -92,7 +94,7 @@ void Start()
                 {
                     long np = CurrentPosition +
                         (BytesPerRow - CurrentPosition % BytesPerRow);
-                    
+
                     if (np + bs <= fs)
                         Goto(np);
                     else
@@ -113,14 +115,11 @@ void Start()
             case Key.F5:
                 RefreshDisplay();
                 break;
-            case Key.G:
-                if (k.ctrl)
-                    GotoStr(Ask("Jump to: "));
-                break;
             case Key.Escape, Key.Enter:
                 EnterMenu();
                 UpdateOffsetBar();
                 break;
+            case Key.Q: Exit(); break;
 			default:
 		}
 	}
@@ -182,32 +181,20 @@ void GotoStr(string str)
     }
 }
 
-string Ask(string msg)
-{
-    ClearMsg();
-    Message(msg);
-    return readln();
-}
-
-void ClearMsg()
-{
-    SetPos(0, 0);
-    writef("%*s", WindowWidth - 1, "");
-}
-
 void UpdateDisplay()
 {
+    import core.stdc.string : memset;
     int bl = cast(int)Buffer.length;
     char[] data = new char[3 * BytesPerRow], ascii = new char[BytesPerRow];
+    memset(&data[0], ' ', data.length);
     SetPos(0, 1);
     for (int o; o < bl; o += BytesPerRow)
     {
         int m = o + BytesPerRow;
 
         if (m > bl) { // If new maximum is overflowing
-            import core.stdc.string : memset;
             m = bl;
-            int ml = bl - o, dml = ml * 3;
+            const int ml = bl - o, dml = ml * 3;
             // Only clear what is necessary
             memset(&data[0] + dml, ' ', dml);
             memset(&ascii[0] + ml, ' ', ml);
@@ -230,7 +217,11 @@ void UpdateDisplay()
     }
 }
 
-/// Fast format
+/**
+ * Fast hex format higher nibble
+ * Params: b = Byte
+ * Returns: Hex character
+ */
 char ffupper(ubyte b) pure @safe @nogc
 {
     final switch (b)
@@ -254,7 +245,11 @@ char ffupper(ubyte b) pure @safe @nogc
     }
 }
 
-/// Fast format
+/**
+ * Fast hex format lower nibble
+ * Params: b = Byte
+ * Returns: Hex character
+ */
 char fflower(ubyte b) pure @safe @nogc
 {
     final switch (b)
@@ -280,15 +275,16 @@ char fflower(ubyte b) pure @safe @nogc
 
 char FormatChar(ubyte c) pure @safe @nogc
 {
-    return c >= 0x20 && c <= 0x7E ? c : '.';
+    return c < 0x20 || c > 0x7E ? '.' : c;
 }
 
 void UpdatePositionBar()
 {
     SetPos(0, WindowHeight - 1);
-    alias p = CurrentPosition;
-    float cpos = ((cast(float)p + Buffer.length) / CurrentFile.size) * 100;
-    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %.3f%%", p, p, p, cpos);
+    float f = CurrentPosition;
+    f = ((f + Buffer.length) / CurrentFile.size) * 100;
+    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %.3f%%",
+        CurrentPosition, CurrentPosition, CurrentPosition, f);
 }
 
 void RefreshDisplay()
@@ -304,7 +300,33 @@ void Message(string msg)
     write(msg);
 }
 
+void MessageAlt(string msg)
+{
+    ClearMsgAlt();
+    SetPos(0, WindowHeight - 1);
+    write(msg);
+}
+
+void ClearMsg()
+{
+    SetPos(0, 0);
+    writef("%*s", WindowWidth - 1, "");
+}
+
+void ClearMsgAlt()
+{
+    SetPos(0, WindowHeight - 1);
+    writef("%*s", WindowWidth - 1, "");
+}
+
 void ShowAbout()
 {
-    Message("Written by dd86k. Copyright (c) 2017 dd86k");
+    MessageAlt("Written by dd86k. Copyright (c) 2017 dd86k");
+}
+
+void Exit()
+{
+    import core.stdc.stdlib : exit;
+    Clear();
+    exit(0);
 }
