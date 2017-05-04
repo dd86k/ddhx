@@ -1,10 +1,10 @@
 module main;
 
-import std.stdio, std.file : exists, isDir;
 import ddhx;
 
 int main(string[] args)
 {
+	import std.stdio, std.file : exists, isDir;
 	{
 		string filename = args[$ - 1];
 
@@ -12,14 +12,14 @@ int main(string[] args)
         {
             if (isDir(filename))
             {
-                writeln("\"", filename, "\" is a directory.");
+                writeln(`"`, filename, `" is a directory. Exiting.`);
                 return 4;
             }
-			else CurrentFile = File(filename);
+			CurrentFile = File(filename);
         }
 		else
 		{
-			writeln("File \"", filename, "\" doesn't exist.");
+			writeln(`File "`, filename, `" doesn't exist. Exiting.`);
 			return 3;
 		}
 	}

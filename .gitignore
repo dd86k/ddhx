@@ -1,3 +1,4 @@
+# DUB
 .dub
 docs.json
 __dummy.html
@@ -6,3 +7,4 @@ __dummy.html
 __test__*__
 t
 *.exe
+dub.selections.json

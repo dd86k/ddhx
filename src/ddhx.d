@@ -25,20 +25,20 @@ File CurrentFile;
 int LastErrorCode;
 private long CurrentPosition;
 private ubyte[] Buffer;
-private bool UsingApp = true;
 
 /// Main ddhx entry point past CLI.
 void Start()
 {
 	InitConsole();
 	PrepBuffer();
-	ReadFile();
+    if (CurrentFile.size > 0)
+	    ReadFile();
     Clear();
 	UpdateOffsetBar();
 	UpdateDisplay();
     UpdatePositionBar();
 
-	while (UsingApp)
+	while (1)
 	{
 		KeyInfo k = ReadKey;
         ulong fs = CurrentFile.size;
@@ -117,8 +117,7 @@ void Start()
                 if (k.ctrl)
                     GotoStr(Ask("Jump to: "));
                 break;
-            case Key.Escape:
-                InitiateMenu();
+            case Key.Escape, Key.Enter:
                 EnterMenu();
                 UpdateOffsetBar();
                 break;
@@ -260,16 +259,16 @@ char fflower(ubyte b) pure @safe @nogc
 {
     final switch (b)
     {
-        case 0:  return '0';
-        case 1:  return '1';
-        case 2:  return '2';
-        case 3:  return '3';
-        case 4:  return '4';
-        case 5:  return '5';
-        case 6:  return '6';
-        case 7:  return '7';
-        case 8:  return '8';
-        case 9:  return '9';
+        case 0:   return '0';
+        case 1:   return '1';
+        case 2:   return '2';
+        case 3:   return '3';
+        case 4:   return '4';
+        case 5:   return '5';
+        case 6:   return '6';
+        case 7:   return '7';
+        case 8:   return '8';
+        case 9:   return '9';
         case 0xA: return 'A';
         case 0xB: return 'B';
         case 0xC: return 'C';
@@ -287,10 +286,9 @@ char FormatChar(ubyte c) pure @safe @nogc
 void UpdatePositionBar()
 {
     SetPos(0, WindowHeight - 1);
-    long pos = CurrentPosition;
-    float cpos = ((pos + Buffer.length) / CurrentFile.size) * 100;
-    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %1.3f%%",
-        pos, pos, pos, cpos);
+    alias p = CurrentPosition;
+    float cpos = ((cast(float)p + Buffer.length) / CurrentFile.size) * 100;
+    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %.3f%%", p, p, p, cpos);
 }
 
 void RefreshDisplay()
@@ -304,4 +302,9 @@ void Message(string msg)
     ClearMsg();
     SetPos(0, 0);
     write(msg);
+}
+
+void ShowAbout()
+{
+    Message("Written by dd86k. Copyright (c) 2017 dd86k");
 }
