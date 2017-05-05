@@ -4,24 +4,29 @@ import std.stdio;
 import Poshub;
 import ddhx;
 
+//TODO: When typing g goto menu directly
+
 /**
  * Internal command prompt.
  */
 void EnterMenu()
 {
+    import std.array : split;
     SetPos(0, 0);
     writef("%*s", WindowWidth, "");
     SetPos(0, 0);
     write(">");
-    const string e = readln()[0..$-1];
+    string[] e = split(readln()[0..$-1], ' ');
 
-    switch (e) { // toUpper...
-        case "i", "info": PrintFileInfo; break;
-        case "about": ShowAbout; break;
-        case "version": break;
+    if (e.length > 0)
+    switch (e[0]) { // toUpper...
+        case "g", "goto": GotoStr(e[1]); break;
         case "search": break;
+        case "i", "info": PrintFileInfo; break;
         case "q", "quit": Exit; break;
-        default: break;
+        case "about": ShowAbout; break;
+        case "version": ShowInfo; break;
+        default: MessageAlt("Unknown command: " ~ e[0]); break;
     }
 }
 
@@ -51,4 +56,15 @@ private void PrintFileInfo()
         formatsize(CurrentFile.size), // File formatted size
         CurrentFile.name)
     );
+}
+
+private void ShowAbout()
+{
+    MessageAlt("Written by dd86k. Copyright (c) 2017 dd86k");
+}
+
+private void ShowInfo()
+{
+    import std.format : format;
+    MessageAlt(format("Using ddhx version %s", APP_VERSION));
 }

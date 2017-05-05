@@ -6,6 +6,9 @@ import std.conv : parse, ConvException;
 import Menu;
 import Poshub;
 
+debug enum APP_VERSION = "0.0.0-debug";
+else  enum APP_VERSION = "0.0.0";
+
 enum OffsetType {
 	Hexadecimal, Decimal, Octal
 }
@@ -170,31 +173,38 @@ void Goto(long pos)
 
 void GotoStr(string str)
 {
+    import Utils : unformatHex;
     try
     {
-        Goto(parse!long(str));
+        long l;
+        switch (str[$ - 1])
+        {
+            case 'h', 'H': l = unformatHex(str[0..$ - 1]); break;
+            default: l = parse!long(str); break;
+        }
+        Goto(l);
         UpdateOffsetBar();
     }
     catch (ConvException)
     {
-        Message("Failed to parse number.");
+        MessageAlt("Failed to parse number.");
     }
 }
 
 void UpdateDisplay()
 {
     import core.stdc.string : memset;
-    int bl = cast(int)Buffer.length;
+    const size_t bl = Buffer.length;
     char[] data = new char[3 * BytesPerRow], ascii = new char[BytesPerRow];
     memset(&data[0], ' ', data.length);
     SetPos(0, 1);
     for (int o; o < bl; o += BytesPerRow)
     {
-        int m = o + BytesPerRow;
+        size_t m = o + BytesPerRow;
 
         if (m > bl) { // If new maximum is overflowing
             m = bl;
-            const int ml = bl - o, dml = ml * 3;
+            const size_t ml = bl - o, dml = ml * 3;
             // Only clear what is necessary
             memset(&data[0] + dml, ' ', dml);
             memset(&ascii[0] + ml, ' ', ml);
@@ -317,11 +327,6 @@ void ClearMsgAlt()
 {
     SetPos(0, WindowHeight - 1);
     writef("%*s", WindowWidth - 1, "");
-}
-
-void ShowAbout()
-{
-    MessageAlt("Written by dd86k. Copyright (c) 2017 dd86k");
 }
 
 void Exit()

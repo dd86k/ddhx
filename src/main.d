@@ -1,10 +1,18 @@
 module main;
 
+import std.stdio;
 import ddhx;
 
 int main(string[] args)
 {
-	import std.stdio, std.file : exists, isDir;
+	import std.file : exists, isDir;
+
+	if (args.length <= 1)
+	{
+		PrintHelp;
+		return 0;
+	}
+
 	Filepath = args[$ - 1];
 
 	if (exists(Filepath))
@@ -24,4 +32,15 @@ int main(string[] args)
 
     Start();
     return LastErrorCode;
+}
+
+private void PrintHelp()
+{
+	writeln("ddhx\t<File>");
+	writeln("ddhx\t{-h|--help|--version}");
+}
+
+private void PrintVersion()
+{
+
 }

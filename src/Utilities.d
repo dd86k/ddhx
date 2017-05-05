@@ -2,6 +2,23 @@ module Utils;
 
 import ddhx;
 
+long unformatHex(string e)
+{
+	enum C_MINOR = '0' + 39,
+		 C_MAJOR = '0' + 7;
+	int s; long l;
+	foreach_reverse (c; e) {
+		switch (c) {
+			case '1': .. case '9': l |= (c - '0') << s; break;
+			case 'A': .. case 'F': l |= (c - C_MAJOR) << s; break;
+			case 'a': .. case 'f': l |= (c - C_MINOR) << s; break;
+			default:
+		}
+		s += 4;
+	}
+	return l;
+}
+
 /**
  * Format byte size.
  * Params: size = Long number
