@@ -13,8 +13,16 @@ ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool
 | Windows | Mid-way there! |
 | Windows XP | Unknown |
 | macOS | Unknown |
-| Linux | Needs work |
+| Linux | Unusable |
 | *BSD | Unknown |
+
+## Planned features
+Basically a TODO list:
+
+- Byte, Word, Doubleword, and Quadword searching
+- UTF-8, UTF-16, and UTF-32 string searching
+- Hex dump
+- More file info
 
 ## FAQ
 
@@ -33,3 +41,6 @@ After fiddling around for a while, I couldn't get a good looking menu system. .N
 Best I _could_ of done is pure ASCII (with the `-|+` set) but didn't look as good.
 
 So for now, a command prompt system (a bit like vim's) is a lot faster to put in and use. I still try to remain a little user friendly.
+
+### Why are you making your own console library?
+Naming schemes, mostly.

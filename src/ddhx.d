@@ -2,7 +2,6 @@ module ddhx;
 
 import std.stdio, std.file : exists;
 import std.format : format;
-import std.conv : parse, ConvException;
 import Menu;
 import Poshub;
 
@@ -122,6 +121,10 @@ void Start()
                 EnterMenu();
                 UpdateOffsetBar();
                 break;
+            case Key.G:
+                EnterMenu("g");
+                UpdateOffsetBar();
+                break;
             case Key.Q: Exit(); break;
 			default:
 		}
@@ -173,21 +176,11 @@ void Goto(long pos)
 
 void GotoStr(string str)
 {
-    import Utils : unformatHex;
-    try
-    {
-        long l;
-        switch (str[$ - 1])
-        {
-            case 'h', 'H': l = unformatHex(str[0..$ - 1]); break;
-            default: l = parse!long(str); break;
-        }
+    import Utils : unformat;
+    long l;
+    if (unformat(str, l)) {
         Goto(l);
         UpdateOffsetBar();
-    }
-    catch (ConvException)
-    {
-        MessageAlt("Failed to parse number.");
     }
 }
 

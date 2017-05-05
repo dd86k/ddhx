@@ -2,10 +2,27 @@ module Utils;
 
 import ddhx;
 
-long unformatHex(string e)
+bool unformat(string e, ref long l)
 {
-	enum C_MINOR = '0' + 39,
-		 C_MAJOR = '0' + 7;
+	import std.conv : parse, ConvException;
+	try {
+		switch (e[$ - 1]) {
+			case 'h', 'H': l = unformatHex(e[0..$ - 1]); break;
+			default: l = parse!long(e); break;
+		}
+		return true;
+    } catch (ConvException) {
+		MessageAlt("Could not parse number");
+		return false;
+    } catch (Exception) {
+		MessageAlt("Could not parse number (Generic)");
+		return false;
+	}
+}
+
+long unformatHex(string e)
+{ //TODO: Use a byte pointer instead
+	enum C_MINOR = '0' + 39, C_MAJOR = '0' + 7;
 	int s; long l;
 	foreach_reverse (c; e) {
 		switch (c) {

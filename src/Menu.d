@@ -9,25 +9,78 @@ import ddhx;
 /**
  * Internal command prompt.
  */
-void EnterMenu()
+void EnterMenu(string prefix = null)
 {
     import std.array : split;
     SetPos(0, 0);
     writef("%*s", WindowWidth, "");
     SetPos(0, 0);
     write(">");
-    string[] e = split(readln()[0..$-1], ' ');
+    string[] e = split(readln[0..$-1], ' ');
 
     if (e.length > 0)
     switch (e[0]) { // toUpper...
-        case "g", "goto": GotoStr(e[1]); break;
-        case "search": break;
+        case "g", "goto":
+            if (e.length > 1)
+                GotoStr(e[1]);
+            break;
+        case "search": // Search
+            if (e.length > 1)
+            switch (e[1][0]) {
+                case '\'', '"': goto MENU_STRING;
+                default: goto MENU_NUMBER;
+            }
+            break;
+        case "ss": // Search string
+MENU_STRING:
+//TODO: Search string
+            switch (e[1][$ - 2..$ - 1]) {
+                default: break; // UTF-8
+                case "\"d": break; // UTF-32
+                case "\"w": break; // UTF-16
+            }
+            break;
+        case "sb": // Search byte
+MENU_NUMBER:
+//TODO: Byte string
+            if (e.length > 1)
+            {
+                import Utils : unformat;
+                long l;
+                if (unformat(e[1], l))
+                {
+                    if (l < 0 || l > 0xFF)
+                    {
+                        MessageAlt(
+                            "Only byte ranges are supported at the moment."
+                        );
+                        return;
+                    }
+                }
+            }
+            break;
         case "i", "info": PrintFileInfo; break;
+        case "o", "offset":
+            if (e.length > 1) {
+                switch (e[1][0]) {
+                    case 'o': CurrentOffset = OffsetType.Octal; break;
+                    case 'd': CurrentOffset = OffsetType.Decimal; break;
+                    case 'h': CurrentOffset = OffsetType.Hexadecimal; break;
+                    default:
+                }
+            }
+            break;
         case "q", "quit": Exit; break;
         case "about": ShowAbout; break;
         case "version": ShowInfo; break;
+        case "h", "help": ShowHelp; break;
         default: MessageAlt("Unknown command: " ~ e[0]); break;
     }
+}
+
+private void ShowHelp()
+{
+
 }
 
 private void PrintFileInfo()
