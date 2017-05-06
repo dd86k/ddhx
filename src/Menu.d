@@ -5,6 +5,7 @@ import Poshub;
 import ddhx;
 
 //TODO: When typing g goto menu directly
+//TODO: Number searching: Inverted bool (native to platform)
 
 /**
  * Internal command prompt.
@@ -68,6 +69,8 @@ MENU_NUMBER:
                     case 'h': CurrentOffset = OffsetType.Hexadecimal; break;
                     default:
                 }
+                UpdateOffsetBar;
+                UpdateDisplay;
             }
             break;
         case "q", "quit": Exit; break;
@@ -78,9 +81,42 @@ MENU_NUMBER:
     }
 }
 
-private void ShowHelp()
+void ShowHelp()
 {
+    //TODO: "Scroll" system and etc. (Important!!)
+    //TODO: Not make the help text a string maybe?
+    enum helpstr =
+`Shortcuts:
+q: Quit
+h: This help screen
 
+Commands:
+g|goto: Goto <FilePosition>
+i|info: Display file information
+o|offset: Change offset type
+
+Navigation
+Up/Down Arrows: Go backward or forward a line (by width)
+Left/Right Arrow: Go backward or forward a byte
+Home/End: Align by line
+^Home/^End: Go to begining or end of file`;
+    MessageAlt(" q:Return");
+    Clear;
+    SetPos(0, 0);
+    writeln(helpstr);
+    while (1)
+    {
+        const KeyInfo e = ReadKey;
+        switch (e.keyCode)
+        {
+            case Key.Q:
+                UpdateDisplay;
+                UpdateOffsetBar;
+                UpdatePositionBar;
+                return;
+            default:
+        }
+    }
 }
 
 private void PrintFileInfo()
@@ -88,6 +124,7 @@ private void PrintFileInfo()
     import Utils : formatsize;
     import std.format : format;
     import std.file : getAttributes;
+    import std.path : baseName;
     const uint a = getAttributes(Filepath);
     char[7] c;
     version (Windows)
@@ -104,10 +141,10 @@ private void PrintFileInfo()
     {
 
     }
-    MessageAlt(format("%s %s %s",
+    MessageAlt(format("%s  %s  %s",
         c, // File attributes
         formatsize(CurrentFile.size), // File formatted size
-        CurrentFile.name)
+        baseName(CurrentFile.name))
     );
 }
 
@@ -118,6 +155,5 @@ private void ShowAbout()
 
 private void ShowInfo()
 {
-    import std.format : format;
-    MessageAlt(format("Using ddhx version %s", APP_VERSION));
+    MessageAlt("Using ddhx version " ~ APP_VERSION);
 }

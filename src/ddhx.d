@@ -44,7 +44,7 @@ void Start()
 
 	while (1)
 	{
-		KeyInfo k = ReadKey;
+		const KeyInfo k = ReadKey;
         ulong fs = CurrentFile.size;
         size_t bs = Buffer.length;
 
@@ -122,8 +122,11 @@ void Start()
                 UpdateOffsetBar();
                 break;
             case Key.G:
-                EnterMenu("g");
-                UpdateOffsetBar();
+                /*EnterMenu("g");
+                UpdateOffsetBar();*/
+                break;
+            case Key.H:
+                ShowHelp;
                 break;
             case Key.Q: Exit(); break;
 			default:
@@ -137,11 +140,22 @@ void UpdateOffsetBar()
 	write("Offset ");
 	switch (CurrentOffset)
 	{
-		default: write("h "); break;
-		Decimal: write("d "); break;
-		Octal:   write("o "); break;
+		default:
+            write("h ");
+	        for (ushort i; i < BytesPerRow; ++i)
+                writef(" %02X", i);
+            break;
+		case OffsetType.Decimal:
+            write("d ");
+	        for (ushort i; i < BytesPerRow; ++i)    
+                writef(" %02d", i);
+            break;
+		case OffsetType.Octal:
+            write("o ");
+	        for (ushort i; i < BytesPerRow; ++i)
+                writef(" %02o", i);
+            break;
 	}
-	for (ushort i; i < BytesPerRow; ++i) writef(" %02X", i);
 }
 
 void PrepBuffer()
@@ -206,8 +220,8 @@ void UpdateDisplay()
         switch (CurrentOffset)
         {
             default: writef("%08X ", o + CurrentPosition); break;
-            Decimal: writef("%08d ", o + CurrentPosition); break;
-            Octal:   writef("%08o ", o + CurrentPosition); break;
+            case OffsetType.Decimal: writef("%08d ", o + CurrentPosition); break;
+            case OffsetType.Octal:   writef("%08o ", o + CurrentPosition); break;
         }
 
         for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
@@ -220,12 +234,23 @@ void UpdateDisplay()
     }
 }
 
+void ClearDisplay()
+{
+    import core.stdc.string : memset;
+    SetPos(0, 0);
+    int h = WindowHeight;
+    char[] s = new char[WindowWidth];
+    memset(&s[0], ' ', s.length);
+    for(int i; i < h; ++i)
+        writeln(s);
+}
+
 /**
  * Fast hex format higher nibble
  * Params: b = Byte
  * Returns: Hex character
  */
-char ffupper(ubyte b) pure @safe @nogc
+private char ffupper(ubyte b) pure @safe @nogc
 {
     final switch (b)
     {
@@ -253,7 +278,7 @@ char ffupper(ubyte b) pure @safe @nogc
  * Params: b = Byte
  * Returns: Hex character
  */
-char fflower(ubyte b) pure @safe @nogc
+private char fflower(ubyte b) pure @safe @nogc
 {
     final switch (b)
     {
@@ -276,7 +301,7 @@ char fflower(ubyte b) pure @safe @nogc
     }
 }
 
-char FormatChar(ubyte c) pure @safe @nogc
+private char FormatChar(ubyte c) pure @safe @nogc
 {
     return c < 0x20 || c > 0x7E ? '.' : c;
 }
