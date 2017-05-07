@@ -3,6 +3,8 @@ module main;
 import std.stdio;
 import ddhx;
 
+//TODO: -sb ffh (+Echo flag) -> Initiate -> Echo result
+
 int main(string[] args)
 {
 	import std.file : exists, isDir;

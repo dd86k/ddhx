@@ -24,11 +24,12 @@ bool Base10;
  * Internal
  */
 
+bool Echo;
 string Filepath;
 File CurrentFile;
 int LastErrorCode;
-private long CurrentPosition;
-private ubyte[] Buffer;
+long CurrentPosition;
+ubyte[] Buffer;
 
 /// Main ddhx entry point past CLI.
 void Start()
@@ -119,7 +120,6 @@ void Start()
                 break;
             case Key.Escape, Key.Enter:
                 EnterMenu();
-                UpdateOffsetBar();
                 break;
             case Key.G:
                 /*EnterMenu("g");
@@ -156,6 +156,15 @@ void UpdateOffsetBar()
                 writef(" %02o", i);
             break;
 	}
+}
+
+void UpdatePositionBar()
+{
+    SetPos(0, WindowHeight - 1);
+    float f = CurrentPosition;
+    f = ((f + Buffer.length) / CurrentFile.size) * 100;
+    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %7.3f%%",
+        CurrentPosition, CurrentPosition, CurrentPosition, f);
 }
 
 void PrepBuffer()
@@ -304,15 +313,6 @@ private char fflower(ubyte b) pure @safe @nogc
 private char FormatChar(ubyte c) pure @safe @nogc
 {
     return c < 0x20 || c > 0x7E ? '.' : c;
-}
-
-void UpdatePositionBar()
-{
-    SetPos(0, WindowHeight - 1);
-    float f = CurrentPosition;
-    f = ((f + Buffer.length) / CurrentFile.size) * 100;
-    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %.3f%%",
-        CurrentPosition, CurrentPosition, CurrentPosition, f);
 }
 
 void RefreshDisplay()

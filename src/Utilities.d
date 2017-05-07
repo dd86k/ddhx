@@ -2,6 +2,17 @@ module Utils;
 
 import ddhx;
 
+enum : long {
+	KB = 1024,
+	MB = KB * 1024,
+	GB = MB * 1024,
+	TB = GB * 1024,
+	KiB = 1000,
+	MiB = KiB * 1000,
+	GiB = MiB * 1000,
+	TiB = GiB * 1000
+}
+
 bool unformat(string e, ref long l)
 {
 	import std.conv : parse, ConvException;
@@ -44,17 +55,6 @@ long unformatHex(string e)
 string formatsize(long size) //BUG: %f is unpure?
 {
     import std.format : format;
-
-    enum : long {
-        KB = 1024,
-        MB = KB * 1024,
-        GB = MB * 1024,
-        TB = GB * 1024,
-        KiB = 1000,
-        MiB = KiB * 1000,
-        GiB = MiB * 1000,
-        TiB = GiB * 1000
-    }
 
 	const float s = size;
 

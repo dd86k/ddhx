@@ -1,0 +1,83 @@
+." Hi! This manual (man page) was written by dd86k.
+."
+.TH ddhx 1 "April 2017" Linux "User manual"
+.SH NAME
+ddhx - hexadecimal file viewer
+.SH SYNOPSIS
+.RI "ddhx " "file"
+
+.R ddhx {--help|-h|--version}
+
+
+.SH DESCRIPTION
+ddhx is a fast hexadecimal file viewer with several search features.
+.SH OPTIONS
+.I
+.IP file
+File to open.
+.SH Application Shortcuts
+Pressing the associated key will execute an action.
+
+The format starts with the associated key then a short description.
+
+.B q
+- Quit
+
+.B h
+- This help screen
+
+.SH Prompt Commands
+Pressing the
+.B ESC
+or
+.B ENTER
+(RETURN) key will enter prompt mode, where commands and queries can be entered.
+
+The format starts with the short alias (if available), the long command name, then a short description of the command.
+
+.B g|goto <Number>
+.RS
+Goto to position <Number> (bytes) in file. Supports hexadecimal.
+.RE
+
+.B i|info
+.RS
+Display file information.
+.RE
+
+.B o|offset <Offset>
+.RS
+Change offset type. Possible values are o (octal), d (decimal), or h (hexadecimal).
+.RE
+
+.SH Navigation
+.B Up/Down Arrows
+.RS
+Go backward or forward a line (by width).
+.RE
+
+.B Left/Right Arrow
+.RS
+Go backward or forward a byte
+.RE
+
+.B Home/End
+.RS
+Align to the line
+.RE
+
+.B ^Home/^End
+.RS
+Go to begining or end of file
+.RE
+
+.SH WARNINGS
+ddhx is still currently going under active development. Except crashes.
+.SH NOTES
+ddhx will clear the output on exit.
+.SH BUGS
+Currently none.
+.SH Contact Information
+Homepage:
+
+.URL "https://github.com/dd86k/ddhx/" "ddhx"
