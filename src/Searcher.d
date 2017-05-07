@@ -10,8 +10,7 @@ void SearchByte(const ubyte b)
 {
     MessageAlt("Searching byte...");
     long pos = CurrentPosition;
-    with (CurrentFile)
-    foreach (const ubyte[] buf; byChunk(CHUNK_SIZE))
+    foreach (const ubyte[] buf; CurrentFile.byChunk(CHUNK_SIZE))
     {
         for (int i; i < buf.length; ++i)
             if (b == buf[i]) {
@@ -24,4 +23,9 @@ void SearchByte(const ubyte b)
         pos += CHUNK_SIZE;
     }
     MessageAlt("Not found");
+}
+
+void SearchUTF8String(const char[] s)
+{
+    const ubyte b = cast(ubyte)s[0];
 }

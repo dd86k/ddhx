@@ -312,7 +312,7 @@ private char fflower(ubyte b) pure @safe @nogc
 
 private char FormatChar(ubyte c) pure @safe @nogc
 {
-    return c < 0x20 || c > 0x7E ? '.' : c;
+    return c > 0x7E || c < 0x20 ? '.' : c;
 }
 
 void RefreshDisplay()
@@ -338,13 +338,13 @@ void MessageAlt(string msg)
 void ClearMsg()
 {
     SetPos(0, 0);
-    writef("%*s", WindowWidth - 1, "");
+    writef("%*s", WindowWidth, "");
 }
 
 void ClearMsgAlt()
 {
     SetPos(0, WindowHeight - 1);
-    writef("%*s", WindowWidth - 1, "");
+    writef("%*s", WindowWidth, "");
 }
 
 void Exit()

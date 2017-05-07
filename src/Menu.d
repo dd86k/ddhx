@@ -6,15 +6,16 @@ import ddhx;
 
 //TODO: When typing g goto menu directly
 //TODO: Number searching: Inverted bool (native to platform)
+//TODO: String searching: Inverted bool (native to platform)
+//TODO: Progress bars (es. when searching)
 
 /**
  * Internal command prompt.
  */
-void EnterMenu(string prefix = null)
+void EnterMenu()
 {
     import std.array : split;
-    SetPos(0, 0);
-    writef("%*s", WindowWidth, "");
+    ClearMsg;
     SetPos(0, 0);
     write(">");
     string[] e = split(readln[0..$-1], ' ');
@@ -34,30 +35,37 @@ void EnterMenu(string prefix = null)
                 }
                 break;
             case "ss": // Search string
-    MENU_STRING:
-    //TODO: Search string
+MENU_STRING:
+//TODO: Search string
                 switch (e[1][$ - 2..$ - 1]) {
-                    default: break; // UTF-8
-                    case "\"d": break; // UTF-32
-                    case "\"w": break; // UTF-16
+                    case `"`: break; // UTF-8
+                    case `"w`: break; // UTF-16
+                    case `"d`: break; // UTF-32
+                    default:
                 }
                 break;
             case "sb": // Search byte
-    MENU_NUMBER:
-    //TODO: Byte string
+MENU_NUMBER:
                 if (e.length > 1)
                 {
                     import Utils : unformat;
                     long l;
                     if (unformat(e[1], l))
                     {
-                        import Searcher : SearchByte;
-                        if (l < 0 || l > 0xFF)
+                        import Searcher;
+                        if (l >= 0 && l <= 0xFF)
                         {
-                            MessageAlt("Only byte values are supported at the moment.");
+                            SearchByte(cast(ubyte)l);
+                        }
+                        /*else if (l >= -127 && l <= 128)
+                        {
+
+                        }*/
+                        else
+                        {
+                            MessageAlt("Unsupported range.");
                             return;
                         }
-                        SearchByte(cast(ubyte)l);
                     }
                 }
                 break;
@@ -102,10 +110,10 @@ Up/Down Arrows: Go backward or forward a line (by width)
 Left/Right Arrow: Go backward or forward a byte
 Home/End: Align by line
 ^Home/^End: Go to begining or end of file`;
-    MessageAlt(" q:Return");
     Clear;
     SetPos(0, 0);
     writeln(helpstr);
+    MessageAlt(" q:Return");
     while (1)
     {
         const KeyInfo e = ReadKey;

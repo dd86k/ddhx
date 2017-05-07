@@ -8,7 +8,6 @@ ddhx - hexadecimal file viewer
 
 .R ddhx {--help|-h|--version}
 
-
 .SH DESCRIPTION
 ddhx is a fast hexadecimal file viewer with several search features.
 .SH OPTIONS
@@ -26,12 +25,14 @@ The format starts with the associated key then a short description.
 .B h
 - This help screen
 
+.B ENTER
+- Prompt
+
 .SH Prompt Commands
 Pressing the
 .B ESC
 or
-.B ENTER
-(RETURN) key will enter prompt mode, where commands and queries can be entered.
+.BR "ENTER" " (" "RETURN" ")" "key will enter prompt mode, where commands and queries can be entered."
 
 The format starts with the short alias (if available), the long command name, then a short description of the command.
 
@@ -66,18 +67,37 @@ Go backward or forward a byte
 Align to the line
 .RE
 
-.B ^Home/^End
+.B CTRL+Home/CTRL+End
 .RS
 Go to begining or end of file
 .RE
 
+.SH File Information
+Under Windows, the file information tag differs from any Posix platforms. Otherwise the symbolic permissions (e.g. rwx from ls -l) are used.
+
+In order of apperance (NTFS attributes):
+
+.IP r
+Read-only. (FILE_ATTRIBUTE_READONLY)
+.IP h
+Hidden. (FILE_ATTRIBUTE_HIDDEN)
+.IP s
+System. (FILE_ATTRIBUTE_SYSTEM)
+.IP a
+Archive. (FILE_ATTRIBUTE_ARCHIVE)
+.IP t
+Temporary. (FILE_ATTRIBUTE_TEMPORARY)
+.IP c
+Compressed. (FILE_ATTRIBUTE_COMPRESSED)
+.IP e
+Encrypted. (FILE_ATTRIBUTE_ENCRYPTED)
+
 .SH WARNINGS
-ddhx is still currently going under active development. Except crashes.
+ddhx is still currently going under active development. Expect crashes!
 .SH NOTES
 ddhx will clear the output on exit.
 .SH BUGS
 Currently none.
 .SH Contact Information
 Homepage:
-
-.URL "https://github.com/dd86k/ddhx/" "ddhx"
+.RI "<" "https://github.com/dd86k/ddhx" ">"
