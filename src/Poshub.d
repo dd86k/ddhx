@@ -9,7 +9,7 @@ private alias sys = core.stdc.stdlib.system;
 
 version (Windows)
 {
-    private import core.sys.windows.windows;
+    import core.sys.windows.windows;
     private enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
     private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
     /// Necessary handles.
@@ -17,7 +17,8 @@ version (Windows)
 }
 else version (Posix)
 {
-    private import core.sys.posix.sys.ioctl;
+    import core.sys.posix.sys.ioctl;
+    import core.sys.posix.unistd;
     //import core.sys.posix.termios;
 }
 
@@ -81,7 +82,7 @@ void Clear()
     else version (Posix)
     {
         winsize ws;
-        ioctl(0, TIOCGWINSZ, &ws);
+        ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
         return ws.ws_col;
     }
     else
@@ -101,7 +102,7 @@ void Clear()
     else version (Posix)
     {
         winsize ws = { cast(ushort)w, WindowWidth };
-        ioctl(0, TIOCSWINSZ, &ws);
+        ioctl(STDOUT_FILENO, TIOCSWINSZ, &ws);
     }
     else
     {
@@ -121,7 +122,7 @@ void Clear()
     else version (Posix)
     {
         winsize ws;
-        ioctl(0, TIOCGWINSZ, &ws);
+        ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
         return ws.ws_row;
     }
     else
@@ -141,7 +142,7 @@ void Clear()
     else version (Posix)
     {
         winsize ws = { WindowWidth, cast(ushort)h, 0, 0 };
-        ioctl(0, TIOCSWINSZ, &ws);
+        ioctl(STDOUT_FILENO, TIOCSWINSZ, &ws);
     }
     else
     {
