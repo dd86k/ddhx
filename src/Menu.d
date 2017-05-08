@@ -15,44 +15,65 @@ import ddhx;
 void EnterMenu()
 {
     import std.array : split;
+    //import std.algorithm.iteration : splitter, filter;
     ClearMsg;
     SetPos(0, 0);
     write(">");
-    string[] e = split(readln[0..$-1], ' ');
+    //TODO: Remove empty entries.
+    string[] e = split(readln[0..$-1]);
+    //string[] e = splitter(readln[0..$-1], ' ').filter!(a => a != null);
 
     UpdateOffsetBar;
     if (e.length > 0) {
         switch (e[0]) { // toUpper...
             case "g", "goto":
                 if (e.length > 1)
-                    GotoStr(e[1]);
+                    switch (e[1])
+                    {
+                        case "e", "end":
+                            Goto(CurrentFile.size - Buffer.length);
+                            break;
+                        case "s", "h", "home", "start":
+                            Goto(0);
+                            break;
+                        default:
+                            GotoStr(e[1]);
+                            break;
+                    }
                 break;
-            case "search": // Search
+            case "s", "search": // Search
+                //TODO: Figure a way to figure out signed numbers.
+                //      "sbyte" ? (Very possible!
                 if (e.length > 1)
-                switch (e[1][0]) {
-                    case '\'', '"': goto MENU_STRING;
-                    default: goto MENU_NUMBER;
+                switch (e[1]) {
+                    case "b", "byte":
+                        if (e.length > 2)
+                            e[1] = e[2];
+                        else
+                            MessageAlt("Missing argument. (Byte)");
+                        goto SEARCH_BYTE;
+                    default: goto SEARCH_STRING;
                 }
                 break;
             case "ss": // Search string
-MENU_STRING:
+SEARCH_STRING:
 //TODO: Search string
                 switch (e[1][$ - 2..$ - 1]) {
-                    case `"`: break; // UTF-8
+                    case `"`:  break; // UTF-8
                     case `"w`: break; // UTF-16
                     case `"d`: break; // UTF-32
                     default:
                 }
                 break;
             case "sb": // Search byte
-MENU_NUMBER:
+SEARCH_BYTE:
                 if (e.length > 1)
                 {
                     import Utils : unformat;
                     long l;
                     if (unformat(e[1], l))
                     {
-                        import Searcher;
+                        import Searcher : SearchByte;
                         if (l >= 0 && l <= 0xFF)
                         {
                             SearchByte(cast(ubyte)l);
@@ -160,7 +181,7 @@ private void PrintFileInfo()
 
 private void ShowAbout()
 {
-    MessageAlt("Written by dd86k. Copyright (c) 2017 dd86k");
+    MessageAlt("Written by dd86k in D. Copyright (c) dd86k 2017");
 }
 
 private void ShowInfo()

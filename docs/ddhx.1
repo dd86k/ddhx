@@ -32,9 +32,10 @@ The format starts with the associated key then a short description.
 Pressing the
 .B ESC
 or
-.BR "ENTER" " (" "RETURN" ")" " key will enter prompt mode, where commands and queries can be entered."
+.BR "ENTER" " (" "RETURN" ")"
+key will enter prompt mode, where commands and queries can be entered.
 
-The format starts with the short alias (if available), the long command name, then a short description of the command.
+The format starts with the short alias (one character, if available), the long command name, then a short description of the command.
 
 .B g|goto <Number>
 .RS
@@ -52,6 +53,10 @@ Change offset type. Possible values are o (octal), d (decimal), or h (hexadecima
 .RE
 
 .SH Navigation
+Currently, the modifier key states on Posix platforms are unavailable. You are invited to use the
+.B goto end
+command.
+
 .B Up/Down Arrows
 .RS
 Go backward or forward a line (by width).

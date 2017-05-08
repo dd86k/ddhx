@@ -1,5 +1,11 @@
 /*
  * poshub.d : In-house console library.
+ *
+ * This library maximize the use of Posix functions to be as portable and
+ * compatible for many operating systems.
+ *
+ * NOTE: The Posix functions were only tested on:
+ *   - Linux 3.4.0+ (Bash for Windows 10, Perl -V gives 3.13.0-79-generic)
  */
 
 module Poshub;
@@ -9,7 +15,7 @@ private alias sys = core.stdc.stdlib.system;
 
 version (Windows)
 {
-    import core.sys.windows.windows;
+    private import core.sys.windows.windows;
     private enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
     private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
     /// Necessary handles.
@@ -17,9 +23,10 @@ version (Windows)
 }
 else version (Posix)
 {
-    import core.sys.posix.sys.ioctl;
-    import core.sys.posix.unistd;
-    //import core.sys.posix.termios;
+    private import core.sys.posix.sys.ioctl;
+    private import core.sys.posix.unistd;
+    private import core.sys.posix.termios;
+    private termios old_tio, new_tio;
 }
 
 /// Initiate poshub
@@ -34,10 +41,6 @@ void InitConsole()
         }*/
     }
 }
-
-/*
- * Buffer management.
- */
 
 /// Clear screen
 void Clear()
@@ -287,10 +290,61 @@ KeyInfo ReadKey(bool echo = false)
         return k;
     }
     else version (Posix)
-    { //TODO: Readkey (Posix)
+    {
         KeyInfo k;
 
+        //TODO: Get modifier keys states
 
+        // Commenting this section will echo the character
+        // And also it won't do anything to getchar
+        tcgetattr(STDIN_FILENO, &old_tio);
+        new_tio=old_tio;
+        new_tio.c_lflag &= (~ICANON & ~ECHO);
+        tcsetattr(STDIN_FILENO,TCSANOW, &new_tio);
+
+        uint c = getchar();
+
+        with (k)
+        switch (c)
+        {
+        case '\n': // \n (ENTER)
+            k.keyCode = Key.Enter;
+            break;
+        case 27: // ESC
+            switch (c = getchar())
+            {
+            case '[':
+                switch (c = getchar())
+                {
+                case 'A': keyCode = Key.UpArrow; break;
+                case 'B': keyCode = Key.DownArrow; break;
+                case 'C': keyCode = Key.RightArrow; break;
+                case 'D': keyCode = Key.LeftArrow; break;
+                case 'F': keyCode = Key.End; break;
+                case 'H': keyCode = Key.Home; break;
+                // There is an additional getchar due to the pending '~'
+                case '2': keyCode = Key.Insert; getchar; break;
+                case '3': keyCode = Key.Delete; getchar; break;
+                case '5': keyCode = Key.PageUp; getchar; break;
+                case '6': keyCode = Key.PageDown; getchar; break;
+                default: break;
+                }
+                break;
+            default: // EOF?
+
+                break;
+            }
+            break;
+        case 'a': .. case 'z': // A .. Z
+            k.keyCode = cast(Key)(c - 32);
+            break;
+        //TODO: The rest
+        default:
+            k.keyCode = c & 0xFFFF;
+            break;
+        }
+
+        tcsetattr(STDIN_FILENO,TCSANOW, &old_tio);
 
         return k;
     }
