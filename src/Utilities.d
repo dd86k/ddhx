@@ -2,17 +2,25 @@ module Utils;
 
 import ddhx;
 
+// Anonymous array with 2^(n*3) and 10^n notations in order
 enum : long {
-	KB = 1024,
-	MB = KB * 1024,
-	GB = MB * 1024,
-	TB = GB * 1024,
-	KiB = 1000,
-	MiB = KiB * 1000,
-	GiB = MiB * 1000,
-	TiB = GiB * 1000
+	KB = 1024, /// Represents one KiloByte
+	MB = KB * 1024, /// Represents one MegaByte
+	GB = MB * 1024, /// Represents one GigaByte
+	TB = GB * 1024, /// Represents one TeraByte
+	KiB = 1000, /// Represents one KibiByte
+	MiB = KiB * 1000, /// Represents one MebiByte
+	GiB = MiB * 1000, /// Represents one GibiByte
+	TiB = GiB * 1000 /// Represents one TebiByte
 }
 
+/**
+ * Converts a string number to a long number.
+ * Params:
+ *   e = Input string
+ *   l = Long number as a reference
+ * Returns: Returns true if successful.
+ */
 bool unformat(string e, ref long l)
 {
 	import std.conv : parse, ConvException;
@@ -31,6 +39,11 @@ bool unformat(string e, ref long l)
 	}
 }
 
+/**
+ * Converts a string HEX number to a long number.
+ * Params: e = Input string
+ * Returns: Unformatted number.
+ */
 long unformatHex(string e)
 { //TODO: Use a byte pointer instead
 	enum C_MINOR = '0' + 39, C_MAJOR = '0' + 7;

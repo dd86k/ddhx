@@ -4,8 +4,17 @@
  * This library maximize the use of Posix functions to be as portable and
  * compatible for many operating systems.
  *
- * NOTE: The Posix functions were only tested on:
- *   - Linux 3.4.0+ (Bash for Windows 10, Perl -V gives 3.13.0-79-generic)
+ * The Posix functions were tested on:
+ *   - Linux version 3.4.0-Microsoft (Bash for Windows 10)
+ *     - uname: Linux 3.4.0+
+ *     - Perl's osvers: 3.13.0-79-generic
+ *
+ * To test on:
+ * - *BSD
+ * - macOS
+ * - SunOS (Solaris, somehow, e.g. OpenIndianna)
+ *
+ * This source is separated by long comments for easier navigation while scrolling.
  */
 
 module Poshub;
@@ -29,6 +38,10 @@ else version (Posix)
     private termios old_tio, new_tio;
 }
 
+/*******************************************************************
+ * Initiation
+ *******************************************************************/
+
 /// Initiate poshub
 void InitConsole()
 {
@@ -41,6 +54,10 @@ void InitConsole()
         }*/
     }
 }
+
+/*******************************************************************
+ * Clear
+ *******************************************************************/
 
 /// Clear screen
 void Clear()
@@ -68,9 +85,10 @@ void Clear()
     else static assert(0, "Clear: Not implemented");
 }
 
-/*
- * Window dimensions.
- */
+/*******************************************************************
+ * Window dimensions
+ *******************************************************************/
+
 // Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
 
 /// Window width
@@ -153,9 +171,9 @@ void Clear()
     }
 }
 
-/*
- * Cursor
- */
+/*******************************************************************
+ * Cursor management
+ *******************************************************************/
 
 /// Set cursor position x and y position respectively from the
 /// top left corner, 0-based.
@@ -204,11 +222,12 @@ void SetPos(int x, int y)
     }
 }*/
 
-/*
+/*******************************************************************
  * Titles
- */
+ *******************************************************************/
 
 /// Set session title
+/// Param: value = Title to set
 @property void Title(string value)
 {
     version (Windows)
@@ -220,6 +239,7 @@ void SetPos(int x, int y)
 }
 
 /// Set session title
+/// Param: value = Title to set
 @property void Title(wstring value)
 {
     version (Windows)
@@ -231,6 +251,7 @@ void SetPos(int x, int y)
 }
 
 /// Get session title
+/// Returns: Console title
 @property string Title()
 {
     version (Windows)
@@ -245,6 +266,7 @@ void SetPos(int x, int y)
 }
 
 /// Get session title
+/// Returns: Console title
 @property wstring TitleW()
 {
     version (Windows)
@@ -258,17 +280,20 @@ void SetPos(int x, int y)
     }
 }
 
-/*
+/*******************************************************************
  * Input
- */
+ *******************************************************************/
 
-/// Read a single character.
+/**
+ * Read a single character.
+ * Params: echo = Echo character to output.
+ * Returns: A KeyInfo structure.
+ */
 KeyInfo ReadKey(bool echo = false)
 {
+    KeyInfo k;
     version (Windows)
     { // Sort of is like .NET's ReadKey
-        KeyInfo k;
-
         INPUT_RECORD ir;
         DWORD num = 0;
         if (ReadConsoleInput(hIn, &ir, 1, &num))
@@ -286,13 +311,9 @@ KeyInfo ReadKey(bool echo = false)
                 if (echo) write(k.keyChar);
             }
         }
-
-        return k;
     }
     else version (Posix)
     {
-        KeyInfo k;
-
         //TODO: Get modifier keys states
 
         // Commenting this section will echo the character
@@ -345,9 +366,8 @@ KeyInfo ReadKey(bool echo = false)
         }
 
         tcsetattr(STDIN_FILENO,TCSANOW, &old_tio);
-
-        return k;
     }
+    return k;
 }
 
 RawEvent ReadGlobal()
@@ -393,34 +413,21 @@ RawEvent ReadGlobal()
     }
 }
 
+/*******************************************************************
+ * Handlers
+ *******************************************************************/
+
+void SetCtrlHandler(void function() f)
+{ //TODO: Ctrl handler
+
+}
+
+/*******************************************************************
+ * Emunerations
+ *******************************************************************/
+
 enum EventType : ushort {
     Key = 1, Mouse = 2, Resize = 4
-}
-
-struct RawEvent
-{
-    EventType Type;
-    KeyInfo Key;
-    MouseInfo Mouse;
-    WindowSize Size;
-}
-
-/// Key information structure
-// ala C#
-struct KeyInfo
-{
-    /// UTF-8 Character.
-    char keyChar;
-    /// Key code.
-    ushort keyCode;
-    /// Scan code.
-    ushort scanCode;
-    /// If either CTRL was held down.
-    bool ctrl;
-    /// If either ALT was held down.
-    bool alt;
-    /// If SHIFT was held down.
-    bool shift;
 }
 
 enum MouseButton : ushort { // Windows compilant
@@ -435,20 +442,6 @@ enum MouseState : ushort { // Windows compilant
 
 enum MouseEventType { // Windows compilant
     Moved = 1, DoubleClick = 2, Wheel = 4, HorizontalWheel = 8
-}
-
-struct MouseInfo
-{
-    struct ScreenLocation { ushort X, Y; }
-    ScreenLocation Location;
-    ushort Buttons;
-    ushort State;
-    ushort Type;
-}
-
-struct WindowSize
-{
-    ushort Width, Height;
 }
 
 /// Key codes mapping.
@@ -599,17 +592,46 @@ enum Key : ushort {
     OemClear = 254
 }
 
-/*
- * Output
- */
+/*******************************************************************
+ * Structs
+ *******************************************************************/
 
-//SetFgColor : SetConsoleTextAttribute
+struct RawEvent
+{
+    EventType Type;
+    KeyInfo Key;
+    MouseInfo Mouse;
+    WindowSize Size;
+}
 
-/*
- * CTRL Handler
- */
+/// Key information structure
+// ala C#
+struct KeyInfo
+{
+    /// UTF-8 Character.
+    char keyChar;
+    /// Key code.
+    ushort keyCode;
+    /// Scan code.
+    ushort scanCode;
+    /// If either CTRL was held down.
+    bool ctrl;
+    /// If either ALT was held down.
+    bool alt;
+    /// If SHIFT was held down.
+    bool shift;
+}
 
-void SetCtrlHandler(void function() f)
-{ //TODO: Ctrl handler
+struct MouseInfo
+{
+    struct ScreenLocation { ushort X, Y; }
+    ScreenLocation Location;
+    ushort Buttons;
+    ushort State;
+    ushort Type;
+}
 
+struct WindowSize
+{
+    ushort Width, Height;
 }

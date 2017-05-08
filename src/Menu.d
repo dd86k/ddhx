@@ -169,8 +169,9 @@ private void PrintFileInfo()
         c[6] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
     }
     else version (Posix)
-    {
-
+    {// import core.sys.posix;
+        //TODO: Posix symbolic permissions
+        
     }
     MessageAlt(format("%s  %s  %s",
         c, // File attributes
