@@ -65,13 +65,13 @@ long unformatHex(string e)
  * Params: size = Long number
  * Returns: Formatted string
  */
-string formatsize(long size) //BUG: %f is unpure?
+string formatsize(long size, bool base10 = false) //BUG: %f is unpure?
 {
     import std.format : format;
 
 	const float s = size;
 
-	if (Base10)
+	if (base10)
 	{
 		if (size > TiB)
 			if (size > 100 * TiB)

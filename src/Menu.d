@@ -157,26 +157,36 @@ private void PrintFileInfo()
     import std.file : getAttributes;
     import std.path : baseName;
     const uint a = getAttributes(Filepath);
-    char[7] c;
     version (Windows)
     { import core.sys.windows.winnt; // FILE_ATTRIBUTE_*
+        char[8] c;
         c[0] = a & FILE_ATTRIBUTE_READONLY ? 'r' : '-';
         c[1] = a & FILE_ATTRIBUTE_HIDDEN ? 'h' : '-';
         c[2] = a & FILE_ATTRIBUTE_SYSTEM ? 's' : '-';
         c[3] = a & FILE_ATTRIBUTE_ARCHIVE ? 'a' : '-';
         c[4] = a & FILE_ATTRIBUTE_TEMPORARY ? 't' : '-';
+        c[6] = a & FILE_ATTRIBUTE_SPARSE_FILE ? 'S' : '-';
         c[5] = a & FILE_ATTRIBUTE_COMPRESSED ? 'c' : '-';
-        c[6] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
+        c[7] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
     }
     else version (Posix)
-    {// import core.sys.posix;
-        //TODO: Posix symbolic permissions
-        
+    { import core.sys.posix.sys.stat;
+        char[10] c;
+        c[0] = a & S_IRUSR ? 'r' : '-';
+        c[1] = a & S_IWUSR ? 'w' : '-';
+        c[2] = a & S_IXUSR ? 'x' : '-';
+        c[3] = a & S_IRGRP ? 'r' : '-';
+        c[4] = a & S_IWGRP ? 'w' : '-';
+        c[5] = a & S_IXGRP ? 'x' : '-';
+        c[6] = a & S_IROTH ? 'r' : '-';
+        c[7] = a & S_IWOTH ? 'w' : '-';
+        c[8] = a & S_IXOTH ? 'x' : '-';
+        c[9] = a & S_ISVTX ? 't' : '-';
     }
     MessageAlt(format("%s  %s  %s",
         c, // File attributes
         formatsize(CurrentFile.size), // File formatted size
-        baseName(CurrentFile.name))
+        baseName(Filepath))
     );
 }
 

@@ -1,5 +1,5 @@
 ." Hi! This manual (man page) was written by dd86k.
-."
+." Please read man-pages(7) and groff_man(7) about the manual page format.
 .TH ddhx 1 "April 2017" Linux "User manual"
 .SH NAME
 ddhx - hexadecimal file viewer
@@ -77,11 +77,12 @@ Align to the line
 Go to begining or end of file
 .RE
 
-.SH File Information
-Under Windows, the file information tag differs from any Posix platforms. Otherwise the symbolic permissions (e.g. rwx from ls -l) are used.
+.SH FILE ATTRIBUTES
+The information command will display different file attributes on different platforms:
 
-In order of apperance (NTFS attributes):
+.SS Under Windows
 
+On Windows, the following file attributes (NTFS) will be displayed:
 .IP r
 Read-only. (FILE_ATTRIBUTE_READONLY)
 .IP h
@@ -92,10 +93,19 @@ System. (FILE_ATTRIBUTE_SYSTEM)
 Archive. (FILE_ATTRIBUTE_ARCHIVE)
 .IP t
 Temporary. (FILE_ATTRIBUTE_TEMPORARY)
+.IP S
+Sparse file. (FILE_ATTRIBUTE_SPARSE_FILE)
 .IP c
 Compressed. (FILE_ATTRIBUTE_COMPRESSED)
 .IP e
 Encrypted. (FILE_ATTRIBUTE_ENCRYPTED)
+.RE
+
+.SS Under Posix
+
+.RB "The file permissions are displayed (not exactly like the output of " "ls -l" ")."
+The last character is the sticky bit indicator
+.RB "(" "t" ")."
 
 .SH WARNINGS
 ddhx is still currently going under active development. Expect crashes!
@@ -104,5 +114,6 @@ ddhx will clear the output on exit.
 .SH BUGS
 Currently none.
 .SH Contact Information
+.UR https://github.com/dd86k/ddhx
 Homepage:
-.RI "<" "https://github.com/dd86k/ddhx" ">"
+.UE

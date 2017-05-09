@@ -18,7 +18,6 @@ enum OffsetType {
 
 ushort BytesPerRow = 16;
 OffsetType CurrentOffset;
-bool Base10;
 
 /*
  * Internal
