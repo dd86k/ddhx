@@ -35,6 +35,7 @@ else version (Posix)
     private import core.sys.posix.sys.ioctl;
     private import core.sys.posix.unistd;
     private import core.sys.posix.termios;
+    private enum TERM_ATTR = ~ICANON & ~ECHO;
     private termios old_tio, new_tio;
 }
 
@@ -319,8 +320,8 @@ KeyInfo ReadKey(bool echo = false)
         // Commenting this section will echo the character
         // And also it won't do anything to getchar
         tcgetattr(STDIN_FILENO, &old_tio);
-        new_tio=old_tio;
-        new_tio.c_lflag &= (~ICANON & ~ECHO);
+        new_tio = old_tio;
+        new_tio.c_lflag &= TERM_ATTR;
         tcsetattr(STDIN_FILENO,TCSANOW, &new_tio);
 
         uint c = getchar();

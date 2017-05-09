@@ -15,6 +15,7 @@ import ddhx;
 void EnterMenu()
 {
     import std.array : split;
+    import Searcher;
     //import std.algorithm.iteration : splitter, filter;
     ClearMsg;
     SetPos(0, 0);
@@ -30,15 +31,15 @@ void EnterMenu()
                 if (e.length > 1)
                     switch (e[1])
                     {
-                        case "e", "end":
-                            Goto(CurrentFile.size - Buffer.length);
-                            break;
-                        case "s", "h", "home", "start":
-                            Goto(0);
-                            break;
-                        default:
-                            GotoStr(e[1]);
-                            break;
+                    case "e", "end":
+                        Goto(CurrentFile.size - Buffer.length);
+                        break;
+                    case "h", "home", "s":
+                        Goto(0);
+                        break;
+                    default:
+                        GotoStr(e[1]);
+                        break;
                     }
                 break;
             case "s", "search": // Search
@@ -46,24 +47,28 @@ void EnterMenu()
                 //      "sbyte" ? (Very possible!
                 if (e.length > 1)
                 switch (e[1]) {
-                    case "b", "byte":
-                        if (e.length > 2)
-                            e[1] = e[2];
-                        else
-                            MessageAlt("Missing argument. (Byte)");
-                        goto SEARCH_BYTE;
-                    default: goto SEARCH_STRING;
+                case "b", "byte":
+                    if (e.length > 2)
+                        e[1] = e[2];
+                    else
+                        MessageAlt("Missing argument. (Byte)");
+                    goto SEARCH_BYTE;
+                default:
+                    if (e.length > 2)
+                        e[1] = e[2];
+                    else
+                        MessageAlt("Missing argument. (String)");
+                    goto SEARCH_STRING;
                 }
                 break;
             case "ss": // Search string
 SEARCH_STRING:
-//TODO: Search string
-                switch (e[1][$ - 2..$ - 1]) {
-                    case `"`:  break; // UTF-8
-                    case `"w`: break; // UTF-16
-                    case `"d`: break; // UTF-32
-                    default:
-                }
+//TODO: Figure out a way to determine UTF-16/32 strings by user
+//      Maybe ss16le and etc.? search string32be?
+                if (e.length > 1)
+                    SearchUTF8String(e[1]);
+                else
+                    MessageAlt("Missing argument. (String)");
                 break;
             case "sb": // Search byte
 SEARCH_BYTE:
@@ -73,7 +78,6 @@ SEARCH_BYTE:
                     long l;
                     if (unformat(e[1], l))
                     {
-                        import Searcher : SearchByte;
                         if (l >= 0 && l <= 0xFF)
                         {
                             SearchByte(cast(ubyte)l);
@@ -94,10 +98,10 @@ SEARCH_BYTE:
             case "o", "offset":
                 if (e.length > 1) {
                     switch (e[1][0]) {
-                        case 'o': CurrentOffset = OffsetType.Octal; break;
-                        case 'd': CurrentOffset = OffsetType.Decimal; break;
-                        case 'h': CurrentOffset = OffsetType.Hexadecimal; break;
-                        default:
+                    case 'o': CurrentOffset = OffsetType.Octal; break;
+                    case 'd': CurrentOffset = OffsetType.Decimal; break;
+                    case 'h': CurrentOffset = OffsetType.Hexadecimal; break;
+                    default:
                     }
                     UpdateOffsetBar;
                     UpdateDisplay;
