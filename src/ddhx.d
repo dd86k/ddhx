@@ -167,7 +167,7 @@ void UpdatePositionBar()
         CurrentPosition, CurrentPosition, CurrentPosition, f);
 }
 
-void PrepBuffer()
+private void PrepBuffer()
 {
 	int h = WindowHeight - 2;
     ulong fs = CurrentFile.size;
@@ -175,35 +175,48 @@ void PrepBuffer()
     Buffer = new ubyte[fs >= bufs ? bufs : cast(uint)fs];
 }
 
-void ReadFile()
+private void ReadFile()
 {
     CurrentFile.seek(CurrentPosition);
     CurrentFile.rawRead(Buffer);
 }
 
+/**
+ * Goes to the specified position in the file.
+ * Ignores some verification since this function is mostly used
+ * by the program itself. (And we know what we're doing!)
+ * Param: pos = New position.
+ */
 void Goto(long pos)
 {
     if (Buffer.length < CurrentFile.size)
     {
-        if (pos >= 0)
-        {
-            CurrentPosition = pos;
-            RefreshDisplay();
-            UpdatePositionBar();
-        }
-        else Message(format("Out of range : %d", pos));
+        CurrentPosition = pos;
+        RefreshDisplay();
+        UpdatePositionBar();
     }
     else
         Message("Navigation disabled, buffer too small.");
 }
 
+/**
+ * Parses the string as a long and navigates to the file location.
+ * This function takes a few more steps to ensure the number is properly
+ * formatted and isn't going off range.
+ * Params: str = String as a number
+ */
 void GotoStr(string str)
 {
     import Utils : unformat;
     long l;
     if (unformat(str, l)) {
-        Goto(l);
-        UpdateOffsetBar();
+        if (l >= 0 && l < CurrentFile.size - Buffer.length) {
+            Goto(l);
+            UpdateOffsetBar();
+        } else {
+            import std.format : format;
+            MessageAlt(format("Range too far or negative: %d (%XH)", l, l));
+        }
     }
 }
 
