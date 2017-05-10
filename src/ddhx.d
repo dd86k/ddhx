@@ -141,18 +141,15 @@ void UpdateOffsetBar()
 	{
 		default:
             write("h ");
-	        for (ushort i; i < BytesPerRow; ++i)
-                writef(" %02X", i);
+	        for (ushort i; i < BytesPerRow; ++i) writef(" %02X", i);
             break;
 		case OffsetType.Decimal:
             write("d ");
-	        for (ushort i; i < BytesPerRow; ++i)    
-                writef(" %02d", i);
+	        for (ushort i; i < BytesPerRow; ++i) writef(" %02d", i);
             break;
 		case OffsetType.Octal:
             write("o ");
-	        for (ushort i; i < BytesPerRow; ++i)
-                writef(" %02o", i);
+	        for (ushort i; i < BytesPerRow; ++i) writef(" %02o", i);
             break;
 	}
 }
@@ -160,6 +157,12 @@ void UpdateOffsetBar()
 void UpdatePositionBar()
 {
     SetPos(0, WindowHeight - 1);
+    UpdatePositionBarRaw;
+}
+
+/// Used right after UpdateDisplay to not waste a cursor positioning call.
+private void UpdatePositionBarRaw()
+{
     float f = CurrentPosition;
     f = ((f + Buffer.length) / CurrentFile.size) * 100;
     writef(" HEX:%08X | DEC:%08d | OCT:%08o | %7.3f%%",
@@ -191,11 +194,21 @@ void Goto(long pos)
     if (Buffer.length < CurrentFile.size)
     {
         CurrentPosition = pos;
-        RefreshDisplay();
-        UpdatePositionBar();
+        RefreshDisplay;
+        UpdatePositionBarRaw;
     }
     else
         Message("Navigation disabled, buffer too small.");
+}
+
+/// Goto a position carefully. (Includes boundcheck)
+/// Params: pos = New position
+void GotoC(long pos)
+{
+    if (pos + Buffer.length > CurrentFile.size)
+        Goto(CurrentFile.size - Buffer.length);
+    else
+        Goto(pos);
 }
 
 /**
