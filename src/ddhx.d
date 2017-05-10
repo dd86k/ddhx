@@ -23,7 +23,6 @@ OffsetType CurrentOffset;
  * Internal
  */
 
-bool Echo;
 string Filepath;
 File CurrentFile;
 int LastErrorCode;
@@ -44,9 +43,9 @@ void Start()
 
 	while (1)
 	{
-		const KeyInfo k = ReadKey;
         ulong fs = CurrentFile.size;
         size_t bs = Buffer.length;
+		const KeyInfo k = ReadKey;
 
 		switch (k.keyCode)
 		{
@@ -94,7 +93,7 @@ void Start()
                     Goto(fs - bs);
                 else
                 {
-                    long np = CurrentPosition +
+                    const long np = CurrentPosition +
                         (BytesPerRow - CurrentPosition % BytesPerRow);
 
                     if (np + bs <= fs)
@@ -133,6 +132,9 @@ void Start()
 	}
 }
 
+/**
+ * Update the upper offset bar.
+ */
 void UpdateOffsetBar()
 {
 	SetPos(0, 0);
@@ -154,6 +156,9 @@ void UpdateOffsetBar()
 	}
 }
 
+/**
+ * Update the bottom current position bar.
+ */
 void UpdatePositionBar()
 {
     SetPos(0, WindowHeight - 1);
@@ -198,11 +203,14 @@ void Goto(long pos)
         UpdatePositionBarRaw;
     }
     else
-        Message("Navigation disabled, buffer too small.");
+        MessageAlt("Navigation disabled, buffer too small.");
 }
 
-/// Goto a position carefully. (Includes boundcheck)
-/// Params: pos = New position
+/**
+ * Goto a position carefully. (Includes boundcheck)
+ * Mostly used for user entered numbers.
+ * Params: pos = New position
+ */
 void GotoC(long pos)
 {
     if (pos + Buffer.length > CurrentFile.size)
@@ -264,7 +272,7 @@ void UpdateDisplay()
             ascii[ai] = FormatChar(Buffer[i]);
         }
 
-        writeln(data, "  ", ascii);
+        writefln("%s  %s", data, ascii);
     }
 }
 

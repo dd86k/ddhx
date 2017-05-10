@@ -4,6 +4,9 @@ import std.stdio;
 import ddhx;
 
 //TODO: -sb ffh (+Echo flag) -> Initiate -> Echo result
+//TODO: CLI SWITCHES
+// -w: Byte width, -w a OR 0 being automatic (make a handler? (only for a))
+// --dump
 
 int main(string[] args)
 {
@@ -11,14 +14,14 @@ int main(string[] args)
 
 	if (args.length <= 1)
 	{
-		PrintHelp;
+		PrintSypnosis;
 		return 0;
 	}
 
 	GetoptResult r;
 	try {
 		r = getopt(args,
-            "version|v", "Print version information", &PrintVersion);
+            "version|v", "Print version information.", &PrintVersion);
 	} catch (GetOptException ex) {
 		stderr.writeln("Error: ", ex.msg);
         return 1;
@@ -26,8 +29,8 @@ int main(string[] args)
 
     if (r.helpWanted)
     {
-        PrintHelp;
-        writeln("\nSwitches");
+        PrintSypnosis;
+        writeln("\nOption             Description");
         foreach (it; r.options)
         { // "custom" defaultGetoptPrinter
             writefln("%*s, %-*s%s%s",
@@ -62,16 +65,18 @@ int main(string[] args)
     return LastErrorCode;
 }
 
-private void PrintHelp()
+private void PrintSypnosis() // ..And description.
 {
-	writeln("ddhx\t<File>");
-	writeln("ddhx\t{-h|--help|--version}");
+	writeln("Hexadecimal file viewer.");
+	writeln("Usage:");
+	writeln("  ddhx\t[Options] <File>");
+	writeln("  ddhx\t{-h|--help|--version}");
 }
 
 private void PrintVersion()
 {
     import core.stdc.stdlib : exit;
-    writefln("ddhx %s (%s) ", APP_VERSION, __TIMESTAMP__);
+    writefln("ddhx %s (Compiled at %s) ", APP_VERSION, __TIMESTAMP__);
     writeln("MIT License: Copyright (c) dd86k 2017");
     writeln("Project page: <https://github.com/dd86k/ddhx>");
     writefln("Compiled %s with %s v%s", __FILE__, __VENDOR__, __VERSION__);
