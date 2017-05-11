@@ -50,14 +50,14 @@ int main(string[] args)
 			if (isDir(Filepath))
 			{
 				writeln(`"`, Filepath, `" is a directory, exiting.`);
-				return 4;
+				return 1;
 			}
 			CurrentFile = File(Filepath);
 		}
 		else
 		{
 			writeln(`File "`, Filepath, `" doesn't exist, exiting.`);
-			return 3;
+			return 1;
 		}
 
 		Start();
