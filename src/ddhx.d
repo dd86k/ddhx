@@ -371,13 +371,13 @@ void MessageAlt(string msg)
 void ClearMsg()
 {
     SetPos(0, 0);
-    writef("%*s", WindowWidth, "");
+    writef("%*s", WindowWidth - 1, "");
 }
 
 void ClearMsgAlt()
 {
     SetPos(0, WindowHeight - 1);
-    writef("%*s", WindowWidth, "");
+    writef("%*s", WindowWidth - 1, "");
 }
 
 void Exit()

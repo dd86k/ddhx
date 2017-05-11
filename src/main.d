@@ -14,7 +14,7 @@ int main(string[] args)
 
 	if (args.length <= 1)
 	{
-		PrintSypnosis;
+		PrintHelp;
 		return 0;
 	}
 
@@ -29,7 +29,7 @@ int main(string[] args)
 
     if (r.helpWanted)
     {
-        PrintSypnosis;
+        PrintHelp;
         writeln("\nOption             Description");
         foreach (it; r.options)
         { // "custom" defaultGetoptPrinter
@@ -65,9 +65,9 @@ int main(string[] args)
     return LastErrorCode;
 }
 
-private void PrintSypnosis() // ..And description.
+private void PrintHelp() // ..And description.
 {
-	writeln("Hexadecimal file viewer.");
+	writeln("Interactive hexadecimal file viewer.");
 	writeln("Usage:");
 	writeln("  ddhx\t[Options] <File>");
 	writeln("  ddhx\t{-h|--help|--version}");
@@ -76,7 +76,7 @@ private void PrintSypnosis() // ..And description.
 private void PrintVersion()
 {
     import core.stdc.stdlib : exit;
-    writefln("ddhx %s (Compiled at %s) ", APP_VERSION, __TIMESTAMP__);
+    writefln("ddhx %s (%s) ", APP_VERSION, __TIMESTAMP__);
     writeln("MIT License: Copyright (c) dd86k 2017");
     writeln("Project page: <https://github.com/dd86k/ddhx>");
     writefln("Compiled %s with %s v%s", __FILE__, __VENDOR__, __VERSION__);
