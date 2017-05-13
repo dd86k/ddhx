@@ -21,6 +21,7 @@ void EnterMenu()
     SetPos(0, 0);
     write(">");
     //TODO: Remove empty entries.
+    //TODO: Wrap arguments with commas
     string[] e = split(readln[0..$-1]);
     //string[] e = splitter(readln[0..$-1], ' ').filter!(a => a != null);
 
@@ -29,8 +30,7 @@ void EnterMenu()
         switch (e[0]) { // toUpper...
             case "g", "goto":
                 if (e.length > 1)
-                    switch (e[1])
-                    {
+                    switch (e[1]) {
                     case "e", "end":
                         Goto(CurrentFile.size - Buffer.length);
                         break;
@@ -61,25 +61,26 @@ void EnterMenu()
                     goto SEARCH_STRING;
                 }
                 break;
-            case "ss": // Search string
+            case "ss": // Search ASCII/UTF-8 string
 SEARCH_STRING:
-//TODO: Figure out a way to determine UTF-16/32 strings by user
-//      Maybe ss16le and etc.? search string32be?
                 if (e.length > 1)
                     SearchUTF8String(e[1]);
                 else
                     MessageAlt("Missing argument. (String)");
                 break;
+            case "ss16": // Search UTF-16 string
+                if (e.length > 1)
+                    SearchUTF16String(e[1]);
+                else
+                    MessageAlt("Missing argument. (String)");
+                break;
             case "sb": // Search byte
 SEARCH_BYTE:
-                if (e.length > 1)
-                {
+                if (e.length > 1) {
                     import Utils : unformat;
                     long l;
-                    if (unformat(e[1], l))
-                    {
-                        if (l >= 0 && l <= 0xFF)
-                        {
+                    if (unformat(e[1], l)) {
+                        if (l >= 0 && l <= 0xFF) {
                             SearchByte(cast(ubyte)l);
                         }
                         /*else if (l >= -127 && l <= 128)
