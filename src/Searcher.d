@@ -24,6 +24,8 @@ void SearchByte(const ubyte b)
     MessageAlt("Not found");
 }
 
+//TODO: ONE function that translate any strings to a byte array
+
 void SearchUTF8String(const char[] s)
 {
     const char b = s[0];
@@ -49,6 +51,7 @@ void SearchUTF8String(const char[] s)
 
 void SearchUTF16String(const char[] s)
 {
+    //TODO: UTF-16 string searching
     const char b = s[0];
     const size_t len = s.length;
     MessageAlt("Searching string...");
@@ -60,7 +63,7 @@ void SearchUTF16String(const char[] s)
             if (b == buf[i]) {
                 if (buf[i..i+len] == s) {
                     GotoC(pos);
-                    MessageAlt(format(` Found string "%s" at %XH`, s, pos));
+                    MessageAlt(format(` Found wstring "%s" at %XH`, s, pos));
                     return;
                 }
             }
