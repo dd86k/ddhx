@@ -108,6 +108,11 @@ SEARCH_BYTE:
                     UpdateDisplay;
                 }
                 break;
+            case "r", "refresh":
+                UpdateOffsetBar;
+                UpdateDisplay;
+                UpdatePositionBar;
+                break;
             case "q", "quit": Exit; break;
             case "about": ShowAbout; break;
             case "version": ShowInfo; break;

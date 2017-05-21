@@ -53,6 +53,12 @@ int main(string[] args)
 				return 1;
 			}
 			CurrentFile = File(Filepath);
+
+			if (CurrentFile.size == 0)
+			{
+				stderr.writeln("Error: 0-byte file.");
+				return 1;
+			}
 		}
 		else
 		{
