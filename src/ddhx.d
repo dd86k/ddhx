@@ -113,9 +113,6 @@ void Start()
              * Actions/Shortcuts
              */
 
-            case Key.F5:
-                RefreshDisplay();
-                break;
             case Key.Escape, Key.Enter:
                 EnterMenu();
                 break;
@@ -126,7 +123,7 @@ void Start()
             case Key.I:
                 PrintFileInfo;
                 break;
-            case Key.R:
+            case Key.R, Key.F5:
                 RefreshAll;
                 break;
             case Key.H:

@@ -2,7 +2,8 @@
 ." Please read man-pages(7) and groff_man(7) about the manual page format.
 .TH ddhx 1 "April 2017" Linux "User manual"
 .SH NAME
-ddhx - hexadecimal file viewer
+ddhx - Interactive hexadecimal file viewer.
+
 .SH SYNOPSIS
 .RI "ddhx " "file"
 
@@ -16,27 +17,27 @@ ddhx is a fast interactive hexadecimal file viewer with several search features.
 File to open.
 
 .SH SHORTCUTS
-Pressing the associated key will execute an action.
 
-The format starts with the associated key then a short description.
+.IP q
+Quits (closes) the program
 
-.B q
-- Quit
+.IP ENTER
+Enters prompt
 
-.B h
-- This help screen
+.IP i
+Displays file information.
 
-.B ENTER
-- Prompt
+.IP r|F5
+Refresh all panels and displays.
 
-.SH PROMPT
+.SH PROMPT AND COMMANDS
 Pressing
 .B ESC
 or
 .BR "ENTER" " (" "RETURN" ")"
 will enter prompt mode, where commands and queries can be entered.
 
-The format starts with the short alias (one character, if available), the long command name, then a short description of the command.
+The one character commands are command aliases.
 
 .B g|goto <Number>
 .RS
@@ -51,6 +52,27 @@ Display file information.
 .B o|offset <Offset>
 .RS
 Change offset type. Possible values are o (octal), d (decimal), or h (hexadecimal).
+.RE
+
+.B s|search <Type> <Value>
+.RS
+Search a
+.IR "byte" " or " "string" "."
+.RE
+
+.B ss <Value>
+.RS
+Search UTF-8 string alias.
+.RE
+
+.B sb <Value>
+.RS
+Search byte alias.
+.RE
+
+.B r|refresh <Offset>
+.RS
+Refresh all panels and displays.
 .RE
 
 .SH NAVIGATION
@@ -102,18 +124,18 @@ Compressed. (FILE_ATTRIBUTE_COMPRESSED)
 Encrypted. (FILE_ATTRIBUTE_ENCRYPTED)
 .RE
 
-.SS Under Posix
+.SS Under Posix-compilant systems
 
-.RB "The file permissions are displayed (not exactly like the output of " "ls -l" ")."
+.RB "The symbolic file permissions are displayed (although not exactly like the output of " "ls -l" ")."
 The last character is the sticky bit indicator
 .RB "(" "t" ")."
 
 .SH WARNINGS
-ddhx is still currently going under active development. Expect crashes!
+ddhx is still currently going under active development. Expect lots of bugs and crashes!
 .SH NOTES
 ddhx will clear the output on exit.
 .SH BUGS
-Currently none.
+Currently, string searching may be inacurate with small chunks.
 .SH CONTACT
 Homepage:
 .UR "https://github.com/dd86k/ddhx"
