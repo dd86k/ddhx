@@ -68,12 +68,12 @@ SEARCH_STRING:
                     else
                         MessageAlt("Missing argument. (String)");
                     break;
-                /*case "ss16": // Search UTF-16 string
+                case "ss16": // Search UTF-16 string
                     if (e.length > 1)
                         SearchUTF16String(e[1]);
                     else
                         MessageAlt("Missing argument. (String)");
-                    break;*/
+                    break;
                 case "sb": // Search byte
 SEARCH_BYTE:
                     if (e.length > 1) {
