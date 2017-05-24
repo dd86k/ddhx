@@ -2,7 +2,7 @@ module Searcher;
 
 import std.stdio;
 import std.format : format;
-import ddhx, Utils;
+import ddhx, Utils : MB;
 
 private enum CHUNK_SIZE = MB / 2;
 
@@ -54,8 +54,7 @@ private void SearchArray(const ubyte[] a, string type)
             if (b == buf[i]) {
                 if (buf[i..i+len] == a) {
                     GotoC(pos);
-                    MessageAlt(format(
-                        ` Found %s value at %XH`, type, pos));
+                    MessageAlt(format(" Found %s value at %XH", type, pos));
                     return;
                 }
             }

@@ -1,7 +1,7 @@
 module Menu;
 
 import std.stdio;
-import Poshub;
+import ddcon;
 import ddhx;
 
 //TODO: When typing g goto menu directly

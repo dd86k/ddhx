@@ -3,11 +3,15 @@ module ddhx;
 import std.stdio, std.file : exists;
 import std.format : format;
 import Menu;
-import Poshub;
+import ddcon;
 
+/// Debug version
 debug enum APP_VERSION = "0.0.0-debug";
-else  enum APP_VERSION = "0.0.0";
+else
+/// Release version
+enum APP_VERSION = "0.0.0";
 
+/// Offset type (hex, dec, etc.)
 enum OffsetType {
 	Hexadecimal, Decimal, Octal
 }
@@ -16,8 +20,8 @@ enum OffsetType {
  * User settings
  */
 
-ushort BytesPerRow = 16;
-OffsetType CurrentOffset;
+ushort BytesPerRow = 16; /// Bytes shown per row
+OffsetType CurrentOffset; /// Current offset view type
 
 /*
  * Internal
