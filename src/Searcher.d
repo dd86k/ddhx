@@ -6,6 +6,9 @@ import ddhx, Utils;
 
 private enum CHUNK_SIZE = MB / 2;
 
+//TODO: Progress bar
+//TODO: One main function with an ubyte[] parameter
+
 void SearchByte(const ubyte b)
 {
     MessageAlt("Searching byte...");

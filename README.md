@@ -10,16 +10,16 @@ ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool
 
 | Platform | Progress |
 |---|---|
-| Windows (Vista+) | Mid-way there! |
+| Windows (Vista+) | Works! |
 | macOS | Unknown |
-| Linux | Unusable |
+| Linux | Works! |
 | *BSD | Unknown |
 
 ## Planned features
 Basically a TODO list:
 
-- Byte, Word (short), Doubleword (int), and Quadword (long) searching (both endians)
-- UTF-8, UTF-16, and UTF-32 string searching (both endians)
+- Word (short), Doubleword (int), and Quadword (long) searching (both endians)
+- UTF-16, and UTF-32 string searching (both endians)
 - Hex dump
 - More file info
 
