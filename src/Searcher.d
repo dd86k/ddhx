@@ -9,20 +9,31 @@ private enum CHUNK_SIZE = MB / 2;
 //TODO: Progress bar
 //TODO: String REGEX
 
+/**
+ * Search an UTF-8/ASCII string
+ * Params: s = string
+ */
 void SearchUTF8String(const char[] s)
 {
     SearchArray(cast(ubyte[])s, "string");
 }
 
+/**
+ * Search an UTF-16LE string
+ * Params: s = string
+ */
 void SearchUTF16String(const char[] s)
-{
+{//TODO: bool bigendian
     const size_t l = s.length;
     ubyte[] buf = new ubyte[l * 2];
-    for (int i = 1, e = 0; e < l; i += 2, ++e)
-        buf[i] = s[e];
+    for (int i = 1, e = 0; e < l; i += 2, ++e) buf[i] = s[e];
     SearchArray(buf, "wstring");
 }
 
+/**
+ * Search a byte
+ * Params: b = ubyte
+ */
 void SearchByte(const ubyte b)
 {
     MessageAlt("Searching byte...");

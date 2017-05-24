@@ -4,10 +4,11 @@ import std.stdio;
 import ddcon;
 import ddhx;
 
-//TODO: When typing g goto menu directly
 //TODO: Number searching: Inverted bool (native to platform)
 //TODO: String searching: Inverted bool (native to platform)
-//TODO: Progress bars (es. when searching)
+//TODO: Settings handler
+//      set <option> <value>
+//      save
 
 /**
  * Internal command prompt.

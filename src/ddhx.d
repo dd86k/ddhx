@@ -33,6 +33,8 @@ int LastErrorCode;
 long CurrentPosition;
 ubyte[] Buffer;
 
+//TODO: When typing g goto menu directly
+
 /// Main ddhx entry point past CLI.
 void Start()
 {
@@ -47,96 +49,104 @@ void Start()
 
 	while (1)
 	{
-        ulong fs = CurrentFile.size;
-        size_t bs = Buffer.length;
-		const KeyInfo k = ReadKey;
+//TODO: ReadGlobal Scroll-wheel look
+        const KeyInfo k = ReadKey;
 
-		switch (k.keyCode)
-		{
-            /*
-             * Navigation
-             */
-
-            case Key.UpArrow:
-                if (CurrentPosition - BytesPerRow >= 0)
-                    Goto(CurrentPosition - BytesPerRow);
-                else
-                    Goto(0);
-                break;
-			case Key.DownArrow:
-                if (CurrentPosition + bs + BytesPerRow <= fs)
-				    Goto(CurrentPosition + BytesPerRow);
-                else
-                    Goto(fs - bs);
-				break;
-            case Key.LeftArrow:
-                if (CurrentPosition - 1 >= 0) // Else already at 0
-                    Goto(CurrentPosition - 1);
-                break;
-            case Key.RightArrow:
-                if (CurrentPosition + bs + 1 <= fs)
-                    Goto(CurrentPosition + 1);
-                else
-                    Goto(fs - bs);
-                break;
-            case Key.PageUp:
-                if (CurrentPosition - cast(long)bs >= 0)
-                    Goto(CurrentPosition - bs);
-                else
-                    Goto(0);
-                break;
-            case Key.PageDown:
-                if (CurrentPosition + bs + bs <= fs)
-                    Goto(CurrentPosition + bs);
-                else
-                    Goto(fs - bs);
-                break;
-
-            case Key.End:
-                if (k.ctrl)
-                    Goto(fs - bs);
-                else
-                {
-                    const long np = CurrentPosition +
-                        (BytesPerRow - CurrentPosition % BytesPerRow);
-
-                    if (np + bs <= fs)
-                        Goto(np);
-                    else
-                        Goto(fs - bs);
-                }
-                break;
-            case Key.Home:
-                if (k.ctrl)
-                    Goto(0);
-                else
-                    Goto(CurrentPosition - (CurrentPosition % BytesPerRow));
-                break;
-
-            /*
-             * Actions/Shortcuts
-             */
-
-            case Key.Escape, Key.Enter:
-                EnterMenu();
-                break;
-            case Key.G:
-                /*EnterMenu("g");
-                UpdateOffsetBar();*/
-                break;
-            case Key.I:
-                PrintFileInfo;
-                break;
-            case Key.R, Key.F5:
-                RefreshAll;
-                break;
-            case Key.H:
-                ShowHelp;
-                break;
-            case Key.Q: Exit(); break;
-			default:
-		}
+        HandleKey(&k);
 	}
+}
+
+void HandleKey(const KeyInfo* ki)
+{
+    ulong fs = CurrentFile.size;
+    size_t bs = Buffer.length;
+    const KeyInfo k = *ki;
+
+    switch (k.keyCode)
+    {
+    /*
+     * Navigation
+     */
+
+    case Key.UpArrow:
+        if (CurrentPosition - BytesPerRow >= 0)
+            Goto(CurrentPosition - BytesPerRow);
+        else
+            Goto(0);
+        break;
+    case Key.DownArrow:
+        if (CurrentPosition + bs + BytesPerRow <= fs)
+            Goto(CurrentPosition + BytesPerRow);
+        else
+            Goto(fs - bs);
+        break;
+    case Key.LeftArrow:
+        if (CurrentPosition - 1 >= 0) // Else already at 0
+            Goto(CurrentPosition - 1);
+        break;
+    case Key.RightArrow:
+        if (CurrentPosition + bs + 1 <= fs)
+            Goto(CurrentPosition + 1);
+        else
+            Goto(fs - bs);
+        break;
+    case Key.PageUp:
+        if (CurrentPosition - cast(long)bs >= 0)
+            Goto(CurrentPosition - bs);
+        else
+            Goto(0);
+        break;
+    case Key.PageDown:
+        if (CurrentPosition + bs + bs <= fs)
+            Goto(CurrentPosition + bs);
+        else
+            Goto(fs - bs);
+        break;
+
+    case Key.End:
+        if (k.ctrl)
+            Goto(fs - bs);
+        else
+        {
+            const long np = CurrentPosition +
+                (BytesPerRow - CurrentPosition % BytesPerRow);
+
+            if (np + bs <= fs)
+                Goto(np);
+            else
+                Goto(fs - bs);
+        }
+        break;
+    case Key.Home:
+        if (k.ctrl)
+            Goto(0);
+        else
+            Goto(CurrentPosition - (CurrentPosition % BytesPerRow));
+        break;
+
+    /*
+     * Actions/Shortcuts
+     */
+
+    case Key.Escape, Key.Enter:
+        EnterMenu();
+        break;
+    case Key.G:
+        /*EnterMenu("g");
+        UpdateOffsetBar();*/
+        break;
+    case Key.I:
+        PrintFileInfo;
+        break;
+    case Key.R, Key.F5:
+        RefreshAll;
+        break;
+    case Key.H:
+        ShowHelp;
+        break;
+    case Key.Q: Exit(); break;
+    default:
+    }
 }
 
 void RefreshAll() {
