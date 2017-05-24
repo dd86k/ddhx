@@ -49,18 +49,46 @@ void Start()
 
 	while (1)
 	{
-//TODO: ReadGlobal Scroll-wheel look
-        const KeyInfo k = ReadKey;
-
-        HandleKey(&k);
+        const GlobalEvent g = ReadGlobal;
+        switch (g.Type) {
+            case EventType.Key:
+                HandleKey(&g.Key);
+                break;
+            case EventType.Mouse:
+                HandleMouse(&g.Mouse);
+                break;
+            default:
+        }
 	}
 }
 
-void HandleKey(const KeyInfo* ki)
+void HandleMouse(const MouseInfo* mi)
 {
     ulong fs = CurrentFile.size;
     size_t bs = Buffer.length;
-    const KeyInfo k = *ki;
+
+    switch (mi.Type) {
+        case MouseEventType.Wheel:
+            if (mi.ButtonState > 0) { // Up
+                if (CurrentPosition - BytesPerRow >= 0)
+                    Goto(CurrentPosition - BytesPerRow);
+                else
+                    Goto(0);
+            } else { // Down
+                if (CurrentPosition + bs + BytesPerRow <= fs)
+                    Goto(CurrentPosition + BytesPerRow);
+                else
+                    Goto(fs - bs);
+            }
+            break;
+        default:
+    }
+}
+
+void HandleKey(const KeyInfo* k)
+{
+    ulong fs = CurrentFile.size;
+    size_t bs = Buffer.length;
 
     switch (k.keyCode)
     {
