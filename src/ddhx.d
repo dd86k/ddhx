@@ -49,20 +49,12 @@ void Start()
 
 	while (1)
 	{
-        const GlobalEvent g = ReadGlobal;
-        switch (g.Type) {
-            case EventType.Key:
-                HandleKey(&g.Key);
-                break;
-            case EventType.Mouse:
-                HandleMouse(&g.Mouse);
-                break;
-            default:
-        }
+        const KeyInfo g = ReadKey;
+        HandleKey(&g);
 	}
 }
 
-void HandleMouse(const MouseInfo* mi)
+/*void HandleMouse(const MouseInfo* mi)
 {
     ulong fs = CurrentFile.size;
     size_t bs = Buffer.length;
@@ -83,7 +75,7 @@ void HandleMouse(const MouseInfo* mi)
             break;
         default:
     }
-}
+}*/
 
 void HandleKey(const KeyInfo* k)
 {

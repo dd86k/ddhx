@@ -2,7 +2,7 @@ module Searcher;
 
 import std.stdio;
 import std.format : format;
-import ddhx, Utils : MB;
+import ddhx, Utils : MB, unformat;
 
 private enum CHUNK_SIZE = MB / 2;
 
@@ -26,6 +26,7 @@ void SearchUTF16String(const char[] s)
 {//TODO: bool bigendian
     const size_t l = s.length;
     ubyte[] buf = new ubyte[l * 2];
+//TODO: Lesser cheap UTF-8 to UTF-16 transformation
     for (int i = 1, e = 0; e < l; i += 2, ++e) buf[i] = s[e];
     SearchArray(buf, "wstring");
 }
@@ -52,7 +53,22 @@ void SearchByte(const ubyte b)
     MessageAlt("Not found");
 }
 
-private void SearchArray(const ubyte[] a, string type)
+/**
+ * Search for a 16-bit value.
+ * Params: s = Input
+ */
+void SearchUShort(string s)
+{
+    long l;
+    if (unformat(s, l)) {
+        ubyte* lp = cast(ubyte*)&l;
+        ubyte[2] la;
+        for (size_t i; i < 8;) la = *lp++;
+        SearchArray(la, "ushort");
+    }
+}
+
+private void SearchArray(ubyte[] a, string type)
 {
     MessageAlt(format("Searching %s...", type));
     const char b = a[0];

@@ -24,10 +24,17 @@ enum : long {
 bool unformat(string e, ref long l)
 {
 	import std.conv : parse, ConvException;
+	import std.algorithm.searching : startsWith;
 	try {
-		switch (e[$ - 1]) {
+		if (e.startsWith("0x")) {
+			l = unformatHex(e[0..$ - 1]);
+		} /*else if (e.startsWith("0")) {
+			//TODO: UNFORMAT OCTAL
+		} */else {
+			switch (e[$ - 1]) {
 			case 'h', 'H': l = unformatHex(e[0..$ - 1]); break;
 			default: l = parse!long(e); break;
+			}
 		}
 		return true;
     } catch (ConvException) {
@@ -62,7 +69,9 @@ long unformatHex(string e)
 
 /**
  * Format byte size.
- * Params: size = Long number
+ * Params:
+ *   size = Long number
+ *   base10 = Use x1000 instead
  * Returns: Formatted string
  */
 string formatsize(long size, bool base10 = false) //BUG: %f is unpure?

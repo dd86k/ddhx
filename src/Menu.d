@@ -16,7 +16,7 @@ import ddhx;
 void EnterMenu()
 {
     import std.array : split;
-    import Searcher : SearchByte, SearchUTF8String, SearchUTF16String;
+    import Searcher;
     //import std.algorithm.iteration : splitter, filter;
     ClearMsg;
     SetPos(0, 0);
@@ -54,6 +54,12 @@ void EnterMenu()
                         else
                             MessageAlt("Missing argument. (Byte)");
                         goto SEARCH_BYTE;
+                    case "s", "short", "ushort":
+                        if (e.length > 2) {
+                            SearchUShort(e[2]);
+                        } else
+                            MessageAlt("Missing argument. (UShort)");
+                        break;
                     default:
                         if (e.length > 2)
                             e[1] = e[2];
