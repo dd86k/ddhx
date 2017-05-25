@@ -427,7 +427,6 @@ void Exit()
     exit(0);
 }
 
-pragma(inline, true):
 /**
  * Fast hex format higher nibble
  * Params: b = Byte
