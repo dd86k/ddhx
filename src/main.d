@@ -82,7 +82,10 @@ private void PrintHelp() // ..And description.
 private void PrintVersion()
 {
     import core.stdc.stdlib : exit;
-    writefln("ddhx %s (%s) ", APP_VERSION, __TIMESTAMP__);
+debug
+    writefln("ddhx %s-debug  (%s) ", APP_VERSION, __TIMESTAMP__);
+else
+    writefln("ddhx %s  (%s) ", APP_VERSION, __TIMESTAMP__);
     writeln("MIT License: Copyright (c) dd86k 2017");
     writeln("Project page: <https://github.com/dd86k/ddhx>");
     writefln("Compiled %s with %s v%s", __FILE__, __VENDOR__, __VERSION__);

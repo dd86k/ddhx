@@ -5,10 +5,7 @@ import std.format : format;
 import Menu;
 import ddcon;
 
-/// Debug version
-debug enum APP_VERSION = "0.0.0-debug";
-else
-/// Release version
+/// App version
 enum APP_VERSION = "0.0.0";
 
 /// Offset type (hex, dec, etc.)
@@ -27,11 +24,11 @@ OffsetType CurrentOffset; /// Current offset view type
  * Internal
  */
 
-string Filepath;
-File CurrentFile;
-int LastErrorCode;
-long CurrentPosition;
-ubyte[] Buffer;
+int LastErrorCode; /// Last error code to report
+string Filepath; /// Current file path
+File CurrentFile; /// Current file handle
+long CurrentPosition; /// Current file position
+ubyte[] Buffer; /// Display buffer
 
 //TODO: When typing g goto menu directly
 
@@ -77,6 +74,10 @@ void Start()
     }
 }*/
 
+/**
+ * Handles a user key-stroke
+ * Params: k = KeyInfo (ddcon)
+ */
 void HandleKey(const KeyInfo* k)
 {
     ulong fs = CurrentFile.size;
@@ -169,6 +170,7 @@ void HandleKey(const KeyInfo* k)
     }
 }
 
+/// Refresh display and both bars
 void RefreshAll() {
     RefreshDisplay;
     ClearMsg;
@@ -213,7 +215,7 @@ void UpdatePositionBar()
 /// Used right after UpdateDisplay to not waste a cursor positioning call.
 private void UpdatePositionBarRaw()
 {
-    float f = CurrentPosition;
+    const float f = CurrentPosition;
     writef(" HEX:%08X | DEC:%08d | OCT:%08o | %7.3f%%",
         CurrentPosition, CurrentPosition, CurrentPosition,
         ((f + Buffer.length) / CurrentFile.size) * 100);
@@ -221,9 +223,9 @@ private void UpdatePositionBarRaw()
 
 private void PrepBuffer()
 {
-	int h = WindowHeight - 2;
-    ulong fs = CurrentFile.size;
-    int bufs = h * BytesPerRow;
+	const int h = WindowHeight - 2;
+    const ulong fs = CurrentFile.size;
+    const int bufs = h * BytesPerRow;
     Buffer = new ubyte[fs >= bufs ? bufs : cast(uint)fs];
 }
 
@@ -237,7 +239,7 @@ private void ReadFile()
  * Goes to the specified position in the file.
  * Ignores some verification since this function is mostly used
  * by the program itself. (And we know what we're doing!)
- * Param: pos = New position.
+ * Params: pos = New position.
  */
 void Goto(long pos)
 {
@@ -285,6 +287,7 @@ void GotoStr(string str)
     }
 }
 
+/// Update display from buffer
 void UpdateDisplay()
 {
     import core.stdc.string : memset;
@@ -321,17 +324,110 @@ void UpdateDisplay()
     }
 }
 
+/// Clear main display
 void ClearDisplay()
 {
     import core.stdc.string : memset;
     SetPos(0, 0);
-    int h = WindowHeight;
+    const int h = WindowHeight;
     char[] s = new char[WindowWidth];
     memset(&s[0], ' ', s.length);
-    for(int i; i < h; ++i)
-        writeln(s);
+    for(int i; i < h; ++i) writeln(s);
 }
 
+/// Refresh display
+void RefreshDisplay()
+{
+    ReadFile();
+    UpdateDisplay();
+}
+
+/**
+ * Message (upper bar)
+ * Params: msg = Message string
+ */
+void Message(string msg)
+{
+    ClearMsg();
+    SetPos(0, 0);
+    write(msg);
+}
+
+/// Clear upper bar
+void ClearMsg()
+{
+    SetPos(0, 0);
+    writef("%*s", WindowWidth - 1, "");
+}
+
+/**
+ * Message (bottom bar)
+ * Params: msg = Message string
+ */
+void MessageAlt(string msg)
+{
+    ClearMsgAlt();
+    SetPos(0, WindowHeight - 1);
+    write(msg);
+}
+
+/// Clear bottom bar
+void ClearMsgAlt()
+{
+    SetPos(0, WindowHeight - 1);
+    writef("%*s", WindowWidth - 1, "");
+}
+
+/// Print some file information at the bottom bar
+void PrintFileInfo()
+{
+    import Utils : formatsize;
+    import std.format : format;
+    import std.file : getAttributes;
+    import std.path : baseName;
+    const uint a = getAttributes(Filepath);
+    version (Windows)
+    { import core.sys.windows.winnt; // FILE_ATTRIBUTE_*
+        char[8] c;
+        c[0] = a & FILE_ATTRIBUTE_READONLY ? 'r' : '-';
+        c[1] = a & FILE_ATTRIBUTE_HIDDEN ? 'h' : '-';
+        c[2] = a & FILE_ATTRIBUTE_SYSTEM ? 's' : '-';
+        c[3] = a & FILE_ATTRIBUTE_ARCHIVE ? 'a' : '-';
+        c[4] = a & FILE_ATTRIBUTE_TEMPORARY ? 't' : '-';
+        c[6] = a & FILE_ATTRIBUTE_SPARSE_FILE ? 'S' : '-';
+        c[5] = a & FILE_ATTRIBUTE_COMPRESSED ? 'c' : '-';
+        c[7] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
+    }
+    else version (Posix)
+    { import core.sys.posix.sys.stat;
+        char[10] c;
+        c[0] = a & S_IRUSR ? 'r' : '-';
+        c[1] = a & S_IWUSR ? 'w' : '-';
+        c[2] = a & S_IXUSR ? 'x' : '-';
+        c[3] = a & S_IRGRP ? 'r' : '-';
+        c[4] = a & S_IWGRP ? 'w' : '-';
+        c[5] = a & S_IXGRP ? 'x' : '-';
+        c[6] = a & S_IROTH ? 'r' : '-';
+        c[7] = a & S_IWOTH ? 'w' : '-';
+        c[8] = a & S_IXOTH ? 'x' : '-';
+        c[9] = a & S_ISVTX ? 't' : '-';
+    }
+    MessageAlt(format("%s  %s  %s",
+        c, // File attributes symbolic representation
+        formatsize(CurrentFile.size), // File formatted size
+        baseName(Filepath))
+    );
+}
+
+/// Exits ddhx
+void Exit()
+{
+    import core.stdc.stdlib : exit;
+    Clear();
+    exit(0);
+}
+
+pragma(inline, true):
 /**
  * Fast hex format higher nibble
  * Params: b = Byte
@@ -391,83 +487,4 @@ private char fflower(ubyte b) pure @safe @nogc
 private char FormatChar(ubyte c) pure @safe @nogc
 {
     return c > 0x7E || c < 0x20 ? '.' : c;
-}
-
-void RefreshDisplay()
-{
-    ReadFile();
-    UpdateDisplay();
-}
-
-void Message(string msg)
-{
-    ClearMsg();
-    SetPos(0, 0);
-    write(msg);
-}
-
-void MessageAlt(string msg)
-{
-    ClearMsgAlt();
-    SetPos(0, WindowHeight - 1);
-    write(msg);
-}
-
-void ClearMsg()
-{
-    SetPos(0, 0);
-    writef("%*s", WindowWidth - 1, "");
-}
-
-void ClearMsgAlt()
-{
-    SetPos(0, WindowHeight - 1);
-    writef("%*s", WindowWidth - 1, "");
-}
-
-void PrintFileInfo()
-{
-    import Utils : formatsize;
-    import std.format : format;
-    import std.file : getAttributes;
-    import std.path : baseName;
-    const uint a = getAttributes(Filepath);
-    version (Windows)
-    { import core.sys.windows.winnt; // FILE_ATTRIBUTE_*
-        char[8] c;
-        c[0] = a & FILE_ATTRIBUTE_READONLY ? 'r' : '-';
-        c[1] = a & FILE_ATTRIBUTE_HIDDEN ? 'h' : '-';
-        c[2] = a & FILE_ATTRIBUTE_SYSTEM ? 's' : '-';
-        c[3] = a & FILE_ATTRIBUTE_ARCHIVE ? 'a' : '-';
-        c[4] = a & FILE_ATTRIBUTE_TEMPORARY ? 't' : '-';
-        c[6] = a & FILE_ATTRIBUTE_SPARSE_FILE ? 'S' : '-';
-        c[5] = a & FILE_ATTRIBUTE_COMPRESSED ? 'c' : '-';
-        c[7] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
-    }
-    else version (Posix)
-    { import core.sys.posix.sys.stat;
-        char[10] c;
-        c[0] = a & S_IRUSR ? 'r' : '-';
-        c[1] = a & S_IWUSR ? 'w' : '-';
-        c[2] = a & S_IXUSR ? 'x' : '-';
-        c[3] = a & S_IRGRP ? 'r' : '-';
-        c[4] = a & S_IWGRP ? 'w' : '-';
-        c[5] = a & S_IXGRP ? 'x' : '-';
-        c[6] = a & S_IROTH ? 'r' : '-';
-        c[7] = a & S_IWOTH ? 'w' : '-';
-        c[8] = a & S_IXOTH ? 'x' : '-';
-        c[9] = a & S_ISVTX ? 't' : '-';
-    }
-    MessageAlt(format("%s  %s  %s",
-        c, // File attributes symbolic representation
-        formatsize(CurrentFile.size), // File formatted size
-        baseName(Filepath))
-    );
-}
-
-void Exit()
-{
-    import core.stdc.stdlib : exit;
-    Clear();
-    exit(0);
 }
