@@ -29,100 +29,94 @@ void EnterMenu()
     UpdateOffsetBar;
     if (e.length > 0) {
         switch (e[0]) { // toUpper...
-            case "g", "goto":
+        case "g", "goto":
+            if (e.length > 1)
+                switch (e[1]) {
+                case "e", "end":
+                    Goto(CurrentFile.size - Buffer.length);
+                    break;
+                case "h", "home", "s":
+                    Goto(0);
+                    break;
+                default:
+                    GotoStr(e[1]);
+                    break;
+                }
+            break;
+            case "s", "search": // Search
+                //TODO: Figure a way to figure out signed numbers.
+                //      "sbyte" ? (Very possible!
                 if (e.length > 1)
-                    switch (e[1]) {
-                    case "e", "end":
-                        Goto(CurrentFile.size - Buffer.length);
-                        break;
-                    case "h", "home", "s":
-                        Goto(0);
-                        break;
-                    default:
-                        GotoStr(e[1]);
-                        break;
-                    }
+                switch (e[1]) {
+                case "byte":
+                    if (e.length > 2)
+                        e[1] = e[2];
+                    else
+                        MessageAlt("Missing argument. (Byte)");
+                    goto SEARCH_BYTE;
+                case "short", "ushort":
+                    if (e.length > 2) {
+                        SearchUShort(e[2]);
+                    } else
+                        MessageAlt("Missing argument. (UShort)");
+                    break;
+                case "string":
+                    if (e.length > 2)
+                        SearchUTF8String(e[2]);
+                    else
+                        MessageAlt("Missing argument. (String)");
+                    break;
+                default:
+                    if (e.length > 1)
+                        MessageAlt("Invalid type.");
+                    else
+                        MessageAlt("Missing type.");
+                    break;
+                }
                 break;
-                case "s", "search": // Search
-                    //TODO: Figure a way to figure out signed numbers.
-                    //      "sbyte" ? (Very possible!
-                    if (e.length > 1)
-                    switch (e[1]) {
-                    case "b", "byte":
-                        if (e.length > 2)
-                            e[1] = e[2];
-                        else
-                            MessageAlt("Missing argument. (Byte)");
-                        goto SEARCH_BYTE;
-                    case "s", "short", "ushort":
-                        if (e.length > 2) {
-                            SearchUShort(e[2]);
-                        } else
-                            MessageAlt("Missing argument. (UShort)");
-                        break;
-                    default:
-                        if (e.length > 2)
-                            e[1] = e[2];
-                        else
-                            MessageAlt("Missing argument. (String)");
-                        goto SEARCH_STRING;
-                    }
-                    break;
-                case "ss": // Search ASCII/UTF-8 string
-SEARCH_STRING:
-                    if (e.length > 1)
-                        SearchUTF8String(e[1]);
-                    else
-                        MessageAlt("Missing argument. (String)");
-                    break;
-                case "ss16": // Search UTF-16 string
-                    if (e.length > 1)
-                        SearchUTF16String(e[1]);
-                    else
-                        MessageAlt("Missing argument. (String)");
-                    break;
-                case "sb": // Search byte
+            case "ss": // Search ASCII/UTF-8 string
+                if (e.length > 1)
+                    SearchUTF8String(e[1]);
+                else
+                    MessageAlt("Missing argument. (String)");
+                break;
+            case "ss16": // Search UTF-16 string
+                if (e.length > 1)
+                    SearchUTF16String(e[1]);
+                else
+                    MessageAlt("Missing argument. (String)");
+                break;
+            case "sb": // Search byte
 SEARCH_BYTE:
-                    if (e.length > 1) {
-                        import Utils : unformat;
-                        long l;
-                        if (unformat(e[1], l)) {
-                            if (l >= 0 && l <= 0xFF) {
-                                SearchByte(cast(ubyte)l);
-                            }
-                            /*else if (l >= -127 && l <= 128)
-                            {
-
-                            }*/
-                            else
-                            {
-                                MessageAlt("Unsupported range.");
-                                return;
-                            }
-                        }
+                if (e.length > 1) {
+                    import Utils : unformat;
+                    long l;
+                    if (unformat(e[1], l)) {
+                        SearchByte(l & 0xFF);
                     }
-                    break;
-                case "i", "info": PrintFileInfo; break;
-                case "o", "offset":
-                    if (e.length > 1) {
-                        switch (e[1][0]) {
-                        case 'o': CurrentOffset = OffsetType.Octal; break;
-                        case 'd': CurrentOffset = OffsetType.Decimal; break;
-                        case 'h': CurrentOffset = OffsetType.Hexadecimal; break;
-                        default:
-                        }
-                        UpdateOffsetBar;
-                        UpdateDisplay;
+                }
+                break;
+            case "i", "info": PrintFileInfo; break;
+            case "o", "offset":
+                if (e.length > 1) {
+                    switch (e[1][0]) {
+                    case 'o': CurrentOffset = OffsetType.Octal; break;
+                    case 'd': CurrentOffset = OffsetType.Decimal; break;
+                    case 'h': CurrentOffset = OffsetType.Hexadecimal; break;
+                    default:
                     }
-                    break;
-                case "r", "refresh":
-                    RefreshAll;
-                    break;
-                case "q", "quit": Exit; break;
-                case "about": ShowAbout; break;
-                case "version": ShowInfo; break;
-                case "h", "help": ShowHelp; break;
-                default: MessageAlt("Unknown command: " ~ e[0]); break;
+                    UpdateOffsetBar;
+                    UpdateDisplay;
+                }
+                break;
+            case "r", "refresh":
+                RefreshAll;
+                break;
+            case "q", "quit": Exit; break;
+            case "about": ShowAbout; break;
+            case "version": ShowInfo; break;
+            case "h", "help": ShowHelp; break;
+            default: MessageAlt("Unknown command: " ~ e[0]); break;
         }
     }
 }

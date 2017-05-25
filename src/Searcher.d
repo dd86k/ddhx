@@ -26,7 +26,7 @@ void SearchUTF16String(const char[] s)
 {//TODO: bool bigendian
     const size_t l = s.length;
     ubyte[] buf = new ubyte[l * 2];
-//TODO: Lesser cheap UTF-8 to UTF-16 transformation
+//TODO: Richer UTF-8 to UTF-16 transformation
     for (int i = 1, e = 0; e < l; i += 2, ++e) buf[i] = s[e];
     SearchArray(buf, "wstring");
 }

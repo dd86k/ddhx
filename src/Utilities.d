@@ -27,7 +27,7 @@ bool unformat(string e, ref long l)
 	import std.algorithm.searching : startsWith;
 	try {
 		if (e.startsWith("0x")) {
-			l = unformatHex(e[0..$ - 1]);
+			l = unformatHex(e[2..$]);
 		} /*else if (e.startsWith("0")) {
 			//TODO: UNFORMAT OCTAL
 		} */else {
@@ -51,7 +51,7 @@ bool unformat(string e, ref long l)
  * Params: e = Input string
  * Returns: Unformatted number.
  */
-long unformatHex(string e)
+ulong unformatHex(string e)
 { //TODO: Use a byte pointer instead
 	enum C_MINOR = '0' + 39, C_MAJOR = '0' + 7;
 	int s; long l;
