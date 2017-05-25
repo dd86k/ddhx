@@ -61,9 +61,9 @@ void SearchUShort(string s)
 {
     long l;
     if (unformat(s, l)) {
-        ubyte* lp = cast(ubyte*)&l;
         ubyte[2] la;
-        for (size_t i; i < 8;) la = *lp++;
+        la[0] = l & 0xFF;
+        la[1] = (l >> 8) & 0xFF;
         SearchArray(la, "ushort");
     }
 }
