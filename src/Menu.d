@@ -1,8 +1,7 @@
 module Menu;
 
 import std.stdio;
-import ddcon;
-import ddhx;
+import ddcon, ddhx, Searcher;
 
 //TODO: Number searching: Inverted bool (native to platform)
 //TODO: String searching: Inverted bool (native to platform)
@@ -16,7 +15,6 @@ import ddhx;
 void EnterMenu()
 {
     import std.array : split;
-    import Searcher;
     //import std.algorithm.iteration : splitter, filter;
     ClearMsg;
     SetPos(0, 0);
@@ -35,7 +33,7 @@ void EnterMenu()
                 case "e", "end":
                     Goto(CurrentFile.size - Buffer.length);
                     break;
-                case "h", "home", "s":
+                case "h", "home":
                     Goto(0);
                     break;
                 default:
@@ -121,6 +119,7 @@ SEARCH_BYTE:
     }
 }
 
+/// Prints on screen
 void ShowHelp()
 {
     //TODO: "Scroll" system and etc. (Important!!)
