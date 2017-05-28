@@ -6,7 +6,7 @@ import Menu;
 import ddcon;
 
 /// App version
-enum APP_VERSION = "0.0.0";
+enum APP_VERSION = "0.0.0-0";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType {
@@ -18,7 +18,7 @@ enum OffsetType {
  */
 
 ushort BytesPerRow = 16; /// Bytes shown per row
-OffsetType CurrentOffset; /// Current offset view type
+OffsetType CurrentOffsetType; /// Current offset view type
 
 /*
  * Internal
@@ -47,6 +47,8 @@ void Start()
 	while (1)
 	{
         const KeyInfo g = ReadKey;
+        //TODO: Handle resize event (Windows)
+        //TODO: Handle resize event (Posix)
         HandleKey(&g);
 	}
 }
@@ -186,7 +188,7 @@ void UpdateOffsetBar()
 {
 	SetPos(0, 0);
 	write("Offset ");
-	switch (CurrentOffset)
+	switch (CurrentOffsetType)
 	{
 		default:
             write("h ");
@@ -254,7 +256,7 @@ void Goto(long pos)
 }
 
 /**
- * Goto a position carefully. (Includes boundcheck)
+ * Goto a position while checking bounds
  * Mostly used for user entered numbers.
  * Params: pos = New position
  */
@@ -307,7 +309,7 @@ void UpdateDisplay()
             memset(&ascii[0] + ml, ' ', ml);
         }
 
-        switch (CurrentOffset)
+        switch (CurrentOffsetType)
         {
             default: writef("%08X ", o + CurrentPosition); break;
             case OffsetType.Decimal: writef("%08d ", o + CurrentPosition); break;
@@ -322,17 +324,6 @@ void UpdateDisplay()
 
         writefln("%s  %s", data, ascii);
     }
-}
-
-/// Clear main display
-void ClearDisplay()
-{
-    import core.stdc.string : memset;
-    SetPos(0, 0);
-    const int h = WindowHeight;
-    char[] s = new char[WindowWidth];
-    memset(&s[0], ' ', s.length);
-    for(int i; i < h; ++i) writeln(s);
 }
 
 /// Refresh display

@@ -98,9 +98,9 @@ SEARCH_BYTE:
             case "o", "offset":
                 if (e.length > 1) {
                     switch (e[1][0]) {
-                    case 'o': CurrentOffset = OffsetType.Octal; break;
-                    case 'd': CurrentOffset = OffsetType.Decimal; break;
-                    case 'h': CurrentOffset = OffsetType.Hexadecimal; break;
+                    case 'o': CurrentOffsetType = OffsetType.Octal; break;
+                    case 'd': CurrentOffsetType = OffsetType.Decimal; break;
+                    case 'h': CurrentOffsetType = OffsetType.Hexadecimal; break;
                     default:
                     }
                     UpdateOffsetBar;
