@@ -1,10 +1,10 @@
-# ddhx - Hex file viewer
+# ddhx, Hex file viewer
 
 ![Screenshot of ddhx](https://dd86k.github.io/imgs/ddhx0.png)
 
-I wanted a tool that is simple, light, and does what I want to do quickly, and so I created ddhx.
+### Native, fast, simple.
 
-ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool.
+ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool, which means it does not require .NET nor Mono whatsoever.
 
 ## Supported Platforms
 
@@ -18,7 +18,8 @@ ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool
 ## Planned features
 Basically a TODO list:
 
-- Word (short, BE), Doubleword (int, BE/LE), and Quadword (long, BE/LE) searching
+- Big Endian number search
+- Array searching
 - UTF-16BE, and UTF-32LE/BE string searching
 - Hex dump
 

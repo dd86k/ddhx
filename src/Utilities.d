@@ -147,3 +147,102 @@ string formatsize(long size, bool base10 = false) //BUG: %f is unpure?
 			return format("%d B", size);
 	}
 }
+
+/// Byte swap 2 bytes.
+ushort bswap(ushort num) pure
+{
+    version (LittleEndian)
+        version (X86) asm pure {
+            naked;
+            xchg AH, AL;
+            ret;
+        } else version (X86_64)
+            version (Windows) asm pure {
+                naked;
+                mov AX, CX;
+                xchg AL, AH;
+                ret;
+            } else asm pure { // System V AMD64 ABI
+                naked;
+                mov EAX, EDI;
+                xchg AL, AH;
+                ret;
+            }
+        else
+        {
+            if (num)
+            {
+                ubyte* p = cast(ubyte*)&num;
+                return p[1] | p[0] << 8;
+            }
+        }
+    else return num;
+}
+
+/// Byte swap 4 bytes.
+uint bswap(uint num) pure
+{
+    version (LittleEndian)
+        version (X86) asm pure {
+            naked;
+            bswap EAX;
+            ret;
+        } else version (X86_64)
+            version (Windows) asm pure {
+                naked;
+                mov EAX, ECX;
+                bswap EAX;
+                ret;
+            } else asm pure { // System V AMD64 ABI
+                naked;
+                mov RAX, RDI;
+                bswap EAX;
+                ret;
+            }
+        else
+        {
+            if (num)
+            {
+                ubyte* p = cast(ubyte*)&num;
+                return p[3] | p[2] << 8 | p[1] << 16 | p[0] << 24;
+            }
+        }
+    else return num;
+}
+
+/// Byte swap 8 bytes.
+ulong bswap(ulong num) pure
+{
+	version (X86) asm pure {
+		naked;
+		xchg EAX, EDX;
+		bswap EDX;
+		bswap EAX;
+		ret;
+	} else version (X86_64)
+		version (Windows) asm pure {
+			naked;
+			mov RAX, RCX;
+			bswap RAX;
+			ret;
+		} else asm pure { // System V AMD64 ABI
+			naked;
+			mov RAX, RDI;
+			bswap RAX;
+			ret;
+		}
+	else
+	{
+		if (num)
+		{
+			ubyte* p = cast(ubyte*)&num;
+			ubyte c;
+			for (int a, b = 7; a < 4; ++a, --b) {
+				c = *(p + b);
+				*(p + b) = *(p + a);
+				*(p + a) = c;
+			}
+			return num;
+		}
+	}
+}

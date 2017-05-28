@@ -26,7 +26,7 @@ void EnterMenu()
 
     UpdateOffsetBar;
     if (e.length > 0) {
-        switch (e[0]) { // toUpper...
+        switch (e[0]) {
         case "g", "goto":
             if (e.length > 1)
                 switch (e[1]) {
@@ -42,36 +42,59 @@ void EnterMenu()
                 }
             break;
             case "s", "search": // Search
-                //TODO: Figure a way to figure out signed numbers.
-                //      "sbyte" ? (Very possible!
-                if (e.length > 1)
-                switch (e[1]) {
-                case "byte":
-                    if (e.length > 2)
-                        e[1] = e[2];
-                    else
-                        MessageAlt("Missing argument. (Byte)");
-                    goto SEARCH_BYTE;
-                case "short", "ushort":
-                    if (e.length > 2) {
-                        SearchUShort(e[2]);
-                    } else
-                        MessageAlt("Missing argument. (UShort)");
-                    break;
-                case "string":
-                    if (e.length > 2)
-                        SearchUTF8String(e[2]);
-                    else
-                        MessageAlt("Missing argument. (String)");
-                    break;
-                default:
-                    if (e.length > 1)
-                        MessageAlt("Invalid type.");
-                    else
-                        MessageAlt("Missing type.");
-                    break;
+                if (e.length > 1) {
+                    string value = e[$-1];
+                    const bool a2 = e.length > 2;
+                    bool invert;
+                    if (a2)
+                        invert = e[2] == "invert";
+                    switch (e[1]) {
+                    case "byte":
+                        if (e.length > 2) {
+                            e[1] = value;
+                            goto SEARCH_BYTE;
+                        } else
+                            MessageAlt("Missing argument. (Byte)");
+                        break;
+                    case "short", "ushort", "word", "w":
+                        if (e.length > 2) {
+                            SearchUInt16(value, invert);
+                        } else
+                            MessageAlt("Missing argument. (Number)");
+                        break;
+                    case "int", "uint", "doubleword", "dword", "dw":
+                        if (e.length > 2) {
+                            SearchUInt32(value, invert);
+                        } else
+                            MessageAlt("Missing argument. (Number)");
+                        break;
+                    case "long", "ulong", "quadword", "qword", "qw":
+                        if (e.length > 2) {
+                            SearchUInt64(value, invert);
+                        } else
+                            MessageAlt("Missing argument. (Number)");
+                        break;
+                    case "string":
+                        if (e.length > 2)
+                            SearchUTF8String(value);
+                        else
+                            MessageAlt("Missing argument. (String)");
+                        break;
+                    case "wstring":
+                        if (e.length > 2)
+                            SearchUTF16String(value, invert);
+                        else
+                            MessageAlt("Missing argument. (String)");
+                        break;
+                    default:
+                        if (e.length > 1)
+                            MessageAlt("Invalid type.");
+                        else
+                            MessageAlt("Missing type.");
+                        break;
+                    }
+                    break; // "search"
                 }
-                break;
             case "ss": // Search ASCII/UTF-8 string
                 if (e.length > 1)
                     SearchUTF8String(e[1]);
@@ -98,10 +121,12 @@ SEARCH_BYTE:
             case "o", "offset":
                 if (e.length > 1) {
                     switch (e[1][0]) {
-                    case 'o': CurrentOffsetType = OffsetType.Octal; break;
-                    case 'd': CurrentOffsetType = OffsetType.Decimal; break;
-                    case 'h': CurrentOffsetType = OffsetType.Hexadecimal; break;
+                    case 'o','O': CurrentOffsetType = OffsetType.Octal; break;
+                    case 'd','D': CurrentOffsetType = OffsetType.Decimal; break;
+                    case 'h','H': CurrentOffsetType = OffsetType.Hexadecimal; break;
                     default:
+                        MessageAlt(" Invalid offset type.");
+                        break;
                     }
                     UpdateOffsetBar;
                     UpdateDisplay;
