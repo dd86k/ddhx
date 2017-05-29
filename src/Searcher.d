@@ -4,7 +4,7 @@ import std.stdio;
 import std.format : format;
 import ddhx, Utils : MB, unformat;
 
-private enum CHUNK_SIZE = MB / 2;
+private enum CHUNK_SIZE = 2 * MB;
 
 //TODO: Progress bar
 //TODO: String REGEX
@@ -19,7 +19,7 @@ void SearchUTF8String(const char[] s)
 }
 
 /**
- * Search an UTF-16LE string
+ * Search an UTF-16 string
  * Params: s = string
  */
 void SearchUTF16String(const char[] s, bool invert = false)
@@ -30,6 +30,20 @@ void SearchUTF16String(const char[] s, bool invert = false)
     for (int i = invert ? 0 : 1, e = 0; e < l; i += 2, ++e)
         buf[i] = s[e];
     SearchArray(buf, "wstring");
+}
+
+/**
+ * Search an UTF-32 string
+ * Params: s = string
+ */
+void SearchUTF32String(const char[] s, bool invert = false)
+{//TODO: bool bigendian
+    const size_t l = s.length;
+    ubyte[] buf = new ubyte[l * 4];
+//TODO: Richer UTF-8 to UTF-16 transformation
+    for (int i = invert ? 0 : 3, e = 0; e < l; i += 4, ++e)
+        buf[i] = s[e];
+    SearchArray(buf, "dstring");
 }
 
 /**
@@ -109,12 +123,8 @@ private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
     if (l) {
         if (invert)
         switch (size) {
-            case 2:
-                l = bswap(l & 0xFFFF);
-                break;
-            case 4:
-                l = bswap(l & 0xFFFF_FFFF);
-                break;
+            case 2: l = bswap(l & 0xFFFF); break;
+            case 4: l = bswap(l & 0xFFFF_FFFF); break;
             default: l = bswap(l); break;
         }
         ubyte* lp = cast(ubyte*)&l;
@@ -131,6 +141,7 @@ private void SearchArray(ubyte[] a, string type)
     long pos = CurrentPosition + 1;
     CurrentFile.seek(pos);
     //TODO: array compare between chunks
+    //TODO: Fix when at end of file and 0s
     foreach (const ubyte[] buf; CurrentFile.byChunk(CHUNK_SIZE)) {
         for (int i; i < CHUNK_SIZE; ++i) {
             if (buf[i] == b) {
