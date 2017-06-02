@@ -1,12 +1,17 @@
 module ddhx;
 
-import std.stdio, std.file : exists;
-import std.format : format;
+import std.stdio;
 import Menu;
 import ddcon;
+import std.file : exists;
+
+//TODO: Bookmarks page (What shortcut or function key?)
+//TODO: Statistics page or functions
+//TODO: MD5? SHA1?
+//TODO: Tabs? (Probably not)
 
 /// App version
-enum APP_VERSION = "0.0.0-0";
+enum APP_VERSION = "0.0.0-0-notoutyet";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType {
@@ -31,6 +36,7 @@ long CurrentPosition; /// Current file position
 ubyte[] Buffer; /// Display buffer
 
 //TODO: When typing g goto menu directly
+//      - Tried writing to stdin
 
 /// Main ddhx entry point past CLI.
 void Start()
@@ -155,13 +161,14 @@ void HandleKey(const KeyInfo* k)
         EnterMenu();
         break;
     case Key.G:
-        /*EnterMenu("g");
-        UpdateOffsetBar();*/
+        //EnterMenu("g");
+        //UpdateOffsetBar();
         break;
     case Key.I:
         PrintFileInfo;
         break;
     case Key.R, Key.F5:
+        //PrepBuffer;
         RefreshAll;
         break;
     case Key.H:
@@ -218,12 +225,11 @@ void UpdatePositionBar()
 private void UpdatePositionBarRaw()
 {
     const float f = CurrentPosition;
-    writef(" HEX:%08X | DEC:%08d | OCT:%08o | %7.3f%%",
-        CurrentPosition, CurrentPosition, CurrentPosition,
-        ((f + Buffer.length) / CurrentFile.size) * 100);
+    writef(" %7.3f%%", ((f + Buffer.length) / CurrentFile.size) * 100);
 }
 
-private void PrepBuffer()
+/// Prepare buffer according to console/term height
+void PrepBuffer()
 {
 	const int h = WindowHeight - 2;
     const ulong fs = CurrentFile.size;
@@ -286,6 +292,8 @@ void GotoStr(string str)
             import std.format : format;
             MessageAlt(format("Range too far or negative: %d (%XH)", l, l));
         }
+    } else {
+		MessageAlt("Could not parse number");
     }
 }
 

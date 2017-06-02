@@ -4,10 +4,10 @@ import std.stdio;
 import std.format : format;
 import ddhx, Utils : MB, unformat;
 
-private enum CHUNK_SIZE = 2 * MB;
+private enum CHUNK_SIZE = MB;
 
 //TODO: Progress bar
-//TODO: String REGEX
+//TODO: String REGEX (will require a new function entirely for searching)
 
 /**
  * Search an UTF-8/ASCII string
@@ -20,10 +20,12 @@ void SearchUTF8String(const char[] s)
 
 /**
  * Search an UTF-16 string
- * Params: s = string
+ * Params:
+ *   s = string
+ *   invert = Invert endianness
  */
 void SearchUTF16String(const char[] s, bool invert = false)
-{//TODO: bool bigendian
+{
     const size_t l = s.length;
     ubyte[] buf = new ubyte[l * 2];
 //TODO: Richer UTF-8 to UTF-16 transformation
@@ -34,10 +36,12 @@ void SearchUTF16String(const char[] s, bool invert = false)
 
 /**
  * Search an UTF-32 string
- * Params: s = string
+ * Params:
+ *   s = string
+ *   invert = Invert endianness
  */
 void SearchUTF32String(const char[] s, bool invert = false)
-{//TODO: bool bigendian
+{
     const size_t l = s.length;
     ubyte[] buf = new ubyte[l * 4];
 //TODO: Richer UTF-8 to UTF-16 transformation
@@ -70,7 +74,9 @@ void SearchByte(const ubyte b)
 
 /**
  * Search for a 16-bit value.
- * Params: s = Input
+ * Params:
+ *   s = Input
+ *   invert = Invert endianness
  */
 void SearchUInt16(string s, bool invert = false)
 {
@@ -79,12 +85,16 @@ void SearchUInt16(string s, bool invert = false)
         ubyte[2] la;
         itoa(&la[0], 2, l, invert);
         SearchArray(la, "short");
+    } else {
+		MessageAlt("Could not parse number");
     }
 }
 
 /**
  * Search for a 32-bit value.
- * Params: s = Input
+ * Params:
+ *   s = Input
+ *   invert = Invert endianness
  */
 void SearchUInt32(string s, bool invert = false)
 {
@@ -93,12 +103,16 @@ void SearchUInt32(string s, bool invert = false)
         ubyte[4] la;
         itoa(&la[0], 4, l, invert);
         SearchArray(la, "int");
+    } else {
+		MessageAlt("Could not parse number");
     }
 }
 
 /**
  * Search for a 64-bit value.
- * Params: s = Input
+ * Params:
+ *   s = Input
+ *   invert = Invert endianness
  */
 void SearchUInt64(string s, bool invert = false)
 {
@@ -107,6 +121,8 @@ void SearchUInt64(string s, bool invert = false)
         ubyte[8] la;
         itoa(&la[0], 8, l, invert);
         SearchArray(la, "long");
+    } else {
+		MessageAlt("Could not parse number");
     }
 }
 
@@ -119,41 +135,44 @@ void SearchUInt64(string s, bool invert = false)
  *   invert = Invert endianness
  */
 private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
-    import Utils : bswap;
     if (l) {
+        import Utils : bswap;
+        import core.stdc.string : memcpy;
         if (invert)
-        switch (size) {
-            case 2: l = bswap(l & 0xFFFF); break;
-            case 4: l = bswap(l & 0xFFFF_FFFF); break;
-            default: l = bswap(l); break;
-        }
-        ubyte* lp = cast(ubyte*)&l;
-        for (int i = 0; i < size; ++i, ++lp, ++ap)
-            *ap = *lp;
+            switch (size) {
+                case 2: l = bswap(l & 0xFFFF); break;
+                case 4: l = bswap(l & 0xFFFF_FFFF); break;
+                default: l = bswap(l); break;
+            }
+        //ubyte* lp = cast(ubyte*)&l;
+        //for (const void* i = ap + size; ap < i; ++lp, ++ap)
+        //    *ap = *lp;
+        memcpy(ap, &l, size);
     }
 }
 
 private void SearchArray(ubyte[] a, string type)
 {
-    MessageAlt(format("Searching %s...", type));
+    MessageAlt(format(" Searching %s...", type));
     const char b = a[0];
     const size_t len = a.length;
     long pos = CurrentPosition + 1;
     CurrentFile.seek(pos);
     //TODO: array compare between chunks
-    //TODO: Fix when at end of file and 0s
     foreach (const ubyte[] buf; CurrentFile.byChunk(CHUNK_SIZE)) {
-        for (int i; i < CHUNK_SIZE; ++i) {
+        const size_t bufl = buf.length;
+        for (size_t i; i < bufl; ++i) {
             if (buf[i] == b) {
-                if (i + len < CHUNK_SIZE)
+                if (i + len < bufl)
                 if (buf[i..i+len] == a) {
-                    GotoC(pos);
-                    MessageAlt(format(" Found %s value at %XH", type, pos));
+                    const long npos = pos + i;
+                    GotoC(npos);
+                    MessageAlt(format(" Found %s value at %XH", type, npos));
                     return;
                 }
             }
-            ++pos;
         }
+        pos += CHUNK_SIZE;
     }
     MessageAlt(format(" Type %s not found", type));
 }

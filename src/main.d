@@ -1,16 +1,22 @@
+/*
+ * main.d : CLI entry point
+ * Some of these functions are private for linter reasons
+ */
+
 module main;
 
 import std.stdio;
 import ddhx;
+import SettingHandler;
 
-//TODO: -sb ffh (+Echo flag) -> Initiate -> Echo result
 //TODO: CLI SWITCHES
-// -w: Byte width, -w a OR 0 being automatic (make a handler? (only for a))
-// --dump
+// -o
+// --dump: Dump into file (like xxd)
+// -sb ffh (+Echo flag) -> Initiate -> Echo result
 
-int main(string[] args)
+private int main(string[] args)
 {
-	import std.getopt;
+	import std.getopt : getopt, GetoptResult, GetOptException;
 
 	if (args.length <= 1)
 	{
@@ -21,7 +27,9 @@ int main(string[] args)
 	GetoptResult r;
 	try {
 		r = getopt(args,
-            "version|v", "Print version information.", &PrintVersion);
+			"w|width", "Set the width of the view in bytes.", &HandleWCLI,
+			//"o|offset", "Set the offset viewing type.", &HandleOCLI,
+            "v|version", "Print version information.", &PrintVersion);
 	} catch (GetOptException ex) {
 		stderr.writeln("Error: ", ex.msg);
         return 1;
@@ -56,7 +64,7 @@ int main(string[] args)
 
 			if (CurrentFile.size == 0)
 			{
-				stderr.writeln("Error: 0-byte file.");
+				stderr.writeln("0-Byte file, exiting.");
 				return 1;
 			}
 		}
@@ -81,7 +89,7 @@ private void PrintHelp() // ..And description.
 
 private void PrintVersion()
 {
-    import core.stdc.stdlib : exit;
+	import core.stdc.stdlib : exit;
 debug
     writefln("ddhx %s-debug  (%s) ", APP_VERSION, __TIMESTAMP__);
 else

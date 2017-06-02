@@ -37,11 +37,7 @@ bool unformat(string e, ref long l)
 			}
 		}
 		return true;
-    } catch (ConvException) {
-		MessageAlt("Could not parse number");
-		return false;
     } catch (Exception) {
-		MessageAlt("Could not parse number (Generic)");
 		return false;
 	}
 }

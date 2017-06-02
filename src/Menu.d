@@ -3,11 +3,7 @@ module Menu;
 import std.stdio;
 import ddcon, ddhx, Searcher;
 
-//TODO: Number searching: Inverted bool (native to platform)
-//TODO: String searching: Inverted bool (native to platform)
-//TODO: Settings handler
-//      set <option> <value>
-//      save
+//TODO: Setting aliases (o -> offset, w -> width, etc.)
 
 /**
  * Internal command prompt.
@@ -25,10 +21,11 @@ void EnterMenu()
     //string[] e = splitter(readln[0..$-1], ' ').filter!(a => a != null);
 
     UpdateOffsetBar;
-    if (e.length > 0) {
+    const size_t argl = e.length;
+    if (argl > 0) {
         switch (e[0]) {
         case "g", "goto":
-            if (e.length > 1)
+            if (argl > 1)
                 switch (e[1]) {
                 case "e", "end":
                     Goto(CurrentFile.size - Buffer.length);
@@ -42,52 +39,52 @@ void EnterMenu()
                 }
             break;
             case "s", "search": // Search
-                if (e.length > 1) {
+                if (argl > 1) {
                     string value = e[$-1];
-                    const bool a2 = e.length > 2;
+                    const bool a2 = argl > 2;
                     bool invert;
                     if (a2)
                         invert = e[2] == "invert";
                     switch (e[1]) {
                     case "byte":
-                        if (e.length > 2) {
+                        if (argl > 2) {
                             e[1] = value;
                             goto SEARCH_BYTE;
                         } else
                             MessageAlt("Missing argument. (Byte)");
                         break;
                     case "short", "ushort", "word", "w":
-                        if (e.length > 2) {
+                        if (argl > 2) {
                             SearchUInt16(value, invert);
                         } else
                             MessageAlt("Missing argument. (Number)");
                         break;
                     case "int", "uint", "doubleword", "dword", "dw":
-                        if (e.length > 2) {
+                        if (argl > 2) {
                             SearchUInt32(value, invert);
                         } else
                             MessageAlt("Missing argument. (Number)");
                         break;
                     case "long", "ulong", "quadword", "qword", "qw":
-                        if (e.length > 2) {
+                        if (argl > 2) {
                             SearchUInt64(value, invert);
                         } else
                             MessageAlt("Missing argument. (Number)");
                         break;
                     case "string":
-                        if (e.length > 2)
+                        if (argl > 2)
                             SearchUTF8String(value);
                         else
                             MessageAlt("Missing argument. (String)");
                         break;
                     case "wstring":
-                        if (e.length > 2)
+                        if (argl > 2)
                             SearchUTF16String(value, invert);
                         else
                             MessageAlt("Missing argument. (String)");
                         break;
                     default:
-                        if (e.length > 1)
+                        if (argl > 1)
                             MessageAlt("Invalid type.");
                         else
                             MessageAlt("Missing type.");
@@ -96,30 +93,32 @@ void EnterMenu()
                     break; // "search"
                 }
             case "ss": // Search ASCII/UTF-8 string
-                if (e.length > 1)
+                if (argl > 1)
                     SearchUTF8String(e[1]);
                 else
                     MessageAlt("Missing argument. (String)");
                 break;
             case "ss16": // Search UTF-16 string
-                if (e.length > 1)
+                if (argl > 1)
                     SearchUTF16String(e[1]);
                 else
                     MessageAlt("Missing argument. (String)");
                 break;
             case "sb": // Search byte
 SEARCH_BYTE:
-                if (e.length > 1) {
+                if (argl > 1) {
                     import Utils : unformat;
                     long l;
                     if (unformat(e[1], l)) {
                         SearchByte(l & 0xFF);
+                    } else {
+                        MessageAlt("Could not parse number");
                     }
                 }
                 break;
             case "i", "info": PrintFileInfo; break;
             case "o", "offset":
-                if (e.length > 1) {
+                if (argl > 1) {
                     switch (e[1][0]) {
                     case 'o','O': CurrentOffsetType = OffsetType.Octal; break;
                     case 'd','D': CurrentOffsetType = OffsetType.Decimal; break;
@@ -131,6 +130,24 @@ SEARCH_BYTE:
                     UpdateOffsetBar;
                     UpdateDisplay;
                 }
+                break;
+            case "set":
+                if (argl > 1) {
+                    import SettingHandler;
+                    import std.format : format;
+                    switch(e[1]) {
+                    case "width":
+                        if (argl > 2) {
+                            HandleWidth(e[2]);
+                            PrepBuffer;
+                            Clear;
+                            RefreshAll;
+                        }
+                        break;
+                    default:
+                        MessageAlt(format("Unknown setting parameter: %s", e[1]));
+                    }
+                } else MessageAlt("Missing setting parameter");
                 break;
             case "r", "refresh":
                 RefreshAll;
@@ -147,8 +164,7 @@ SEARCH_BYTE:
 /// Prints on screen
 void ShowHelp()
 {
-    //TODO: "Scroll" system and etc. (Important!!)
-    //TODO: Make help text a file.
+    //TODO: "Scroll" system and etc?
     enum helpstr =
 `Shortcuts:
 q: Quit
