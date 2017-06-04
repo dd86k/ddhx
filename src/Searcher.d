@@ -86,9 +86,8 @@ void SearchUInt16(string s, bool invert = false)
         ubyte[2] la;
         itoa(&la[0], 2, l, invert);
         SearchArray(la, "short");
-    } else {
+    } else
 		MessageAlt("Could not parse number");
-    }
 }
 
 /**
@@ -104,9 +103,8 @@ void SearchUInt32(string s, bool invert = false)
         ubyte[4] la;
         itoa(&la[0], 4, l, invert);
         SearchArray(la, "int");
-    } else {
+    } else
 		MessageAlt("Could not parse number");
-    }
 }
 
 /**
@@ -122,9 +120,8 @@ void SearchUInt64(string s, bool invert = false)
         ubyte[8] la;
         itoa(&la[0], 8, l, invert);
         SearchArray(la, "long");
-    } else {
+    } else
 		MessageAlt("Could not parse number");
-    }
 }
 
 /**
@@ -140,14 +137,11 @@ private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
         import Utils : bswap;
         import core.stdc.string : memcpy;
         if (invert)
-            switch (size) {
-                case 2: l = bswap(l & 0xFFFF); break;
-                case 4: l = bswap(l & 0xFFFF_FFFF); break;
-                default: l = bswap(l); break;
-            }
-        //ubyte* lp = cast(ubyte*)&l;
-        //for (const void* i = ap + size; ap < i; ++lp, ++ap)
-        //    *ap = *lp;
+        switch (size) {
+            case 2: l = bswap(l & 0xFFFF); break;
+            case 4: l = bswap(l & 0xFFFF_FFFF); break;
+            default: l = bswap(l); break;
+        }
         memcpy(ap, &l, size);
     }
 }
@@ -168,7 +162,7 @@ private void SearchArray(ubyte[] a, string type)
                 if (ilen < bufl) { // Within CHUNK
                     if (buf[i..i+len] == a) {
 S_FOUND:
-                        const size_t n = pos + i;
+                        const long n = pos + i;
                         GotoC(n);
                         MessageAlt(format(" Found %s value at %XH", type, n));
                         return;

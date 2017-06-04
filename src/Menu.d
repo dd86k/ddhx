@@ -131,6 +131,9 @@ SEARCH_BYTE:
                     UpdateDisplay;
                 }
                 break;
+            /*
+             * Setting manager
+             */
             case "set":
                 if (argl > 1) {
                     import SettingHandler;
@@ -140,7 +143,6 @@ SEARCH_BYTE:
                         if (argl > 2) {
                             HandleWidth(e[2]);
                             PrepBuffer;
-                            Clear;
                             RefreshAll;
                         }
                         break;

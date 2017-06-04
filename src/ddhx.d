@@ -3,7 +3,6 @@ module ddhx;
 import std.stdio;
 import Menu;
 import ddcon;
-import std.file : exists;
 
 //TODO: Bookmarks page (What shortcut or function key?)
 //TODO: Statistics page or functions
@@ -132,6 +131,12 @@ void HandleKey(const KeyInfo* k)
             Goto(fs - bs);
         break;
 
+    case Key.Home:
+        if (k.ctrl)
+            Goto(0);
+        else
+            Goto(CurrentPosition - (CurrentPosition % BytesPerRow));
+        break;
     case Key.End:
         if (k.ctrl)
             Goto(fs - bs);
@@ -145,12 +150,6 @@ void HandleKey(const KeyInfo* k)
             else
                 Goto(fs - bs);
         }
-        break;
-    case Key.Home:
-        if (k.ctrl)
-            Goto(0);
-        else
-            Goto(CurrentPosition - (CurrentPosition % BytesPerRow));
         break;
 
     /*
@@ -168,13 +167,11 @@ void HandleKey(const KeyInfo* k)
         PrintFileInfo;
         break;
     case Key.R, Key.F5:
-        //PrepBuffer;
+        PrepBuffer;
         RefreshAll;
         break;
-    case Key.H:
-        ShowHelp;
-        break;
-    case Key.Q: Exit(); break;
+    case Key.H: ShowHelp; break;
+    case Key.Q: Exit; break;
     default:
     }
 }
@@ -197,24 +194,19 @@ void UpdateOffsetBar()
 	write("Offset ");
 	switch (CurrentOffsetType)
 	{
-		default:
-            write("h ");
+		default: write("h ");
 	        for (ushort i; i < BytesPerRow; ++i) writef(" %02X", i);
             break;
-		case OffsetType.Decimal:
-            write("d ");
+		case OffsetType.Decimal: write("d ");
 	        for (ushort i; i < BytesPerRow; ++i) writef(" %02d", i);
             break;
-		case OffsetType.Octal:
-            write("o ");
+		case OffsetType.Octal: write("o ");
 	        for (ushort i; i < BytesPerRow; ++i) writef(" %02o", i);
             break;
 	}
 }
 
-/**
- * Update the bottom current position bar.
- */
+/// Update the bottom current position bar.
 void UpdatePositionBar()
 {
     SetPos(0, WindowHeight - 1);
@@ -309,7 +301,7 @@ void UpdateDisplay()
     {
         size_t m = o + BytesPerRow;
 
-        if (m > bl) { // If new maximum is overflowing
+        if (m > bl) { // If new maximum is overflowing buffer length
             m = bl;
             const size_t ml = bl - o, dml = ml * 3;
             // Only clear what is necessary
@@ -342,12 +334,12 @@ void RefreshDisplay()
 }
 
 /**
- * Message (upper bar)
+ * Message once (upper bar)
  * Params: msg = Message string
  */
 void Message(string msg)
 {
-    ClearMsg();
+    ClearMsg;
     SetPos(0, 0);
     write(msg);
 }
@@ -355,17 +347,18 @@ void Message(string msg)
 /// Clear upper bar
 void ClearMsg()
 {
+    ClearMsg;
     SetPos(0, 0);
     writef("%*s", WindowWidth - 1, "");
 }
 
 /**
- * Message (bottom bar)
+ * Message once (bottom bar)
  * Params: msg = Message string
  */
 void MessageAlt(string msg)
 {
-    ClearMsgAlt();
+    ClearMsgAlt;
     SetPos(0, WindowHeight - 1);
     write(msg);
 }
@@ -482,6 +475,7 @@ private char fflower(ubyte b) pure @safe @nogc
     }
 }
 
+pragma(inline, true):
 private char FormatChar(ubyte c) pure @safe @nogc
 {
     return c > 0x7E || c < 0x20 ? '.' : c;
