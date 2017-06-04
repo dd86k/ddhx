@@ -5,7 +5,7 @@ import ddhx;
 import std.format : format;
 import Utils : MB, unformat;
 
-private enum CHUNK_SIZE = MB;
+private enum CHUNK_SIZE = MB / 2;
 
 //TODO: Progress bar
 //TODO: String REGEX (will require a new function entirely for searching)
@@ -155,25 +155,34 @@ private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
 private void SearchArray(ubyte[] a, string type)
 {
     MessageAlt(format(" Searching %s...", type));
+    const long fsize = CurrentFile.size;
     const char b = a[0];
     const size_t len = a.length;
-    long pos = CurrentPosition + 1;
+    long pos = CurrentPosition + 1; // To not affect CurrentPosition itself
     CurrentFile.seek(pos);
-    //TODO: array compare between chunks
     foreach (const ubyte[] buf; CurrentFile.byChunk(CHUNK_SIZE)) {
         const size_t bufl = buf.length;
         for (size_t i; i < bufl; ++i) {
             if (buf[i] == b) {
-                if (i + len < bufl)
-                if (buf[i..i+len] == a) {
-                    const long npos = pos + i;
-                    GotoC(npos);
-                    MessageAlt(format(" Found %s value at %XH", type, npos));
-                    return;
-                }
+                const size_t ilen = i + len;
+                if (ilen < bufl) { // Within CHUNK
+                    if (buf[i..i+len] == a) {
+S_FOUND:
+                        const size_t n = pos + i;
+                        GotoC(n);
+                        MessageAlt(format(" Found %s value at %XH", type, n));
+                        return;
+                    }
+                } else if (ilen < fsize) { // Out-of-chunk
+                    CurrentFile.seek(pos + i);
+                    if (CurrentFile.byChunk(len).front == a) {
+                        goto S_FOUND;
+                    }
+                } else goto S_END; // EOF otherwise, can't continue
             }
         }
         pos += CHUNK_SIZE;
     }
-    MessageAlt(format(" Type %s not found", type));
+S_END:
+    MessageAlt(format(" Type %s was not found", type));
 }

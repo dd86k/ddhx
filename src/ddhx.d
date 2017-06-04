@@ -11,7 +11,7 @@ import std.file : exists;
 //TODO: Tabs? (Probably not)
 
 /// App version
-enum APP_VERSION = "0.0.0-0-notoutyet";
+enum APP_VERSION = "0.0.0-0-notoutyet-1";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType {
