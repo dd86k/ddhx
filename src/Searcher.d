@@ -1,8 +1,9 @@
 module Searcher;
 
 import std.stdio;
+import ddhx;
 import std.format : format;
-import ddhx, Utils : MB, unformat;
+import Utils : MB, unformat;
 
 private enum CHUNK_SIZE = MB;
 

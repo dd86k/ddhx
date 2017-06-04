@@ -10,30 +10,31 @@ import ddhx;
 import SettingHandler;
 
 //TODO: CLI SWITCHES
-// -o
+// -o: override default offset viewing type
 // --dump: Dump into file (like xxd)
-// -sb ffh (+Echo flag) -> Initiate -> Echo result
+// -q: Quiet, useful with --dump
+// -sb: Search byte, e.g. -sb ffh -> init -> Echo result
 
 private int main(string[] args)
 {
-	import std.getopt : getopt, GetoptResult, GetOptException;
+    import std.getopt : getopt, GetoptResult, GetOptException;
 
-	if (args.length <= 1)
-	{
-		PrintHelp;
-		return 0;
-	}
+    if (args.length <= 1)
+    {
+        PrintHelp;
+        return 0;
+    }
 
-	GetoptResult r;
-	try {
-		r = getopt(args,
-			"w|width", "Set the width of the view in bytes.", &HandleWCLI,
-			//"o|offset", "Set the offset viewing type.", &HandleOCLI,
+    GetoptResult r;
+    try {
+        r = getopt(args,
+            "w|width", "Set the width of the display in bytes, 'a' is automatic.", &HandleWCLI,
+            //"o|offset", "Set the offset viewing type.", &HandleOCLI,
             "v|version", "Print version information.", &PrintVersion);
-	} catch (GetOptException ex) {
-		stderr.writeln("Error: ", ex.msg);
+    } catch (GetOptException ex) {
+        stderr.writeln("Error: ", ex.msg);
         return 1;
-	}
+    }
 
     if (r.helpWanted)
     {
@@ -47,55 +48,56 @@ private int main(string[] args)
                 it.required ? "Required: " : " ",
                 it.help);
         }
-	}
-	else
-	{
-		import std.file : exists, isDir;
-		Filepath = args[$ - 1];
+    }
+    else
+    {
+        import std.file : exists, isDir;
+        Filepath = args[$ - 1];
 
-		if (exists(Filepath))
-		{
-			if (isDir(Filepath))
-			{
-				writeln(`"`, Filepath, `" is a directory, exiting.`);
-				return 1;
-			}
-			CurrentFile = File(Filepath);
+        if (exists(Filepath))
+        {
+            if (isDir(Filepath))
+            {
+                writeln(`"`, Filepath, `" is a directory, exiting.`);
+                return 1;
+            }
 
-			if (CurrentFile.size == 0)
-			{
-				stderr.writeln("0-Byte file, exiting.");
-				return 1;
-			}
-		}
-		else
-		{
-			writeln(`File "`, Filepath, `" doesn't exist, exiting.`);
-			return 1;
-		}
+            CurrentFile = File(Filepath);
 
-		Start();
-	}
+            if (CurrentFile.size == 0)
+            {
+                stderr.writeln("0-Byte file, exiting.");
+                return 1;
+            }
+        }
+        else
+        {
+            writeln(`File "`, Filepath, `" doesn't exist, exiting.`);
+            return 1;
+        }
+
+        Start;
+    }
     return LastErrorCode;
 }
 
 private void PrintHelp() // ..And description.
 {
-	writeln("Interactive hexadecimal file viewer.");
-	writeln("Usage:");
-	writeln("  ddhx\t[Options] <File>");
-	writeln("  ddhx\t{-h|--help|--version}");
+    writeln("Interactive hexadecimal file viewer.");
+    writeln("Usage:");
+    writeln("  ddhx\t[Options] <File>");
+    writeln("  ddhx\t{-h|--help|--version}");
 }
 
 private void PrintVersion()
 {
-	import core.stdc.stdlib : exit;
-debug
+    import core.stdc.stdlib : exit;
+debug {
     writefln("ddhx %s-debug  (%s) ", APP_VERSION, __TIMESTAMP__);
-else
+    writefln("Compiled %s with %s v%s", __FILE__, __VENDOR__, __VERSION__);
+} else
     writefln("ddhx %s  (%s) ", APP_VERSION, __TIMESTAMP__);
     writeln("MIT License: Copyright (c) dd86k 2017");
     writeln("Project page: <https://github.com/dd86k/ddhx>");
-    writefln("Compiled %s with %s v%s", __FILE__, __VENDOR__, __VERSION__);
     exit(0); // getopt hack
 }
