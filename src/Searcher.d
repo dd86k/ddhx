@@ -7,7 +7,7 @@ import Utils : MB, unformat;
 
 private enum CHUNK_SIZE = MB / 2;
 
-//TODO: Progress bar
+//TODO: Progress bar (only if higher than chunk size) (update per-chunk)
 //TODO: String REGEX (will require a new function entirely for searching)
 
 /**

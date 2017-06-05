@@ -159,7 +159,6 @@ SEARCH_BYTE:
             case "q", "quit": Exit; break;
             case "about": ShowAbout; break;
             case "version": ShowInfo; break;
-            //TODO: "help menu" -> ShowHelpMenu
             case "h", "help":
                 if (argl > 1)
                 switch (e[1]) {

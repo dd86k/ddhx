@@ -12,7 +12,6 @@ import SettingHandler;
 //TODO: CLI SWITCHES
 // -o: override default offset viewing type
 // --dump: Dump into file (like xxd)
-// -q: Quiet, useful with --dump
 // -sb: Search byte, e.g. -sb ffh -> init -> Echo result
 
 private int main(string[] args)
@@ -99,5 +98,5 @@ debug {
     writefln("ddhx %s  (%s) ", APP_VERSION, __TIMESTAMP__);
     writeln("MIT License: Copyright (c) dd86k 2017");
     writeln("Project page: <https://github.com/dd86k/ddhx>");
-    exit(0); // getopt hack
+    exit(0); // getopt hack, or 2x optional string values could work
 }
