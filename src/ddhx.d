@@ -214,7 +214,7 @@ void UpdatePositionBar()
 }
 
 /// Used right after UpdateDisplay to not waste a cursor positioning call.
-private void UpdatePositionBarRaw()
+void UpdatePositionBarRaw()
 {
     const float f = CurrentPosition;
     writef(" %7.3f%%", ((f + Buffer.length) / CurrentFile.size) * 100);

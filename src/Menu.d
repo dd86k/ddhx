@@ -4,6 +4,7 @@ import std.stdio;
 import ddcon, ddhx, Searcher;
 
 //TODO: Setting aliases (o -> offset, w -> width, etc.)
+//TODO: Invert with aliases
 
 /**
  * Internal command prompt.
@@ -157,34 +158,104 @@ SEARCH_BYTE:
             case "q", "quit": Exit; break;
             case "about": ShowAbout; break;
             case "version": ShowInfo; break;
+            //TODO: "help menu" -> ShowHelpMenu
             case "h", "help": ShowHelp; break;
             default: MessageAlt("Unknown command: " ~ e[0]); break;
         }
     }
 }
 
+private void ShowHelpMenu()
+{
+//TODO: Update man-page
+//TODO: Alias "offset" to "set offset" then write it down
+    enum str =
+`Command Help
+
+Some commands can be shortened to their alias. At the moment, it is not possible to wrap values in quotes.
+
+Please take note that note hex notations such as 0xFF and FFH are acepted.
+
+g|goto - Go to a file position
+  Go to a file position in bytes (supports decimal and hexadecimal).
+  Aliases like "home" and "end" can be used for the start and end of the file.
+  Sypnosis: goto <Position>
+  Example:
+    Go to byte 333: goto 333
+    Go to position 0x8001: goto 0x8001
+
+i|info - Display file information
+  Display some file information.
+
+o|offset - Change offset type
+  Change the current offset view type.
+  Synopsis: offset <Type>
+  Types:
+    Hexadecimal
+    Decimal
+    Octal
+  Example:
+    Change type to decimal: offset d
+
+s|search - Search for data
+  Search for data, specifying a type is obligatory. Aliases are available and do not require the type. To invert the endianess, add "invert" after specifying the type.
+  Synopsis: search <Type> [invert] <Value>
+  Types available:
+    1-Byte: byte (Alias: sb)
+    2-Byte: short, dw
+    4-Byte: int, dd
+    8-Byte: long, dq
+    UTF-8/ASCII string: string (Alias: ss)
+    UTF-16 string: wstring (Alias: ss16)
+    UTF-32 string: dstring
+  Examples:
+    Search for a douleword value: search int 1337
+    Search for an UTF-16BE value: search wstring invert Hello!
+    Search for a byte: sb ddh
+    Search for an inverted 16-bit value: search short invert 0xBEBA
+
+set - Change setting
+  Change a setting.
+  Synopsis: set <Setting> <Value>
+  Types:
+    width - Change the number of bytes displayed
+  Example:
+    Set 2 bytes per row: set width 2
+`;
+    Clear;
+    SetPos(0, 0);
+    writeln(str);
+    HelpQuit;
+}
+
 /// Prints on screen
 void ShowHelp()
 {
-    //TODO: "Scroll" system and etc?
     enum helpstr =
-`Shortcuts:
-q: Quit
-h: This help screen
+`Welcome to ddhx, an interactive hex file viewer!
 
-Commands:
-g|goto: Goto <FilePosition>
-i|info: Display file information
-o|offset: Change offset type
+To get help on the menu, quit this screen, then enter "help commands".
 
-Navigation
-Up/Down Arrows: Go backward or forward a line (by width)
-Left/Right Arrow: Go backward or forward a byte
-Home/End: Align by line
-^Home/^End: Go to begining or end of file`;
+SHORTCUTS:
+  q: Quit
+  i: Show file information
+  h: This help screen (q to quit this screen)
+  F5 or r: Refresh all displays
+  ENTER: Enter menu prompt
+
+NAVIGATION:
+  Up/Down Arrows: Go backward or forward a line (by width)
+  Left/Right Arrow: Go backward or forward a byte
+  Home/End: Align by line
+  ^Home/^End: Go to begining or end of file
+`;
     Clear;
     SetPos(0, 0);
     writeln(helpstr);
+    HelpQuit;
+}
+
+private void HelpQuit() {
     MessageAlt(" q:Return");
     while (1)
     {
@@ -192,8 +263,8 @@ Home/End: Align by line
         switch (e.keyCode)
         {
         case Key.Q:
-            UpdateDisplay;
             UpdateOffsetBar;
+            UpdateDisplay;
             UpdatePositionBar;
             return;
         default:
