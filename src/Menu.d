@@ -1,6 +1,7 @@
 module Menu;
 
 import std.stdio;
+import std.format : format;
 import ddcon, ddhx, Searcher;
 
 //TODO: Setting aliases (o -> offset, w -> width, etc.)
@@ -159,7 +160,19 @@ SEARCH_BYTE:
             case "about": ShowAbout; break;
             case "version": ShowInfo; break;
             //TODO: "help menu" -> ShowHelpMenu
-            case "h", "help": ShowHelp; break;
+            case "h", "help":
+                if (argl > 1)
+                switch (e[1]) {
+                    case "commands":
+                        ShowHelpMenu;
+                        break;
+                    default:
+                        MessageAlt(format("Entry not found: %s", e[1]));
+                        break;
+                }
+                else
+                    ShowHelp;
+                break;
             default: MessageAlt("Unknown command: " ~ e[0]); break;
         }
     }
@@ -183,6 +196,7 @@ g|goto - Go to a file position
   Example:
     Go to byte 333: goto 333
     Go to position 0x8001: goto 0x8001
+    Go to the end of the file: goto end
 
 i|info - Display file information
   Display some file information.
@@ -199,6 +213,7 @@ o|offset - Change offset type
 
 s|search - Search for data
   Search for data, specifying a type is obligatory. Aliases are available and do not require the type. To invert the endianess, add "invert" after specifying the type.
+  BUG: Invert does not work with aliases yet.
   Synopsis: search <Type> [invert] <Value>
   Types available:
     1-Byte: byte (Alias: sb)
@@ -211,7 +226,7 @@ s|search - Search for data
   Examples:
     Search for a douleword value: search int 1337
     Search for an UTF-16BE value: search wstring invert Hello!
-    Search for a byte: sb ddh
+    Search for a byte (alias): sb ddh
     Search for an inverted 16-bit value: search short invert 0xBEBA
 
 set - Change setting
@@ -232,7 +247,7 @@ set - Change setting
 void ShowHelp()
 {
     enum helpstr =
-`Welcome to ddhx, an interactive hex file viewer!
+`Welcome to ddhx, an interactive hex file viewer.
 
 To get help on the menu, quit this screen, then enter "help commands".
 
@@ -248,21 +263,23 @@ NAVIGATION:
   Left/Right Arrow: Go backward or forward a byte
   Home/End: Align by line
   ^Home/^End: Go to begining or end of file
+    BUG: Only works in Windows
 `;
     Clear;
-    SetPos(0, 0);
     writeln(helpstr);
     HelpQuit;
 }
 
 private void HelpQuit() {
-    MessageAlt(" q:Return");
+    write(" q:Return");
+    SetPos(0, 0);
     while (1)
     {
         const KeyInfo e = ReadKey;
         switch (e.keyCode)
         {
         case Key.Q:
+            Clear;
             UpdateOffsetBar;
             UpdateDisplay;
             UpdatePositionBar;

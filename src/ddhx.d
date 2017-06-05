@@ -347,7 +347,6 @@ void Message(string msg)
 /// Clear upper bar
 void ClearMsg()
 {
-    ClearMsg;
     SetPos(0, 0);
     writef("%*s", WindowWidth - 1, "");
 }
