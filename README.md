@@ -1,10 +1,8 @@
-# ddhx, Hex file viewer
+# ddhx, Interactive Hexadecimal File Viewer
 
 ![Screenshot of ddhx](https://dd86k.github.io/imgs/ddhx0.png)
 
 ## Native, Fast, Simple.
-
-
 
 ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool.
 
@@ -20,10 +18,10 @@ ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool
 ## Planned features
 Basically a TODO list:
 
-- Big Endian number search
-- Array searching
-- UTF-16BE, and UTF-32LE/BE string searching
-- Hex dump
+- Raw array searching
+- UTF-32 string searching
+- Dump to stream
+- Scrollwheel support
 
 ## Screenshots
 
