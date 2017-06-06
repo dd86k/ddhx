@@ -153,18 +153,14 @@ SEARCH_BYTE:
                     }
                 } else MessageAlt("Missing setting parameter");
                 break;
-            case "r", "refresh":
-                RefreshAll;
-                break;
+            case "r", "refresh": RefreshAll; break;
             case "q", "quit": Exit; break;
             case "about": ShowAbout; break;
             case "version": ShowInfo; break;
             case "h", "help":
                 if (argl > 1)
                 switch (e[1]) {
-                    case "commands":
-                        ShowHelpMenu;
-                        break;
+                    case "commands": ShowHelpMenu; break;
                     default:
                         MessageAlt(format("Entry not found: %s", e[1]));
                         break;
