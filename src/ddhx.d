@@ -16,6 +16,10 @@ enum APP_VERSION = "0.0.0-0-notoutyet-1";
 enum OffsetType {
 	Hexadecimal, Decimal, Octal
 }
+/// 
+enum DisplayType {
+    Default, Text, Hex
+}
 
 /*
  * User settings
@@ -23,6 +27,7 @@ enum OffsetType {
 
 ushort BytesPerRow = 16; /// Bytes shown per row
 OffsetType CurrentOffsetType; /// Current offset view type
+DisplayType CurrentDisplayType; /// Current display view type
 
 /*
  * Internal
@@ -294,35 +299,44 @@ void UpdateDisplay()
 {
     import core.stdc.string : memset;
     const size_t bl = Buffer.length;
-    char[] data = new char[3 * BytesPerRow], ascii = new char[BytesPerRow];
-    memset(&data[0], ' ', data.length);
+    char[] data, ascii;
     SetPos(0, 1);
-    for (int o; o < bl; o += BytesPerRow)
-    {
-        size_t m = o + BytesPerRow;
+    switch (CurrentDisplayType) {
+    default:
+        data = new char[3 * BytesPerRow]; ascii = new char[BytesPerRow];
+        memset(&data[0], ' ', data.length);
+        for (int o; o < bl; o += BytesPerRow) {
+            size_t m = o + BytesPerRow;
 
-        if (m > bl) { // If new maximum is overflowing buffer length
-            m = bl;
-            const size_t ml = bl - o, dml = ml * 3;
-            // Only clear what is necessary
-            memset(&data[0] + dml, ' ', dml);
-            memset(&ascii[0] + ml, ' ', ml);
+            if (m > bl) { // If new maximum is overflowing buffer length
+                m = bl;
+                const size_t ml = bl - o, dml = ml * 3;
+                // Only clear what is necessary
+                memset(&data[0] + dml, ' ', dml);
+                memset(&ascii[0] + ml, ' ', ml);
+            }
+
+            switch (CurrentOffsetType) {
+                default: writef("%08X ", o + CurrentPosition); break;
+                case OffsetType.Decimal: writef("%08d ", o + CurrentPosition); break;
+                case OffsetType.Octal:   writef("%08o ", o + CurrentPosition); break;
+            }
+
+            for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
+                data[di + 1] = ffupper(Buffer[i] & 0xF0);
+                data[di + 2] = fflower(Buffer[i] &  0xF);
+                ascii[ai] = FormatChar(Buffer[i]);
+            }
+
+            writefln("%s  %s", data, ascii);
         }
+        break; // Default
+    case DisplayType.Text:
 
-        switch (CurrentOffsetType)
-        {
-            default: writef("%08X ", o + CurrentPosition); break;
-            case OffsetType.Decimal: writef("%08d ", o + CurrentPosition); break;
-            case OffsetType.Octal:   writef("%08o ", o + CurrentPosition); break;
-        }
+        break; // Text
+    case DisplayType.Hex:
 
-        for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
-            data[di + 1] = ffupper(Buffer[i] & 0xF0);
-            data[di + 2] = fflower(Buffer[i] &  0xF);
-            ascii[ai] = FormatChar(Buffer[i]);
-        }
-
-        writefln("%s  %s", data, ascii);
+        break; // Hex
     }
 }
 
