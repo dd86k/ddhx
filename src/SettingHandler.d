@@ -58,3 +58,11 @@ void HandleWidth(string val, bool cli = false)
         }
     }
 }
+
+/*ushort getAutoWidth()
+{
+    switch (CurrentDisplayMode)
+    {
+        case DisplayMode.
+    }
+}*/

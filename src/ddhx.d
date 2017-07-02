@@ -38,6 +38,7 @@ string Filepath; /// Current file path
 File CurrentFile; /// Current file handle
 long CurrentPosition; /// Current file position
 ubyte[] Buffer; /// Display buffer
+long fsize; /// File size, used to avoid spamming system functions
 
 //TODO: When typing g goto menu directly
 //      - Tried writing to stdin
@@ -92,7 +93,7 @@ void Start()
  */
 void HandleKey(const KeyInfo* k)
 {
-    ulong fs = CurrentFile.size;
+    fsize = CurrentFile.size;
     size_t bs = Buffer.length;
 
     switch (k.keyCode)
@@ -108,20 +109,20 @@ void HandleKey(const KeyInfo* k)
             Goto(0);
         break;
     case Key.DownArrow:
-        if (CurrentPosition + bs + BytesPerRow <= fs)
+        if (CurrentPosition + bs + BytesPerRow <= fsize)
             Goto(CurrentPosition + BytesPerRow);
         else
-            Goto(fs - bs);
+            Goto(fsize - bs);
         break;
     case Key.LeftArrow:
         if (CurrentPosition - 1 >= 0) // Else already at 0
             Goto(CurrentPosition - 1);
         break;
     case Key.RightArrow:
-        if (CurrentPosition + bs + 1 <= fs)
+        if (CurrentPosition + bs + 1 <= fsize)
             Goto(CurrentPosition + 1);
         else
-            Goto(fs - bs);
+            Goto(fsize - bs);
         break;
     case Key.PageUp:
         if (CurrentPosition - cast(long)bs >= 0)
@@ -130,10 +131,10 @@ void HandleKey(const KeyInfo* k)
             Goto(0);
         break;
     case Key.PageDown:
-        if (CurrentPosition + bs + bs <= fs)
+        if (CurrentPosition + bs + bs <= fsize)
             Goto(CurrentPosition + bs);
         else
-            Goto(fs - bs);
+            Goto(fsize - bs);
         break;
 
     case Key.Home:
@@ -144,16 +145,16 @@ void HandleKey(const KeyInfo* k)
         break;
     case Key.End:
         if (k.ctrl)
-            Goto(fs - bs);
+            Goto(fsize - bs);
         else
         {
             const long np = CurrentPosition +
                 (BytesPerRow - CurrentPosition % BytesPerRow);
 
-            if (np + bs <= fs)
+            if (np + bs <= fsize)
                 Goto(np);
             else
-                Goto(fs - bs);
+                Goto(fsize - bs);
         }
         break;
 
@@ -248,7 +249,7 @@ private void ReadFile()
  */
 void Goto(long pos)
 {
-    if (Buffer.length < CurrentFile.size)
+    if (Buffer.length < fsize)
     {
         CurrentPosition = pos;
         RefreshDisplay;
@@ -328,13 +329,49 @@ void UpdateDisplay()
                 ascii[ai] = FormatChar(Buffer[i]);
             }
 
-            writefln("%s  %s", data, ascii);
+            writeln(data, "  ", ascii);
         }
         break; // Default
     case DisplayType.Text:
-        ascii = new char[BytesPerRow * 4];
+        ascii = new char[BytesPerRow * 3];
+        memset(&ascii[0], ' ', data.length);
         for (int o; o < bl; o += BytesPerRow) {
             size_t m = o + BytesPerRow;
+            
+            if (m > bl) { // If new maximum is overflowing buffer length
+                m = bl;
+                const size_t ml = bl - o, dml = ml * 3;
+                // Only clear what is necessary
+                memset(&data[0] + dml, ' ', dml);
+                memset(&ascii[0] + ml, ' ', ml);
+            }
+
+            switch (CurrentOffsetType) {
+                default: writef("%08X  ", o + CurrentPosition); break;
+                case OffsetType.Decimal: writef("%08d  ", o + CurrentPosition); break;
+                case OffsetType.Octal:   writef("%08o  ", o + CurrentPosition); break;
+            }
+
+            for (int i = o, di = 1; i < m; ++i, di += 3)
+                ascii[di] = FormatChar(Buffer[i]);
+            
+            writeln(ascii);
+        }
+        break; // Text
+    case DisplayType.Hex:
+        data = new char[3 * BytesPerRow];
+        memset(&data[0], ' ', data.length);
+
+        for (int o; o < bl; o += BytesPerRow) {
+            size_t m = o + BytesPerRow;
+
+            if (m > bl) { // If new maximum is overflowing buffer length
+                m = bl;
+                const size_t ml = bl - o, dml = ml * 3;
+                // Only clear what is necessary
+                memset(&data[0] + dml, ' ', dml);
+                memset(&ascii[0] + ml, ' ', ml);
+            }
 
             switch (CurrentOffsetType) {
                 default: writef("%08X ", o + CurrentPosition); break;
@@ -342,12 +379,13 @@ void UpdateDisplay()
                 case OffsetType.Octal:   writef("%08o ", o + CurrentPosition); break;
             }
 
-            for (int i = o, di, ai; i < m; ++i, di += 3, ++ai)
-                ascii[ai] = FormatChar(Buffer[i]);
-        }
-        break; // Text
-    case DisplayType.Hex:
+            for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
+                data[di + 1] = ffupper(Buffer[i] & 0xF0);
+                data[di + 2] = fflower(Buffer[i] &  0xF);
+            }
 
+            writeln(data);
+        }
         break; // Hex
     }
 }

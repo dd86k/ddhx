@@ -30,7 +30,7 @@ void EnterMenu()
             if (argl > 1)
                 switch (e[1]) {
                 case "e", "end":
-                    Goto(CurrentFile.size - Buffer.length);
+                    Goto(fsize - Buffer.length);
                     break;
                 case "h", "home":
                     Goto(0);
@@ -149,11 +149,31 @@ SEARCH_BYTE:
                         }
                         break;
                     case "mode":
-                        if (argl > 2) {
-                            switch ()
+                        if (argl > 2)
+                        switch (e[2]) {
+                        case "normal", "default", "n", "d":
+                            CurrentDisplayType = DisplayType.Default;
+                            Clear;
+                            RefreshAll;
+                            break;
+                        case "text", "t":
+                            CurrentDisplayType = DisplayType.Text;
+                            Clear;
+                            RefreshAll;
+                            break;
+                        case "hex", "h":
+                            CurrentDisplayType = DisplayType.Hex;
+                            Clear;
+                            RefreshAll;
+                            break;
+                        default:
+                            MessageAlt(format("Unknown mode parameter: %s", e[2]));
+                            break;
                         }
+                        break;
                     default:
                         MessageAlt(format("Unknown setting parameter: %s", e[1]));
+                        break;
                     }
                 } else MessageAlt("Missing setting parameter");
                 break;
