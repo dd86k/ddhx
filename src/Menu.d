@@ -140,7 +140,7 @@ SEARCH_BYTE:
                 if (argl > 1) {
                     import SettingHandler;
                     import std.format : format;
-                    switch(e[1]) {
+                    switch (e[1]) {
                     case "width":
                         if (argl > 2) {
                             HandleWidth(e[2]);
@@ -148,6 +148,10 @@ SEARCH_BYTE:
                             RefreshAll;
                         }
                         break;
+                    case "mode":
+                        if (argl > 2) {
+                            switch ()
+                        }
                     default:
                         MessageAlt(format("Unknown setting parameter: %s", e[1]));
                     }
@@ -160,10 +164,10 @@ SEARCH_BYTE:
             case "h", "help":
                 if (argl > 1)
                 switch (e[1]) {
-                    case "commands": ShowHelpMenu; break;
-                    default:
-                        MessageAlt(format("Entry not found: %s", e[1]));
-                        break;
+                case "commands": ShowHelpMenu; break;
+                default:
+                    MessageAlt(format("Entry not found: %s", e[1]));
+                    break;
                 }
                 else
                     ShowHelp;

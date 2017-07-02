@@ -332,7 +332,19 @@ void UpdateDisplay()
         }
         break; // Default
     case DisplayType.Text:
+        ascii = new char[BytesPerRow * 4];
+        for (int o; o < bl; o += BytesPerRow) {
+            size_t m = o + BytesPerRow;
 
+            switch (CurrentOffsetType) {
+                default: writef("%08X ", o + CurrentPosition); break;
+                case OffsetType.Decimal: writef("%08d ", o + CurrentPosition); break;
+                case OffsetType.Octal:   writef("%08o ", o + CurrentPosition); break;
+            }
+
+            for (int i = o, di, ai; i < m; ++i, di += 3, ++ai)
+                ascii[ai] = FormatChar(Buffer[i]);
+        }
         break; // Text
     case DisplayType.Hex:
 
