@@ -1,6 +1,7 @@
 module ddhx;
 
 import std.stdio;
+import core.stdc.stdio : printf;
 import Menu;
 import ddcon;
 
@@ -10,7 +11,7 @@ import ddcon;
 //TODO: Tabs? (Probably not)
 
 /// App version
-enum APP_VERSION = "0.0.0-0-notoutyet-1";
+enum APP_VERSION = "0.0.0-*";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType {
@@ -42,21 +43,25 @@ File CurrentFile; /// Current file handle
 long CurrentPosition; /// Current file position
 ubyte[] Buffer; /// Display buffer
 long fsize; /// File size, used to avoid spamming system functions
+string tfsize; /// total formatted size
 
 //TODO: When typing g goto menu directly
-//      - Tried writing to stdin
+//      - Tried writing to stdin directly, crashes (2.074.0)
 
 /// Main ddhx entry point past CLI.
 void Start()
 {
-	InitConsole();
-	PrepBuffer();
+    import Utils : formatsize;
+    fsize = CurrentFile.size;
+    tfsize = formatsize(fsize);
+	InitConsole;
+	PrepBuffer;
     if (CurrentFile.size > 0)
-	    ReadFile();
-    Clear();
-	UpdateOffsetBar();
-	UpdateDisplay();
-    UpdateInfoBar();
+	    ReadFile;
+    Clear;
+	UpdateOffsetBar;
+	UpdateDisplay;
+    UpdateInfoBar;
 
 	while (1)
 	{
@@ -96,7 +101,7 @@ void Start()
  */
 void HandleKey(const KeyInfo* k)
 {
-    fsize = CurrentFile.size;
+    import SettingHandler : HandleWidth;
     size_t bs = Buffer.length;
 
     switch (k.keyCode)
@@ -168,16 +173,27 @@ void HandleKey(const KeyInfo* k)
     case Key.Escape, Key.Enter:
         EnterMenu();
         break;
-    case Key.G:
-        //EnterMenu("g");
-        //UpdateOffsetBar();
-        break;
+    /*case Key.G:
+        EnterMenu("g");
+        UpdateOffsetBar();
+        break;*/
     case Key.I:
         PrintFileInfo;
         break;
     case Key.R, Key.F5:
+        Clear;
+        UpdateOffsetBar;
+        UpdateDisplay;
+        UpdateInfoBar;
+        break;
+    case Key.A:
+        HandleWidth("a");
         PrepBuffer;
-        RefreshAll;
+        ReadFile;
+        Clear;
+        UpdateOffsetBar;
+        UpdateDisplay;
+        UpdateInfoBar;
         break;
     case Key.H: ShowHelp; break;
     case Key.Q: Exit; break;
@@ -204,13 +220,13 @@ void UpdateOffsetBar()
 	switch (CurrentOffsetType)
 	{
 		default: write("h ");
-	        for (ushort i; i < BytesPerRow; ++i) writef(" %02X", i);
+	        for (ushort i; i < BytesPerRow; ++i) printf(" %02X", i);
             break;
 		case OffsetType.Decimal: write("d ");
-	        for (ushort i; i < BytesPerRow; ++i) writef(" %02d", i);
+	        for (ushort i; i < BytesPerRow; ++i) printf(" %02d", i);
             break;
 		case OffsetType.Octal: write("o ");
-	        for (ushort i; i < BytesPerRow; ++i) writef(" %02o", i);
+	        for (ushort i; i < BytesPerRow; ++i) printf(" %02o", i);
             break;
 	}
 }
@@ -225,17 +241,19 @@ void UpdateInfoBar()
 /// Used right after UpdateDisplay to not waste a cursor positioning call.
 void UpdateInfoBarRaw()
 {
+    import Utils : formatsize;
     const float f = CurrentPosition;
-    writef(" %7.3f%%", ((f + Buffer.length) / CurrentFile.size) * 100);
+    string s = formatsize(CurrentPosition);
+    writef(" %s/%s  %7.3f%%",
+        s, tfsize, ((f + Buffer.length) / fsize) * 100);
 }
 
 /// Prepare buffer according to console/term height
 void PrepBuffer()
 {
 	const int h = WindowHeight - 2;
-    const ulong fs = CurrentFile.size;
-    const int bufs = h * BytesPerRow;
-    Buffer = new ubyte[fs >= bufs ? bufs : cast(uint)fs];
+    const int bufs = h * BytesPerRow; // Proposed buffer size
+    Buffer = new ubyte[fsize >= bufs ? bufs : cast(uint)fsize];
 }
 
 private void ReadFile()
@@ -396,8 +414,8 @@ void UpdateDisplay()
 /// Refresh display
 void RefreshDisplay()
 {
-    ReadFile();
-    UpdateDisplay();
+    ReadFile;
+    UpdateDisplay;
 }
 
 /**
@@ -415,7 +433,7 @@ void Message(string msg)
 void ClearMsg()
 {
     SetPos(0, 0);
-    writef("%*s", WindowWidth - 1, "");
+    writef("%*s", WindowWidth - 1, " ");
 }
 
 /**
@@ -433,7 +451,7 @@ void MessageAlt(string msg)
 void ClearMsgAlt()
 {
     SetPos(0, WindowHeight - 1);
-    writef("%*s", WindowWidth - 1, "");
+    writef("%*s", WindowWidth - 1, " ");
 }
 
 /// Print some file information at the bottom bar
@@ -449,7 +467,6 @@ void PrintFileInfo()
             FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM,
             FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_TEMPORARY, FILE_ATTRIBUTE_TEMPORARY,
             FILE_ATTRIBUTE_SPARSE_FILE, FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_ENCRYPTED;
-
         char[8] c;
         c[0] = a & FILE_ATTRIBUTE_READONLY ? 'r' : '-';
         c[1] = a & FILE_ATTRIBUTE_HIDDEN ? 'h' : '-';
@@ -479,7 +496,7 @@ void PrintFileInfo()
     }
     MessageAlt(format("%s  %s  %s",
         c, // File attributes symbolic representation
-        formatsize(CurrentFile.size), // File formatted size
+        formatsize(fsize), // File formatted size
         baseName(Filepath))
     );
 }
@@ -548,13 +565,13 @@ private char fflower(ubyte b) pure @safe @nogc
     }
 }
 
-pragma(inline, true):
 /**
  * Converts an unsigned byte to an ASCII character. If the byte is outside of
  * the ASCII range, DEFAULT_CHAR will be returned.
  * Params: c = Unsigned byte
  * Returns: ASCII character
  */
+pragma(inline, true):
 private char FormatChar(ubyte c) pure @safe @nogc
 {
     return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;

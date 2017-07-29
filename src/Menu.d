@@ -19,7 +19,7 @@ void EnterMenu()
     write(">");
     //TODO: Remove empty entries.
     //TODO: Wrap arguments with commas
-    string[] e = split(readln[0..$-1]);
+    string[] e = split(readln[0..$-1]); // Remove newline
     //string[] e = splitter(readln[0..$-1], ' ').filter!(a => a != null);
 
     UpdateOffsetBar;
