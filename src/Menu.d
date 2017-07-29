@@ -133,6 +133,12 @@ SEARCH_BYTE:
                     UpdateDisplay;
                 }
                 break;
+            case "clear":
+                Clear;
+                UpdateOffsetBar;
+                UpdateDisplay;
+                UpdateInfoBar;
+                break;
             /*
              * Setting manager
              */
@@ -301,7 +307,7 @@ private void HelpQuit() {
             Clear;
             UpdateOffsetBar;
             UpdateDisplay;
-            UpdatePositionBar;
+            UpdateInfoBar;
             return;
         default:
         }

@@ -16,10 +16,13 @@ enum APP_VERSION = "0.0.0-0-notoutyet-1";
 enum OffsetType {
 	Hexadecimal, Decimal, Octal
 }
+
 /// 
 enum DisplayType {
     Default, Text, Hex
 }
+
+enum DEFAULT_CHAR = '.'; /// Default non-ASCII character
 
 /*
  * User settings
@@ -53,7 +56,7 @@ void Start()
     Clear();
 	UpdateOffsetBar();
 	UpdateDisplay();
-    UpdatePositionBar();
+    UpdateInfoBar();
 
 	while (1)
 	{
@@ -188,7 +191,7 @@ void RefreshAll() {
     ClearMsg;
     UpdateOffsetBar;
     ClearMsgAlt;
-    UpdatePositionBar;
+    UpdateInfoBar;
 }
 
 /**
@@ -212,15 +215,15 @@ void UpdateOffsetBar()
 	}
 }
 
-/// Update the bottom current position bar.
-void UpdatePositionBar()
+/// Update the bottom current information bar.
+void UpdateInfoBar()
 {
     SetPos(0, WindowHeight - 1);
-    UpdatePositionBarRaw;
+    UpdateInfoBarRaw;
 }
 
 /// Used right after UpdateDisplay to not waste a cursor positioning call.
-void UpdatePositionBarRaw()
+void UpdateInfoBarRaw()
 {
     const float f = CurrentPosition;
     writef(" %7.3f%%", ((f + Buffer.length) / CurrentFile.size) * 100);
@@ -253,7 +256,7 @@ void Goto(long pos)
     {
         CurrentPosition = pos;
         RefreshDisplay;
-        UpdatePositionBarRaw;
+        UpdateInfoBarRaw;
     }
     else
         MessageAlt("Navigation disabled, buffer too small.");
@@ -442,7 +445,11 @@ void PrintFileInfo()
     import std.path : baseName;
     const uint a = getAttributes(Filepath);
     version (Windows)
-    { import core.sys.windows.winnt; // FILE_ATTRIBUTE_*
+    { import core.sys.windows.winnt : // FILE_ATTRIBUTE_*
+            FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM,
+            FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_TEMPORARY, FILE_ATTRIBUTE_TEMPORARY,
+            FILE_ATTRIBUTE_SPARSE_FILE, FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_ENCRYPTED;
+
         char[8] c;
         c[0] = a & FILE_ATTRIBUTE_READONLY ? 'r' : '-';
         c[1] = a & FILE_ATTRIBUTE_HIDDEN ? 'h' : '-';
@@ -454,7 +461,10 @@ void PrintFileInfo()
         c[7] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
     }
     else version (Posix)
-    { import core.sys.posix.sys.stat;
+    { import core.sys.posix.sys.stat : S_ISVTX,
+            S_IRUSR, S_IWUSR, S_IXUSR,
+            S_IRGRP, S_IWGRP, S_IXGRP,
+            S_IROTH, S_IWOTH, S_IXOTH;
         char[10] c;
         c[0] = a & S_IRUSR ? 'r' : '-';
         c[1] = a & S_IWUSR ? 'w' : '-';
@@ -539,7 +549,13 @@ private char fflower(ubyte b) pure @safe @nogc
 }
 
 pragma(inline, true):
+/**
+ * Converts an unsigned byte to an ASCII character. If the byte is outside of
+ * the ASCII range, DEFAULT_CHAR will be returned.
+ * Params: c = Unsigned byte
+ * Returns: ASCII character
+ */
 private char FormatChar(ubyte c) pure @safe @nogc
 {
-    return c > 0x7E || c < 0x20 ? '.' : c;
+    return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
 }
