@@ -19,7 +19,7 @@ void EnterMenu()
     write(">");
     //TODO: Remove empty entries.
     //TODO: Wrap arguments with commas
-    string[] e = split(readln[0..$-1]); // Remove newline
+    string[] e = readln[0..$-1].split; // Remove newline
     //string[] e = splitter(readln[0..$-1], ' ').filter!(a => a != null);
 
     UpdateOffsetBar;
@@ -32,7 +32,7 @@ void EnterMenu()
                 case "e", "end":
                     Goto(fsize - Buffer.length);
                     break;
-                case "h", "home":
+                case "h", "home", "s":
                     Goto(0);
                     break;
                 default:
@@ -144,7 +144,7 @@ SEARCH_BYTE:
              */
             case "set":
                 if (argl > 1) {
-                    import SettingHandler;
+                    import SettingHandler : HandleWidth;
                     import std.format : format;
                     switch (e[1]) {
                     case "width":
@@ -207,6 +207,7 @@ private void ShowHelpMenu()
 {
 //TODO: Update man-page
 //TODO: Alias "offset" to "set offset" then write it down
+// Wouldn't it be better to simply do a text file? I have no idea.
     enum str =
 `Command Help
 
@@ -316,7 +317,7 @@ private void HelpQuit() {
 
 private void ShowAbout()
 {
-    MessageAlt("Written by dd86k in D. Copyright (c) dd86k 2017");
+    MessageAlt("Written by dd86k. Copyright (c) dd86k 2017");
 }
 
 private void ShowInfo()

@@ -56,7 +56,7 @@ void Start()
     tfsize = formatsize(fsize);
 	InitConsole;
 	PrepBuffer;
-    if (CurrentFile.size > 0)
+    if (fsize > 0)
 	    ReadFile;
     Clear;
 	UpdateOffsetBar;
@@ -74,7 +74,6 @@ void Start()
 
 /*void HandleMouse(const MouseInfo* mi)
 {
-    ulong fs = CurrentFile.size;
     size_t bs = Buffer.length;
 
     switch (mi.Type) {
@@ -243,9 +242,11 @@ void UpdateInfoBarRaw()
 {
     import Utils : formatsize;
     const float f = CurrentPosition;
-    string s = formatsize(CurrentPosition);
     writef(" %s/%s  %7.3f%%",
-        s, tfsize, ((f + Buffer.length) / fsize) * 100);
+        formatsize(CurrentPosition), // Formatted position
+        tfsize, // Total file size
+        ((f + Buffer.length) / fsize) * 100 // Pos/filesize%
+    );
 }
 
 /// Prepare buffer according to console/term height
@@ -287,8 +288,8 @@ void Goto(long pos)
  */
 void GotoC(long pos)
 {
-    if (pos + Buffer.length > CurrentFile.size)
-        Goto(CurrentFile.size - Buffer.length);
+    if (pos + Buffer.length > fsize)
+        Goto(fsize - Buffer.length);
     else
         Goto(pos);
 }
@@ -304,7 +305,7 @@ void GotoStr(string str)
     import Utils : unformat;
     long l;
     if (unformat(str, l)) {
-        if (l >= 0 && l < CurrentFile.size - Buffer.length) {
+        if (l >= 0 && l < fsize - Buffer.length) {
             Goto(l);
             UpdateOffsetBar();
         } else {
