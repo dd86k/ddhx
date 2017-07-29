@@ -1,6 +1,8 @@
 ." Hi! This manual (man page) was written by dd86k.
 ." Please read man-pages(7) and groff_man(7) about the manual page format.
-.TH ddhx 1 "April 2017" Linux "User manual"
+." 
+."
+.TH ddhx 1 "July 2017" POSIX "User manual"
 .SH NAME
 ddhx - Interactive hexadecimal file viewer.
 
@@ -10,7 +12,8 @@ ddhx - Interactive hexadecimal file viewer.
 .R ddhx {--help|-h|--version}
 
 .SH DESCRIPTION
-ddhx is a fast interactive hexadecimal file viewer with several search features.
+.B ddhx
+is a fast interactive hexadecimal file viewer with several search features that runs within the terminal.
 .SH OPTIONS
 .I
 .IP file
@@ -24,11 +27,14 @@ Quits (closes) the program
 .IP ENTER
 Enters prompt
 
+.IP a
+Auto-adjust screen width (bytes per row).
+
 .IP i
 Displays file information.
 
 .IP r|F5
-Refresh all panels and displays.
+Repaint display entirely.
 
 .SH PROMPT AND COMMANDS
 Pressing
@@ -56,8 +62,9 @@ Change offset type. Possible values are o (octal), d (decimal), or h (hexadecima
 
 .B s|search <Type> <Value>
 .RS
-Search a
-.IR "byte" " or " "string" "."
+Search for data. Valid data can be:
+.IP
+.BR "byte" ", " "short" ", " "int" ", " "long" ", " "string" ", and " "wstring"
 .RE
 
 .B ss <Value>
