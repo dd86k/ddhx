@@ -2,15 +2,14 @@
 
 ![Screenshot of ddhx](https://dd86k.github.io/imgs/ddhx0.png)
 
-## Native, Fast, Simple.
-
-ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool.
+ddhx is meant as a replacement for my [0xdd](https://github.com/dd86k/0xdd) tool as a "native, fast, simple" kind of thing.
 
 ## Supported Platforms
 
 | Platform | Progress |
 |---|---|
-| Windows (Vista+) | Works! |
+| Windows XP | Doesn't work |
+| Windows | Works! |
 | macOS | Unknown |
 | Linux | Works! |
 | *BSD | Unknown |
@@ -20,7 +19,7 @@ Basically a TODO list:
 
 - Raw array searching
 - UTF-32 string searching
-- Dump to stream
+- Dump to file
 - Scrollwheel support
 
 ## Screenshots
