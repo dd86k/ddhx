@@ -30,7 +30,7 @@ void SearchUTF16String(const char[] s, bool invert = false)
     const size_t l = s.length;
     ubyte[] buf = new ubyte[l * 2];
 //TODO: Richer UTF-8 to UTF-16 transformation
-    for (int i = invert ? 0 : 1, e = 0; e < l; i += 2, ++e)
+    for (int i = invert ? 0 : 1, e; e < l; i += 2, ++e)
         buf[i] = s[e];
     SearchArray(buf, "wstring");
 }
@@ -46,7 +46,7 @@ void SearchUTF32String(const char[] s, bool invert = false)
     const size_t l = s.length;
     ubyte[] buf = new ubyte[l * 4];
 //TODO: Richer UTF-8 to UTF-16 transformation
-    for (int i = invert ? 0 : 3, e = 0; e < l; i += 4, ++e)
+    for (int i = invert ? 0 : 3, e; e < l; i += 4, ++e)
         buf[i] = s[e];
     SearchArray(buf, "dstring");
 }
@@ -64,13 +64,23 @@ void SearchByte(const ubyte b)
         foreach (i; buf) {
             if (b == i) {
                 GotoC(pos);
-                MessageAlt(format(" Found byte %02XH at %XH", b, pos));
+                switch (CurrentOffsetType) {
+                default:
+                    MessageAlt(format(" Found byte %02XH at %X", b, pos));
+                    break;
+                case OffsetType.Decimal:
+                    MessageAlt(format(" Found byte %02XH at %d", b, pos));
+                    break;
+                case OffsetType.Octal:
+                    MessageAlt(format(" Found byte %02XH at %o", b, pos));
+                    break;
+                }
                 return;
             }
             ++pos;
         }
     }
-    MessageAlt("Not found");
+    MessageAlt("Byte not found");
 }
 
 /**
@@ -125,7 +135,7 @@ void SearchUInt64(string s, bool invert = false)
 }
 
 /**
- * Converts a number into an array.
+ * Converts a number into an array. Endian can be swapped.
  * Params:
  *   ap = Destination array pointer
  *   size = Size of the operation (usually 2, 4, and 8)
@@ -138,20 +148,20 @@ private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
         import core.stdc.string : memcpy;
         if (invert)
         switch (size) {
-            case 2: l = bswap(l & 0xFFFF); break;
-            case 4: l = bswap(l & 0xFFFF_FFFF); break;
+            case 2:  l = bswap(l & 0xFFFF); break;
+            case 4:  l = bswap(l & 0xFFFF_FFFF); break;
             default: l = bswap(l); break;
         }
         memcpy(ap, &l, size);
     }
 }
 
-private void SearchArray(ubyte[] a, string type)
+private void SearchArray(ubyte[] input, string type)
 {
     MessageAlt(format(" Searching %s...", type));
     const long fsize = CurrentFile.size;
-    const char b = a[0];
-    const size_t len = a.length;
+    const char b = input[0];
+    const size_t len = input.length;
     long pos = CurrentPosition + 1; // To not affect CurrentPosition itself
     CurrentFile.seek(pos);
     foreach (const ubyte[] buf; CurrentFile.byChunk(CHUNK_SIZE)) {
@@ -160,16 +170,26 @@ private void SearchArray(ubyte[] a, string type)
             if (buf[i] == b) {
                 const size_t ilen = i + len;
                 if (ilen < bufl) { // Within CHUNK
-                    if (buf[i..i+len] == a) {
+                    if (buf[i..i+len] == input) {
 S_FOUND:
-                        const long n = pos + i;
+                        const long n = pos + i; // New position
+                        switch (CurrentOffsetType) {
+                        default:
+                            MessageAlt(format(" Found %s value at %X", type, n));
+                            break;
+                        case OffsetType.Decimal:
+                            MessageAlt(format(" Found %s value at %d", type, n));
+                            break;
+                        case OffsetType.Octal:
+                            MessageAlt(format(" Found %s value at %o", type, n));
+                            break;
+                        }
                         GotoC(n);
-                        MessageAlt(format(" Found %s value at %XH", type, n));
                         return;
                     }
                 } else if (ilen < fsize) { // Out-of-chunk
                     CurrentFile.seek(pos + i);
-                    if (CurrentFile.byChunk(len).front == a) {
+                    if (CurrentFile.byChunk(len).front == input) {
                         goto S_FOUND;
                     }
                 } else goto S_END; // EOF otherwise, can't continue

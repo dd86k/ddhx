@@ -1,11 +1,17 @@
 module Menu;
 
 import std.stdio;
-import std.format : format;
 import ddcon, ddhx, Searcher;
+import std.format : format;
 
-//TODO: Setting aliases (o -> offset, w -> width, etc.)
+//TODO: count command (stat)
 //TODO: Invert with aliases
+/*TODO: Aliases
+    si: Search int
+    sl: Search long
+    utf8: search utf-8 string, etc.
+*/
+
 
 /**
  * Internal command prompt.
@@ -16,7 +22,7 @@ void EnterMenu()
     //import std.algorithm.iteration : splitter, filter;
     ClearMsg;
     SetPos(0, 0);
-    write(">");
+    write('>');
     //TODO: Remove empty entries.
     //TODO: Wrap arguments with commas
     string[] e = readln[0..$-1].split; // Remove newline
@@ -121,14 +127,8 @@ SEARCH_BYTE:
             case "i", "info": PrintFileInfo; break;
             case "o", "offset":
                 if (argl > 1) {
-                    switch (e[1][0]) {
-                    case 'o','O': CurrentOffsetType = OffsetType.Octal; break;
-                    case 'd','D': CurrentOffsetType = OffsetType.Decimal; break;
-                    case 'h','H': CurrentOffsetType = OffsetType.Hexadecimal; break;
-                    default:
-                        MessageAlt(" Invalid offset type.");
-                        break;
-                    }
+                    import SettingHandler : HandleOffset;
+                    HandleOffset(e[1]);
                     UpdateOffsetBar;
                     UpdateDisplay;
                 }
@@ -144,37 +144,29 @@ SEARCH_BYTE:
              */
             case "set":
                 if (argl > 1) {
-                    import SettingHandler : HandleWidth;
+                    import SettingHandler :
+                        HandleWidth, HandleOffset, HandleMode;
                     import std.format : format;
                     switch (e[1]) {
-                    case "width":
+                    case "width", "w":
                         if (argl > 2) {
                             HandleWidth(e[2]);
                             PrepBuffer;
                             RefreshAll;
                         }
                         break;
-                    case "mode":
-                        if (argl > 2)
-                        switch (e[2]) {
-                        case "normal", "default", "n", "d":
-                            CurrentDisplayType = DisplayType.Default;
+                    case "offset", "o":
+                        if (argl > 2) {
+                            HandleOffset(e[2]);
                             Clear;
                             RefreshAll;
-                            break;
-                        case "text", "t":
-                            CurrentDisplayType = DisplayType.Text;
+                        }
+                        break;
+                    case "mode", "m":
+                        if (argl > 2) {
+                            HandleMode(e[2]);
                             Clear;
                             RefreshAll;
-                            break;
-                        case "hex", "h":
-                            CurrentDisplayType = DisplayType.Hex;
-                            Clear;
-                            RefreshAll;
-                            break;
-                        default:
-                            MessageAlt(format("Unknown mode parameter: %s", e[2]));
-                            break;
                         }
                         break;
                     default:
@@ -279,6 +271,7 @@ To get help on the menu, quit this screen, then enter "help commands".
 
 SHORTCUTS:
   q: Quit
+  a: Auto-adjust screen width (bytes per screen)
   i: Show file information
   h: This help screen (q to quit this screen)
   F5 or r: Refresh all displays
@@ -297,7 +290,7 @@ NAVIGATION:
 }
 
 private void HelpQuit() {
-    write(" q:Return");
+    write(" To quit this help screen: q");
     SetPos(0, 0);
     while (1)
     {

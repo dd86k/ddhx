@@ -10,13 +10,12 @@ import ddhx;
 import SettingHandler;
 
 //TODO: CLI SWITCHES
-// -o: override default offset viewing type
 // --dump: Dump into file (like xxd)
 // -sb: Search byte, e.g. -sb ffh -> init -> Echo result
 
 private int main(string[] args)
 {
-    import std.getopt : getopt, GetoptResult, GetOptException;
+    import std.getopt : getopt, GetoptResult, GetOptException, config;
 
     if (args.length <= 1)
     {
@@ -27,8 +26,9 @@ private int main(string[] args)
     GetoptResult r;
     try {
         r = getopt(args,
-            "w|width", "Set the width of the display in bytes, 'a' is automatic.", &HandleWCLI,
-            //"o|offset", "Set the offset viewing type.", &HandleOCLI,
+            "w|width", "Set the number of bytes per line, 'a' being automatic.", &HandleWCLI,
+            "o|offset", "Set offset type.", &HandleOCLI,
+            "m|mode", "Set view mode type.", &HandleMCLI,
             "v|version", "Print version information.", &PrintVersion);
     } catch (GetOptException ex) {
         stderr.writeln("Error: ", ex.msg);
@@ -65,7 +65,7 @@ private int main(string[] args)
 
             if (CurrentFile.size == 0)
             {
-                stderr.writeln("0-Byte file, exiting.");
+                stderr.writeln("Empty file, exiting.");
                 return 1;
             }
         }
@@ -84,8 +84,8 @@ private void PrintHelp() // ..And description.
 {
     writeln("Interactive hexadecimal file viewer.");
     writeln("Usage:");
-    writeln("  ddhx\t[Options] <File>");
-    writeln("  ddhx\t{-h|--help|--version}");
+    writeln("  ddhx\t[Options] file");
+    writeln("  ddhx\t{--help|--version}");
 }
 
 private void PrintVersion()

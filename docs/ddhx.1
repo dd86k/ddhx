@@ -1,23 +1,30 @@
 ." Hi! This manual (man page) was written by dd86k.
 ." Please read man-pages(7) and groff_man(7) about the manual page format.
-." 
+." Don't forget to respect the format of this document!
 ."
-.TH ddhx 1 "July 2017" POSIX "User manual"
+.TH ddhx 1 "July 2017" dd86k "User manual"
 .SH NAME
 ddhx - Interactive hexadecimal file viewer.
 
 .SH SYNOPSIS
-.RI "ddhx " "file"
-
-.R ddhx {--help|-h|--version}
+.SY ddhx
+.OP \-w width
+.OP \-o offset
+.OP \-m mode
+.RI file
+.IR
+.YS
 
 .SH DESCRIPTION
 .B ddhx
-is a fast interactive hexadecimal file viewer with several search features that runs within the terminal.
+is a fast interactive hexadecimal terminal file viewer with several search features.
+
 .SH OPTIONS
-.I
 .IP file
 File to open.
+
+.IP width
+Set width in bytes of the display.
 
 .SH SHORTCUTS
 
@@ -36,76 +43,87 @@ Displays file information.
 .IP r|F5
 Repaint display entirely.
 
-.SH PROMPT AND COMMANDS
+.SH PROMPT COMMANDS
 Pressing
 .B ESC
 or
 .BR "ENTER" " (" "RETURN" ")"
-will enter prompt mode, where commands and queries can be entered.
+will enter prompt mode, where commands can be entered.
 
-The one character commands are command aliases.
+Some commands have an alias which is described before the '|' (pipe) character.
 
-.B g|goto <Number>
+.SS g|goto <Number>
+Goto to position <Number> (bytes) in file.
+
+.B Examples:
 .RS
-Goto to position <Number> (bytes) in file. Supports hexadecimal.
+.EX
+goto 1200
+g 8001h
+g 0x1381
+.EE
 .RE
 
-.B i|info
-.RS
+.SS i|info
 Display file information.
-.RE
 
-.B o|offset <Offset>
-.RS
+.SS o|offset <OffsetType>
 Change offset type. Possible values are o (octal), d (decimal), or h (hexadecimal).
+
+.B Example:
+.RS
+.EX
+offset decimal
+o h
+.EE
 .RE
 
-.B s|search <Type> <Value>
+.SS s|search <Type> <Value>
+Search for data.
+
+.B Types:
 .RS
-Search for data. Valid data can be:
-.IP
-.BR "byte" ", " "short" ", " "int" ", " "long" ", " "string" ", and " "wstring"
+.EX
+- byte
+- short: ushort, word, w
+- int: uint, doubleword, dword, dw
+- long: ulong, quadword, qword, qw
+- string
+- wstring
+.EE
 .RE
 
-.B ss <Value>
-.RS
+.SS ss <Value>
 Search UTF-8 string alias.
-.RE
 
 .B sb <Value>
-.RS
 Search byte alias.
-.RE
 
 .B r|refresh <Offset>
-.RS
 Refresh all panels and displays.
-.RE
 
 .SH NAVIGATION
 Currently, the modifier key states on Posix platforms are unavailable. You are invited to use the
-.B goto end
-command.
+.B goto
+command with the 
+.BR "end" " and " "start"
+aliases.
 
-.B Up/Down Arrows
-.RS
+.B
+.IP Up/Down Arrows
 Go backward or forward a line (by width).
-.RE
 
-.B Left/Right Arrow
-.RS
+.B
+.IP Left/Right Arrow
 Go backward or forward a byte
-.RE
 
-.B Home/End
-.RS
+.B
+.IP Home/End
 Align to the line
-.RE
 
-.B CTRL+Home/CTRL+End
-.RS
-Go to begining or end of file
-.RE
+.B
+.IP ^Home/^End
+Go to begining or end of file.
 
 .SH FILE ATTRIBUTES
 The information command will display different file attributes on different platforms:
@@ -133,17 +151,29 @@ Encrypted. (FILE_ATTRIBUTE_ENCRYPTED)
 
 .SS Under Posix-compilant systems
 
-.RB "The symbolic file permissions are displayed (although not exactly like the output of " "ls -l" ")."
+.RB "The symbolic file permissions are displayed (not exactly like the output of " "ls -l" ")."
 The last character is the sticky bit indicator
-.RB "(" "t" ")."
+.RB "('" "t" "')."
 
 .SH WARNINGS
 ddhx is still currently going under active development. Expect lots of bugs and crashes!
+
 .SH NOTES
 ddhx will clear the output on exit.
+
 .SH BUGS
 Currently, string searching may be inacurate with small chunks.
+
+.SH AUTHOR
+Written by dd86k.
+
 .SH CONTACT
+.UR https://github.com/dd86k/ddhx
 Homepage:
-.UR "https://github.com/dd86k/ddhx"
 .UE
+
+.MT devddstuff@gmail.com
+Email:
+.ME
+
+.SH HISTORY

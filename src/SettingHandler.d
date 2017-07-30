@@ -1,9 +1,12 @@
 module SettingHandler;
 
+//TODO: Maybe do a "central" CLI handler?
+
 import std.stdio;
 import ddhx;
 import Utils : unformat;
 import core.stdc.stdlib : exit;
+import std.format : format;
 
 private enum
     ENOPARSE = "Could not parse number",
@@ -28,14 +31,12 @@ void HandleWCLI(string opt, string val)
  */
 void HandleWidth(string val, bool cli = false)
 {
-    import ddcon : WindowWidth;
     if (val[0] == 'a') {
         version (Windows) {
 //TODO: Fix with CLI, returns 65535 (why can't Windows work?)
-        if (!cli)
-            BytesPerRow = cast(ushort)(((WindowWidth - 10) / 4) - 1);
+        if (!cli) BytesPerRow = getBytesPerRow;
         } else {
-        BytesPerRow = cast(ushort)(((WindowWidth - 10) / 4) - 1);
+        BytesPerRow = getBytesPerRow;
         }
     } else {
         long l;
@@ -59,10 +60,88 @@ void HandleWidth(string val, bool cli = false)
     }
 }
 
-/*ushort getAutoWidth()
+/**
+ * Handle offset CLI option.
+ * Params:
+ *   opt = Option
+ *   val = Option value
+ */
+void HandleOCLI(string opt, string val)
 {
-    switch (CurrentDisplayMode)
-    {
-        case DisplayMode.
+    HandleOffset(val, true);
+}
+
+/**
+ * Handle offset setting.
+ * Params:
+ *   val = Value
+ *   cli = From CLI?
+ */
+void HandleOffset(string val, bool cli = false)
+{
+    switch (val[0]) {
+    case 'o','O': CurrentOffsetType = OffsetType.Octal; break;
+    case 'd','D': CurrentOffsetType = OffsetType.Decimal; break;
+    case 'h','H': CurrentOffsetType = OffsetType.Hexadecimal; break;
+    default:
+        if (cli) {
+            writef("Unknown mode parameter: %s", val);
+            exit(1);
+        } else {
+            MessageAlt(format(" Invalid offset type: %s", val));
+        }
+        break;
     }
-}*/
+}
+
+/**
+ * Handle view mode CLI option.
+ * Params:
+ *   opt = Option
+ *   val = Option value
+ */
+void HandleMCLI(string opt, string val)
+{
+    HandleMode(val, true);
+}
+
+/**
+ * Handle view mode setting.
+ * Params:
+ *   val = Value
+ *   cli = From CLI?
+ */
+void HandleMode(string val, bool cli = false)
+{
+    switch (val) {
+        case "normal", "default", "n", "de":
+            CurrentDisplayMode = DisplayMode.Default;
+            break;
+        case "data", "d":
+            CurrentDisplayMode = DisplayMode.Data;
+            break;
+        case "text", "t":
+            CurrentDisplayMode = DisplayMode.Text;
+            break;
+        default:
+            if (cli) {
+                writef("Unknown mode parameter: %s", val);
+                exit(1);
+            } else {
+                MessageAlt(format("Unknown mode parameter: %s", val));
+            }
+            break;
+    }
+}
+
+private ushort getBytesPerRow()
+{
+    import ddcon : WindowWidth;
+    final switch (CurrentDisplayMode)
+    { // Will crash on newer values which is a GOOD REMINDER.
+        case DisplayMode.Default:
+            return cast(ushort)((WindowWidth - 11) / 4);
+        case DisplayMode.Text, DisplayMode.Data:
+            return cast(ushort)((WindowWidth - 11) / 3);
+    }
+}

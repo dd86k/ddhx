@@ -6,8 +6,6 @@ import Menu;
 import ddcon;
 
 //TODO: Bookmarks page (What shortcut or function key?)
-//TODO: Statistics page or functions
-//TODO: MD5? SHA1?
 //TODO: Tabs? (Probably not)
 
 /// App version
@@ -18,9 +16,11 @@ enum OffsetType {
 	Hexadecimal, Decimal, Octal
 }
 
+//TODO: PureText (does not align with offset bar)
+//TODO: PureData (does not align with offset bar)
 /// 
-enum DisplayType {
-    Default, Text, Hex
+enum DisplayMode {
+    Default, Text, Data
 }
 
 enum DEFAULT_CHAR = '.'; /// Default non-ASCII character
@@ -31,7 +31,7 @@ enum DEFAULT_CHAR = '.'; /// Default non-ASCII character
 
 ushort BytesPerRow = 16; /// Bytes shown per row
 OffsetType CurrentOffsetType; /// Current offset view type
-DisplayType CurrentDisplayType; /// Current display view type
+DisplayMode CurrentDisplayMode; /// Current display view type
 
 /*
  * Internal
@@ -237,15 +237,17 @@ void UpdateInfoBar()
     UpdateInfoBarRaw;
 }
 
-/// Used right after UpdateDisplay to not waste a cursor positioning call.
+/// Updates information bar without cursor position call.
 void UpdateInfoBarRaw()
 {
     import Utils : formatsize;
-    const float f = CurrentPosition;
-    writef(" %s/%s  %7.3f%%",
-        formatsize(CurrentPosition), // Formatted position
-        tfsize, // Total file size
-        ((f + Buffer.length) / fsize) * 100 // Pos/filesize%
+    const size_t bufs = Buffer.length;
+    const float f = CurrentPosition; // Converts to float implicitly
+    writef(" %*s | %*s/%*s | %7.3f%%",
+        7, formatsize(bufs),            // Buffer size
+        10, formatsize(CurrentPosition), // Formatted position
+        10, tfsize,                      // Total file size
+        ((f + bufs) / fsize) * 100      // Pos/filesize%
     );
 }
 
@@ -307,7 +309,7 @@ void GotoStr(string str)
     if (unformat(str, l)) {
         if (l >= 0 && l < fsize - Buffer.length) {
             Goto(l);
-            UpdateOffsetBar();
+            UpdateOffsetBar;
         } else {
             import std.format : format;
             MessageAlt(format("Range too far or negative: %d (%XH)", l, l));
@@ -324,7 +326,7 @@ void UpdateDisplay()
     const size_t bl = Buffer.length;
     char[] data, ascii;
     SetPos(0, 1);
-    switch (CurrentDisplayType) {
+    switch (CurrentDisplayMode) {
     default:
         data = new char[3 * BytesPerRow]; ascii = new char[BytesPerRow];
         memset(&data[0], ' ', data.length);
@@ -354,7 +356,7 @@ void UpdateDisplay()
             writeln(data, "  ", ascii);
         }
         break; // Default
-    case DisplayType.Text:
+    case DisplayMode.Text:
         ascii = new char[BytesPerRow * 3];
         memset(&ascii[0], ' ', data.length);
         for (int o; o < bl; o += BytesPerRow) {
@@ -380,7 +382,7 @@ void UpdateDisplay()
             writeln(ascii);
         }
         break; // Text
-    case DisplayType.Hex:
+    case DisplayMode.Data:
         data = new char[3 * BytesPerRow];
         memset(&data[0], ' ', data.length);
 
