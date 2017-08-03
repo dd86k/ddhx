@@ -3,11 +3,11 @@ module Searcher;
 import std.stdio;
 import ddhx;
 import std.format : format;
-import Utils : MB, unformat;
+import Utils : unformat;
 
-private enum CHUNK_SIZE = MB / 2;
+private enum CHUNK_SIZE = 512;
 
-//TODO: Progress bar (only if higher than chunk size) (update per-chunk)
+//TODO: Progress bar (only after first chunk, updates per-chunk)
 //TODO: String REGEX (will require a new function entirely for searching)
 
 /**

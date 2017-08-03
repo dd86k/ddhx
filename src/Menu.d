@@ -130,14 +130,14 @@ SEARCH_BYTE:
                     import SettingHandler : HandleOffset;
                     HandleOffset(e[1]);
                     UpdateOffsetBar;
-                    UpdateDisplay;
+                    UpdateDisplayRaw;
                 }
                 break;
             case "clear":
                 Clear;
                 UpdateOffsetBar;
-                UpdateDisplay;
-                UpdateInfoBar;
+                UpdateDisplayRaw;
+                UpdateInfoBarRaw;
                 break;
             /*
              * Setting manager
@@ -300,8 +300,8 @@ private void HelpQuit() {
         case Key.Q:
             Clear;
             UpdateOffsetBar;
-            UpdateDisplay;
-            UpdateInfoBar;
+            UpdateDisplayRaw;
+            UpdateInfoBarRaw;
             return;
         default:
         }

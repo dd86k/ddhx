@@ -60,8 +60,8 @@ void Start()
 	    ReadFile;
     Clear;
 	UpdateOffsetBar;
-	UpdateDisplay;
-    UpdateInfoBar;
+	UpdateDisplayRaw;
+    UpdateInfoBarRaw;
 
 	while (1)
 	{
@@ -182,8 +182,8 @@ void HandleKey(const KeyInfo* k)
     case Key.R, Key.F5:
         Clear;
         UpdateOffsetBar;
-        UpdateDisplay;
-        UpdateInfoBar;
+        UpdateDisplayRaw;
+        UpdateInfoBarRaw;
         break;
     case Key.A:
         HandleWidth("a");
@@ -191,8 +191,8 @@ void HandleKey(const KeyInfo* k)
         ReadFile;
         Clear;
         UpdateOffsetBar;
-        UpdateDisplay;
-        UpdateInfoBar;
+        UpdateDisplayRaw;
+        UpdateInfoBarRaw;
         break;
     case Key.H: ShowHelp; break;
     case Key.Q: Exit; break;
@@ -200,13 +200,18 @@ void HandleKey(const KeyInfo* k)
     }
 }
 
-/// Refresh display and both bars
+/// Refresh the entire screen
 void RefreshAll() {
-    RefreshDisplay;
+    Clear;
+    ReadFile;
+    UpdateOffsetBar;
+    UpdateDisplayRaw;
+    UpdateInfoBarRaw;
+    /*RefreshDisplay;
     ClearMsg;
     UpdateOffsetBar;
     ClearMsgAlt;
-    UpdateInfoBar;
+    UpdateInfoBar;*/
 }
 
 /**
@@ -228,6 +233,7 @@ void UpdateOffsetBar()
 	        for (ushort i; i < BytesPerRow; ++i) printf(" %02o", i);
             break;
 	}
+    writeln; // In case of "raw" function being called
 }
 
 /// Update the bottom current information bar.
@@ -244,10 +250,10 @@ void UpdateInfoBarRaw()
     const size_t bufs = Buffer.length;
     const float f = CurrentPosition; // Converts to float implicitly
     writef(" %*s | %*s/%*s | %7.3f%%",
-        7, formatsize(bufs),            // Buffer size
+        7, formatsize(bufs),             // Buffer size
         10, formatsize(CurrentPosition), // Formatted position
         10, tfsize,                      // Total file size
-        ((f + bufs) / fsize) * 100      // Pos/filesize%
+        ((f + bufs) / fsize) * 100       // Pos/filesize%
     );
 }
 
@@ -322,10 +328,16 @@ void GotoStr(string str)
 /// Update display from buffer
 void UpdateDisplay()
 {
+    SetPos(0, 1);
+    UpdateDisplayRaw;
+}
+
+/// Update display from buffer without setting cursor
+void UpdateDisplayRaw()
+{
     import core.stdc.string : memset;
     const size_t bl = Buffer.length;
     char[] data, ascii;
-    SetPos(0, 1);
     switch (CurrentDisplayMode) {
     default:
         data = new char[3 * BytesPerRow]; ascii = new char[BytesPerRow];

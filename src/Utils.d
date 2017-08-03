@@ -2,18 +2,6 @@ module Utils;
 
 import ddhx;
 
-// Anonymous array with 2^(n*3) and 10^n notations in order
-enum : long {
-    KB = 1024,      /// Represents one KiloByte
-    MB = KB * 1024, /// Represents one MegaByte
-    GB = MB * 1024, /// Represents one GigaByte
-    TB = GB * 1024, /// Represents one TeraByte
-    KiB = 1000,       /// Represents one KibiByte
-    MiB = KiB * 1000, /// Represents one MebiByte
-    GiB = MiB * 1000, /// Represents one GibiByte
-    TiB = GiB * 1000  /// Represents one TebiByte
-}
-
 /**
  * Converts a string number to a long number.
  * Params:
@@ -47,7 +35,7 @@ bool unformat(string e, ref long l)
  * Params: e = Input string
  * Returns: Unformatted number.
  */
-ulong unformatHex(string e)
+ulong unformatHex(string e) nothrow @nogc pure
 { //TODO: Use a byte pointer instead
     enum C_MINOR = '0' + 39, C_MAJOR = '0' + 7;
     int s; long l;
@@ -73,6 +61,17 @@ ulong unformatHex(string e)
 string formatsize(long size, bool base10 = false) //BUG: %f is unpure?
 {
     import std.format : format;
+
+    enum : long {
+        KB = 1024,      /// Represents one KiloByte
+        MB = KB * 1024, /// Represents one MegaByte
+        GB = MB * 1024, /// Represents one GigaByte
+        TB = GB * 1024, /// Represents one TeraByte
+        KiB = 1000,       /// Represents one KibiByte
+        MiB = KiB * 1000, /// Represents one MebiByte
+        GiB = MiB * 1000, /// Represents one GibiByte
+        TiB = GiB * 1000  /// Represents one TebiByte
+    }
 
     const float s = size;
 
@@ -144,93 +143,95 @@ string formatsize(long size, bool base10 = false) //BUG: %f is unpure?
     }
 }
 
-/// Byte swap 2 bytes.
-ushort bswap(ushort num) pure
+/**
+ * Byte swap a 2-byte number.
+ * Params: num = 2-byte number to swap.
+ * Returns: Byte swapped number.
+ */
+ushort bswap(ushort num) pure nothrow @nogc
 {
-    version (LittleEndian)
-        version (X86) asm pure {
+    version (X86) asm pure nothrow @nogc {
+        naked;
+        xchg AH, AL;
+        ret;
+    } else version (X86_64) {
+        version (Windows) asm pure nothrow @nogc {
             naked;
-            xchg AH, AL;
+            mov AX, CX;
+            xchg AL, AH;
             ret;
-        } else version (X86_64)
-            version (Windows) asm pure {
-                naked;
-                mov AX, CX;
-                xchg AL, AH;
-                ret;
-            } else asm pure { // System V AMD64 ABI
-                naked;
-                mov EAX, EDI;
-                xchg AL, AH;
-                ret;
-            }
-        else
-        {
-            if (num)
-            {
-                ubyte* p = cast(ubyte*)&num;
-                return p[1] | p[0] << 8;
-            }
+        } else asm pure nothrow @nogc { // System V AMD64 ABI
+            naked;
+            mov EAX, EDI;
+            xchg AL, AH;
+            ret;
         }
-    else return num;
+    } else {
+        if (num) {
+            ubyte* p = cast(ubyte*)&num;
+            return p[1] | p[0] << 8;
+        }
+    }
 }
 
-/// Byte swap 4 bytes.
-uint bswap(uint num) pure
+/**
+ * Byte swap a 4-byte number.
+ * Params: num = 4-byte number to swap.
+ * Returns: Byte swapped number.
+ */
+uint bswap(uint num) pure nothrow @nogc
 {
-    version (LittleEndian)
-        version (X86) asm pure {
+    version (X86) asm pure nothrow @nogc {
+        naked;
+        bswap EAX;
+        ret;
+    } else version (X86_64) {
+        version (Windows) asm pure nothrow @nogc {
             naked;
+            mov EAX, ECX;
             bswap EAX;
             ret;
-        } else version (X86_64)
-            version (Windows) asm pure {
-                naked;
-                mov EAX, ECX;
-                bswap EAX;
-                ret;
-            } else asm pure { // System V AMD64 ABI
-                naked;
-                mov RAX, RDI;
-                bswap EAX;
-                ret;
-            }
-        else
-        {
-            if (num)
-            {
-                ubyte* p = cast(ubyte*)&num;
-                return p[3] | p[2] << 8 | p[1] << 16 | p[0] << 24;
-            }
+        } else asm pure nothrow @nogc { // System V AMD64 ABI
+            naked;
+            mov RAX, RDI;
+            bswap EAX;
+            ret;
         }
-    else return num;
+    } else {
+        if (num) {
+            ubyte* p = cast(ubyte*)&num;
+            return p[3] | p[2] << 8 | p[1] << 16 | p[0] << 24;
+        }
+    }
 }
 
-/// Byte swap 8 bytes.
-ulong bswap(ulong num) pure
+/**
+ * Byte swap a 8-byte number.
+ * Params: num = 8-byte number to swap.
+ * Returns: Byte swapped number.
+ */
+ulong bswap(ulong num) pure nothrow @nogc
 {
-    version (X86) asm pure {
+    version (X86) asm pure nothrow @nogc {
         naked;
         xchg EAX, EDX;
         bswap EDX;
         bswap EAX;
         ret;
-    } else version (X86_64)
-        version (Windows) asm pure {
+    } else version (X86_64) {
+        version (Windows) asm pure nothrow @nogc {
             naked;
             mov RAX, RCX;
             bswap RAX;
             ret;
-        } else asm pure { // System V AMD64 ABI
+        } else asm pure nothrow @nogc { // System V AMD64 ABI
             naked;
             mov RAX, RDI;
             bswap RAX;
             ret;
         }
-    else
-    {
-        if (num)
-        {
+    } else {
+        if (num) {
             ubyte* p = cast(ubyte*)&num;
             ubyte c;
             for (int a, b = 7; a < 4; ++a, --b) {
