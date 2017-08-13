@@ -31,32 +31,39 @@ void HandleWCLI(string opt, string val)
  */
 void HandleWidth(string val, bool cli = false)
 {
-    if (val[0] == 'a') {
-        version (Windows) {
+    switch (val[0]) {
+        case 'a': // Automatic
+            version (Windows) {
 //TODO: Fix with CLI, returns 65535 (why can't Windows work?)
-        if (!cli) BytesPerRow = getBytesPerRow;
-        } else {
-        BytesPerRow = getBytesPerRow;
-        }
-    } else {
-        long l;
-        if (unformat(val, l)) {
-            if (l < 1 || l > ushort.max) {
-                if (cli) {
-                    writefln(ETRANGE, l, ushort.max);
-                    exit(1);
-                } else
-                    MessageAlt("Number out of range");
-                    return;
+            if (!cli) BytesPerRow = getBytesPerRow;
+            } else {
+            BytesPerRow = getBytesPerRow;
             }
-            BytesPerRow = l & 0xFFFF;
-        } else {
-            if (cli) {
-                writeln(ENOPARSE);
-                exit(1);
-            } else 
-                MessageAlt(ENOPARSE);
-        }
+            break;
+
+        case 'd': // Default
+            BytesPerRow = 16;
+            break;
+        
+        default:
+            long l;
+            if (unformat(val, l)) {
+                if (l < 1 || l > ushort.max) {
+                    if (cli) {
+                        writefln(ETRANGE, l, ushort.max);
+                        exit(1);
+                    } else
+                        MessageAlt("Number out of range");
+                        return;
+                }
+                BytesPerRow = l & 0xFFFF;
+            } else {
+                if (cli) {
+                    writeln(ENOPARSE);
+                    exit(1);
+                } else 
+                    MessageAlt(ENOPARSE);
+            }
     }
 }
 
