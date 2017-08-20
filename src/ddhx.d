@@ -340,8 +340,8 @@ void UpdateDisplayRaw()
     char[] data, ascii;
     switch (CurrentDisplayMode) {
     default:
-        data = new char[3 * BytesPerRow]; ascii = new char[BytesPerRow];
-        memset(&data[0], ' ', data.length);
+        data = new char[3 * BytesPerRow];
+        ascii = new char[BytesPerRow];
         for (int o; o < bl; o += BytesPerRow) {
             size_t m = o + BytesPerRow;
 
@@ -354,9 +354,9 @@ void UpdateDisplayRaw()
             }
 
             switch (CurrentOffsetType) {
-                default: writef("%08X ", o + CurrentPosition); break;
-                case OffsetType.Decimal: writef("%08d ", o + CurrentPosition); break;
-                case OffsetType.Octal:   writef("%08o ", o + CurrentPosition); break;
+                default: printf("%08X ", o + CurrentPosition); break;
+                case OffsetType.Decimal: printf("%08d ", o + CurrentPosition); break;
+                case OffsetType.Octal:   printf("%08o ", o + CurrentPosition); break;
             }
 
             for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
@@ -365,38 +365,35 @@ void UpdateDisplayRaw()
                 ascii[ai] = FormatChar(Buffer[i]);
             }
 
-            writeln(data, "  ", ascii);
+            printf("%s  %s\n", &data[0], &ascii[0]);
         }
         break; // Default
     case DisplayMode.Text:
         ascii = new char[BytesPerRow * 3];
-        memset(&ascii[0], ' ', data.length);
         for (int o; o < bl; o += BytesPerRow) {
             size_t m = o + BytesPerRow;
             
             if (m > bl) { // If new maximum is overflowing buffer length
                 m = bl;
-                const size_t ml = bl - o, dml = ml * 3;
+                const size_t ml = bl - o;
                 // Only clear what is necessary
-                memset(&data[0] + dml, ' ', dml);
                 memset(&ascii[0] + ml, ' ', ml);
             }
 
             switch (CurrentOffsetType) {
-                default: writef("%08X  ", o + CurrentPosition); break;
-                case OffsetType.Decimal: writef("%08d  ", o + CurrentPosition); break;
-                case OffsetType.Octal:   writef("%08o  ", o + CurrentPosition); break;
+                default: printf("%08X  ", o + CurrentPosition); break;
+                case OffsetType.Decimal: printf("%08d  ", o + CurrentPosition); break;
+                case OffsetType.Octal:   printf("%08o  ", o + CurrentPosition); break;
             }
 
             for (int i = o, di = 1; i < m; ++i, di += 3)
                 ascii[di] = FormatChar(Buffer[i]);
             
-            writeln(ascii);
+            printf("%s\n", &ascii[0]);
         }
         break; // Text
     case DisplayMode.Data:
         data = new char[3 * BytesPerRow];
-        memset(&data[0], ' ', data.length);
 
         for (int o; o < bl; o += BytesPerRow) {
             size_t m = o + BytesPerRow;
@@ -406,13 +403,12 @@ void UpdateDisplayRaw()
                 const size_t ml = bl - o, dml = ml * 3;
                 // Only clear what is necessary
                 memset(&data[0] + dml, ' ', dml);
-                memset(&ascii[0] + ml, ' ', ml);
             }
 
             switch (CurrentOffsetType) {
-                default: writef("%08X ", o + CurrentPosition); break;
-                case OffsetType.Decimal: writef("%08d ", o + CurrentPosition); break;
-                case OffsetType.Octal:   writef("%08o ", o + CurrentPosition); break;
+                default: printf("%08X ", o + CurrentPosition); break;
+                case OffsetType.Decimal: printf("%08d ", o + CurrentPosition); break;
+                case OffsetType.Octal:   printf("%08o ", o + CurrentPosition); break;
             }
 
             for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
@@ -420,7 +416,7 @@ void UpdateDisplayRaw()
                 data[di + 2] = fflower(Buffer[i] &  0xF);
             }
 
-            writeln(data);
+            printf("%s\n", &data[0]);
         }
         break; // Hex
     }
