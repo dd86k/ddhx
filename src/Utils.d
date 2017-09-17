@@ -75,72 +75,29 @@ string formatsize(long size, bool base10 = false) //BUG: %f is unpure?
 
     const float s = size;
 
-    if (base10)
-    {
-        if (size > TiB)
-            if (size > 100 * TiB)
-                return format("%d TiB", size / TiB);
-            else if (size > 10 * TiB)
-                return format("%0.1f TiB", s / TiB);
-            else
-                return format("%0.2f TiB", s / TiB);
-        else if (size > GiB)
-            if (size > 100 * GiB)
-                return format("%d GiB", size / GiB);
-            else if (size > 10 * GiB)
-                return format("%0.1f GiB", s / GiB);
-            else
-                return format("%0.2f GiB", s / GiB);
-        else if (size > MiB)
-            if (size > 100 * MiB)
-                return format("%d MiB", size / MiB);
-            else if (size > 10 * MiB)
-                return format("%0.1f MiB", s / MiB);
-            else
-                return format("%0.2f MiB", s / MiB);
-        else if (size > KiB)
-            if (size > 100 * MiB)
-                return format("%d KiB", size / KiB);
-            else if (size > 10 * KiB)
-                return format("%0.1f KiB", s / KiB);
-            else
-                return format("%0.2f KiB", s / KiB);
-        else
-            return format("%d B", size);
-    }
-    else
-    {
-        if (size > TB)
-            if (size > 100 * TB)
-                return format("%d TB", size / TB);
-            else if (size > 10 * TB)
-                return format("%0.1f TB", s / TB);
-            else
-                return format("%0.2f TB", s / TB);
-        else if (size > GB)
-            if (size > 100 * GB)
-                return format("%d GB", size / GB);
-            else if (size > 10 * GB)
-                return format("%0.1f GB", s / GB);
-            else
-                return format("%0.2f GB", s / GB);
-        else if (size > MB)
-            if (size > 100 * MB)
-                return format("%d MB", size / MB);
-            else if (size > 10 * MB)
-                return format("%0.1f MB", s / MB);
-            else
-                return format("%0.2f MB", s / MB);
-        else if (size > KB)
-            if (size > 100 * KB)
-                return format("%d KB", size / KB);
-            else if (size > 10 * KB)
-                return format("%0.1f KB", s / KB);
-            else
-                return format("%0.2f KB", s / KB);
-        else
-            return format("%d B", size);
-    }
+    if (base10) {
+		if (size > TiB)
+            return format("%0.2f TiB\0", s / TiB);
+		else if (size > GiB)
+            return format("%0.2f GiB\0", s / GiB);
+		else if (size > MiB)
+            return format("%0.2f MiB\0", s / MiB);
+		else if (size > KiB)
+            return format("%0.2f KiB\0", s / KiB);
+		else
+			return format("%d B\0", size);
+	} else {
+		if (size > TB)
+            return format("%0.2f TB\0", s / TB);
+		else if (size > GB)
+            return format("%0.2f GB\0", s / GB);
+		else if (size > MB)
+            return format("%0.2f MB\0", s / MB);
+		else if (size > KB)
+            return format("%0.2f KB\0", s / KB);
+		else
+			return format("%d B\0", size);
+	}
 }
 
 /**
