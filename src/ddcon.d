@@ -182,7 +182,7 @@ void InvertColor()
     version (Windows)
         SetConsoleTextAttribute(hOut, COMMON_LVB_REVERSE_VIDEO | defaultColor);
     else version (Posix)
-        write("\033[7m");
+        printf("\033[7m");
 }
 
 /// Reset console color
@@ -191,7 +191,7 @@ void ResetColor()
     version (Windows)
         SetConsoleTextAttribute(hOut, defaultColor);
     else version (Posix)
-        write("\033[0m");
+        printf("\033[0m");
 }
 
 /*******************************************************************
@@ -333,7 +333,7 @@ void SetPos(int x, int y)
     }
     else version (Posix)
     { // 1-based
-        write("\033[", y + 1, ";", x + 1, "H");
+        printf("\033[%d;%dH", y + 1, x + 1);
     }
 }
 
