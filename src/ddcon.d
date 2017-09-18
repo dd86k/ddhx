@@ -9,7 +9,7 @@
 
 module ddcon;
 
-private import std.stdio;
+private import core.stdc.stdio;
 private alias sys = core.stdc.stdlib.system;
 
 version (Windows)
@@ -36,39 +36,13 @@ else version (Posix)
  * Initiation
  *******************************************************************/
 
-/// Initiate poshub
+/// Initiate ddcon
 void InitConsole()
 {
     version (Windows)
     {
         hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         hIn  = GetStdHandle(STD_INPUT_HANDLE);
-        /*HKEY key;
-        if (RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            `SOFTWARE\Microsoft\Command Processor`,
-            0,
-            0,
-            &key
-        ))*/
-        /*wstring e = `SOFTWARE\Microsoft\Command Processor\DefaultColor`w;
-        DWORD n = 4;
-        DWORD val;
-        if (RegQueryValueExW(
-                cast(const)HKEY_CURRENT_USER,
-                cast(const wchar*)&e[0],
-                cast(uint*)0,
-                cast(uint*)0,
-                cast(void*)&val,
-                &n
-            ) != 0)
-        {
-            defaultColor = val & 0xFFFF;
-        }*/
-
-        /*if (SetConsoleCP(65001) == 0) {
-            sys ("chcp 65001");
-        }*/
     }
 }
 
@@ -90,8 +64,8 @@ version (Windows)
 7 = White       F = Bright White
 */
 //https://msdn.microsoft.com/en-us/library/windows/desktop/ms682088(v=vs.85).aspx#_win32_character_attributes
-    enum FgColor
-    {
+    /// Foreground color
+    enum FgColor {
         Black = 0,
         Red    = FOREGROUND_RED,
         Green  = FOREGROUND_GREEN,
@@ -110,8 +84,8 @@ version (Windows)
         //LightYellow = FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_GREEN,
         White       = FOREGROUND_INTENSITY | Gray
     }
-    enum BgColor
-    {
+    /// Background color
+    enum BgColor {
         Black = 0,
         Red    = BACKGROUND_RED,
         Green  = BACKGROUND_GREEN,
@@ -143,25 +117,9 @@ Purple      0;35     Light Purple  1;35
 Brown       0;33     Yellow        1;33
 Light Gray  0;37     White         1;37
 */
-    enum INTENSIFY = 0x100;
-    enum FgColor
-    {
-        /*Black = 30,
-        Red = 31,
-        Blue = 34,
-        Green = 32,
-        Purple = 35,
-        //Brown = 33,
-        Cyan = 36,
-        Gray = 37,
-        DarkGray = INTENSIFY | Black,
-        LightRed = INTENSIFY | Red,
-        LightBlue = INTENSIFY | Blue,
-        LightGreen = INTENSIFY | Green,
-        LightPurple = 45,
-        LightCyan = 46,
-        //Yellow = 43,
-        White = INTENSIFY*/
+    private enum INTENSIFY = 0x100;
+    /// Foreground color
+    enum FgColor {
         Black = 0,
         Red,
         Green,
@@ -179,8 +137,8 @@ Light Gray  0;37     White         1;37
         LightCyan,
         White
     }
-    enum BgColor
-    {
+    /// Background
+    enum BgColor {
         Black = FgColor.Black << 8,
         Blue = FgColor.Blue << 8,
         Green = FgColor.Green << 8,
@@ -200,6 +158,8 @@ Light Gray  0;37     White         1;37
     }
 }
 
+/// Set console color
+/// Params: n = Compiled color
 void SetColor(int n)
 {
     version (Windows)
@@ -216,6 +176,7 @@ void SetColor(int n)
     }
 }
 
+/// Invert console color
 void InvertColor()
 {
     version (Windows)
@@ -224,6 +185,7 @@ void InvertColor()
         write("\033[7m");
 }
 
+/// Reset console color
 void ResetColor()
 {
     version (Windows)
@@ -242,10 +204,10 @@ void Clear()
     version (Windows)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi;
-        COORD c;
         GetConsoleScreenBufferInfo(hOut, &csbi);
-        int size = csbi.dwSize.X * csbi.dwSize.Y;
-        DWORD num = 0;
+        const int size = csbi.dwSize.X * csbi.dwSize.Y;
+        DWORD num;
+        COORD c;
         if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
             /*|| // .NET uses this but no idea why.
             FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/)
@@ -269,6 +231,7 @@ void Clear()
 // Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
 
 /// Window width
+/// Returns: window width
 @property ushort WindowWidth()
 {
     version (Windows)
@@ -290,6 +253,7 @@ void Clear()
 }
 
 /// Window width
+/// Params: w = New width
 @property void WindowWidth(int w)
 {
     version (Windows)
@@ -309,6 +273,7 @@ void Clear()
 }
 
 /// Window height
+/// Returns: window height
 @property ushort WindowHeight()
 {
     version (Windows)
@@ -330,6 +295,7 @@ void Clear()
 }
 
 /// Window height
+/// Params: h = New height
 @property void WindowHeight(int h)
 {
     version (Windows)
@@ -352,8 +318,12 @@ void Clear()
  * Cursor management
  *******************************************************************/
 
-/// Set cursor position x and y position respectively from the
-/// top left corner, 0-based.
+/**
+ * Set cursor position x and y position respectively from the top left corner, 0-based.
+ * Params:
+ *   x = X position
+ *   y = Y position
+ */
 void SetPos(int x, int y)
 {
     version (Windows)
@@ -400,64 +370,6 @@ void SetPos(int x, int y)
 }*/
 
 /*******************************************************************
- * Titles
- *******************************************************************/
-
-/// Set session title
-/// Param: value = Title to set
-@property void Title(string value)
-{
-    version (Windows)
-    {
-        // Sanity check
-        if (value[$-1] != '\0') value ~= '\0';
-        SetConsoleTitleA(&value[0]);
-    }
-}
-
-/// Set session title
-/// Param: value = Title to set
-@property void Title(wstring value)
-{
-    version (Windows)
-    {
-        // Sanity check
-        if (value[$-1] != '\0') value ~= '\0';
-        SetConsoleTitleW(&value[0]);
-    }
-}
-
-/// Get session title
-/// Returns: Console title
-@property string Title()
-{
-    version (Windows)
-    {
-        char[255] buf;
-        return buf[0..GetConsoleTitleA(&buf[0], MAX_PATH)].idup;
-    }
-    else 
-    {
-        return null;
-    }
-}
-
-/// Get session title
-/// Returns: Console title
-@property wstring TitleW()
-{
-    version (Windows)
-    {
-        wchar[255] buf;
-        return buf[0..GetConsoleTitleW(&buf[0], MAX_PATH)].idup;
-    }
-    else 
-    {
-        return null;
-    }
-}
-
-/*******************************************************************
  * Input
  *******************************************************************/
 
@@ -477,7 +389,7 @@ KeyInfo ReadKey(bool echo = false)
         {
             if (ir.KeyEvent.bKeyDown && ir.EventType == KEY_EVENT)
             {
-                DWORD state = ir.KeyEvent.dwControlKeyState;
+                const DWORD state = ir.KeyEvent.dwControlKeyState;
                 k.alt   = (state & ALT_PRESSED)   != 0;
                 k.ctrl  = (state & CTRL_PRESSED)  != 0;
                 k.shift = (state & SHIFT_PRESSED) != 0;
@@ -485,7 +397,7 @@ KeyInfo ReadKey(bool echo = false)
                 k.keyCode  = ir.KeyEvent.wVirtualKeyCode;
                 k.scanCode = ir.KeyEvent.wVirtualScanCode;
  
-                if (echo) write(k.keyChar);
+                if (echo) printf("%c", k.keyChar);
             }
         }
     }
@@ -547,79 +459,18 @@ KeyInfo ReadKey(bool echo = false)
     return k;
 }
 
-RawEvent ReadGlobal()
-{
-    version (Windows)
-    {
-        RawEvent r;
-
-        INPUT_RECORD ir;
-        DWORD num = 0;
-        if (ReadConsoleInput(hIn, &ir, 1, &num))
-        {
-            r.Type = cast(EventType)ir.EventType;
-
-            if (ir.KeyEvent.bKeyDown)
-            {
-                DWORD state = ir.KeyEvent.dwControlKeyState;
-                r.Key.alt   = (state & ALT_PRESSED)   != 0;
-                r.Key.ctrl  = (state & CTRL_PRESSED)  != 0;
-                r.Key.shift = (state & SHIFT_PRESSED) != 0;
-                r.Key.keyChar  = ir.KeyEvent.AsciiChar;
-                r.Key.keyCode  = ir.KeyEvent.wVirtualKeyCode;
-                r.Key.scanCode = ir.KeyEvent.wVirtualScanCode;
-            }
-
-            r.Mouse.Location.X = cast(ushort)ir.MouseEvent.dwMousePosition.X;
-            r.Mouse.Location.Y = cast(ushort)ir.MouseEvent.dwMousePosition.Y;
-            r.Mouse.Buttons = cast(ushort)ir.MouseEvent.dwButtonState;
-            r.Mouse.State = cast(ushort)ir.MouseEvent.dwControlKeyState;
-            r.Mouse.Type = cast(ushort)ir.MouseEvent.dwEventFlags;
-
-            r.Size.Width = ir.WindowBufferSizeEvent.dwSize.X;
-            r.Size.Height = ir.WindowBufferSizeEvent.dwSize.Y;
-        }
-
-        return r;
-    }
-    else version (Posix)
-    { //TODO: RawEvent (Posix)
-        RawEvent r;
-
-        return r;
-    }
-}
-
 /*******************************************************************
  * Handlers
  *******************************************************************/
 
-void SetCtrlHandler(void function() f)
+/*void SetCtrlHandler(void function() f)
 { //TODO: Ctrl handler
 
-}
+}*/
 
 /*******************************************************************
  * Emunerations
  *******************************************************************/
-
-enum EventType : ushort {
-    Key = 1, Mouse = 2, Resize = 4
-}
-
-enum MouseButton : ushort { // Windows compilant
-    Left = 1, Right = 2, Middle = 4, Mouse4 = 8, Mouse5 = 16
-}
-
-enum MouseState : ushort { // Windows compilant
-    RightAlt = 1, LeftAlt = 2, RightCtrl = 4,
-    LeftCtrl = 8, Shift = 0x10, NumLock = 0x20,
-    ScrollLock = 0x40, CapsLock = 0x80, EnhancedKey = 0x100
-}
-
-enum MouseEventType { // Windows compilant
-    Moved = 1, DoubleClick = 2, Wheel = 4, HorizontalWheel = 8
-}
 
 /// Key codes mapping.
 enum Key : ushort {
@@ -773,16 +624,7 @@ enum Key : ushort {
  * Structs
  *******************************************************************/
 
-struct RawEvent
-{
-    EventType Type;
-    KeyInfo Key;
-    MouseInfo Mouse;
-    WindowSize Size;
-}
-
 /// Key information structure
-// ala C#
 struct KeyInfo
 {
     /// UTF-8 Character.
@@ -799,15 +641,7 @@ struct KeyInfo
     bool shift;
 }
 
-struct MouseInfo
-{
-    struct ScreenLocation { ushort X, Y; }
-    ScreenLocation Location;
-    ushort Buttons;
-    ushort State;
-    ushort Type;
-}
-
+/// Console window size
 struct WindowSize
 {
     ushort Width, Height;
