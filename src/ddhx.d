@@ -37,8 +37,6 @@ DisplayMode CurrentDisplayMode; /// Current display view type
  * Internal
  */
 
-int LastErrorCode; /// Last error code to report
-string Filepath; /// Current file path
 File CurrentFile; /// Current file handle
 long CurrentPosition; /// Current file position
 ubyte[] Buffer; /// Display buffer
@@ -48,7 +46,7 @@ string tfsize; /// total formatted size
 //TODO: When typing g goto menu directly
 //      - Tried writing to stdin directly, crashes (2.074.0)
 
-/// Main ddhx entry point past CLI.
+/// Main app entry point
 void Start()
 {
     import Utils : formatsize;
@@ -335,44 +333,61 @@ void UpdateDisplay()
 /// Update display from buffer without setting cursor
 void UpdateDisplayRaw()
 {
+    import core.stdc.stdlib : malloc, free;
     import core.stdc.string : memset;
+
+    const int ds = (3 * BytesPerRow) + 1;
+    const int as = BytesPerRow + 1;
     const size_t bl = Buffer.length;
-    char[] data, ascii;
-    switch (CurrentDisplayMode) {
-    default:
-        data = new char[3 * BytesPerRow];
-        ascii = new char[BytesPerRow];
-        for (int o; o < bl; o += BytesPerRow) {
-            size_t m = o + BytesPerRow;
-
-            if (m > bl) { // If new maximum is overflowing buffer length
-                m = bl;
-                const size_t ml = bl - o, dml = ml * 3;
-                // Only clear what is necessary
-                memset(&data[0] + dml, ' ', dml);
-                memset(&ascii[0] + ml, ' ', ml);
+    ubyte* bufp = &Buffer[0] - 1;
+    char* data, ascii; // Buffers
+    long p = CurrentPosition;
+    final switch (CurrentDisplayMode) {
+    case DisplayMode.Default:
+        data = cast(char*)malloc(ds);
+        ascii = cast(char*)malloc(as);
+        memset(data, ' ', ds);
+        memset(ascii, ' ', as);
+        *(data + ds - 1) = '\0';
+        *(ascii + as - 1) = '\0';
+        for (int bi; bi < bl; p += CurrentPosition) {
+            final switch (CurrentOffsetType) {
+                case OffsetType.Hexadecimal: printf("%08X ", p); break;
+                case OffsetType.Decimal: printf("%08d ", p); break;
+                case OffsetType.Octal:   printf("%08o ", p); break;
             }
 
-            switch (CurrentOffsetType) {
-                default: printf("%08X ", o + CurrentPosition); break;
-                case OffsetType.Decimal: printf("%08d ", o + CurrentPosition); break;
-                case OffsetType.Octal:   printf("%08o ", o + CurrentPosition); break;
+            if ((bi += BytesPerRow) > bl) {
+                const ulong max = bl - (bi - BytesPerRow);
+                for (int i, a; a < max; i += 3, ++a) {
+                    *(data + i + 1) = ffupper(*++bufp & 0xF0);
+                    *(data + i + 2) = fflower(*bufp   &  0xF);
+                    *(ascii + a) = FormatChar(*bufp);
+                }
+                *(data + (max * 3)) = '\0';
+                *(ascii + max) = '\0';
+                printf("%s  %s\n", data, ascii);
+                free(ascii);
+                free(data);
+                return;
+            } else {
+                for (int i, a; a < BytesPerRow; i += 3, ++a) {
+                    *(data + i + 1) = ffupper(*++bufp & 0xF0);
+                    *(data + i + 2) = fflower(*bufp   &  0xF);
+                    *(ascii + a) = FormatChar(*bufp);
+                } 
             }
-
-            for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
-                data[di + 1] = ffupper(Buffer[i] & 0xF0);
-                data[di + 2] = fflower(Buffer[i] &  0xF);
-                ascii[ai] = FormatChar(Buffer[i]);
-            }
-
-            printf("%s  %s\n", &data[0], &ascii[0]);
+            printf("%s  %s\n", data, ascii);
         }
+        free(ascii);
+        free(data);
         break; // Default
     case DisplayMode.Text:
-        ascii = new char[BytesPerRow * 3];
-        for (int o; o < bl; o += BytesPerRow) {
+        ascii = cast(char*)malloc(BytesPerRow * 3);
+        ascii[as - 1] = '\0';
+        for (int o; o < bl; o += BytesPerRow, p += CurrentPosition) {
             size_t m = o + BytesPerRow;
-            
+
             if (m > bl) { // If new maximum is overflowing buffer length
                 m = bl;
                 const size_t ml = bl - o;
@@ -380,22 +395,23 @@ void UpdateDisplayRaw()
                 memset(&ascii[0] + ml, ' ', ml);
             }
 
-            switch (CurrentOffsetType) {
-                default: printf("%08X  ", o + CurrentPosition); break;
-                case OffsetType.Decimal: printf("%08d  ", o + CurrentPosition); break;
-                case OffsetType.Octal:   printf("%08o  ", o + CurrentPosition); break;
+            final switch (CurrentOffsetType) {
+                case OffsetType.Hexadecimal: printf("%08X  ", p); break;
+                case OffsetType.Decimal: printf("%08d  ", p); break;
+                case OffsetType.Octal:   printf("%08o  ", p); break;
             }
 
             for (int i = o, di = 1; i < m; ++i, di += 3)
                 ascii[di] = FormatChar(Buffer[i]);
-            
-            printf("%s\n", &ascii[0]);
+
+            printf("%s\n", ascii);
         }
+        free(ascii);
         break; // Text
     case DisplayMode.Data:
-        data = new char[3 * BytesPerRow];
-
-        for (int o; o < bl; o += BytesPerRow) {
+        data = cast(char*)malloc(3 * BytesPerRow);
+        data[ds] = '\0';
+        for (int o; o < bl; o += BytesPerRow, p += CurrentPosition) {
             size_t m = o + BytesPerRow;
 
             if (m > bl) { // If new maximum is overflowing buffer length
@@ -405,19 +421,21 @@ void UpdateDisplayRaw()
                 memset(&data[0] + dml, ' ', dml);
             }
 
-            switch (CurrentOffsetType) {
-                default: printf("%08X ", o + CurrentPosition); break;
-                case OffsetType.Decimal: printf("%08d ", o + CurrentPosition); break;
-                case OffsetType.Octal:   printf("%08o ", o + CurrentPosition); break;
+            final switch (CurrentOffsetType) {
+                case OffsetType.Hexadecimal: printf("%08X ", p); break;
+                case OffsetType.Decimal: printf("%08d ", p); break;
+                case OffsetType.Octal:   printf("%08o ", p); break;
             }
 
             for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
+                data[di] = ' ';
                 data[di + 1] = ffupper(Buffer[i] & 0xF0);
                 data[di + 2] = fflower(Buffer[i] &  0xF);
             }
 
-            printf("%s\n", &data[0]);
+            printf("%s\n", data);
         }
+        free(data);
         break; // Hex
     }
 }
@@ -472,9 +490,10 @@ void PrintFileInfo()
     import std.format : format;
     import std.file : getAttributes;
     import std.path : baseName;
-    const uint a = getAttributes(Filepath);
+    const uint a = getAttributes(CurrentFile.name);
     version (Windows)
-    { import core.sys.windows.winnt : // FILE_ATTRIBUTE_*
+    {
+        import core.sys.windows.winnt :
             FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM,
             FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_TEMPORARY, FILE_ATTRIBUTE_TEMPORARY,
             FILE_ATTRIBUTE_SPARSE_FILE, FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_ENCRYPTED;
@@ -489,10 +508,9 @@ void PrintFileInfo()
         c[7] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
     }
     else version (Posix)
-    { import core.sys.posix.sys.stat : S_ISVTX,
-            S_IRUSR, S_IWUSR, S_IXUSR,
-            S_IRGRP, S_IWGRP, S_IXGRP,
-            S_IROTH, S_IWOTH, S_IXOTH;
+    {
+        import core.sys.posix.sys.stat : S_ISVTX, S_IRUSR, S_IWUSR, S_IXUSR,
+            S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH;
         char[10] c;
         c[0] = a & S_IRUSR ? 'r' : '-';
         c[1] = a & S_IWUSR ? 'w' : '-';
@@ -508,7 +526,7 @@ void PrintFileInfo()
     MessageAlt(format("%s  %s  %s",
         c, // File attributes symbolic representation
         formatsize(fsize), // File formatted size
-        baseName(Filepath))
+        baseName(CurrentFile.name))
     );
 }
 
@@ -527,24 +545,23 @@ void Exit()
  */
 private char ffupper(ubyte b) pure @safe @nogc
 {
-    final switch (b)
-    {
-        case 0:    return '0';
-        case 0x10: return '1';
-        case 0x20: return '2';
-        case 0x30: return '3';
-        case 0x40: return '4';
-        case 0x50: return '5';
-        case 0x60: return '6';
-        case 0x70: return '7';
-        case 0x80: return '8';
-        case 0x90: return '9';
-        case 0xA0: return 'A';
-        case 0xB0: return 'B';
-        case 0xC0: return 'C';
-        case 0xD0: return 'D';
-        case 0xE0: return 'E';
-        case 0xF0: return 'F';
+    final switch (b) {
+    case 0:    return '0';
+    case 0x10: return '1';
+    case 0x20: return '2';
+    case 0x30: return '3';
+    case 0x40: return '4';
+    case 0x50: return '5';
+    case 0x60: return '6';
+    case 0x70: return '7';
+    case 0x80: return '8';
+    case 0x90: return '9';
+    case 0xA0: return 'A';
+    case 0xB0: return 'B';
+    case 0xC0: return 'C';
+    case 0xD0: return 'D';
+    case 0xE0: return 'E';
+    case 0xF0: return 'F';
     }
 }
 
@@ -555,35 +572,34 @@ private char ffupper(ubyte b) pure @safe @nogc
  */
 private char fflower(ubyte b) pure @safe @nogc
 {
-    final switch (b)
-    {
-        case 0:   return '0';
-        case 1:   return '1';
-        case 2:   return '2';
-        case 3:   return '3';
-        case 4:   return '4';
-        case 5:   return '5';
-        case 6:   return '6';
-        case 7:   return '7';
-        case 8:   return '8';
-        case 9:   return '9';
-        case 0xA: return 'A';
-        case 0xB: return 'B';
-        case 0xC: return 'C';
-        case 0xD: return 'D';
-        case 0xE: return 'E';
-        case 0xF: return 'F';
+    final switch (b) {
+    case 0:   return '0';
+    case 1:   return '1';
+    case 2:   return '2';
+    case 3:   return '3';
+    case 4:   return '4';
+    case 5:   return '5';
+    case 6:   return '6';
+    case 7:   return '7';
+    case 8:   return '8';
+    case 9:   return '9';
+    case 0xA: return 'A';
+    case 0xB: return 'B';
+    case 0xC: return 'C';
+    case 0xD: return 'D';
+    case 0xE: return 'E';
+    case 0xF: return 'F';
     }
 }
 
 /**
- * Converts an unsigned byte to an ASCII character. If the byte is outside of
- * the ASCII range, DEFAULT_CHAR will be returned.
+ * Converts an unsigned byte to an ASCII or EIBEC character. If the byte is outside of
+ * the ASCII range, $(D DEFAULT_CHAR) will be returned.
  * Params: c = Unsigned byte
  * Returns: ASCII character
  */
 pragma(inline, true):
-private char FormatChar(ubyte c) pure @safe @nogc
+private char FormatChar(ubyte c) pure @safe @nogc nothrow
 {
     return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
 }

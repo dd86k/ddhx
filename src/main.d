@@ -39,8 +39,7 @@ private int main(string[] args)
     {
         PrintHelp;
         writeln("\nOption             Description");
-        foreach (it; r.options)
-        { // "custom" defaultGetoptPrinter
+        foreach (it; r.options) { // "custom" defaultGetoptPrinter
             writefln("%*s, %-*s%s%s",
                 4,  it.optShort,
                 12, it.optLong,
@@ -51,17 +50,17 @@ private int main(string[] args)
     else
     {
         import std.file : exists, isDir;
-        Filepath = args[$ - 1];
+        string file = args[$ - 1];
 
-        if (exists(Filepath))
+        if (exists(file))
         {
-            if (isDir(Filepath))
+            if (isDir(file))
             {
-                writeln(`"`, Filepath, `" is a directory, exiting.`);
+                writeln(`"`, file, `" is a directory, exiting.`);
                 return 1;
             }
 
-            CurrentFile = File(Filepath);
+            CurrentFile = File(file);
 
             if (CurrentFile.size == 0)
             {
@@ -71,32 +70,30 @@ private int main(string[] args)
         }
         else
         {
-            writeln(`File "`, Filepath, `" doesn't exist, exiting.`);
+            writeln(`File "`, file, `" doesn't exist, exiting.`);
             return 1;
         }
 
         Start;
     }
-    return LastErrorCode;
+
+    return 0;
 }
 
-private void PrintHelp() // ..And description.
+private void PrintHelp()
 {
-    writeln("Interactive hexadecimal file viewer.");
-    writeln("Usage:");
-    writeln("  ddhx\t[Options] file");
-    writeln("  ddhx\t{--help|--version}");
+    printf("Interactive hexadecimal file viewer.\n");
+    printf("Usage:\n");
+    printf("  ddhx\t[Options] file\n");
+    printf("  ddhx\t{--help|--version}\n");
 }
 
 private void PrintVersion()
 {
     import core.stdc.stdlib : exit;
-debug {
-    writefln("ddhx %s-debug  (%s) ", APP_VERSION, __TIMESTAMP__);
-    writefln("Compiled %s with %s v%s", __FILE__, __VENDOR__, __VERSION__);
-} else
-    writefln("ddhx %s  (%s) ", APP_VERSION, __TIMESTAMP__);
-    writeln("MIT License: Copyright (c) dd86k 2017");
-    writeln("Project page: <https://github.com/dd86k/ddhx>");
-    exit(0); // getopt hack, or 2x optional string values could work
+    printf("ddhx %s  (%s)\n", &APP_VERSION[0], &__TIMESTAMP__[0]);
+    printf("Compiled %s with %s v%d\n", &__FILE__[0], &__VENDOR__[0], __VERSION__);
+    printf("MIT License: Copyright (c) dd86k 2017\n");
+    printf("Project page: <https://github.com/dd86k/ddhx>\n");
+    exit(0); // getopt hack
 }
