@@ -2,6 +2,8 @@ module ddhx;
 
 import std.stdio;
 import core.stdc.stdio : printf;
+import core.stdc.stdlib : malloc, free;
+import core.stdc.string : memset;
 import Menu;
 import ddcon;
 
@@ -9,21 +11,21 @@ import ddcon;
 //TODO: Tabs? (Probably not)
 
 /// App version
-enum APP_VERSION = "0.0.0-*";
+enum APP_VERSION = "0.0.0-1";
 
 /// Offset type (hex, dec, etc.)
-enum OffsetType {
+enum OffsetType : ubyte {
 	Hexadecimal, Decimal, Octal
 }
 
 //TODO: PureText (does not align with offset bar)
 //TODO: PureData (does not align with offset bar)
 /// 
-enum DisplayMode {
+enum DisplayMode : ubyte {
     Default, Text, Data
 }
 
-enum DEFAULT_CHAR = '.'; /// Default non-ASCII character
+enum DEFAULT_CHAR = '.'; /// Default character for non-ASCII characters
 
 /*
  * User settings
@@ -40,6 +42,7 @@ DisplayMode CurrentDisplayMode; /// Current display view type
 File CurrentFile; /// Current file handle
 long CurrentPosition; /// Current file position
 ubyte[] Buffer; /// Display buffer
+size_t BufferLength; /// Buffer length
 long fsize; /// File size, used to avoid spamming system functions
 string tfsize; /// total formatted size
 
@@ -50,12 +53,10 @@ string tfsize; /// total formatted size
 void Start()
 {
     import Utils : formatsize;
-    fsize = CurrentFile.size;
     tfsize = formatsize(fsize);
 	InitConsole;
 	PrepBuffer;
-    if (fsize > 0)
-	    ReadFile;
+    ReadFile;
     Clear;
 	UpdateOffsetBar;
 	UpdateDisplayRaw;
@@ -99,7 +100,7 @@ void Start()
 void HandleKey(const KeyInfo* k)
 {
     import SettingHandler : HandleWidth;
-    size_t bs = Buffer.length;
+    alias bs = BufferLength;
 
     switch (k.keyCode)
     {
@@ -245,13 +246,18 @@ void UpdateInfoBar()
 void UpdateInfoBarRaw()
 {
     import Utils : formatsize;
-    const size_t bufs = Buffer.length;
     const float f = CurrentPosition; // Converts to float implicitly
-    writef(" %*s | %*s/%*s | %7.3f%%",
+    /*writef(" %*s | %*s/%*s | %7.3f%%",
         7, formatsize(bufs),             // Buffer size
         10, formatsize(CurrentPosition), // Formatted position
         10, tfsize,                      // Total file size
         ((f + bufs) / fsize) * 100       // Pos/filesize%
+    );*/
+    printf(" %*s | %*s/%*s | %7.3f%%", // Works so far
+        7, &formatsize(BufferLength)[0],             // Buffer size
+        10, &formatsize(CurrentPosition)[0], // Formatted position
+        10, &tfsize[0],                      // Total file size
+        ((f + BufferLength) / fsize) * 100       // Pos/filesize%
     );
 }
 
@@ -261,11 +267,11 @@ void PrepBuffer()
 	const int h = WindowHeight - 2;
     const int bufs = h * BytesPerRow; // Proposed buffer size
     Buffer = new ubyte[fsize >= bufs ? bufs : cast(uint)fsize];
+    BufferLength = bufs;
 }
 
 private void ReadFile()
 {
-    CurrentFile.seek(CurrentPosition);
     CurrentFile.rawRead(Buffer);
 }
 
@@ -279,8 +285,9 @@ void Goto(long pos)
 {
     if (Buffer.length < fsize)
     {
-        CurrentPosition = pos;
-        RefreshDisplay;
+        CurrentFile.seek(CurrentPosition = pos);
+        ReadFile;
+        UpdateDisplay;
         UpdateInfoBarRaw;
     }
     else
@@ -333,15 +340,12 @@ void UpdateDisplay()
 /// Update display from buffer without setting cursor
 void UpdateDisplayRaw()
 {
-    import core.stdc.stdlib : malloc, free;
-    import core.stdc.string : memset;
-
     const int ds = (3 * BytesPerRow) + 1;
     const int as = BytesPerRow + 1;
-    const size_t bl = Buffer.length;
-    ubyte* bufp = &Buffer[0] - 1;
+    ubyte* bufp = &Buffer[0];
     char* data, ascii; // Buffers
     long p = CurrentPosition;
+
     final switch (CurrentDisplayMode) {
     case DisplayMode.Default:
         data = cast(char*)malloc(ds);
@@ -350,19 +354,20 @@ void UpdateDisplayRaw()
         memset(ascii, ' ', as);
         *(data + ds - 1) = '\0';
         *(ascii + as - 1) = '\0';
-        for (int bi; bi < bl; p += CurrentPosition) {
+        for (int bi; bi < BufferLength; p += BytesPerRow) {
             final switch (CurrentOffsetType) {
                 case OffsetType.Hexadecimal: printf("%08X ", p); break;
                 case OffsetType.Decimal: printf("%08d ", p); break;
                 case OffsetType.Octal:   printf("%08o ", p); break;
             }
 
-            if ((bi += BytesPerRow) > bl) {
-                const ulong max = bl - (bi - BytesPerRow);
+            if ((bi += BytesPerRow) > BufferLength) {
+                const ulong max = BufferLength - (bi - BytesPerRow);
                 for (int i, a; a < max; i += 3, ++a) {
-                    *(data + i + 1) = ffupper(*++bufp & 0xF0);
+                    *(data + i + 1) = ffupper(*bufp & 0xF0);
                     *(data + i + 2) = fflower(*bufp   &  0xF);
                     *(ascii + a) = FormatChar(*bufp);
+                    ++bufp;
                 }
                 *(data + (max * 3)) = '\0';
                 *(ascii + max) = '\0';
@@ -372,9 +377,10 @@ void UpdateDisplayRaw()
                 return;
             } else {
                 for (int i, a; a < BytesPerRow; i += 3, ++a) {
-                    *(data + i + 1) = ffupper(*++bufp & 0xF0);
+                    *(data + i + 1) = ffupper(*bufp & 0xF0);
                     *(data + i + 2) = fflower(*bufp   &  0xF);
                     *(ascii + a) = FormatChar(*bufp);
+                    ++bufp;
                 } 
             }
             printf("%s  %s\n", data, ascii);
@@ -385,12 +391,12 @@ void UpdateDisplayRaw()
     case DisplayMode.Text:
         ascii = cast(char*)malloc(BytesPerRow * 3);
         ascii[as - 1] = '\0';
-        for (int o; o < bl; o += BytesPerRow, p += CurrentPosition) {
+        for (int o; o < BufferLength; o += BytesPerRow, p += CurrentPosition) {
             size_t m = o + BytesPerRow;
 
-            if (m > bl) { // If new maximum is overflowing buffer length
-                m = bl;
-                const size_t ml = bl - o;
+            if (m > BufferLength) { // If new maximum is overflowing buffer length
+                m = BufferLength;
+                const size_t ml = BufferLength - o;
                 // Only clear what is necessary
                 memset(&ascii[0] + ml, ' ', ml);
             }
@@ -401,8 +407,10 @@ void UpdateDisplayRaw()
                 case OffsetType.Octal:   printf("%08o  ", p); break;
             }
 
-            for (int i = o, di = 1; i < m; ++i, di += 3)
-                ascii[di] = FormatChar(Buffer[i]);
+            for (int i = o, di = 1; i < m; ++i, di += 3) {
+                ascii[di] = FormatChar(*bufp);
+                ++bufp;
+            }
 
             printf("%s\n", ascii);
         }
@@ -411,12 +419,12 @@ void UpdateDisplayRaw()
     case DisplayMode.Data:
         data = cast(char*)malloc(3 * BytesPerRow);
         data[ds] = '\0';
-        for (int o; o < bl; o += BytesPerRow, p += CurrentPosition) {
+        for (int o; o < BufferLength; o += BytesPerRow, p += CurrentPosition) {
             size_t m = o + BytesPerRow;
 
-            if (m > bl) { // If new maximum is overflowing buffer length
-                m = bl;
-                const size_t ml = bl - o, dml = ml * 3;
+            if (m > BufferLength) { // If new maximum is overflowing buffer length
+                m = BufferLength;
+                const size_t ml = BufferLength - o, dml = ml * 3;
                 // Only clear what is necessary
                 memset(&data[0] + dml, ' ', dml);
             }
@@ -593,13 +601,24 @@ private char fflower(ubyte b) pure @safe @nogc
 }
 
 /**
- * Converts an unsigned byte to an ASCII or EIBEC character. If the byte is outside of
+ * Converts an unsigned byte to an ASCII character. If the byte is outside of
  * the ASCII range, $(D DEFAULT_CHAR) will be returned.
  * Params: c = Unsigned byte
  * Returns: ASCII character
  */
-pragma(inline, true):
-private char FormatChar(ubyte c) pure @safe @nogc nothrow
+char FormatChar(ubyte c) pure @safe @nogc nothrow
 {
-    return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
+    //TODO: EIBEC
+    /*version(X86) asm pure @safe @nogc nothrow { naked;
+       mov AL, c;
+       cmp AL, 0x7E;
+       ja FC_OUT;
+       cmp AL, 0x20; // ' '
+       jb FC_OUT;
+       ret;
+FC_OUT:
+       mov AL, 0x2E; // '.'
+       ret;
+    } else*/
+        return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
 }

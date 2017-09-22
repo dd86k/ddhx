@@ -62,7 +62,7 @@ private int main(string[] args)
 
             CurrentFile = File(file);
 
-            if (CurrentFile.size == 0)
+            if ((fsize = CurrentFile.size) == 0)
             {
                 stderr.writeln("Empty file, exiting.");
                 return 1;
