@@ -1,6 +1,6 @@
 module ddhx;
 
-import std.stdio;
+import std.stdio : File, write, writeln, writef;
 import core.stdc.stdio : printf;
 import core.stdc.stdlib : malloc, free;
 import core.stdc.string : memset;
@@ -11,15 +11,13 @@ import ddcon;
 //TODO: Tabs? (Probably not)
 
 /// App version
-enum APP_VERSION = "0.0.0-1";
+enum APP_VERSION = "0.0.0-2";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType : ubyte {
 	Hexadecimal, Decimal, Octal
 }
 
-//TODO: PureText (does not align with offset bar)
-//TODO: PureData (does not align with offset bar)
 /// 
 enum DisplayMode : ubyte {
     Default, Text, Data
@@ -73,7 +71,7 @@ void Start()
 
 /*void HandleMouse(const MouseInfo* mi)
 {
-    size_t bs = Buffer.length;
+    size_t bs = BufferLength;
 
     switch (mi.Type) {
         case MouseEventType.Wheel:
@@ -283,7 +281,7 @@ private void ReadFile()
  */
 void Goto(long pos)
 {
-    if (Buffer.length < fsize)
+    if (BufferLength < fsize)
     {
         CurrentFile.seek(CurrentPosition = pos);
         ReadFile;
@@ -301,8 +299,8 @@ void Goto(long pos)
  */
 void GotoC(long pos)
 {
-    if (pos + Buffer.length > fsize)
-        Goto(fsize - Buffer.length);
+    if (pos + BufferLength > fsize)
+        Goto(fsize - BufferLength);
     else
         Goto(pos);
 }
@@ -318,7 +316,7 @@ void GotoStr(string str)
     import Utils : unformat;
     long l;
     if (unformat(str, l)) {
-        if (l >= 0 && l < fsize - Buffer.length) {
+        if (l >= 0 && l < fsize - BufferLength) {
             Goto(l);
             UpdateOffsetBar;
         } else {
@@ -340,6 +338,7 @@ void UpdateDisplay()
 /// Update display from buffer without setting cursor
 void UpdateDisplayRaw()
 {
+    //TODO: Consider moving smaller buffers as global
     const int ds = (3 * BytesPerRow) + 1;
     const int as = BytesPerRow + 1;
     ubyte* bufp = &Buffer[0];
@@ -609,16 +608,5 @@ private char fflower(ubyte b) pure @safe @nogc
 char FormatChar(ubyte c) pure @safe @nogc nothrow
 {
     //TODO: EIBEC
-    /*version(X86) asm pure @safe @nogc nothrow { naked;
-       mov AL, c;
-       cmp AL, 0x7E;
-       ja FC_OUT;
-       cmp AL, 0x20; // ' '
-       jb FC_OUT;
-       ret;
-FC_OUT:
-       mov AL, 0x2E; // '.'
-       ret;
-    } else*/
-        return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
+    return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
 }
