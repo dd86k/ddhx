@@ -1,7 +1,5 @@
 module SettingHandler;
 
-//TODO: Maybe do a "central" CLI handler?
-
 import std.stdio;
 import ddhx;
 import Utils : unformat;

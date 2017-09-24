@@ -62,8 +62,7 @@ void Start()
 	while (1)
 	{
         const KeyInfo g = ReadKey;
-        //TODO: Handle resize event (Windows)
-        //TODO: Handle resize event (Posix)
+        //TODO: Handle resize event
         HandleKey(&g);
 	}
 }
@@ -318,7 +317,6 @@ void UpdateDisplay()
 /// Update display from buffer without setting cursor
 void UpdateDisplayRaw()
 {
-    //TODO: Consider moving smaller buffers as global
     const int ds = (3 * BytesPerRow) + 1;
     const int as = BytesPerRow + 1;
     ubyte* bufp = &Buffer[0];

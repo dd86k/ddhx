@@ -38,14 +38,8 @@ void SearchUTF16String(const char[] s, bool invert = false)
     debug MessageAlt(format("WS LENGTH: %d", l));
     ubyte[] buf = new ubyte[l];
     memcpy(&buf[0], &ws[0], l);
+    //TODO: invert
     SearchArray(buf, "wstring");
-    /+ubyte[] 
-    memcpy(&
-    /*const size_t l = s.length;
-    ubyte[] buf = new ubyte[l * 2];
-    for (int i = invert ? 0 : 1, e; e < l; i += 2, ++e)
-        buf[i] = s[e];*/
-    SearchArray(ws, "wstring");+/
 }
 
 /**
@@ -56,11 +50,16 @@ void SearchUTF16String(const char[] s, bool invert = false)
  */
 void SearchUTF32String(const char[] s, bool invert = false)
 {
-    const size_t l = s.length;
-    ubyte[] buf = new ubyte[l * 4];
-//TODO: Richer UTF-8 to UTF-16 transformation
-    for (int i = invert ? 0 : 3, e; e < l; i += 4, ++e)
-        buf[i] = s[e];
+    dstring ds;
+    transcode(s, ds);
+    size_t l;
+    wchar* dp = cast(wchar*)&ds[0];
+    while (*dp != 0xFFFF) { ++dp; ++l; }
+    l *= 4;
+    debug MessageAlt(format("DS LENGTH: %d", l));
+    ubyte[] buf = new ubyte[l];
+    memcpy(&buf[0], &ds[0], l);
+    //TODO: invert
     SearchArray(buf, "dstring");
 }
 
