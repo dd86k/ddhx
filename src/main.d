@@ -10,14 +10,14 @@ import ddhx;
 import SettingHandler;
 
 //TODO: CLI SWITCHES
-// --dump: Dump into file (like xxd)
+// --dump: Dump into stdout (which then user can redirect)
 // -sb: Search byte, e.g. -sb ffh -> init -> Echo result
 
 private int main(string[] args)
 {
     import std.getopt : getopt, GetoptResult, GetOptException, config;
 
-    if (args.length <= 1)
+    if (args.length <= 1) // We need a file!
     {
         PrintHelp;
         return 0;
@@ -85,7 +85,7 @@ private void PrintHelp()
     printf("Interactive hexadecimal file viewer.\n");
     printf("Usage:\n");
     printf("  ddhx\t[Options] file\n");
-    printf("  ddhx\t{--help|--version}\n");
+    printf("  ddhx\t{-h|--help|-v|--version}\n");
 }
 
 private void PrintVersion()

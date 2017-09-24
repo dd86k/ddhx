@@ -1,14 +1,13 @@
 module ddhx;
 
-import std.stdio : File, write, writeln, writef;
+import std.stdio : File, write, writef;
 import core.stdc.stdio : printf;
 import core.stdc.stdlib : malloc, free;
 import core.stdc.string : memset;
 import Menu;
 import ddcon;
 
-//TODO: Bookmarks page (What shortcut or function key?)
-//TODO: Tabs? (Probably not)
+//TODO: Bookmarks page? (What shortcut or function key?)
 
 /// App version
 enum APP_VERSION = "0.0.0-2";
@@ -23,7 +22,7 @@ enum DisplayMode : ubyte {
     Default, Text, Data
 }
 
-enum DEFAULT_CHAR = '.'; /// Default character for non-ASCII characters
+enum DEFAULT_CHAR = '.'; /// Default character for non-displayable characters
 
 /*
  * User settings
@@ -167,7 +166,7 @@ void HandleKey(const KeyInfo* k)
      */
 
     case Key.Escape, Key.Enter:
-        EnterMenu();
+        EnterMenu;
         break;
     /*case Key.G:
         EnterMenu("g");
@@ -177,21 +176,12 @@ void HandleKey(const KeyInfo* k)
         PrintFileInfo;
         break;
     case Key.R, Key.F5:
-        Clear;
-        UpdateOffsetBar;
-        UpdateDisplayRaw;
-        UpdateInfoBarRaw;
+        RefreshAll;
         break;
     case Key.A:
         HandleWidth("a");
-        PrepBuffer;
-        ReadFile;
-        Clear;
-        UpdateOffsetBar;
-        UpdateDisplayRaw;
-        UpdateInfoBarRaw;
+        RefreshAll;
         break;
-    case Key.H: ShowHelp; break;
     case Key.Q: Exit; break;
     default:
     }
@@ -199,16 +189,13 @@ void HandleKey(const KeyInfo* k)
 
 /// Refresh the entire screen
 void RefreshAll() {
+    PrepBuffer;
     Clear;
+    CurrentFile.seek(CurrentPosition);
     ReadFile;
     UpdateOffsetBar;
     UpdateDisplayRaw;
     UpdateInfoBarRaw;
-    /*RefreshDisplay;
-    ClearMsg;
-    UpdateOffsetBar;
-    ClearMsgAlt;
-    UpdateInfoBar;*/
 }
 
 /**
@@ -217,20 +204,20 @@ void RefreshAll() {
 void UpdateOffsetBar()
 {
 	SetPos(0, 0);
-	write("Offset ");
-	switch (CurrentOffsetType)
+	printf("Offset ");
+	final switch (CurrentOffsetType)
 	{
-		default: write("h ");
+		case OffsetType.Hexadecimal: printf("h ");
 	        for (ushort i; i < BytesPerRow; ++i) printf(" %02X", i);
             break;
-		case OffsetType.Decimal: write("d ");
+		case OffsetType.Decimal: printf("d ");
 	        for (ushort i; i < BytesPerRow; ++i) printf(" %02d", i);
             break;
-		case OffsetType.Octal: write("o ");
+		case OffsetType.Octal: printf("o ");
 	        for (ushort i; i < BytesPerRow; ++i) printf(" %02o", i);
             break;
 	}
-    writeln; // In case of "raw" function being called
+    printf("\n"); // In case of "raw" function being called afterwards
 }
 
 /// Update the bottom current information bar.
@@ -245,25 +232,18 @@ void UpdateInfoBarRaw()
 {
     import Utils : formatsize;
     const float f = CurrentPosition; // Converts to float implicitly
-    /*writef(" %*s | %*s/%*s | %7.3f%%",
-        7, formatsize(bufs),             // Buffer size
-        10, formatsize(CurrentPosition), // Formatted position
-        10, tfsize,                      // Total file size
-        ((f + bufs) / fsize) * 100       // Pos/filesize%
-    );*/
-    printf(" %*s | %*s/%*s | %7.3f%%", // Works so far
-        7, &formatsize(BufferLength)[0],             // Buffer size
+    printf(" %*s | %*s/%*s | %7.3f%%",
+        7, &formatsize(BufferLength)[0],     // Buffer size
         10, &formatsize(CurrentPosition)[0], // Formatted position
         10, &tfsize[0],                      // Total file size
-        ((f + BufferLength) / fsize) * 100       // Pos/filesize%
+        ((f + BufferLength) / fsize) * 100   // Pos/filesize%
     );
 }
 
 /// Prepare buffer according to console/term height
 void PrepBuffer()
 {
-	const int h = WindowHeight - 2;
-    const int bufs = h * BytesPerRow; // Proposed buffer size
+    const int bufs = (WindowHeight - 2) * BytesPerRow; // Proposed buffer size
     Buffer = new ubyte[fsize >= bufs ? bufs : cast(uint)fsize];
     BufferLength = bufs;
 }
@@ -495,43 +475,8 @@ void PrintFileInfo()
 {
     import Utils : formatsize;
     import std.format : format;
-    import std.file : getAttributes;
     import std.path : baseName;
-    const uint a = getAttributes(CurrentFile.name);
-    version (Windows)
-    {
-        import core.sys.windows.winnt :
-            FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM,
-            FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_TEMPORARY, FILE_ATTRIBUTE_TEMPORARY,
-            FILE_ATTRIBUTE_SPARSE_FILE, FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_ENCRYPTED;
-        char[8] c;
-        c[0] = a & FILE_ATTRIBUTE_READONLY ? 'r' : '-';
-        c[1] = a & FILE_ATTRIBUTE_HIDDEN ? 'h' : '-';
-        c[2] = a & FILE_ATTRIBUTE_SYSTEM ? 's' : '-';
-        c[3] = a & FILE_ATTRIBUTE_ARCHIVE ? 'a' : '-';
-        c[4] = a & FILE_ATTRIBUTE_TEMPORARY ? 't' : '-';
-        c[6] = a & FILE_ATTRIBUTE_SPARSE_FILE ? 'S' : '-';
-        c[5] = a & FILE_ATTRIBUTE_COMPRESSED ? 'c' : '-';
-        c[7] = a & FILE_ATTRIBUTE_ENCRYPTED ? 'e' : '-';
-    }
-    else version (Posix)
-    {
-        import core.sys.posix.sys.stat : S_ISVTX, S_IRUSR, S_IWUSR, S_IXUSR,
-            S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH;
-        char[10] c;
-        c[0] = a & S_IRUSR ? 'r' : '-';
-        c[1] = a & S_IWUSR ? 'w' : '-';
-        c[2] = a & S_IXUSR ? 'x' : '-';
-        c[3] = a & S_IRGRP ? 'r' : '-';
-        c[4] = a & S_IWGRP ? 'w' : '-';
-        c[5] = a & S_IXGRP ? 'x' : '-';
-        c[6] = a & S_IROTH ? 'r' : '-';
-        c[7] = a & S_IWOTH ? 'w' : '-';
-        c[8] = a & S_IXOTH ? 'x' : '-';
-        c[9] = a & S_ISVTX ? 't' : '-';
-    }
-    MessageAlt(format("%s  %s  %s",
-        c, // File attributes symbolic representation
+    MessageAlt(format("%s  %s",
         formatsize(fsize), // File formatted size
         baseName(CurrentFile.name))
     );

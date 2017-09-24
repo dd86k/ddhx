@@ -10,7 +10,8 @@
 module ddcon;
 
 private import core.stdc.stdio;
-private alias sys = core.stdc.stdlib.system;
+private import core.stdc.stdlib : system;
+private alias system sys;
 
 version (Windows)
 {
@@ -36,162 +37,40 @@ else version (Posix)
  * Initiation
  *******************************************************************/
 
-/// Initiate ddcon
+/// Initiate poshub
 void InitConsole()
 {
     version (Windows)
     {
         hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         hIn  = GetStdHandle(STD_INPUT_HANDLE);
-    }
-}
+        /*HKEY key;
+        if (RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            `SOFTWARE\Microsoft\Command Processor`,
+            0,
+            0,
+            &key
+        ))*/
+        /*wstring e = `SOFTWARE\Microsoft\Command Processor\DefaultColor`w;
+        DWORD n = 4;
+        DWORD val;
+        if (RegQueryValueExW(
+                cast(const)HKEY_CURRENT_USER,
+                cast(const wchar*)&e[0],
+                cast(uint*)0,
+                cast(uint*)0,
+                cast(void*)&val,
+                &n
+            ) != 0)
+        {
+            defaultColor = val & 0xFFFF;
+        }*/
 
-/*******************************************************************
- * Colors
- *******************************************************************/
-
-//TODO: Complete colors and stuff
-version (Windows)
-{
-/*
-0 = Black       8 = Gray
-1 = Blue        9 = Light Blue
-2 = Green       A = Light Green
-3 = Aqua        B = Light Aqua
-4 = Red         C = Light Red
-5 = Purple      D = Light Purple
-6 = Yellow      E = Light Yellow
-7 = White       F = Bright White
-*/
-//https://msdn.microsoft.com/en-us/library/windows/desktop/ms682088(v=vs.85).aspx#_win32_character_attributes
-    /// Foreground color
-    enum FgColor {
-        Black = 0,
-        Red    = FOREGROUND_RED,
-        Green  = FOREGROUND_GREEN,
-        Blue   = FOREGROUND_BLUE,
-        Purple = FOREGROUND_RED | FOREGROUND_BLUE,
-        //Yellow = FOREGROUND_RED | FOREGROUND_GREEN,
-        Cyan   = FOREGROUND_BLUE | FOREGROUND_GREEN,
-        // check if gray/darkgray are ok
-        Gray   = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
-        DarkGray    = FOREGROUND_INTENSITY,
-        LightRed    = FOREGROUND_INTENSITY | FOREGROUND_RED,
-        LightGreen  = FOREGROUND_INTENSITY | FOREGROUND_GREEN,
-        LightBlue   = FOREGROUND_INTENSITY | FOREGROUND_BLUE,
-        LightPurple = FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_BLUE,
-        LightCyan   = FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN,
-        //LightYellow = FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_GREEN,
-        White       = FOREGROUND_INTENSITY | Gray
+        /*if (SetConsoleCP(65001) == 0) {
+            sys ("chcp 65001");
+        }*/
     }
-    /// Background color
-    enum BgColor {
-        Black = 0,
-        Red    = BACKGROUND_RED,
-        Green  = BACKGROUND_GREEN,
-        Blue   = BACKGROUND_BLUE,
-        Purple = BACKGROUND_RED | BACKGROUND_BLUE,
-        //Yellow = BACKGROUND_RED | BACKGROUND_GREEN,
-        Cyan   = BACKGROUND_BLUE | BACKGROUND_GREEN,
-        // check if gray/darkgray are ok
-        Gray   = BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE,
-        DarkGray    = BACKGROUND_INTENSITY,
-        LightRed    = BACKGROUND_INTENSITY | BACKGROUND_RED,
-        LightGreen  = BACKGROUND_INTENSITY | BACKGROUND_GREEN,
-        LightBlue   = BACKGROUND_INTENSITY | BACKGROUND_BLUE,
-        LightPurple = BACKGROUND_INTENSITY | BACKGROUND_RED | BACKGROUND_BLUE,
-        LightCyan   = BACKGROUND_INTENSITY | BACKGROUND_BLUE | BACKGROUND_GREEN,
-        //LightYellow = BACKGROUND_INTENSITY | BACKGROUND_RED | BACKGROUND_GREEN,
-        White       = BACKGROUND_INTENSITY | Gray
-    }
-}
-else version (Posix)
-{
-/*
-Black       0;30     Dark Gray     1;30
-Blue        0;34     Light Blue    1;34
-Green       0;32     Light Green   1;32
-Cyan        0;36     Light Cyan    1;36
-Red         0;31     Light Red     1;31
-Purple      0;35     Light Purple  1;35
-Brown       0;33     Yellow        1;33
-Light Gray  0;37     White         1;37
-*/
-    private enum INTENSIFY = 0x100;
-    /// Foreground color
-    enum FgColor {
-        Black = 0,
-        Red,
-        Green,
-        //Brown,
-        Blue = 4,
-        Purple,
-        Cyan,
-        Gray,
-        DarkGray,
-        LightRed,
-        LightGreen,
-        //LightYellow,
-        LightBlue = 12,
-        LightPurple,
-        LightCyan,
-        White
-    }
-    /// Background
-    enum BgColor {
-        Black = FgColor.Black << 8,
-        Blue = FgColor.Blue << 8,
-        Green = FgColor.Green << 8,
-        Cyan = FgColor.Cyan << 8,
-        Red = FgColor.Red << 8,
-        Purple = FgColor.Purple << 8,
-        //Brown = FgColor.Brown << 8,
-        Gray = FgColor.Gray << 8,
-        DarkGray = FgColor.DarkGray << 8,
-        LightBlue = FgColor.LightBlue << 8,
-        LightGreen = FgColor.LightGreen << 8,
-        LightCyan = FgColor.LightCyan << 8,
-        LightRed = FgColor.LightRed << 8,
-        LightPurple = FgColor.LightPurple << 8,
-        //Yellow = FgColor.Yellow << 8,
-        White = FgColor.White << 8
-    }
-}
-
-/// Set console color
-/// Params: n = Compiled color
-void SetColor(int n)
-{
-    version (Windows)
-    {
-        SetConsoleTextAttribute(hOut, n & 0xFFFF);
-    }
-    else version (Posix)
-    { // Foreground and background
-        printf("\033[38;5;%dm\033[48;5;%dm", n & 0xff, (n >> 8) & 0xff);
-    }
-    else
-    {
-
-    }
-}
-
-/// Invert console color
-void InvertColor()
-{
-    version (Windows)
-        SetConsoleTextAttribute(hOut, COMMON_LVB_REVERSE_VIDEO | defaultColor);
-    else version (Posix)
-        printf("\033[7m");
-}
-
-/// Reset console color
-void ResetColor()
-{
-    version (Windows)
-        SetConsoleTextAttribute(hOut, defaultColor);
-    else version (Posix)
-        printf("\033[0m");
 }
 
 /*******************************************************************
@@ -204,10 +83,10 @@ void Clear()
     version (Windows)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi;
+        COORD c;
         GetConsoleScreenBufferInfo(hOut, &csbi);
         const int size = csbi.dwSize.X * csbi.dwSize.Y;
-        DWORD num;
-        COORD c;
+        DWORD num = 0;
         if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
             /*|| // .NET uses this but no idea why.
             FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/)
@@ -231,7 +110,6 @@ void Clear()
 // Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
 
 /// Window width
-/// Returns: window width
 @property ushort WindowWidth()
 {
     version (Windows)
@@ -253,7 +131,6 @@ void Clear()
 }
 
 /// Window width
-/// Params: w = New width
 @property void WindowWidth(int w)
 {
     version (Windows)
@@ -273,7 +150,6 @@ void Clear()
 }
 
 /// Window height
-/// Returns: window height
 @property ushort WindowHeight()
 {
     version (Windows)
@@ -295,7 +171,6 @@ void Clear()
 }
 
 /// Window height
-/// Params: h = New height
 @property void WindowHeight(int h)
 {
     version (Windows)
@@ -318,12 +193,8 @@ void Clear()
  * Cursor management
  *******************************************************************/
 
-/**
- * Set cursor position x and y position respectively from the top left corner, 0-based.
- * Params:
- *   x = X position
- *   y = Y position
- */
+/// Set cursor position x and y position respectively from the
+/// top left corner, 0-based.
 void SetPos(int x, int y)
 {
     version (Windows)
@@ -625,6 +496,7 @@ enum Key : ushort {
  *******************************************************************/
 
 /// Key information structure
+// ala C#
 struct KeyInfo
 {
     /// UTF-8 Character.
@@ -639,10 +511,4 @@ struct KeyInfo
     bool alt;
     /// If SHIFT was held down.
     bool shift;
-}
-
-/// Console window size
-struct WindowSize
-{
-    ushort Width, Height;
 }

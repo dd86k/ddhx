@@ -16,7 +16,7 @@ bool unformat(string e, ref long l)
     try {
         if (e.startsWith("0x")) {
             l = unformatHex(e[2..$]);
-        } /*else if (e.startsWith("0")) {
+        } /*else if (e[0] == '0') {
             //TODO: UNFORMAT OCTAL
         } */else {
             switch (e[$ - 1]) {

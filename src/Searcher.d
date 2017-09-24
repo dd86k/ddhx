@@ -1,6 +1,8 @@
 module Searcher;
 
 import std.stdio;
+import core.stdc.string : memcpy;
+import std.encoding : transcode;
 import ddhx;
 import std.format : format;
 import Utils : unformat;
@@ -27,12 +29,23 @@ void SearchUTF8String(const char[] s)
  */
 void SearchUTF16String(const char[] s, bool invert = false)
 {
-    const size_t l = s.length;
-    ubyte[] buf = new ubyte[l * 2];
-//TODO: Richer UTF-8 to UTF-16 transformation
-    for (int i = invert ? 0 : 1, e; e < l; i += 2, ++e)
-        buf[i] = s[e];
+    wstring ws;
+    transcode(s, ws);
+    size_t l;
+    wchar* wp = cast(wchar*)&ws[0];
+    while (*wp != 0xFFFF) { ++wp; ++l; }
+    l *= 2;
+    debug MessageAlt(format("WS LENGTH: %d", l));
+    ubyte[] buf = new ubyte[l];
+    memcpy(&buf[0], &ws[0], l);
     SearchArray(buf, "wstring");
+    /+ubyte[] 
+    memcpy(&
+    /*const size_t l = s.length;
+    ubyte[] buf = new ubyte[l * 2];
+    for (int i = invert ? 0 : 1, e; e < l; i += 2, ++e)
+        buf[i] = s[e];*/
+    SearchArray(ws, "wstring");+/
 }
 
 /**
@@ -145,7 +158,6 @@ void SearchUInt64(string s, bool invert = false)
 private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
     if (l) {
         import Utils : bswap;
-        import core.stdc.string : memcpy;
         if (invert)
         switch (size) {
             case 2:  l = bswap(l & 0xFFFF); break;
@@ -159,8 +171,7 @@ private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
 private void SearchArray(ubyte[] input, string type)
 {
     MessageAlt(format(" Searching %s...", type));
-    const long fsize = CurrentFile.size;
-    const char b = input[0];
+    const ubyte b = input[0];
     const size_t len = input.length;
     long pos = CurrentPosition + 1; // To not affect CurrentPosition itself
     CurrentFile.seek(pos);
