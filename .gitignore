@@ -9,3 +9,4 @@ t
 *.exe
 dub.selections.json
 ddhx
+*.zip
