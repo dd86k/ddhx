@@ -9,39 +9,36 @@
 
 module ddcon;
 
+//private import std.stdio;
 private import core.stdc.stdio;
-private import core.stdc.stdlib : system;
-private alias system sys;
+private alias sys = core.stdc.stdlib.system;
 
-version (Windows)
-{
+version (Windows) {
     private import core.sys.windows.windows;
     private enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
     private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
     private enum DEFAULT_COLOR =
         FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
     /// Necessary handles.
-    private HANDLE hIn, hOut;
-    private USHORT defaultColor = DEFAULT_COLOR;
+    private __gshared HANDLE hIn, hOut; //TODO: Check if stdin from stdio.h works
+    private __gshared USHORT defaultColor = DEFAULT_COLOR;
 }
-else version (Posix)
-{
+version (Posix) {
     private import core.sys.posix.sys.ioctl;
     private import core.sys.posix.unistd;
     private import core.sys.posix.termios;
     private enum TERM_ATTR = ~ICANON & ~ECHO;
-    private termios old_tio, new_tio;
+    private __gshared termios old_tio, new_tio;
 }
 
 /*******************************************************************
  * Initiation
  *******************************************************************/
 
-/// Initiate poshub
-void InitConsole()
-{
-    version (Windows)
-    {
+/// Initiate ddcon
+extern (C)
+void InitConsole() {
+    version (Windows) {
         hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         hIn  = GetStdHandle(STD_INPUT_HANDLE);
         /*HKEY key;
@@ -64,7 +61,7 @@ void InitConsole()
                 &n
             ) != 0)
         {
-            defaultColor = val & 0xFFFF;
+            defaultColor = cast(ushort)val;
         }*/
 
         /*if (SetConsoleCP(65001) == 0) {
@@ -74,14 +71,164 @@ void InitConsole()
 }
 
 /*******************************************************************
+ * Colors
+ *******************************************************************/
+
+//TODO: Complete colors and stuff
+version (Windows) {
+/*
+0 = Black       8 = Gray
+1 = Blue        9 = Light Blue
+2 = Green       A = Light Green
+3 = Aqua        B = Light Aqua
+4 = Red         C = Light Red
+5 = Purple      D = Light Purple
+6 = Yellow      E = Light Yellow
+7 = White       F = Bright White
+*/
+//https://msdn.microsoft.com/en-us/library/windows/desktop/ms682088(v=vs.85).aspx#_win32_character_attributes
+    enum FgColor {
+        Black = 0,
+        Red    = FOREGROUND_RED,
+        Green  = FOREGROUND_GREEN,
+        Blue   = FOREGROUND_BLUE,
+        Purple = FOREGROUND_RED | FOREGROUND_BLUE,
+        //Yellow = FOREGROUND_RED | FOREGROUND_GREEN,
+        Cyan   = FOREGROUND_BLUE | FOREGROUND_GREEN,
+        // check if gray/darkgray are ok
+        Gray   = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
+        DarkGray    = FOREGROUND_INTENSITY,
+        LightRed    = FOREGROUND_INTENSITY | FOREGROUND_RED,
+        LightGreen  = FOREGROUND_INTENSITY | FOREGROUND_GREEN,
+        LightBlue   = FOREGROUND_INTENSITY | FOREGROUND_BLUE,
+        LightPurple = FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_BLUE,
+        LightCyan   = FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN,
+        //LightYellow = FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_GREEN,
+        White       = FOREGROUND_INTENSITY | Gray
+    }
+    enum BgColor {
+        Black = 0,
+        Red    = BACKGROUND_RED,
+        Green  = BACKGROUND_GREEN,
+        Blue   = BACKGROUND_BLUE,
+        Purple = BACKGROUND_RED | BACKGROUND_BLUE,
+        //Yellow = BACKGROUND_RED | BACKGROUND_GREEN,
+        Cyan   = BACKGROUND_BLUE | BACKGROUND_GREEN,
+        // check if gray/darkgray are ok
+        Gray   = BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE,
+        DarkGray    = BACKGROUND_INTENSITY,
+        LightRed    = BACKGROUND_INTENSITY | BACKGROUND_RED,
+        LightGreen  = BACKGROUND_INTENSITY | BACKGROUND_GREEN,
+        LightBlue   = BACKGROUND_INTENSITY | BACKGROUND_BLUE,
+        LightPurple = BACKGROUND_INTENSITY | BACKGROUND_RED | BACKGROUND_BLUE,
+        LightCyan   = BACKGROUND_INTENSITY | BACKGROUND_BLUE | BACKGROUND_GREEN,
+        //LightYellow = BACKGROUND_INTENSITY | BACKGROUND_RED | BACKGROUND_GREEN,
+        White       = BACKGROUND_INTENSITY | Gray
+    }
+}
+version (Posix) {
+/*
+Black       0;30     Dark Gray     1;30
+Blue        0;34     Light Blue    1;34
+Green       0;32     Light Green   1;32
+Cyan        0;36     Light Cyan    1;36
+Red         0;31     Light Red     1;31
+Purple      0;35     Light Purple  1;35
+Brown       0;33     Yellow        1;33
+Light Gray  0;37     White         1;37
+*/
+    enum INTENSIFY = 0x100;
+    enum FgColor {
+        /*Black = 30,
+        Red = 31,
+        Blue = 34,
+        Green = 32,
+        Purple = 35,
+        //Brown = 33,
+        Cyan = 36,
+        Gray = 37,
+        DarkGray = INTENSIFY | Black,
+        LightRed = INTENSIFY | Red,
+        LightBlue = INTENSIFY | Blue,
+        LightGreen = INTENSIFY | Green,
+        LightPurple = 45,
+        LightCyan = 46,
+        //Yellow = 43,
+        White = INTENSIFY*/
+        Black = 0,
+        Red,
+        Green,
+        //Brown,
+        Blue = 4,
+        Purple,
+        Cyan,
+        Gray,
+        DarkGray,
+        LightRed,
+        LightGreen,
+        //LightYellow,
+        LightBlue = 12,
+        LightPurple,
+        LightCyan,
+        White
+    }
+    enum BgColor {
+        Black = FgColor.Black << 8,
+        Blue = FgColor.Blue << 8,
+        Green = FgColor.Green << 8,
+        Cyan = FgColor.Cyan << 8,
+        Red = FgColor.Red << 8,
+        Purple = FgColor.Purple << 8,
+        //Brown = FgColor.Brown << 8,
+        Gray = FgColor.Gray << 8,
+        DarkGray = FgColor.DarkGray << 8,
+        LightBlue = FgColor.LightBlue << 8,
+        LightGreen = FgColor.LightGreen << 8,
+        LightCyan = FgColor.LightCyan << 8,
+        LightRed = FgColor.LightRed << 8,
+        LightPurple = FgColor.LightPurple << 8,
+        //Yellow = FgColor.Yellow << 8,
+        White = FgColor.White << 8
+    }
+}
+
+extern (C)
+void SetColor(int n) {
+    version (Windows) {
+        SetConsoleTextAttribute(hOut, cast(ushort)n);
+    }
+    else version (Posix) { // Foreground and background
+        printf("\033[38;5;%dm\033[48;5;%dm", cast(ubyte)n, cast(ubyte)(n >> 8));
+    } else {
+
+    }
+}
+
+extern (C)
+void InvertColor() {
+    version (Windows)
+        SetConsoleTextAttribute(hOut, COMMON_LVB_REVERSE_VIDEO | defaultColor);
+    version (Posix)
+        printf("\033[7m");
+}
+
+extern (C)
+void ResetColor()
+{
+    version (Windows)
+        SetConsoleTextAttribute(hOut, defaultColor);
+    version (Posix)
+        printf("\033[0m");
+}
+
+/*******************************************************************
  * Clear
  *******************************************************************/
 
 /// Clear screen
-void Clear()
-{
-    version (Windows)
-    {
+extern (C)
+void Clear() {
+    version (Windows) {
         CONSOLE_SCREEN_BUFFER_INFO csbi;
         COORD c;
         GetConsoleScreenBufferInfo(hOut, &csbi);
@@ -89,15 +236,12 @@ void Clear()
         DWORD num = 0;
         if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
             /*|| // .NET uses this but no idea why.
-            FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/)
-        {
+            FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/) {
             SetPos(0, 0);
         }
-        else // If that fails, run cls.
-            sys ("cls");
-    }
-    else version (Posix)
-    { //TODO: Clear (Posix)
+        /*else // If that fails, run cls.
+            sys ("cls");*/
+    } else version (Posix) { //TODO: Clear (Posix)
         sys ("clear");
     }
     else static assert(0, "Clear: Not implemented");
@@ -110,81 +254,57 @@ void Clear()
 // Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
 
 /// Window width
-@property ushort WindowWidth()
-{
-    version (Windows)
-    {
+@property ushort WindowWidth() {
+    version (Windows) {
         CONSOLE_SCREEN_BUFFER_INFO c;
         GetConsoleScreenBufferInfo(hOut, &c);
         return cast(ushort)(c.srWindow.Right - c.srWindow.Left + 1);
-    }
-    else version (Posix)
-    {
+    } else version (Posix) {
         winsize ws;
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
         return ws.ws_col;
-    }
-    else
-    {
+    } else {
         static assert(0, "WindowWidth : Not implemented");
     }
 }
 
 /// Window width
-@property void WindowWidth(int w)
-{
-    version (Windows)
-    {
+@property void WindowWidth(int w) {
+    version (Windows) {
         COORD c = { cast(SHORT)w, cast(SHORT)WindowWidth };
         SetConsoleScreenBufferSize(hOut, c);
-    }
-    else version (Posix)
-    {
+    } else version (Posix) {
         winsize ws = { cast(ushort)w, WindowWidth };
         ioctl(STDOUT_FILENO, TIOCSWINSZ, &ws);
-    }
-    else
-    {
+    } else {
         static assert(0, "WindowWidth : Not implemented");
     }
 }
 
 /// Window height
-@property ushort WindowHeight()
-{
-    version (Windows)
-    {
+@property ushort WindowHeight() {
+    version (Windows) {
         CONSOLE_SCREEN_BUFFER_INFO c;
         GetConsoleScreenBufferInfo(hOut, &c);
         return cast(ushort)(c.srWindow.Bottom - c.srWindow.Top + 1);
-    }
-    else version (Posix)
-    {
+    } else version (Posix) {
         winsize ws;
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
         return ws.ws_row;
-    }
-    else
-    {
+    } else {
         static assert(0, "WindowHeight : Not implemented");
     }
 }
 
 /// Window height
-@property void WindowHeight(int h)
-{
-    version (Windows)
-    {
+@property void WindowHeight(int h) {
+    version (Windows) {
         COORD c = { cast(SHORT)WindowWidth, cast(SHORT)h };
         SetConsoleScreenBufferSize(hOut, c);
-    }
-    else version (Posix)
-    {
+    } else version (Posix) {
         winsize ws = { WindowWidth, cast(ushort)h, 0, 0 };
         ioctl(STDOUT_FILENO, TIOCSWINSZ, &ws);
-    }
-    else
-    {
+    } else {
         static assert(0, "WindowHeight : Not implemented");
     }
 }
@@ -193,17 +313,19 @@ void Clear()
  * Cursor management
  *******************************************************************/
 
-/// Set cursor position x and y position respectively from the
-/// top left corner, 0-based.
-void SetPos(int x, int y)
-{
-    version (Windows)
-    { // 0-based
+/**
+ * Set cursor position x and y position respectively from the top left corner,
+ * 0-based.
+ * Params:
+ *   x = X position (horizontal)
+ *   y = Y position (vertical)
+ */
+extern (C)
+void SetPos(int x, int y) {
+    version (Windows) { // 0-based
         COORD c = { cast(SHORT)x, cast(SHORT)y };
         SetConsoleCursorPosition(hOut, c);
-    }
-    else version (Posix)
-    { // 1-based
+    } else version (Posix) { // 1-based
         printf("\033[%d;%dH", y + 1, x + 1);
     }
 }
@@ -249,18 +371,15 @@ void SetPos(int x, int y)
  * Params: echo = Echo character to output.
  * Returns: A KeyInfo structure.
  */
-KeyInfo ReadKey(bool echo = false)
-{
+extern (C)
+KeyInfo ReadKey(bool echo = false) {
     KeyInfo k;
-    version (Windows)
-    { // Sort of is like .NET's ReadKey
+    version (Windows) { // Sort of is like .NET's ReadKey
         INPUT_RECORD ir;
         DWORD num = 0;
-        if (ReadConsoleInput(hIn, &ir, 1, &num))
-        {
-            if (ir.KeyEvent.bKeyDown && ir.EventType == KEY_EVENT)
-            {
-                const DWORD state = ir.KeyEvent.dwControlKeyState;
+        if (ReadConsoleInput(hIn, &ir, 1, &num)) {
+            if (ir.KeyEvent.bKeyDown && ir.EventType == KEY_EVENT) {
+                DWORD state = ir.KeyEvent.dwControlKeyState;
                 k.alt   = (state & ALT_PRESSED)   != 0;
                 k.ctrl  = (state & CTRL_PRESSED)  != 0;
                 k.shift = (state & SHIFT_PRESSED) != 0;
@@ -271,9 +390,7 @@ KeyInfo ReadKey(bool echo = false)
                 if (echo) printf("%c", k.keyChar);
             }
         }
-    }
-    else version (Posix)
-    {
+    } else version (Posix) {
         //TODO: Get modifier keys states
 
         // Commenting this section will echo the character
@@ -283,17 +400,14 @@ KeyInfo ReadKey(bool echo = false)
         new_tio.c_lflag &= TERM_ATTR;
         tcsetattr(STDIN_FILENO,TCSANOW, &new_tio);
 
-        uint c = getchar();
+        uint c = getchar;
 
-        with (k)
-        switch (c)
-        {
+        with (k) switch (c) {
         case '\n': // \n (ENTER)
             keyCode = Key.Enter;
             break;
         case 27: // ESC
-            switch (c = getchar())
-            {
+            switch (c = getchar()) {
             case '[':
                 switch (c = getchar())
                 {
@@ -321,15 +435,58 @@ KeyInfo ReadKey(bool echo = false)
             break;
         //TODO: The rest
         default:
-            k.keyCode = c & 0xFFFF;
+            k.keyCode = cast(ushort)c;
             break;
         }
 
         tcsetattr(STDIN_FILENO,TCSANOW, &old_tio);
-    }
+    } // version posix
     return k;
 }
+/*
+RawEvent ReadGlobal()
+{
+    version (Windows)
+    {
+        RawEvent r;
 
+        INPUT_RECORD ir;
+        DWORD num = 0;
+        if (ReadConsoleInput(hIn, &ir, 1, &num))
+        {
+            r.Type = cast(EventType)ir.EventType;
+
+            if (ir.KeyEvent.bKeyDown)
+            {
+                DWORD state = ir.KeyEvent.dwControlKeyState;
+                r.Key.alt   = (state & ALT_PRESSED)   != 0;
+                r.Key.ctrl  = (state & CTRL_PRESSED)  != 0;
+                r.Key.shift = (state & SHIFT_PRESSED) != 0;
+                r.Key.keyChar  = ir.KeyEvent.AsciiChar;
+                r.Key.keyCode  = ir.KeyEvent.wVirtualKeyCode;
+                r.Key.scanCode = ir.KeyEvent.wVirtualScanCode;
+            }
+
+            r.Mouse.Location.X = cast(ushort)ir.MouseEvent.dwMousePosition.X;
+            r.Mouse.Location.Y = cast(ushort)ir.MouseEvent.dwMousePosition.Y;
+            r.Mouse.Buttons = cast(ushort)ir.MouseEvent.dwButtonState;
+            r.Mouse.State = cast(ushort)ir.MouseEvent.dwControlKeyState;
+            r.Mouse.Type = cast(ushort)ir.MouseEvent.dwEventFlags;
+
+            r.Size.Width = ir.WindowBufferSizeEvent.dwSize.X;
+            r.Size.Height = ir.WindowBufferSizeEvent.dwSize.Y;
+        }
+
+        return r;
+    }
+    else version (Posix)
+    { //TODO: RawEvent (Posix)
+        RawEvent r;
+
+        return r;
+    }
+}
+*/
 /*******************************************************************
  * Handlers
  *******************************************************************/
@@ -342,7 +499,25 @@ KeyInfo ReadKey(bool echo = false)
 /*******************************************************************
  * Emunerations
  *******************************************************************/
+/*
+enum EventType : ushort {
+    Key = 1, Mouse = 2, Resize = 4
+}
 
+enum MouseButton : ushort { // Windows compilant
+    Left = 1, Right = 2, Middle = 4, Mouse4 = 8, Mouse5 = 16
+}
+
+enum MouseState : ushort { // Windows compilant
+    RightAlt = 1, LeftAlt = 2, RightCtrl = 4,
+    LeftCtrl = 8, Shift = 0x10, NumLock = 0x20,
+    ScrollLock = 0x40, CapsLock = 0x80, EnhancedKey = 0x100
+}
+
+enum MouseEventType { // Windows compilant
+    Moved = 1, DoubleClick = 2, Wheel = 4, HorizontalWheel = 8
+}
+*/
 /// Key codes mapping.
 enum Key : ushort {
     Backspace = 8,
@@ -494,7 +669,15 @@ enum Key : ushort {
 /*******************************************************************
  * Structs
  *******************************************************************/
-
+/*
+struct RawEvent
+{
+    EventType Type;
+    KeyInfo Key;
+    MouseInfo Mouse;
+    WindowSize Size;
+}
+*/
 /// Key information structure
 // ala C#
 struct KeyInfo
@@ -511,4 +694,18 @@ struct KeyInfo
     bool alt;
     /// If SHIFT was held down.
     bool shift;
+}
+/*
+struct MouseInfo
+{
+    struct ScreenLocation { ushort X, Y; }
+    ScreenLocation Location;
+    ushort Buttons;
+    ushort State;
+    ushort Type;
+}
+*/
+struct WindowSize
+{
+    ushort Width, Height;
 }
