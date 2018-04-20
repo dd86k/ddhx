@@ -288,14 +288,32 @@ void GotoC(long pos)
 void GotoStr(string str)
 {
     import Utils : unformat;
+    byte rel; // Lazy code fix
+    if (str[0] == '+') {
+        rel = 1;
+        str = str[1..$];
+    } else if (str[0] == '-') {
+        rel = 2;
+        str = str[1..$];
+    }
     long l;
     if (unformat(str, l)) {
-        if (l >= 0 && l < fsize - BufferLength) {
-            Goto(l);
-            UpdateOffsetBar;
-        } else {
-            import std.format : format;
-            MessageAlt(format("Range too far or negative: %d (%XH)", l, l));
+        switch (rel) {
+        case 1:
+            if (CurrentPosition + l - BufferLength < 0)
+                Goto(CurrentPosition + l);
+            break;
+        case 2:
+            if (CurrentPosition - l >= 0)
+                Goto(CurrentPosition - l);
+            break;
+        default:
+            if (l >= 0 && l < fsize - BufferLength) {
+                Goto(l);
+            } else {
+                import std.format : format;
+                MessageAlt(format("Range too far or negative: %d (%XH)", l, l));
+            }
         }
     } else {
 		MessageAlt("Could not parse number");
