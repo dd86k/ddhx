@@ -105,7 +105,8 @@ string formatsize(long size, bool base10 = false) //BUG: %f is unpure?
  * Params: num = 2-byte number to swap.
  * Returns: Byte swapped number.
  */
-ushort bswap(ushort num) pure nothrow @nogc
+extern (C)
+ushort bswap16(ushort num) pure nothrow @nogc
 {
     version (X86) asm pure nothrow @nogc {
         naked;
@@ -136,7 +137,8 @@ ushort bswap(ushort num) pure nothrow @nogc
  * Params: num = 4-byte number to swap.
  * Returns: Byte swapped number.
  */
-uint bswap(uint num) pure nothrow @nogc
+extern (C)
+uint bswap32(uint num) pure nothrow @nogc
 {
     version (X86) asm pure nothrow @nogc {
         naked;
@@ -167,7 +169,8 @@ uint bswap(uint num) pure nothrow @nogc
  * Params: num = 8-byte number to swap.
  * Returns: Byte swapped number.
  */
-ulong bswap(ulong num) pure nothrow @nogc
+extern (C)
+ulong bswap64(ulong num) pure nothrow @nogc
 {
     version (X86) asm pure nothrow @nogc {
         naked;

@@ -38,14 +38,6 @@ private int main(string[] args)
     if (r.helpWanted)
     {
         PrintHelp;
-        writeln("\nOption             Description");
-        foreach (it; r.options) { // "custom" defaultGetoptPrinter
-            writefln("%*s, %-*s%s%s",
-                4,  it.optShort,
-                12, it.optLong,
-                it.required ? "Required: " : " ",
-                it.help);
-        }
     }
     else
     {
@@ -80,20 +72,34 @@ private int main(string[] args)
     return 0;
 }
 
+extern (C)
 private void PrintHelp()
 {
-    printf("Interactive hexadecimal file viewer.\n");
-    printf("Usage:\n");
-    printf("  ddhx\t[Options] file\n");
-    printf("  ddhx\t{-h|--help|-v|--version}\n");
+    puts(
+`Interactive hexadecimal file viewer.
+Usage:
+  ddhx  [Options] file
+  ddhx  {-h|--help|-v|--version}
+
+Option             Description
+  -w, --width      Set the number of bytes per line, 'a' being automatic.
+  -o, --offset     Set offset type.
+  -m, --mode       Set view mode type.
+  -v, --version    Print version information.
+  -h, --help       This help information.`
+    );
 }
 
+extern (C)
 private void PrintVersion()
 {
     import core.stdc.stdlib : exit;
-    printf("ddhx %s  (%s)\n", &APP_VERSION[0], &__TIMESTAMP__[0]);
-    printf("Compiled %s with %s v%d\n", &__FILE__[0], &__VENDOR__[0], __VERSION__);
-    printf("MIT License: Copyright (c) dd86k 2017\n");
-    printf("Project page: <https://github.com/dd86k/ddhx>\n");
+    printf(
+        "ddhx %s  (%s)\n" ~
+        "Compiled %s with %s v%d\n" ~
+        "MIT License: Copyright (c) dd86k 2017\n" ~
+        "Project page: <https://github.com/dd86k/ddhx>\n",
+        cast(char*)APP_VERSION, cast(char*)__TIMESTAMP__,
+        cast(char*)__FILE__, cast(char*)__VENDOR__, __VERSION__);
     exit(0); // getopt hack
 }

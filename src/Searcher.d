@@ -1,3 +1,7 @@
+/*
+ * Search 
+ */
+
 module Searcher;
 
 import std.stdio;
@@ -7,10 +11,7 @@ import ddhx;
 import std.format : format;
 import Utils : unformat;
 
-private enum CHUNK_SIZE = 512;
-
-//TODO: Progress bar (only after first chunk, updates per-chunk)
-//TODO: String REGEX (will require a new function entirely for searching)
+private enum CHUNK_SIZE = 4096;
 
 /**
  * Search an UTF-8/ASCII string
@@ -29,15 +30,16 @@ void SearchUTF8String(const char[] s)
  */
 void SearchUTF16String(const char[] s, bool invert = false)
 {
+    //TODO: See if we can use proper UTF-16 conversion
     wstring ws;
     transcode(s, ws);
     size_t l;
-    wchar* wp = cast(wchar*)&ws[0];
+    wchar* wp = cast(wchar*)ws;
     while (*wp != 0xFFFF) { ++wp; ++l; }
     l *= 2;
     debug MessageAlt(format("WS LENGTH: %d", l));
     ubyte[] buf = new ubyte[l];
-    memcpy(&buf[0], &ws[0], l);
+    memcpy(cast(byte*)buf, cast(byte*)ws, l);
     //TODO: invert
     SearchArray(buf, "wstring");
 }
@@ -50,15 +52,16 @@ void SearchUTF16String(const char[] s, bool invert = false)
  */
 void SearchUTF32String(const char[] s, bool invert = false)
 {
+    //TODO: See if we can use proper UTF-32 conversion
     dstring ds;
     transcode(s, ds);
     size_t l;
-    wchar* dp = cast(wchar*)&ds[0];
+    wchar* dp = cast(wchar*)ds;
     while (*dp != 0xFFFF) { ++dp; ++l; }
     l *= 4;
     debug MessageAlt(format("DS LENGTH: %d", l));
     ubyte[] buf = new ubyte[l];
-    memcpy(&buf[0], &ds[0], l);
+    memcpy(cast(byte*)buf, cast(byte*)ds, l);
     //TODO: invert
     SearchArray(buf, "dstring");
 }
@@ -76,17 +79,6 @@ void SearchByte(const ubyte b)
         foreach (i; buf) {
             if (b == i) {
                 GotoC(pos);
-                switch (CurrentOffsetType) {
-                default:
-                    MessageAlt(format(" Found byte %02XH at %X", b, pos));
-                    break;
-                case OffsetType.Decimal:
-                    MessageAlt(format(" Found byte %02XH at %d", b, pos));
-                    break;
-                case OffsetType.Octal:
-                    MessageAlt(format(" Found byte %02XH at %o", b, pos));
-                    break;
-                }
                 return;
             }
             ++pos;
@@ -105,7 +97,7 @@ void SearchUInt16(string s, bool invert = false)
 {
     long l;
     if (unformat(s, l)) {
-        ubyte[2] la;
+        __gshared ubyte[2] la;
         itoa(&la[0], 2, l, invert);
         SearchArray(la, "short");
     } else
@@ -122,7 +114,7 @@ void SearchUInt32(string s, bool invert = false)
 {
     long l;
     if (unformat(s, l)) {
-        ubyte[4] la;
+        __gshared ubyte[4] la;
         itoa(&la[0], 4, l, invert);
         SearchArray(la, "int");
     } else
@@ -139,7 +131,7 @@ void SearchUInt64(string s, bool invert = false)
 {
     long l;
     if (unformat(s, l)) {
-        ubyte[8] la;
+        __gshared ubyte[8] la;
         itoa(&la[0], 8, l, invert);
         SearchArray(la, "long");
     } else
@@ -156,12 +148,11 @@ void SearchUInt64(string s, bool invert = false)
  */
 private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
     if (l) {
-        import Utils : bswap;
-        if (invert)
-        switch (size) {
-            case 2:  l = bswap(l & 0xFFFF); break;
-            case 4:  l = bswap(l & 0xFFFF_FFFF); break;
-            default: l = bswap(l); break;
+        import Utils : bswap16, bswap32, bswap64;
+        if (invert) switch (size) {
+            case 2:  l = bswap16(cast(ushort)l); break;
+            case 4:  l = bswap32(cast(uint)l); break;
+            default: l = bswap64(l); break;
         }
         memcpy(ap, &l, size);
     }
@@ -181,20 +172,7 @@ private void SearchArray(ubyte[] input, string type)
                 const size_t ilen = i + len;
                 if (ilen < bufl) { // Within CHUNK
                     if (buf[i..i+len] == input) {
-S_FOUND:
-                        const long n = pos + i; // New position
-                        switch (CurrentOffsetType) {
-                        default:
-                            MessageAlt(format(" Found %s value at %X", type, n));
-                            break;
-                        case OffsetType.Decimal:
-                            MessageAlt(format(" Found %s value at %d", type, n));
-                            break;
-                        case OffsetType.Octal:
-                            MessageAlt(format(" Found %s value at %o", type, n));
-                            break;
-                        }
-                        GotoC(n);
+S_FOUND:                GotoC(pos + i);
                         return;
                     }
                 } else if (ilen < fsize) { // Out-of-chunk

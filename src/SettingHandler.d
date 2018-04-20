@@ -30,38 +30,38 @@ void HandleWCLI(string opt, string val)
 void HandleWidth(string val, bool cli = false)
 {
     switch (val[0]) {
-        case 'a': // Automatic
-            version (Windows) {
+    case 'a': // Automatic
+        version (Windows) {
 //TODO: Fix with CLI, returns 65535 (why can't Windows work?)
-            if (!cli) BytesPerRow = getBytesPerRow;
-            } else {
-            BytesPerRow = getBytesPerRow;
-            }
-            break;
+        if (!cli) BytesPerRow = getBytesPerRow;
+        } else {
+        BytesPerRow = getBytesPerRow;
+        }
+        break;
 
-        case 'd': // Default
-            BytesPerRow = 16;
-            break;
-        
-        default:
-            long l;
-            if (unformat(val, l)) {
-                if (l < 1 || l > ushort.max) {
-                    if (cli) {
-                        writefln(ETRANGE, l, ushort.max);
-                        exit(1);
-                    } else
-                        MessageAlt("Number out of range");
-                        return;
-                }
-                BytesPerRow = l & 0xFFFF;
-            } else {
+    case 'd': // Default
+        BytesPerRow = 16;
+        break;
+    
+    default:
+        long l;
+        if (unformat(val, l)) {
+            if (l < 1 || l > ushort.max) {
                 if (cli) {
-                    writeln(ENOPARSE);
+                    writefln(ETRANGE, l, ushort.max);
                     exit(1);
-                } else 
-                    MessageAlt(ENOPARSE);
+                } else
+                    MessageAlt("Number out of range");
+                    return;
             }
+            BytesPerRow = l & 0xFFFF;
+        } else {
+            if (cli) {
+                writeln(ENOPARSE);
+                exit(1);
+            } else 
+                MessageAlt(ENOPARSE);
+        }
     }
 }
 
@@ -119,23 +119,23 @@ void HandleMCLI(string opt, string val)
 void HandleMode(string val, bool cli = false)
 {
     switch (val) {
-        case "normal", "default", "n", "de":
-            CurrentDisplayMode = DisplayMode.Default;
-            break;
-        case "data", "d":
-            CurrentDisplayMode = DisplayMode.Data;
-            break;
-        case "text", "t":
-            CurrentDisplayMode = DisplayMode.Text;
-            break;
-        default:
-            if (cli) {
-                writef("Unknown mode parameter: %s", val);
-                exit(1);
-            } else {
-                MessageAlt(format("Unknown mode parameter: %s", val));
-            }
-            break;
+    case "normal", "default", "n", "de":
+        CurrentDisplayMode = DisplayMode.Default;
+        break;
+    case "data", "d":
+        CurrentDisplayMode = DisplayMode.Data;
+        break;
+    case "text", "t":
+        CurrentDisplayMode = DisplayMode.Text;
+        break;
+    default:
+        if (cli) {
+            writef("Unknown mode parameter: %s", val);
+            exit(1);
+        } else {
+            MessageAlt(format("Unknown mode parameter: %s", val));
+        }
+        break;
     }
 }
 

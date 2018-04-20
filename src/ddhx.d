@@ -7,10 +7,8 @@ import core.stdc.string : memset;
 import Menu;
 import ddcon;
 
-//TODO: Bookmarks page? (What shortcut or function key?)
-
 /// App version
-enum APP_VERSION = "0.0.0-2";
+enum APP_VERSION = "0.0.0-3";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType : ubyte {
@@ -28,23 +26,20 @@ enum DEFAULT_CHAR = '.'; /// Default character for non-displayable characters
  * User settings
  */
 
-ushort BytesPerRow = 16; /// Bytes shown per row
-OffsetType CurrentOffsetType; /// Current offset view type
-DisplayMode CurrentDisplayMode; /// Current display view type
+__gshared ushort BytesPerRow = 16; /// Bytes shown per row
+__gshared OffsetType CurrentOffsetType; /// Current offset view type
+__gshared DisplayMode CurrentDisplayMode; /// Current display view type
 
 /*
  * Internal
  */
 
-File CurrentFile; /// Current file handle
-long CurrentPosition; /// Current file position
-ubyte[] Buffer; /// Display buffer
-size_t BufferLength; /// Buffer length
-long fsize; /// File size, used to avoid spamming system functions
-string tfsize; /// total formatted size
-
-//TODO: When typing g goto menu directly
-//      - Tried writing to stdin directly, crashes (2.074.0)
+__gshared File CurrentFile; /// Current file handle
+__gshared long CurrentPosition; /// Current file position
+__gshared ubyte[] Buffer; /// Display buffer
+__gshared size_t BufferLength; /// Buffer length
+__gshared long fsize; /// File size, used to avoid spamming system functions
+__gshared string tfsize; /// total formatted size
 
 /// Main app entry point
 void Start()
@@ -167,10 +162,10 @@ void HandleKey(const KeyInfo* k)
     case Key.Escape, Key.Enter:
         EnterMenu;
         break;
-    /*case Key.G:
-        EnterMenu("g");
+    case Key.G:
+        EnterMenu("g ");
         UpdateOffsetBar();
-        break;*/
+        break;
     case Key.I:
         PrintFileInfo;
         break;
@@ -319,7 +314,7 @@ void UpdateDisplayRaw()
 {
     const int ds = (3 * BytesPerRow) + 1;
     const int as = BytesPerRow + 1;
-    ubyte* bufp = &Buffer[0];
+    ubyte* bufp = cast(ubyte*)Buffer;
     char* data, ascii; // Buffers
     long p = CurrentPosition;
 
@@ -342,7 +337,7 @@ void UpdateDisplayRaw()
                 const ulong max = BufferLength - (bi - BytesPerRow);
                 for (int i, a; a < max; i += 3, ++a) {
                     *(data + i + 1) = ffupper(*bufp & 0xF0);
-                    *(data + i + 2) = fflower(*bufp   &  0xF);
+                    *(data + i + 2) = fflower(*bufp & 0xF);
                     *(ascii + a) = FormatChar(*bufp);
                     ++bufp;
                 }
@@ -355,7 +350,7 @@ void UpdateDisplayRaw()
             } else {
                 for (int i, a; a < BytesPerRow; i += 3, ++a) {
                     *(data + i + 1) = ffupper(*bufp & 0xF0);
-                    *(data + i + 2) = fflower(*bufp   &  0xF);
+                    *(data + i + 2) = fflower(*bufp & 0xF);
                     *(ascii + a) = FormatChar(*bufp);
                     ++bufp;
                 } 
