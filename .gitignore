@@ -10,3 +10,5 @@ t
 dub.selections.json
 ddhx
 *.zip
+*.gz
+*.tar
