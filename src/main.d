@@ -23,11 +23,11 @@ private int main(string[] args)
         return 0;
     }
 
-    GetoptResult r;
+    __gshared GetoptResult r;
     try {
         r = getopt(args,
-            "w|width", "Set the number of bytes per line, 'a' being automatic.", &HandleWCLI,
-            "o|offset", "Set offset type.", &HandleOCLI,
+            "w", "Set the number of bytes per line, 'a' being automatic.", &HandleWCLI,
+            "o", "Set offset type.", &HandleOCLI,
             "v|version", "Print version information.", &PrintVersion);
     } catch (GetOptException ex) {
         stderr.writeln("Error: ", ex.msg);
@@ -47,25 +47,25 @@ private int main(string[] args)
         {
             if (isDir(file))
             {
-                writeln(`"`, file, `" is a directory, exiting.`);
-                return 1;
+                stderr.writeln(`E: "`, file, `" is a directory, exiting`);
+                return 3;
             }
 
             CurrentFile = File(file);
 
             if ((fsize = CurrentFile.size) == 0)
             {
-                stderr.writeln("Empty file, exiting.");
-                return 1;
+                stderr.writeln("E: Empty file, exiting");
+                return 4;
             }
         }
         else
         {
-            writeln(`File "`, file, `" doesn't exist, exiting.`);
-            return 1;
+            stderr.writeln(`E: File "`, file, `" doesn't exist, exiting`);
+            return 2;
         }
 
-        Start;
+        Start; // start ddhx
     }
 
     return 0;
@@ -81,10 +81,10 @@ Usage:
   ddhx  {-h|--help|-v|--version}
 
 Option             Description
-  -w, --width      Set the number of bytes per line, 'a' being automatic
-  -o, --offset     Set offset type
-  -v, --version    Print version information
-  -h, --help       This help information`
+  -w               Set the number of bytes per line, 'a' being automatic
+  -o               Set offset type
+  -v, --version    Print version screen and quit
+  -h, --help       Print help screen and quit`
     );
 }
 
@@ -93,11 +93,11 @@ private void PrintVersion()
 {
     import core.stdc.stdlib : exit;
     printf(
-        "ddhx %s  (%s)\n" ~
-        "Compiled %s with %s v%d\n" ~
+        "ddhx " ~ APP_VERSION ~ "  (" ~ __TIMESTAMP__  ~ ")\n" ~
+        "Compiled ddhx with " ~ __VENDOR__ ~ " v%d\n" ~
         "MIT License: Copyright (c) dd86k 2017\n" ~
         "Project page: <https://github.com/dd86k/ddhx>\n",
-        cast(char*)APP_VERSION, cast(char*)__TIMESTAMP__,
-        cast(char*)__FILE__, cast(char*)__VENDOR__, __VERSION__);
+        __VERSION__
+    );
     exit(0); // getopt hack
 }
