@@ -4,6 +4,7 @@ import std.stdio : readln, write;
 import core.stdc.stdio : printf;
 import ddcon, ddhx, Searcher;
 import std.format : format;
+import SettingHandler;
 
 //TODO: count command (stat)
 //TODO: Invert aliases
@@ -146,8 +147,6 @@ SEARCH_BYTE:
             */
         case "set":
             if (argl > 1) {
-                import SettingHandler :
-                    HandleWidth, HandleOffset, HandleMode;
                 import std.format : format;
                 switch (e[1]) {
                 case "width", "w":
@@ -160,13 +159,6 @@ SEARCH_BYTE:
                 case "offset", "o":
                     if (argl > 2) {
                         HandleOffset(e[2]);
-                        Clear;
-                        RefreshAll;
-                    }
-                    break;
-                case "mode", "m":
-                    if (argl > 2) {
-                        HandleMode(e[2]);
                         Clear;
                         RefreshAll;
                     }

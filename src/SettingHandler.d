@@ -99,51 +99,11 @@ void HandleOffset(string val, bool cli = false)
     }
 }
 
-/**
- * Handle view mode CLI option.
- * Params:
- *   opt = Option
- *   val = Option value
- */
-void HandleMCLI(string opt, string val)
-{
-    HandleMode(val, true);
-}
-
-/**
- * Handle view mode setting.
- * Params:
- *   val = Value
- *   cli = From CLI?
- */
-void HandleMode(string val, bool cli = false)
-{
-    switch (val) {
-    case "normal", "default", "n", "de":
-        CurrentDisplayMode = DisplayMode.Default;
-        break;
-    case "data", "d":
-        CurrentDisplayMode = DisplayMode.Data;
-        break;
-    case "text", "t":
-        CurrentDisplayMode = DisplayMode.Text;
-        break;
-    default:
-        if (cli) {
-            writef("Unknown mode parameter: %s", val);
-            exit(1);
-        } else {
-            MessageAlt(format("Unknown mode parameter: %s", val));
-        }
-        break;
-    }
-}
-
 private ushort getBytesPerRow()
 {
     import ddcon : WindowWidth;
     final switch (CurrentDisplayMode)
-    { // Will crash on newer values which is a GOOD REMINDER.
+    {
         case DisplayMode.Default:
             return cast(ushort)((WindowWidth - 11) / 4);
         case DisplayMode.Text, DisplayMode.Data:

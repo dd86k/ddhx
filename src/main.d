@@ -28,7 +28,6 @@ private int main(string[] args)
         r = getopt(args,
             "w|width", "Set the number of bytes per line, 'a' being automatic.", &HandleWCLI,
             "o|offset", "Set offset type.", &HandleOCLI,
-            "m|mode", "Set view mode type.", &HandleMCLI,
             "v|version", "Print version information.", &PrintVersion);
     } catch (GetOptException ex) {
         stderr.writeln("Error: ", ex.msg);
@@ -82,11 +81,10 @@ Usage:
   ddhx  {-h|--help|-v|--version}
 
 Option             Description
-  -w, --width      Set the number of bytes per line, 'a' being automatic.
-  -o, --offset     Set offset type.
-  -m, --mode       Set view mode type.
-  -v, --version    Print version information.
-  -h, --help       This help information.`
+  -w, --width      Set the number of bytes per line, 'a' being automatic
+  -o, --offset     Set offset type
+  -v, --version    Print version information
+  -h, --help       This help information`
     );
 }
 

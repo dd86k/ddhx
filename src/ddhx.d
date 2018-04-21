@@ -1,14 +1,14 @@
 module ddhx;
 
 import std.stdio : File, write, writef;
-import core.stdc.stdio : printf;
-import core.stdc.stdlib : malloc, free;
+import core.stdc.stdio : printf, puts;
+import core.stdc.stdlib;
 import core.stdc.string : memset;
 import Menu;
 import ddcon;
 
 /// App version
-enum APP_VERSION = "0.0.0-3";
+enum APP_VERSION = "0.1.0";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType : ubyte {
@@ -38,7 +38,7 @@ __gshared File CurrentFile; /// Current file handle
 __gshared long CurrentPosition; /// Current file position
 __gshared ubyte[] Buffer; /// Display buffer
 __gshared size_t BufferLength; /// Buffer length
-__gshared long fsize; /// File size, used to avoid spamming system functions
+__gshared long fsize; /// File size, cached to avoid spamming system functions
 __gshared string tfsize; /// total formatted size
 
 /// Main app entry point
@@ -48,7 +48,7 @@ void Start()
     tfsize = formatsize(fsize);
 	InitConsole;
 	PrepBuffer;
-    ReadFile;
+    Read;
     Clear;
 	UpdateOffsetBar;
 	UpdateDisplayRaw;
@@ -88,6 +88,7 @@ void Start()
  * Handles a user key-stroke
  * Params: k = KeyInfo (ddcon)
  */
+extern (C)
 void HandleKey(const KeyInfo* k)
 {
     import SettingHandler : HandleWidth;
@@ -182,11 +183,12 @@ void HandleKey(const KeyInfo* k)
 }
 
 /// Refresh the entire screen
+extern (C)
 void RefreshAll() {
     PrepBuffer;
     Clear;
     CurrentFile.seek(CurrentPosition);
-    ReadFile;
+    Read;
     UpdateOffsetBar;
     UpdateDisplayRaw;
     UpdateInfoBarRaw;
@@ -195,26 +197,29 @@ void RefreshAll() {
 /**
  * Update the upper offset bar.
  */
+extern (C)
 void UpdateOffsetBar()
 {
 	SetPos(0, 0);
 	printf("Offset ");
+    ushort i;
 	final switch (CurrentOffsetType)
 	{
 		case OffsetType.Hexadecimal: printf("h ");
-	        for (ushort i; i < BytesPerRow; ++i) printf(" %02X", i);
+	        for (; i < BytesPerRow; ++i) printf(" %02X", i);
             break;
 		case OffsetType.Decimal: printf("d ");
-	        for (ushort i; i < BytesPerRow; ++i) printf(" %02d", i);
+	        for (; i < BytesPerRow; ++i) printf(" %02d", i);
             break;
 		case OffsetType.Octal: printf("o ");
-	        for (ushort i; i < BytesPerRow; ++i) printf(" %02o", i);
+	        for (; i < BytesPerRow; ++i) printf(" %02o", i);
             break;
 	}
-    printf("\n"); // In case of "raw" function being called afterwards
+    printf("\n");
 }
 
 /// Update the bottom current information bar.
+extern (C)
 void UpdateInfoBar()
 {
     SetPos(0, WindowHeight - 1);
@@ -222,43 +227,56 @@ void UpdateInfoBar()
 }
 
 /// Updates information bar without cursor position call.
+extern (C)
 void UpdateInfoBarRaw()
 {
     import Utils : formatsize;
-    const float f = CurrentPosition; // Converts to float implicitly
     printf(" %*s | %*s/%*s | %7.3f%%",
-        7, &formatsize(BufferLength)[0],     // Buffer size
-        10, &formatsize(CurrentPosition)[0], // Formatted position
-        10, &tfsize[0],                      // Total file size
-        ((f + BufferLength) / fsize) * 100   // Pos/filesize%
+        7,  cast(char*)formatsize(BufferLength),    // Buffer size
+        10, cast(char*)formatsize(CurrentPosition), // Formatted position
+        10, cast(char*)tfsize,                      // Total file size
+        ((cast(float)CurrentPosition + BufferLength) / fsize) * 100   // Pos/filesize%
     );
 }
 
-/// Prepare buffer according to console/term height
+/// Prepare buffer and pre-bake some variables
+extern (C)
 void PrepBuffer()
 {
     const int bufs = (WindowHeight - 2) * BytesPerRow; // Proposed buffer size
     Buffer = new ubyte[fsize >= bufs ? bufs : cast(uint)fsize];
     BufferLength = bufs;
+
+    const int ds = (3 * BytesPerRow) + 1; // data size
+    const int as = BytesPerRow + 1; // ascii size
+    data = cast(char*)realloc(data, ds);
+    ascii = cast(char*)realloc(ascii, as);
+    memset(data, ' ', ds); // avoids setting space manually everytime later
+    data[ds - 1] = ascii[as - 1] = '\0';
 }
 
-private void ReadFile()
+/**
+ * Read file and full buffer.
+ */
+extern (C)
+private void Read()
 {
     CurrentFile.rawRead(Buffer);
 }
 
 /**
  * Goes to the specified position in the file.
- * Ignores some verification since this function is mostly used
- * by the program itself. (And we know what we're doing!)
- * Params: pos = New position.
+ * Ignores bounds checking for performance reasons.
+ * Sets CurrentPosition.
+ * Params: pos = New position
  */
+extern (C)
 void Goto(long pos)
 {
     if (BufferLength < fsize)
     {
         CurrentFile.seek(CurrentPosition = pos);
-        ReadFile;
+        Read;
         UpdateDisplay;
         UpdateInfoBarRaw;
     }
@@ -267,10 +285,11 @@ void Goto(long pos)
 }
 
 /**
- * Goto a position while checking bounds
- * Mostly used for user entered numbers.
+ * Goes to the specified position in the file.
+ * Checks bounds and calls Goto.
  * Params: pos = New position
  */
+extern (C)
 void GotoC(long pos)
 {
     if (pos + BufferLength > fsize)
@@ -281,14 +300,13 @@ void GotoC(long pos)
 
 /**
  * Parses the string as a long and navigates to the file location.
- * This function takes a few more steps to ensure the number is properly
- * formatted and isn't going off range.
+ * Includes offset checking (+/- notation).
  * Params: str = String as a number
  */
 void GotoStr(string str)
 {
     import Utils : unformat;
-    byte rel; // Lazy code fix
+    byte rel; // Lazy code
     if (str[0] == '+') {
         rel = 1;
         str = str[1..$];
@@ -300,7 +318,7 @@ void GotoStr(string str)
     if (unformat(str, l)) {
         switch (rel) {
         case 1:
-            if (CurrentPosition + l - BufferLength < 0)
+            if (CurrentPosition + l - BufferLength < fsize)
                 Goto(CurrentPosition + l);
             break;
         case 2:
@@ -321,127 +339,58 @@ void GotoStr(string str)
 }
 
 /// Update display from buffer
+extern (C)
 void UpdateDisplay()
 {
     SetPos(0, 1);
     UpdateDisplayRaw;
 }
 
+private __gshared char* data, ascii; /// Temporary buffer
+
 /// Update display from buffer without setting cursor
+extern (C)
 void UpdateDisplayRaw()
 {
-    const int ds = (3 * BytesPerRow) + 1;
-    const int as = BytesPerRow + 1;
     ubyte* bufp = cast(ubyte*)Buffer;
-    char* data, ascii; // Buffers
     long p = CurrentPosition;
+    long pmax = CurrentPosition + BufferLength;
 
-    final switch (CurrentDisplayMode) {
-    case DisplayMode.Default:
-        data = cast(char*)malloc(ds);
-        ascii = cast(char*)malloc(as);
-        memset(data, ' ', ds);
-        memset(ascii, ' ', as);
-        *(data + ds - 1) = '\0';
-        *(ascii + as - 1) = '\0';
-        for (int bi; bi < BufferLength; p += BytesPerRow) {
-            final switch (CurrentOffsetType) {
-                case OffsetType.Hexadecimal: printf("%08X ", p); break;
-                case OffsetType.Decimal: printf("%08d ", p); break;
-                case OffsetType.Octal:   printf("%08o ", p); break;
-            }
+    for (; p < pmax; p += BytesPerRow) {
+        final switch (CurrentOffsetType) {
+        case OffsetType.Hexadecimal: printf("%08X ", p); break;
+        case OffsetType.Decimal: printf("%08d ", p); break;
+        case OffsetType.Octal: printf("%08o ", p); break;
+        }
 
-            if ((bi += BytesPerRow) > BufferLength) {
-                const ulong max = BufferLength - (bi - BytesPerRow);
-                for (int i, a; a < max; i += 3, ++a) {
-                    *(data + i + 1) = ffupper(*bufp & 0xF0);
-                    *(data + i + 2) = fflower(*bufp & 0xF);
-                    *(ascii + a) = FormatChar(*bufp);
-                    ++bufp;
-                }
-                *(data + (max * 3)) = '\0';
-                *(ascii + max) = '\0';
-                printf("%s  %s\n", data, ascii);
-                free(ascii);
-                free(data);
-                return;
-            } else {
-                for (int i, a; a < BytesPerRow; i += 3, ++a) {
-                    *(data + i + 1) = ffupper(*bufp & 0xF0);
-                    *(data + i + 2) = fflower(*bufp & 0xF);
-                    *(ascii + a) = FormatChar(*bufp);
-                    ++bufp;
-                } 
+        int i, a; // inits to 0
+
+        if (p > pmax) { // over buffer
+            const int max = cast(int)(pmax - (p - BytesPerRow));
+            for (; a < max; i += 3, ++a, ++bufp) {
+                data[i + 1] = ffupper(*bufp & 0xF0);
+                data[i + 2] = fflower(*bufp & 0xF);
+                ascii[a] = FormatChar(*bufp);
             }
+            data[max * 3] = ascii[max] = '\0';
             printf("%s  %s\n", data, ascii);
+            return;
+        } else {
+            for (; a < BytesPerRow; i += 3, ++a, ++bufp) {
+                data[i + 1] = ffupper(*bufp & 0xF0);
+                data[i + 2] = fflower(*bufp & 0xF);
+                ascii[a] = FormatChar(*bufp);
+            }
         }
-        free(ascii);
-        free(data);
-        break; // Default
-    case DisplayMode.Text:
-        ascii = cast(char*)malloc(BytesPerRow * 3);
-        ascii[as - 1] = '\0';
-        for (int o; o < BufferLength; o += BytesPerRow, p += CurrentPosition) {
-            size_t m = o + BytesPerRow;
-
-            if (m > BufferLength) { // If new maximum is overflowing buffer length
-                m = BufferLength;
-                const size_t ml = BufferLength - o;
-                // Only clear what is necessary
-                memset(&ascii[0] + ml, ' ', ml);
-            }
-
-            final switch (CurrentOffsetType) {
-                case OffsetType.Hexadecimal: printf("%08X  ", p); break;
-                case OffsetType.Decimal: printf("%08d  ", p); break;
-                case OffsetType.Octal:   printf("%08o  ", p); break;
-            }
-
-            for (int i = o, di = 1; i < m; ++i, di += 3) {
-                ascii[di] = FormatChar(*bufp);
-                ++bufp;
-            }
-
-            printf("%s\n", ascii);
-        }
-        free(ascii);
-        break; // Text
-    case DisplayMode.Data:
-        data = cast(char*)malloc(3 * BytesPerRow);
-        data[ds] = '\0';
-        for (int o; o < BufferLength; o += BytesPerRow, p += CurrentPosition) {
-            size_t m = o + BytesPerRow;
-
-            if (m > BufferLength) { // If new maximum is overflowing buffer length
-                m = BufferLength;
-                const size_t ml = BufferLength - o, dml = ml * 3;
-                // Only clear what is necessary
-                memset(&data[0] + dml, ' ', dml);
-            }
-
-            final switch (CurrentOffsetType) {
-                case OffsetType.Hexadecimal: printf("%08X ", p); break;
-                case OffsetType.Decimal: printf("%08d ", p); break;
-                case OffsetType.Octal:   printf("%08o ", p); break;
-            }
-
-            for (int i = o, di, ai; i < m; ++i, di += 3, ++ai) {
-                data[di] = ' ';
-                data[di + 1] = ffupper(Buffer[i] & 0xF0);
-                data[di + 2] = fflower(Buffer[i] &  0xF);
-            }
-
-            printf("%s\n", data);
-        }
-        free(data);
-        break; // Hex
+        printf("%s  %s\n", data, ascii);
     }
 }
 
 /// Refresh display
+extern (C)
 void RefreshDisplay()
 {
-    ReadFile;
+    Read;
     UpdateDisplay;
 }
 
@@ -457,6 +406,7 @@ void Message(string msg)
 }
 
 /// Clear upper bar
+extern (C)
 void ClearMsg()
 {
     SetPos(0, 0);
@@ -475,6 +425,7 @@ void MessageAlt(string msg)
 }
 
 /// Clear bottom bar
+extern (C)
 void ClearMsgAlt()
 {
     SetPos(0, WindowHeight - 1);
@@ -482,21 +433,25 @@ void ClearMsgAlt()
 }
 
 /// Print some file information at the bottom bar
+extern (C)
 void PrintFileInfo()
 {
     import Utils : formatsize;
     import std.format : format;
     import std.path : baseName;
     MessageAlt(format("%s  %s",
-        formatsize(fsize), // File formatted size
+        tfsize,
         baseName(CurrentFile.name))
     );
 }
 
 /// Exits ddhx
+extern (C)
 void Exit()
 {
     import core.stdc.stdlib : exit;
+    free(ascii); // for good measure
+    free(data); // ditto
     Clear();
     exit(0);
 }
@@ -506,6 +461,7 @@ void Exit()
  * Params: b = Byte
  * Returns: Hex character
  */
+extern (C)
 private char ffupper(ubyte b) pure @safe @nogc
 {
     final switch (b) {
@@ -533,6 +489,7 @@ private char ffupper(ubyte b) pure @safe @nogc
  * Params: b = Byte
  * Returns: Hex character
  */
+extern (C)
 private char fflower(ubyte b) pure @safe @nogc
 {
     final switch (b) {
@@ -561,6 +518,7 @@ private char fflower(ubyte b) pure @safe @nogc
  * Params: c = Unsigned byte
  * Returns: ASCII character
  */
+extern (C)
 char FormatChar(ubyte c) pure @safe @nogc nothrow
 {
     //TODO: EIBEC
