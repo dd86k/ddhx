@@ -25,7 +25,7 @@ version (Posix) {
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
-	private enum TERM_ATTR = ~ICANON & ECHO;
+	private enum TERM_ATTR = ~ICANON & ~ECHO;
 	private __gshared termios old_tio, new_tio;
 }
 
@@ -192,7 +192,6 @@ KeyInfo ReadKey(ubyte echo = false) {
 		tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
 
 		int c = getchar;
-		printf("%d\n", c);
 
 		with (k) switch (c) {
 		case '\n': // \n (ENTER)
@@ -203,7 +202,7 @@ KeyInfo ReadKey(ubyte echo = false) {
 			case '[':
 				switch (c = getchar) {
 				case 'A': keyCode = Key.UpArrow; goto _READKEY_END;
-				case 'B': keyCode = Key.DownArrow; printf("test\n"); goto _READKEY_END;
+				case 'B': keyCode = Key.DownArrow; goto _READKEY_END;
 				case 'C': keyCode = Key.RightArrow; goto _READKEY_END;
 				case 'D': keyCode = Key.LeftArrow; goto _READKEY_END;
 				case 'F': keyCode = Key.End; goto _READKEY_END;
