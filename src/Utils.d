@@ -56,7 +56,7 @@ ulong unformatHex(string e) nothrow @nogc pure { //TODO: Use a byte pointer inst
  *   base10 = Use x1000 instead
  * Returns: Formatted string
  */
-string formatsize(long size, bool base10 = false) //BUG: %f is unpure? {
+string formatsize(long size, bool base10 = false) { //BUG: %f is unpure?
 	import std.format : format;
 
 	enum : long {
