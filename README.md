@@ -1,5 +1,7 @@
 # ddhx, Interactive Hexadecimal File Viewer
 
+**NOTE:** Please note that ddhx is an inactive project.
+
 ![Screenshot of ddhx](https://dd86k.github.io/imgs/ddhx3.png)
 
 ddhx is a replacement for [0xdd](https://github.com/dd86k/0xdd) as a native tool.
