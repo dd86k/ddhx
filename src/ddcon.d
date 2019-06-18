@@ -4,8 +4,10 @@
 
 module ddcon;
 
+///
 extern (C) int putchar(int);
-extern (C) int getchar();
+///
+private extern (C) int getchar();
 
 private import core.stdc.stdio : printf;
 private alias sys = core.stdc.stdlib.system;
@@ -80,6 +82,7 @@ void Clear() {
 // Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
 
 /// Window width
+/// Returns: Window width in characters
 @property ushort WindowWidth() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
@@ -94,20 +97,8 @@ void Clear() {
 	}
 }
 
-/// Window width
-@property void WindowWidth(int w) {
-	version (Windows) {
-		COORD c = { cast(SHORT)w, cast(SHORT)WindowWidth };
-		SetConsoleScreenBufferSize(hOut, c);
-	} else version (Posix) {
-		winsize ws = { cast(ushort)w, WindowWidth };
-		ioctl(STDOUT_FILENO, TIOCSWINSZ, &ws);
-	} else {
-		static assert(0, "WindowWidth : Not implemented");
-	}
-}
-
 /// Window height
+/// Returns: Window height in characters
 @property ushort WindowHeight() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
@@ -117,19 +108,6 @@ void Clear() {
 		winsize ws = void;
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
 		return ws.ws_row;
-	} else {
-		static assert(0, "WindowHeight : Not implemented");
-	}
-}
-
-/// Window height
-@property void WindowHeight(int h) {
-	version (Windows) {
-		COORD c = { cast(SHORT)WindowWidth, cast(SHORT)h };
-		SetConsoleScreenBufferSize(hOut, c);
-	} else version (Posix) {
-		winsize ws = { WindowWidth, cast(ushort)h, 0, 0 };
-		ioctl(STDOUT_FILENO, TIOCSWINSZ, &ws);
 	} else {
 		static assert(0, "WindowHeight : Not implemented");
 	}
@@ -149,10 +127,12 @@ void Clear() {
 extern (C)
 void SetPos(int x, int y) {
 	version (Windows) { // 0-based
-		COORD c = { cast(SHORT)x, cast(SHORT)y };
+		__gshared COORD c = void;
+		c.X = cast(short)x;
+		c.Y = cast(short)y;
 		SetConsoleCursorPosition(hOut, c);
 	} else version (Posix) { // 1-based
-		printf("\033[%d;%dH", y + 1, x + 1);
+		printf("\033[%d;%dH", ++y, ++x);
 	}
 }
 
@@ -162,15 +142,15 @@ void SetPos(int x, int y) {
 
 /**
  * Read a single character.
- * Params: echo = Echo character to output.
- * Returns: A KeyInfo structure.
+ * Params:
+ *   k = KeyInfo struct
  */
 extern (C)
-KeyInfo ReadKey(ubyte echo = false) {
-	KeyInfo k;
+void ReadKey(ref KeyInfo k) {
 	version (Windows) { // Sort of is like .NET's ReadKey
 		INPUT_RECORD ir = void;
 		DWORD num = void;
+		k.keyCode = 0;
 		if (ReadConsoleInput(hIn, &ir, 1, &num)) {
 			if (ir.KeyEvent.bKeyDown && ir.EventType == KEY_EVENT) {
 				const DWORD state = ir.KeyEvent.dwControlKeyState;
@@ -179,9 +159,6 @@ KeyInfo ReadKey(ubyte echo = false) {
 				k.shift = (state & SHIFT_PRESSED) != 0;
 				k.keyChar  = ir.KeyEvent.AsciiChar;
 				k.keyCode  = ir.KeyEvent.wVirtualKeyCode;
-				k.scanCode = ir.KeyEvent.wVirtualScanCode;
- 
-				if (echo) putchar(k.keyChar);
 			}
 		}
 	} else version (Posix) {
@@ -229,11 +206,11 @@ _READKEY_DEFAULT:
 _READKEY_END:
 		tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
 	} // version posix
-	return k;
 }
 
 /// Key codes mapping.
 enum Key : ushort {
+	Undefined = 0,
 	Backspace = 8,
 	Tab = 9,
 	Clear = 12,
@@ -388,12 +365,13 @@ enum Key : ushort {
 struct KeyInfo {
 	char keyChar;	/// UTF-8 Character.
 	ushort keyCode;	/// Key code.
-	ushort scanCode;	/// Scan code.
 	ubyte ctrl;	/// If either CTRL was held down.
 	ubyte alt;	/// If either ALT was held down.
 	ubyte shift;	/// If SHIFT was held down.
 }
 
+/// 
 struct WindowSize {
+	/// 
 	ushort Width, Height;
 }

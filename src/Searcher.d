@@ -2,15 +2,17 @@
  * Search 
  */
 
-module Searcher;
+module searcher;
 
 import std.stdio;
 import core.stdc.string : memcpy;
 import std.encoding : transcode;
 import ddhx;
 import std.format : format;
-import Utils : unformat;
+import utils : unformat;
+import std.range : chunks;
 
+/// File search chunk buffer size
 private enum CHUNK_SIZE = 4096;
 
 /**
@@ -69,9 +71,8 @@ void SearchUTF32String(const char[] s, bool invert = false) {
  */
 void SearchByte(const ubyte b) {
 	MessageAlt("Searching byte...");
-	long pos = CurrentPosition + 1;
-	CurrentFile.seek(pos);
-	foreach (const ubyte[] buf; CurrentFile.byChunk(CHUNK_SIZE)) {
+	long pos = fpos + 1;
+	foreach (const ubyte[] buf; (cast(ubyte[])MMFile[]).chunks(CHUNK_SIZE)) {
 		foreach (i; buf) {
 			if (b == i) {
 				GotoC(pos);
@@ -140,8 +141,9 @@ void SearchUInt64(string s, bool invert = false) {
  *   invert = Invert endianness
  */
 private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
+	//TODO: template for "size" with TYPE
 	if (l) {
-		import Utils : bswap16, bswap32, bswap64;
+		import utils : bswap16, bswap32, bswap64;
 		if (invert) switch (size) {
 			case 2:  l = bswap16(cast(ushort)l); break;
 			case 4:  l = bswap32(cast(uint)l); break;
@@ -152,31 +154,31 @@ private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
 }
 
 private void SearchArray(ubyte[] input, string type) {
-	MessageAlt(" Searching " ~ type ~ "...");
+	MessageAlt(" Searching %s", type);
 	const ubyte b = input[0];
 	const size_t len = input.length;
-	long pos = CurrentPosition + 1; // To not affect CurrentPosition itself
-	CurrentFile.seek(pos);
-	foreach (const ubyte[] buf; CurrentFile.byChunk(CHUNK_SIZE)) {
+	long pos = fpos + 1; // To not affect CurrentPosition itself
+	foreach (const ubyte[] buf; (cast(ubyte[])MMFile[]).chunks(CHUNK_SIZE)) {
 		const size_t bufl = buf.length;
 		for (size_t i; i < bufl; ++i) {
 			if (buf[i] == b) {
 				const size_t ilen = i + len;
 				if (ilen < bufl) { // Within CHUNK
 					if (buf[i..i+len] == input) {
-S_FOUND:                GotoC(pos + i);
+S_FOUND:                			GotoC(pos + i);
 						return;
 					}
 				} else if (ilen < fsize) { // Out-of-chunk
-					CurrentFile.seek(pos + i);
+				//TODO:
+					/*CurrentFile.seek(pos + i);
 					if (CurrentFile.byChunk(len).front == input) {
 						goto S_FOUND;
-					}
+					}*/
 				} else goto S_END; // EOF otherwise, can't continue
 			}
 		}
 		pos += CHUNK_SIZE;
 	}
 S_END:
-	MessageAlt(" Type " ~ type ~ " was not found");
+	MessageAlt(" Type not found: %s", type);
 }

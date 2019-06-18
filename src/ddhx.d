@@ -1,17 +1,23 @@
+/**
+ * Main rendering engine.
+ */
 module ddhx;
 
-import std.stdio : File, write, writef, writeln;
+import std.stdio : write, writef, writeln;
+import std.mmfile;
 import core.stdc.stdio : printf, puts;
 import core.stdc.stdlib;
 import core.stdc.string : memset;
-import Menu;
-import ddcon;
+import menu, ddcon;
+import utils : formatsize, unformat;
+
+//TODO: retain window dimensions until a new size event or something
 
 /// App version
-enum APP_VERSION = "0.1.0";
+enum APP_VERSION = "0.2.0";
 
 /// Offset type (hex, dec, etc.)
-enum OffsetType : ubyte {
+enum OffsetType : size_t {
 	Hexadecimal, Decimal, Octal
 }
 
@@ -20,44 +26,69 @@ enum DisplayMode : ubyte {
 	Default, Text, Data
 }
 
-enum DEFAULT_CHAR = '.'; /// Default character for non-displayable characters
+/// Default character for non-displayable characters
+enum DEFAULT_CHAR = '.';
 
-/*
- * User settings
- */
+/// Preferred table over computing the same values again$(BR)
+/// Hint: Fast
+private __gshared const char[] hexTable = [
+	'0', '1', '2', '3', '4', '5', '6', '7',
+	'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+];
 
-__gshared ushort BytesPerRow = 16; /// Bytes shown per row
-__gshared OffsetType CurrentOffsetType; /// Current offset view type
-__gshared DisplayMode CurrentDisplayMode; /// Current display view type
+/// For header
+private __gshared const char[] offsetTable = [
+	'h', 'd', 'o'
+];
+/// For formatting
+private __gshared const char[] formatTable = [
+	'X', 'u', 'o'
+];
 
-/*
- * Internal
- */
+//
+// User settings
+//
 
-__gshared File CurrentFile; /// Current file handle
-__gshared long CurrentPosition; /// Current file position
-__gshared ubyte[] Buffer; /// Display buffer
-__gshared size_t BufferLength; /// Buffer length
-__gshared long fsize; /// File size, cached to avoid spamming system functions
-__gshared string tfsize; /// total formatted size
+/// Bytes shown per row
+__gshared ushort BytesPerRow = 16;
+/// Current offset view type
+__gshared OffsetType CurrentOffsetType = void;
+/// Current display view type
+__gshared DisplayMode CurrentDisplayMode = void;
+
+//
+// Internal
+//
+
+__gshared MmFile MMFile = void;
+__gshared ubyte* mmbuf = void;
+__gshared uint screenl = void; // screen size
+
+__gshared string fname = void;
+__gshared long fpos = void; /// Current file position
+__gshared long fsize = void; /// File size
+
+private __gshared char[30] tfsizebuf; /// total formatted size buffer
+private __gshared char[] tfsize; /// total formatted size (pointer)
 
 /// Main app entry point
 void Start() {
-	import Utils : formatsize;
-	tfsize = formatsize(fsize);
+	fpos = 0;
+	tfsize = formatsize(tfsizebuf, fsize);
 	InitConsole;
 	PrepBuffer;
-	Read;
 	Clear;
 	UpdateOffsetBar;
-	UpdateDisplayRaw;
+	UpdateDisplayRawMM;
 	UpdateInfoBarRaw;
 
-	while (1) {
-		const KeyInfo g = ReadKey;
-		//TODO: Handle resize event
-		HandleKey(&g);
-	}
+	KeyInfo k = void;
+KEY:
+	ReadKey(k);
+	//TODO: Handle resize event
+	if (k.keyCode)
+		HandleKey(k);
+	goto KEY;
 }
 
 /*void HandleMouse(const MouseInfo* mi)
@@ -65,20 +96,20 @@ void Start() {
 	size_t bs = BufferLength;
 
 	switch (mi.Type) {
-		case MouseEventType.Wheel:
-			if (mi.ButtonState > 0) { // Up
-				if (CurrentPosition - BytesPerRow >= 0)
-					Goto(CurrentPosition - BytesPerRow);
-				else
-					Goto(0);
-			} else { // Down
-				if (CurrentPosition + bs + BytesPerRow <= fs)
-					Goto(CurrentPosition + BytesPerRow);
-				else
-					Goto(fs - bs);
-			}
-			break;
-		default:
+	case MouseEventType.Wheel:
+		if (mi.ButtonState > 0) { // Up
+			if (CurrentPosition - BytesPerRow >= 0)
+				Goto(CurrentPosition - BytesPerRow);
+			else
+				Goto(0);
+		} else { // Down
+			if (CurrentPosition + bs + BytesPerRow <= fs)
+				Goto(CurrentPosition + BytesPerRow);
+			else
+				Goto(fs - bs);
+		}
+		break;
+	default:
 	}
 }*/
 
@@ -87,79 +118,78 @@ void Start() {
  * Params: k = KeyInfo (ddcon)
  */
 extern (C)
-void HandleKey(const KeyInfo* k) {
-	import SettingHandler : HandleWidth;
-	alias bs = BufferLength;
+void HandleKey(const ref KeyInfo k) {
+	import settings : HandleWidth;
 
 	switch (k.keyCode) {
-	/*
-	 * Navigation
-	 */
+
+	//
+	// Navigation
+	//
 
 	case Key.UpArrow:
-		if (CurrentPosition - BytesPerRow >= 0)
-			Goto(CurrentPosition - BytesPerRow);
+		if (fpos - BytesPerRow >= 0)
+			Goto(fpos - BytesPerRow);
 		else
 			Goto(0);
 		break;
 	case Key.DownArrow:
-		if (CurrentPosition + bs + BytesPerRow <= fsize)
-			Goto(CurrentPosition + BytesPerRow);
+		if (fpos + screenl + BytesPerRow <= fsize)
+			Goto(fpos + BytesPerRow);
 		else
-			Goto(fsize - bs);
+			Goto(fsize - screenl);
 		break;
 	case Key.LeftArrow:
-		if (CurrentPosition - 1 >= 0) // Else already at 0
-			Goto(CurrentPosition - 1);
+		if (fpos - 1 >= 0) // Else already at 0
+			Goto(fpos - 1);
 		break;
 	case Key.RightArrow:
-		if (CurrentPosition + bs + 1 <= fsize)
-			Goto(CurrentPosition + 1);
+		if (fpos + screenl + 1 <= fsize)
+			Goto(fpos + 1);
 		else
-			Goto(fsize - bs);
+			Goto(fsize - screenl);
 		break;
 	case Key.PageUp:
-		if (CurrentPosition - cast(long)bs >= 0)
-			Goto(CurrentPosition - bs);
+		if (fpos - cast(long)screenl >= 0)
+			Goto(fpos - screenl);
 		else
 			Goto(0);
 		break;
 	case Key.PageDown:
-		if (CurrentPosition + bs + bs <= fsize)
-			Goto(CurrentPosition + bs);
+		if (fpos + screenl + screenl <= fsize)
+			Goto(fpos + screenl);
 		else
-			Goto(fsize - bs);
+			Goto(fsize - screenl);
 		break;
-
 	case Key.Home:
 		if (k.ctrl)
 			Goto(0);
 		else
-			Goto(CurrentPosition - (CurrentPosition % BytesPerRow));
+			Goto(fpos - (fpos % BytesPerRow));
 		break;
 	case Key.End:
 		if (k.ctrl)
-			Goto(fsize - bs);
+			Goto(fsize - screenl);
 		else {
-			const long np = CurrentPosition +
-				(BytesPerRow - CurrentPosition % BytesPerRow);
+			const long np = fpos +
+				(BytesPerRow - fpos % BytesPerRow);
 
-			if (np + bs <= fsize)
+			if (np + screenl <= fsize)
 				Goto(np);
 			else
-				Goto(fsize - bs);
+				Goto(fsize - screenl);
 		}
 		break;
 
-	/*
-	 * Actions/Shortcuts
-	 */
+	//
+	// Actions/Shortcuts
+	//
 
 	case Key.Escape, Key.Enter:
-		EnterMenu;
+		Menu;
 		break;
 	case Key.G:
-		EnterMenu("g ");
+		Menu("g ");
 		UpdateOffsetBar();
 		break;
 	case Key.I:
@@ -182,10 +212,8 @@ extern (C)
 void RefreshAll() {
 	PrepBuffer;
 	Clear;
-	CurrentFile.seek(CurrentPosition);
-	Read;
 	UpdateOffsetBar;
-	UpdateDisplayRaw;
+	UpdateDisplayRawMM;
 	UpdateInfoBarRaw;
 }
 
@@ -194,25 +222,13 @@ void RefreshAll() {
  */
 extern (C)
 void UpdateOffsetBar() {
+	char [8]format = cast(char[8])" %02X"; // default
+	format[4] = formatTable[CurrentOffsetType];
 	SetPos(0, 0);
-	char* offset = cast(char*)"Offset h "; // default
-	char* format = cast(char*)" %02X"; // default
-	switch (CurrentOffsetType) {
-		case OffsetType.Decimal:
-			format[4] = 'd';
-			offset[7] = 'd';
-			break;
-		case OffsetType.Octal:
-			format[4] = 'o';
-			offset[7] = 'o';
-			break;
-		case OffsetType.Hexadecimal:
-		default: break;
-	}
-	printf(offset);
+	printf("Offset %c ", offsetTable[CurrentOffsetType]);
 	for (ushort i; i < BytesPerRow; ++i)
-		printf(format, i);
-	puts("");
+		printf(cast(char*)format, i);
+	putchar('\n');
 }
 
 /// Update the bottom current information bar.
@@ -225,36 +241,20 @@ void UpdateInfoBar() {
 /// Updates information bar without cursor position call.
 extern (C)
 void UpdateInfoBarRaw() {
-	import Utils : formatsize;
+	char[30] bl = void, cp = void;
 	writef(" %*s | %*s/%*s | %7.3f%%",
-		7,  formatsize(BufferLength),    // Buffer size
-		10, formatsize(CurrentPosition), // Formatted position
-		10, tfsize,                      // Total file size
-		((cast(float)CurrentPosition + BufferLength) / fsize) * 100   // Pos/filesize%
+		7,  formatsize(bl, screenl), // Buffer size
+		10, formatsize(cp, fpos), // Formatted position
+		10, tfsize, // Total file size
+		((cast(float)fpos + screenl) / fsize) * 100 // Pos/filesize%
 	);
 }
 
-/// Prepare buffer and pre-bake some variables
+/// Determine screensize
 extern (C)
 void PrepBuffer() {
 	const int bufs = (WindowHeight - 2) * BytesPerRow; // Proposed buffer size
-	Buffer = new ubyte[fsize >= bufs ? bufs : cast(uint)fsize];
-	BufferLength = bufs;
-
-	const int ds = (3 * BytesPerRow) + 1; // data size
-	const int as = BytesPerRow + 1; // ascii size
-	data = cast(char*)realloc(data, ds);
-	ascii = cast(char*)realloc(ascii, as);
-	memset(data, ' ', ds); // avoids setting space manually everytime later
-	data[ds - 1] = ascii[as - 1] = '\0';
-}
-
-/**
- * Read file and full buffer.
- */
-extern (C)
-private void Read() {
-	CurrentFile.rawRead(Buffer);
+	screenl = fsize >= bufs ? bufs : cast(uint)fsize;
 }
 
 /**
@@ -265,9 +265,8 @@ private void Read() {
  */
 extern (C)
 void Goto(long pos) {
-	if (BufferLength < fsize) {
-		CurrentFile.seek(CurrentPosition = pos);
-		Read;
+	if (screenl < fsize) {
+		fpos = pos;
 		UpdateDisplay;
 		UpdateInfoBarRaw;
 	} else
@@ -281,8 +280,8 @@ void Goto(long pos) {
  */
 extern (C)
 void GotoC(long pos) {
-	if (pos + BufferLength > fsize)
-		Goto(fsize - BufferLength);
+	if (pos + screenl > fsize)
+		Goto(fsize - screenl);//Buffer.length);
 	else
 		Goto(pos);
 }
@@ -293,7 +292,6 @@ void GotoC(long pos) {
  * Params: str = String as a number
  */
 void GotoStr(string str) {
-	import Utils : unformat;
 	byte rel; // Lazy code
 	if (str[0] == '+') {
 		rel = 1;
@@ -306,15 +304,15 @@ void GotoStr(string str) {
 	if (unformat(str, l)) {
 		switch (rel) {
 		case 1:
-			if (CurrentPosition + l - BufferLength < fsize)
-				Goto(CurrentPosition + l);
+			if (fpos + l - screenl < fsize)
+				Goto(fpos + l);
 			break;
 		case 2:
-			if (CurrentPosition - l >= 0)
-				Goto(CurrentPosition - l);
+			if (fpos - l >= 0)
+				Goto(fpos - l);
 			break;
 		default:
-			if (l >= 0 && l < fsize - BufferLength) {
+			if (l >= 0 && l < fsize - screenl) {
 				Goto(l);
 			} else {
 				import std.format : format;
@@ -330,53 +328,52 @@ void GotoStr(string str) {
 extern (C)
 void UpdateDisplay() {
 	SetPos(0, 1);
-	UpdateDisplayRaw;
+	UpdateDisplayRawMM;
 }
-
-private __gshared char* data, ascii; /// Temporary buffer
 
 /// Update display from buffer without setting cursor
 extern (C)
-void UpdateDisplayRaw() {
-	ubyte* bufp = cast(ubyte*)Buffer;
-	long p = CurrentPosition;
-	long pmax = CurrentPosition + BufferLength;
+void UpdateDisplayRawMM() {
+	import core.stdc.string : memset;
+	char [1024]a = void;
+	char [1024]d = void;
+	
+	size_t brow = BytesPerRow; /// bytes per row
+	int minw = cast(int)brow * 3;
 
-	for (; p < pmax; p += BytesPerRow) {
-		final switch (CurrentOffsetType) {
-		case OffsetType.Hexadecimal: printf("%08X ", p); break;
-		case OffsetType.Decimal: printf("%08d ", p); break;
-		case OffsetType.Octal: printf("%08o ", p); break;
+	a[brow] = '\0';
+	d[minw] = '\0';
+
+	long p = fpos;
+	const long blen = p + screenl;
+
+	//TODO: if >fsize, then slice differently
+	ubyte[] fbuf = cast(ubyte[])MMFile[p..blen];
+
+	char [16]bytef = cast(char[16])"%08X %s  %s\n";
+	bytef[3] = formatTable[CurrentOffsetType];
+
+	for (size_t bi; p < blen; p += brow) {
+		const bool over = p + brow > fsize;
+
+		if (over) {
+			brow = fsize - p;
+			memset(cast(char*)a, ' ', BytesPerRow);
+			memset(cast(char*)d, ' ', minw);
 		}
 
-		int i, a; // inits to 0
-
-		if (p > pmax) { // over buffer
-			const int max = cast(int)(pmax - (p - BytesPerRow));
-			for (; a < max; i += 3, ++a, ++bufp) {
-				data[i + 1] = ffupper(*bufp & 0xF0);
-				data[i + 2] = fflower(*bufp & 0xF);
-				ascii[a] = FormatChar(*bufp);
-			}
-			data[max * 3] = ascii[max] = '\0';
-			printf("%s  %s\n", data, ascii);
-			return;
-		} else {
-			for (; a < BytesPerRow; i += 3, ++a, ++bufp) {
-				data[i + 1] = ffupper(*bufp & 0xF0);
-				data[i + 2] = fflower(*bufp & 0xF);
-				ascii[a] = FormatChar(*bufp);
-			}
+		for (size_t di, ai; ai < brow; ++ai) {
+			const ubyte b = fbuf[bi++];
+			d[di++] = ' ';
+			d[di++] = hexTable[b >> 4];
+			d[di++] = hexTable[b & 15];
+			a[ai] = FormatChar(b);
 		}
-		printf("%s  %s\n", data, ascii);
+
+		printf(cast(char*)bytef, p, cast(char*)d, cast(char*)a);
+
+		if (over) return;
 	}
-}
-
-/// Refresh display
-extern (C)
-void RefreshDisplay() {
-	Read;
-	UpdateDisplay;
 }
 
 /**
@@ -406,6 +403,11 @@ void MessageAlt(string msg) {
 	write(msg);
 }
 
+void MessageAlt(string f, string arg) {
+	import std.format : format;
+	MessageAlt(format(f, arg));
+}
+
 /// Clear bottom bar
 extern (C)
 void ClearMsgAlt() {
@@ -416,77 +418,21 @@ void ClearMsgAlt() {
 /// Print some file information at the bottom bar
 extern (C)
 void PrintFileInfo() {
-	import Utils : formatsize;
-	import std.format : format;
+	import std.format : sformat;
 	import std.path : baseName;
-	MessageAlt(format("%s  %s",
-		tfsize,
-		baseName(CurrentFile.name))
-	);
+
+	char[512] b = void;
+
+	ClearMsgAlt;
+	MessageAlt(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
 }
 
 /// Exits ddhx
 extern (C)
 void Exit() {
 	import core.stdc.stdlib : exit;
-	free(ascii); // for good measure
-	free(data); // ditto
 	Clear;
 	exit(0);
-}
-
-/**
- * Fast hex format higher nibble
- * Params: b = Byte
- * Returns: Hex character
- */
-extern (C)
-private char ffupper(ubyte b) pure @safe @nogc nothrow {
-	final switch (b) {
-	case 0:    return '0';
-	case 0x10: return '1';
-	case 0x20: return '2';
-	case 0x30: return '3';
-	case 0x40: return '4';
-	case 0x50: return '5';
-	case 0x60: return '6';
-	case 0x70: return '7';
-	case 0x80: return '8';
-	case 0x90: return '9';
-	case 0xA0: return 'A';
-	case 0xB0: return 'B';
-	case 0xC0: return 'C';
-	case 0xD0: return 'D';
-	case 0xE0: return 'E';
-	case 0xF0: return 'F';
-	}
-}
-
-/**
- * Fast hex format lower nibble
- * Params: b = Byte
- * Returns: Hex character
- */
-extern (C)
-private char fflower(ubyte b) pure @safe @nogc nothrow {
-	final switch (b) {
-	case 0:   return '0';
-	case 1:   return '1';
-	case 2:   return '2';
-	case 3:   return '3';
-	case 4:   return '4';
-	case 5:   return '5';
-	case 6:   return '6';
-	case 7:   return '7';
-	case 8:   return '8';
-	case 9:   return '9';
-	case 0xA: return 'A';
-	case 0xB: return 'B';
-	case 0xC: return 'C';
-	case 0xD: return 'D';
-	case 0xE: return 'E';
-	case 0xF: return 'F';
-	}
 }
 
 /**
@@ -496,7 +442,6 @@ private char fflower(ubyte b) pure @safe @nogc nothrow {
  * Returns: ASCII character
  */
 extern (C)
-char FormatChar(ubyte c) pure @safe @nogc nothrow {
-	//TODO: EIBEC
+char FormatChar(ubyte c) pure @safe @nogc nothrow { //TODO: EIBEC?
 	return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
 }

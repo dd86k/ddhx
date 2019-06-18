@@ -1,10 +1,10 @@
-module Menu;
+module menu;
 
 import std.stdio : readln, write;
 import core.stdc.stdio : printf;
-import ddcon, ddhx, Searcher;
+import ddcon, ddhx, searcher;
 import std.format : format;
-import SettingHandler;
+import settings;
 
 //TODO: count command (stat)
 //TODO: Invert aliases
@@ -16,17 +16,27 @@ import SettingHandler;
 
 /**
  * Internal command prompt.
+ * Params: init = Initial command
  */
-void EnterMenu(string init = null) {
+void Menu(string prepend = null) {
 	import std.array : split;
-	//import std.algorithm.iteration : splitter, filter;
+	import std.algorithm.iteration : splitter;
+	import std.algorithm.sorting : merge;
+	import std.range : chain;
+	import std.algorithm : joiner;
+	import std.format : sformat;
+
 	ClearMsg;
 	SetPos(0, 0);
 	printf(">");
-	if (init)
-		write(init);
-	//TODO: Wrap arguments with commas and remove empty entries
-	string[] e = (init ~ readln[0..$-1]).split; // split ' ', no empty entries
+	if (prepend)
+		write(prepend);
+
+//	char[] inbuf = void;
+//	const size_t inbufl = readln(inbuf);
+
+	//TODO: GC-free merge prepend and readln(buf), then split
+	string[] e = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 
 	UpdateOffsetBar;
 	const size_t argl = e.length;
@@ -37,7 +47,7 @@ void EnterMenu(string init = null) {
 		if (argl > 1)
 			switch (e[1]) {
 			case "e", "end":
-				Goto(fsize - BufferLength);
+				Goto(fsize - screenl);
 				break;
 			case "h", "home", "s":
 				Goto(0);
@@ -117,7 +127,7 @@ void EnterMenu(string init = null) {
 		case "sb": // Search byte
 SEARCH_BYTE:
 			if (argl > 1) {
-				import Utils : unformat;
+				import utils : unformat;
 				long l;
 				if (unformat(e[1], l)) {
 					SearchByte(l & 0xFF);
@@ -129,21 +139,21 @@ SEARCH_BYTE:
 		case "i", "info": PrintFileInfo; break;
 		case "o", "offset":
 			if (argl > 1) {
-				import SettingHandler : HandleOffset;
+				import settings : HandleOffset;
 				HandleOffset(e[1]);
 				UpdateOffsetBar;
-				UpdateDisplayRaw;
+				UpdateDisplayRawMM;
 			}
 			break;
 		case "clear":
 			Clear;
 			UpdateOffsetBar;
-			UpdateDisplayRaw;
+			UpdateDisplayRawMM;
 			UpdateInfoBarRaw;
 			break;
-		/*
-			* Setting manager
-			*/
+		//
+		// Setting manager
+		//
 		case "set":
 			if (argl > 1) {
 				import std.format : format;
@@ -172,14 +182,14 @@ SEARCH_BYTE:
 		case "q", "quit": Exit; break;
 		case "about": ShowAbout; break;
 		case "version": ShowInfo; break;
-		default: MessageAlt("Unknown command: " ~ e[0]); break;
+		default: MessageAlt("Unknown command: %s", e[0]); break;
 	}
 }
 
 private void ShowAbout() {
-	MessageAlt("Written by dd86k. Copyright (c) dd86k 2017-2018");
+	MessageAlt("Written by dd86k. Copyright (c) dd86k 2017-2019");
 }
 
 private void ShowInfo() {
-	MessageAlt("Using ddhx version " ~ APP_VERSION);
+	MessageAlt("Using ddhx " ~ APP_VERSION); // const string
 }

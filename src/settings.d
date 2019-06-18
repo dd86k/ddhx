@@ -1,8 +1,8 @@
-module SettingHandler;
+module settings;
 
 import std.stdio;
 import ddhx;
-import Utils : unformat;
+import utils : unformat;
 import core.stdc.stdlib : exit;
 import std.format : format;
 
