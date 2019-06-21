@@ -150,8 +150,10 @@ ulong bswap64(ulong n) pure nothrow @nogc {
 			ret;
 		}
 	} else {
-		uint *p = cast(uint*)&num;
-		const uint a = p[0], b = p[1];
-		return bswap32(a) << 32 | bswap32(b);
+		uint *p = cast(uint*)&n;
+		const uint a = bswap32(p[0]);
+		p[1] = bswap32(p[0]);
+		p[0] = a;
+		return n;
 	}
 }

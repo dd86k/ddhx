@@ -44,7 +44,7 @@ void Menu(string prepend = null) {
 
 	switch (e[0]) {
 	case "g", "goto":
-		if (argl > 1)
+		if (argl > 1) {
 			switch (e[1]) {
 			case "e", "end":
 				Goto(fsize - screenl);
@@ -54,135 +54,135 @@ void Menu(string prepend = null) {
 				break;
 			default:
 				GotoStr(e[1]);
-				break;
 			}
+		}
 		break;
-		case "s", "search": // Search
-			if (argl > 1) {
-				string value = e[$-1];
-				const bool a2 = argl > 2;
-				bool invert;
-				if (a2)
-					invert = e[2] == "invert";
-				switch (e[1]) {
-				case "byte":
-					if (argl > 2) {
-						e[1] = value;
-						goto SEARCH_BYTE;
-					} else
-						MessageAlt("Missing argument. (Byte)");
-					break;
-				case "short", "ushort", "word", "w":
-					if (argl > 2) {
-						SearchUInt16(value, invert);
-					} else
-						MessageAlt("Missing argument. (Number)");
-					break;
-				case "int", "uint", "doubleword", "dword", "dw":
-					if (argl > 2) {
-						SearchUInt32(value, invert);
-					} else
-						MessageAlt("Missing argument. (Number)");
-					break;
-				case "long", "ulong", "quadword", "qword", "qw":
-					if (argl > 2) {
-						SearchUInt64(value, invert);
-					} else
-						MessageAlt("Missing argument. (Number)");
-					break;
-				case "string":
-					if (argl > 2)
-						SearchUTF8String(value);
-					else
-						MessageAlt("Missing argument. (String)");
-					break;
-				case "wstring":
-					if (argl > 2)
-						SearchUTF16String(value, invert);
-					else
-						MessageAlt("Missing argument. (String)");
-					break;
-				default:
-					if (argl > 1)
-						MessageAlt("Invalid type.");
-					else
-						MessageAlt("Missing type.");
-					break;
-				}
-				break; // "search"
-			}
-		case "ss": // Search ASCII/UTF-8 string
-			if (argl > 1)
-				SearchUTF8String(e[1]);
+	case "s", "search": // Search
+		if (argl <= 1) break;
+
+		string value = e[$ - 1];
+		const bool a2 = argl > 2;
+		bool invert;
+		if (a2) invert = e[2] == "invert";
+		switch (e[1]) {
+		case "u8":
+			if (argl > 2) {
+				e[1] = value;
+				goto SEARCH_BYTE;
+			} else
+				MessageAlt("Missing argument. (Byte)");
+			break;
+		case "u16":
+			if (argl > 2) {
+				search_u16(value, invert);
+			} else
+				MessageAlt("Missing argument. (Number)");
+			break;
+		case "u32":
+			if (argl > 2) {
+				search_u32(value, invert);
+			} else
+				MessageAlt("Missing argument. (Number)");
+			break;
+		case "u64":
+			if (argl > 2) {
+				search_u64(value, invert);
+			} else
+				MessageAlt("Missing argument. (Number)");
+			break;
+		case "utf8":
+			if (argl > 2)
+				search_utf8(value);
 			else
 				MessageAlt("Missing argument. (String)");
 			break;
-		case "sw": // Search UTF-16 string
-			if (argl > 1)
-				SearchUTF16String(e[1]);
+		case "utf16":
+			if (argl > 2)
+				search_utf16(value, invert);
 			else
 				MessageAlt("Missing argument. (String)");
 			break;
-		//TODO: UTF-32 search alias
-		case "sb": // Search byte
+		default:
+			MessageAlt(
+				argl > 1 ? "Invalid type." : "Missing type."
+			);
+			break;
+		}
+		break; // "search"
+	case "ss": // Search ASCII/UTF-8 string
+		if (argl > 1)
+			search_utf8(e[1]);
+		else
+			MessageAlt("Missing argument. (String)");
+		break;
+	case "sw": // Search UTF-16 string
+		if (argl > 1)
+			search_utf16(e[1]);
+		else
+			MessageAlt("Missing argument. (String)");
+		break;
+	//TODO: UTF-32 search alias
+	case "sb": // Search byte
 SEARCH_BYTE:
-			if (argl > 1) {
-				import utils : unformat;
-				long l;
-				if (unformat(e[1], l)) {
-					SearchByte(l & 0xFF);
-				} else {
-					MessageAlt("Could not parse number");
-				}
+		if (argl > 1) {
+			import utils : unformat;
+			long l;
+			if (unformat(e[1], l)) {
+				search_u8(l & 0xFF);
+			} else {
+				MessageAlt("Could not parse number");
 			}
-			break;
-		case "i", "info": PrintFileInfo; break;
-		case "o", "offset":
-			if (argl > 1) {
-				import settings : HandleOffset;
-				HandleOffset(e[1]);
-				UpdateOffsetBar;
-				UpdateDisplayRawMM;
-			}
-			break;
-		case "clear":
-			Clear;
+		}
+		break;
+	case "i", "info": PrintFileInfo; break;
+	case "o", "offset":
+		if (argl > 1) {
+			import settings : HandleOffset;
+			HandleOffset(e[1]);
 			UpdateOffsetBar;
 			UpdateDisplayRawMM;
-			UpdateInfoBarRaw;
+		}
+		break;
+	case "clear":
+		Clear;
+		UpdateOffsetBar;
+		UpdateDisplayRawMM;
+		UpdateInfoBarRaw;
+		break;
+	//
+	// Setting manager
+	//
+	case "set":
+		if (argl <= 1) {
+			MessageAlt("Missing setting parameter");
 			break;
-		//
-		// Setting manager
-		//
-		case "set":
-			if (argl > 1) {
-				import std.format : format;
-				switch (e[1]) {
-				case "width", "w":
-					if (argl > 2) {
-						HandleWidth(e[2]);
-						PrepBuffer;
-						RefreshAll;
-					}
-					break;
-				case "offset", "o":
-					if (argl > 2) {
-						HandleOffset(e[2]);
-						Clear;
-						RefreshAll;
-					}
-					break;
-				default:
-					MessageAlt(format("Unknown setting parameter: %s", e[1]));
-					break;
-				}
-			} else MessageAlt("Missing setting parameter");
+		}
+		import std.format : format;
+		switch (e[1]) {
+		case "width", "w":
+			if (argl > 2) {
+				HandleWidth(e[2]);
+				PrepBuffer;
+				RefreshAll;
+			}
 			break;
-		case "r", "refresh": RefreshAll; break;
-		case "q", "quit": Exit; break;
-		case "about": ShowAbout; break;
-		case "version": ShowInfo; break;
-		default: MessageAlt("Unknown command: %s", e[0]); break;
+		case "offset", "o":
+			if (argl > 2) {
+				HandleOffset(e[2]);
+				Clear;
+				RefreshAll;
+			}
+			break;
+		default:
+			MessageAlt("Unknown setting parameter: %s", e[1]);
+			break;
+		}
+		break;
+	case "refresh": RefreshAll; break;
+	case "quit": Exit; break;
+	case "about": ShowAbout; break;
+	case "version": ShowInfo; break;
+	default: MessageAlt("Unknown command: %s", e[0]); break;
 	}
 }
 

@@ -20,21 +20,21 @@ Here is a brief list of commands:
 
 | Command | Sub-command | Alias | Description |
 |---|---|---|---|
-| search | byte | sb | Search one byte |
-| | short, ushort, word, w | | Search a 2-byte value (LSB) |
-| | int, uint, doubleword, dword, dw | | Search a 4-byte value (LSB) |
-| | long, ulong, quadword, qword, qw | | Search a 8-byte value (LSB) |
-| | string | ss | Search an UTF-8 string |
-| | wstring | sw | Search an UTF-16LE string |
-| | dstring | | Search an UTF-32LE string |
+| search | u8 | sb | Search one byte |
+| | u16 | | Search a 2-byte value (LSB) |
+| | u32 | | Search a 4-byte value (LSB) |
+| | u64 | | Search a 8-byte value (LSB) |
+| | utf8 | ss | Search an UTF-8 string |
+| | utf16 | sw | Search an UTF-16LE string |
+| | utf32 | | Search an UTF-32LE string |
 | goto | | g | Goto to a specific file location or jump to a relative offset (shortcut: g) |
 | info | | i | Print file information on screen (shortcut: i) |
 | offset | | o | Change display mode (hex, dec, oct), same as `set offset` |
 | clear | | | Clear screen and redraw every panels |
 | set | width | | Set bytes per row |
 | | offset | o | See `offset` command |
-| refresh | | r | Remake buffer, clear screen, re-read file, redraw screen (shortcut: r) |
-| quit | | q | Quit ddhx (key shortcut: q) |
+| refresh | | | Remake buffer, clear screen, re-read file, redraw screen (shortcut: r) |
+| quit | | | Quit ddhx (key shortcut: q) |
 | about | | | Print About text |
 | version | | | Print Version text |
 

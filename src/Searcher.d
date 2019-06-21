@@ -1,16 +1,15 @@
-/*
- * Search 
+/**
+ * Search module.
  */
-
 module searcher;
 
 import std.stdio;
 import core.stdc.string : memcpy;
 import std.encoding : transcode;
 import ddhx;
-import std.format : format;
 import utils : unformat;
 import std.range : chunks;
+import utils;
 
 /// File search chunk buffer size
 private enum CHUNK_SIZE = 4096;
@@ -19,8 +18,8 @@ private enum CHUNK_SIZE = 4096;
  * Search an UTF-8/ASCII string
  * Params: s = string
  */
-void SearchUTF8String(const char[] s) {
-	SearchArray(cast(ubyte[])s, "string");
+void search_utf8(const char[] s) {
+	search_arr(cast(ubyte[])s, "string");
 }
 
 /**
@@ -29,7 +28,7 @@ void SearchUTF8String(const char[] s) {
  *   s = string
  *   invert = Invert endianness
  */
-void SearchUTF16String(const char[] s, bool invert = false) {
+void search_utf16(const char[] s, bool invert = false) {
 	//TODO: See if we can use proper UTF-16 conversion
 	wstring ws;
 	transcode(s, ws);
@@ -37,11 +36,10 @@ void SearchUTF16String(const char[] s, bool invert = false) {
 	wchar* wp = cast(wchar*)ws;
 	while (*wp != 0xFFFF) { ++wp; ++l; }
 	l *= 2;
-	debug MessageAlt(format("WS LENGTH: %d", l));
 	ubyte[] buf = new ubyte[l];
 	memcpy(cast(byte*)buf, cast(byte*)ws, l);
 	//TODO: invert
-	SearchArray(buf, "wstring");
+	search_arr(buf, "wstring");
 }
 
 /**
@@ -50,7 +48,7 @@ void SearchUTF16String(const char[] s, bool invert = false) {
  *   s = string
  *   invert = Invert endianness
  */
-void SearchUTF32String(const char[] s, bool invert = false) {
+void search_utf32(const char[] s, bool invert = false) {
 	//TODO: See if we can use proper UTF-32 conversion
 	dstring ds;
 	transcode(s, ds);
@@ -58,29 +56,20 @@ void SearchUTF32String(const char[] s, bool invert = false) {
 	wchar* dp = cast(wchar*)ds;
 	while (*dp != 0xFFFF) { ++dp; ++l; }
 	l *= 4;
-	debug MessageAlt(format("DS LENGTH: %d", l));
 	ubyte[] buf = new ubyte[l];
 	memcpy(cast(byte*)buf, cast(byte*)ds, l);
 	//TODO: invert
-	SearchArray(buf, "dstring");
+	search_arr(buf, "dstring");
 }
 
 /**
  * Search a byte
  * Params: b = ubyte
  */
-void SearchByte(const ubyte b) {
+void search_u8(const ubyte b) {
 	MessageAlt("Searching byte...");
-	long pos = fpos + 1;
-	foreach (const ubyte[] buf; (cast(ubyte[])MMFile[]).chunks(CHUNK_SIZE)) {
-		foreach (i; buf) {
-			if (b == i) {
-				GotoC(pos);
-				return;
-			}
-			++pos;
-		}
-	}
+	ubyte[1] a = [ b ];
+	search_arr(a, "byte");
 	MessageAlt("Byte not found");
 }
 
@@ -90,12 +79,13 @@ void SearchByte(const ubyte b) {
  *   s = Input
  *   invert = Invert endianness
  */
-void SearchUInt16(string s, bool invert = false) {
+void search_u16(string s, bool invert = false) {
 	long l = void;
 	if (unformat(s, l)) {
-		__gshared ubyte[2] la;
-		itoa(&la[0], 2, l, invert);
-		SearchArray(la, "short");
+		const ushort u16 = invert ? bswap16(cast(ushort)l) : cast(ushort)l;
+		ubyte[2] la = void;
+		*(cast(ushort*)la) = u16;
+		search_arr(la, "u16");
 	} else
 		MessageAlt("Could not parse number");
 }
@@ -106,12 +96,13 @@ void SearchUInt16(string s, bool invert = false) {
  *   s = Input
  *   invert = Invert endianness
  */
-void SearchUInt32(string s, bool invert = false) {
+void search_u32(string s, bool invert = false) {
 	long l = void;
 	if (unformat(s, l)) {
-		__gshared ubyte[4] la;
-		itoa(&la[0], 4, l, invert);
-		SearchArray(la, "int");
+		const uint u32 = invert ? bswap32(cast(uint)l) : cast(uint)l;
+		ubyte[4] la = void;
+		*(cast(uint*)la) = u32;
+		search_arr(la, "u32");
 	} else
 		MessageAlt("Could not parse number");
 }
@@ -122,63 +113,44 @@ void SearchUInt32(string s, bool invert = false) {
  *   s = Input
  *   invert = Invert endianness
  */
-void SearchUInt64(string s, bool invert = false) {
+void search_u64(string s, bool invert = false) {
 	long l = void;
 	if (unformat(s, l)) {
-		__gshared ubyte[8] la;
-		itoa(&la[0], 8, l, invert);
-		SearchArray(la, "long");
+		if (invert) l = bswap64(l);
+		ubyte[8] la = void;
+		*(cast(long*)la) = l;
+		search_arr(la, "u64");
 	} else
 		MessageAlt("Could not parse number");
 }
 
-/**
- * Converts a number into an array. Endian can be swapped.
- * Params:
- *   ap = Destination array pointer
- *   size = Size of the operation (usually 2, 4, and 8)
- *   l = Reference number
- *   invert = Invert endianness
- */
-private void itoa(ubyte* ap, size_t size, long l, bool invert = false) {
-	//TODO: template for "size" with TYPE
-	if (l) {
-		import utils : bswap16, bswap32, bswap64;
-		if (invert) switch (size) {
-			case 2:  l = bswap16(cast(ushort)l); break;
-			case 4:  l = bswap32(cast(uint)l); break;
-			default: l = bswap64(l); break;
-		}
-		memcpy(ap, &l, size);
-	}
-}
-
-private void SearchArray(ubyte[] input, string type) {
+private void search_arr(ubyte[] data, string type) {
 	MessageAlt(" Searching %s", type);
-	const ubyte b = input[0];
-	const size_t len = input.length;
-	long pos = fpos + 1; // To not affect CurrentPosition itself
-	foreach (const ubyte[] buf; (cast(ubyte[])MMFile[]).chunks(CHUNK_SIZE)) {
+	const ubyte firstbyte = data[0];
+	const size_t datal = data.length;
+	long pos = fpos + 1; // To not affect file position itself
+
+	outer: foreach (const ubyte[] buf; (cast(ubyte[])MMFile[]).chunks(CHUNK_SIZE)) {
 		const size_t bufl = buf.length;
-		for (size_t i; i < bufl; ++i) {
-			if (buf[i] == b) {
-				const size_t ilen = i + len;
-				if (ilen < bufl) { // Within CHUNK
-					if (buf[i..i+len] == input) {
-S_FOUND:                			GotoC(pos + i);
-						return;
-					}
-				} else if (ilen < fsize) { // Out-of-chunk
-				//TODO:
-					/*CurrentFile.seek(pos + i);
-					if (CurrentFile.byChunk(len).front == input) {
-						goto S_FOUND;
-					}*/
-				} else goto S_END; // EOF otherwise, can't continue
-			}
+		inner: for (size_t i; i < bufl; ++i) {
+			if (buf[i] != firstbyte) break inner;
+
+			const size_t ilen = i + datal;
+			if (ilen < bufl) { // Within CHUNK
+				if (buf[i..i+datal] == data) {
+					GotoC(pos + i);
+					return;
+				}
+			} else if (ilen < fsize) { // Out-of-chunk
+			//TODO:
+				/*CurrentFile.seek(pos + i);
+				if (CurrentFile.byChunk(len).front == input) {
+					goto S_FOUND;
+				}*/
+			} else
+				break outer; // EOF otherwise, can't continue
 		}
 		pos += CHUNK_SIZE;
 	}
-S_END:
-	MessageAlt(" Type not found: %s", type);
+	MessageAlt(" Not found (%s)", type);
 }

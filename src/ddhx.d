@@ -357,7 +357,7 @@ void UpdateDisplayRawMM() {
 		const bool over = p + brow > fsize;
 
 		if (over) {
-			brow = fsize - p;
+			brow = cast(uint)(fsize - p);
 			memset(cast(char*)a, ' ', BytesPerRow);
 			memset(cast(char*)d, ' ', minw);
 		}
