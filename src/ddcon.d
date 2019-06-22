@@ -31,13 +31,14 @@ version (Posix) {
 	private __gshared termios old_tio, new_tio;
 }
 
+extern (C):
+
 /*******************************************************************
  * Initiation
  *******************************************************************/
 
 /// Initiate ddcon
-extern (C)
-void InitConsole() {
+void screeninit() {
 	version (Windows) {
 		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 		hIn  = GetStdHandle(STD_INPUT_HANDLE);
@@ -54,8 +55,7 @@ void InitConsole() {
  *******************************************************************/
 
 /// Clear screen
-extern (C)
-void Clear() {
+void screenclear() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO csbi = void;
 		COORD c;
@@ -65,7 +65,7 @@ void Clear() {
 		if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
 			/*|| // .NET uses this but no idea why yet.
 			FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/) {
-			SetPos(0, 0);
+			screenpos(0, 0);
 		}
 		else // If that fails, run cls.
 			sys ("cls");
@@ -83,7 +83,7 @@ void Clear() {
 
 /// Window width
 /// Returns: Window width in characters
-@property ushort WindowWidth() {
+@property ushort screenwidth() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
 		GetConsoleScreenBufferInfo(hOut, &c);
@@ -99,7 +99,7 @@ void Clear() {
 
 /// Window height
 /// Returns: Window height in characters
-@property ushort WindowHeight() {
+@property ushort screenheight() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
 		GetConsoleScreenBufferInfo(hOut, &c);
@@ -124,8 +124,7 @@ void Clear() {
  *   x = X position (horizontal)
  *   y = Y position (vertical)
  */
-extern (C)
-void SetPos(int x, int y) {
+void screenpos(int x, int y) {
 	version (Windows) { // 0-based
 		__gshared COORD c = void;
 		c.X = cast(short)x;
@@ -145,8 +144,7 @@ void SetPos(int x, int y) {
  * Params:
  *   k = KeyInfo struct
  */
-extern (C)
-void ReadKey(ref KeyInfo k) {
+void screenkey(ref KeyInfo k) {
 	version (Windows) { // Sort of is like .NET's ReadKey
 		INPUT_RECORD ir = void;
 		DWORD num = void;

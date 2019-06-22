@@ -22,14 +22,14 @@ void phelp() {
 	writeln(
 `Interactive hexadecimal file viewer.
 Usage:
-  ddhx  [Options] file
-  ddhx  {-h|--help|-v|--version}
+  ddhx  [OPTIONS] file
+  ddhx  {-h|--help|--version}
 
-Option             Description
-  -w               Set the number of bytes per line, 'a' being automatic
-  -o               Set offset type
-  -v, --version    Print version screen and quit
-  -h, --help       Print help screen and quit`
+Option         Description
+  -w           Set the number of bytes per line, 'a' being automatic
+  -o           Set offset type
+  --version    Print version screen and quit
+  -h, --help   Print help screen and quit`
 	);
 	exit(0);
 }
@@ -48,41 +48,41 @@ void pversion() {
 }
 
 int main(string[] args) {
-
-	if (args.length <= 1) // FILE required
+	if (args.length <= 1) // FILE or OPTION required
 		phelp;
 
-	GetoptResult r = void;
 	try {
-		r = getopt(args,
-			"w", "Set the number of bytes per line, 'a' being automatic.", &HandleWCLI,
-			"o", "Set offset type.", &HandleOCLI,
-			"version", "Print version information.", &pversion);
+		args.getopt(
+			config.caseSensitive,
+			"w", &HandleWCLI,
+			config.caseSensitive,
+			"o", &HandleOCLI,
+			config.caseSensitive,
+			"h|help", &phelp,
+			config.caseSensitive,
+			"version", &pversion
+		);
 	} catch (GetOptException ex) {
 		stderr.writefln("%s, aborting", ex.msg);
 		return 1;
 	}
 
-	if (r.helpWanted)
-		phelp;
-
 	string file = args[$ - 1];
 
-	if (file.exists) {
-		if (file.isDir) {
-			stderr.writefln(`"%s" is a directory, aborting`, file);
-			return 3;
-		}
-
-		MMFile = new MmFile((fname = file), MmFile.Mode.read, 0, mmbuf);
-
-		if ((fsize = MMFile.length) <= 0) {
-			stderr.writeln("Empty file, aborting");
-			return 4;
-		}
-	} else {
+	if (file.exists == false) {
 		stderr.writefln(`File "%s" doesn't exist, aborting`, file);
 		return 2;
+	}
+	if (file.isDir) {
+		stderr.writefln(`"%s" is a directory, aborting`, file);
+		return 3;
+	}
+
+	MMFile = new MmFile((fname = file), MmFile.Mode.read, 0, mmbuf);
+
+	if ((fsize = MMFile.length) <= 0) {
+		stderr.writeln("Empty file, aborting");
+		return 4;
 	}
 
 	Start; // start ddhx

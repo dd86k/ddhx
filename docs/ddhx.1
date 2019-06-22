@@ -2,7 +2,7 @@
 ." Please read man-pages(7) and groff_man(7) about the manual page format.
 ." Don't forget to respect the format of this document!
 ."
-.TH ddhx 1 "July 2017" dd86k "User manual"
+.TH ddhx 1 "June 2019" dd86k "User manual"
 .SH NAME
 ddhx - Interactive hexadecimal file viewer.
 
@@ -24,7 +24,7 @@ is a fast interactive hexadecimal terminal file viewer with several search featu
 File to open.
 
 .IP width
-Set width in bytes of the display.
+Set width in bytes of the display in bytes.
 
 .SH SHORTCUTS
 
@@ -84,12 +84,12 @@ Search for data.
 .B Types:
 .RS
 .EX
-- byte
-- short: ushort, word, w
-- int: uint, doubleword, dword, dw
-- long: ulong, quadword, qword, qw
-- string
-- wstring
+- u8
+- u16
+- u32
+- u64
+- utf8
+- utf16
 .EE
 .RE
 
@@ -106,54 +106,54 @@ Refresh all panels and displays.
 Currently, the modifier key states on Posix platforms are unavailable. You are invited to use the
 .B goto
 command with the 
-.BR "end" " and " "start"
+.BR "end" " and " "start".
 aliases.
 
 .B
 .IP Up/Down Arrows
-Go backward or forward a line (by width).
+Go backward or forward by a line by the screen width in bytes.
 
 .B
 .IP Left/Right Arrow
-Go backward or forward a byte
+Go backward or forward a byte.
 
 .B
 .IP Home/End
-Align to the line
+Align to the line by screen width in bytes.
 
 .B
 .IP ^Home/^End
 Go to begining or end of file.
 
-.SH FILE ATTRIBUTES
-The information command will display different file attributes on different platforms:
-
-.SS Under Windows
-
-On Windows, the following file attributes (NTFS) will be displayed:
-.IP r
-Read-only. (FILE_ATTRIBUTE_READONLY)
-.IP h
-Hidden. (FILE_ATTRIBUTE_HIDDEN)
-.IP s
-System. (FILE_ATTRIBUTE_SYSTEM)
-.IP a
-Archive. (FILE_ATTRIBUTE_ARCHIVE)
-.IP t
-Temporary. (FILE_ATTRIBUTE_TEMPORARY)
-.IP S
-Sparse file. (FILE_ATTRIBUTE_SPARSE_FILE)
-.IP c
-Compressed. (FILE_ATTRIBUTE_COMPRESSED)
-.IP e
-Encrypted. (FILE_ATTRIBUTE_ENCRYPTED)
-.RE
-
-.SS Under Posix-compilant systems
-
-.RB "The symbolic file permissions are displayed (not exactly like the output of " "ls -l" ")."
-The last character is the sticky bit indicator
-.RB "('" "t" "')."
+.".SH FILE ATTRIBUTES
+."The information command will display different file attributes on different platforms:
+."
+.".SS Under Windows
+."
+."On Windows, the following file attributes (NTFS) will be displayed:
+.".IP r
+."Read-only. (FILE_ATTRIBUTE_READONLY)
+.".IP h
+."Hidden. (FILE_ATTRIBUTE_HIDDEN)
+.".IP s
+."System. (FILE_ATTRIBUTE_SYSTEM)
+.".IP a
+."Archive. (FILE_ATTRIBUTE_ARCHIVE)
+.".IP t
+."Temporary. (FILE_ATTRIBUTE_TEMPORARY)
+.".IP S
+."Sparse file. (FILE_ATTRIBUTE_SPARSE_FILE)
+.".IP c
+."Compressed. (FILE_ATTRIBUTE_COMPRESSED)
+.".IP e
+."Encrypted. (FILE_ATTRIBUTE_ENCRYPTED)
+.".RE
+."
+.".SS Under Posix-compilant systems
+."
+.".RB "The symbolic file permissions are displayed (not exactly like the output of " "ls -l" ")."
+."The last character is the sticky bit indicator
+.".RB "('" "t" "')."
 
 .SH WARNINGS
 ddhx is still currently going under active development. Expect lots of bugs and crashes!
@@ -172,7 +172,7 @@ Written by dd86k.
 Homepage:
 .UE
 
-.MT devddstuff@gmail.com
+.MT dd@dax.moe
 Email:
 .ME
 

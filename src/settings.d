@@ -49,7 +49,7 @@ void HandleWidth(string val, bool cli = false) {
 					writefln(ETRANGE, l, ushort.max);
 					exit(1);
 				} else
-					MessageAlt("Number out of range");
+					msgalt("Number out of range");
 					return;
 			}
 			BytesPerRow = l & 0xFFFF;
@@ -58,7 +58,7 @@ void HandleWidth(string val, bool cli = false) {
 				writeln(ENOPARSE);
 				exit(1);
 			} else 
-				MessageAlt(ENOPARSE);
+				msgalt(ENOPARSE);
 		}
 	}
 }
@@ -89,19 +89,19 @@ void HandleOffset(string val, bool cli = false) {
 			writef("Unknown mode parameter: %s", val);
 			exit(1);
 		} else {
-			MessageAlt(format(" Invalid offset type: %s", val));
+			msgalt(format(" Invalid offset type: %s", val));
 		}
 		break;
 	}
 }
 
 private ushort getBytesPerRow() {
-	import ddcon : WindowWidth;
+	import ddcon : screenwidth;
 	final switch (CurrentDisplayMode)
 	{
 		case DisplayMode.Default:
-			return cast(ushort)((WindowWidth - 11) / 4);
+			return cast(ushort)((screenwidth - 11) / 4);
 		case DisplayMode.Text, DisplayMode.Data:
-			return cast(ushort)((WindowWidth - 11) / 3);
+			return cast(ushort)((screenwidth - 11) / 3);
 	}
 }

@@ -9,16 +9,15 @@ import settings;
 //TODO: count command (stat)
 //TODO: Invert aliases
 /*TODO: Aliases
-	si: Search int
-	sl: Search long
-	utf8: search utf-8 string, etc.
+	su32: Search int
+	su64: Search long
 */
 
 /**
  * Internal command prompt.
- * Params: init = Initial command
+ * Params: prepend = Initial command
  */
-void Menu(string prepend = null) {
+void hxmenu(string prepend = null) {
 	import std.array : split;
 	import std.algorithm.iteration : splitter;
 	import std.algorithm.sorting : merge;
@@ -26,170 +25,153 @@ void Menu(string prepend = null) {
 	import std.algorithm : joiner;
 	import std.format : sformat;
 
-	ClearMsg;
-	SetPos(0, 0);
+	screenpos(0, 0);
+	printf("%*s", screenwidth - 1, cast(char*)" ");
+	screenpos(0, 0);
 	printf(">");
 	if (prepend)
 		write(prepend);
 
-//	char[] inbuf = void;
+//	size_t argc;
+//	char[1024] inbuf = void;
+//	string[12] argv  = void;
 //	const size_t inbufl = readln(inbuf);
 
 	//TODO: GC-free merge prepend and readln(buf), then split
-	string[] e = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
+	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 
-	UpdateOffsetBar;
-	const size_t argl = e.length;
-	if (argl == 0) return;
+	hxoffsetbar;
 
-	switch (e[0]) {
+	const size_t argc = argv.length;
+	if (argc == 0) return;
+
+	switch (argv[0]) {
 	case "g", "goto":
-		if (argl > 1) {
-			switch (e[1]) {
-			case "e", "end":
-				Goto(fsize - screenl);
-				break;
-			case "h", "home", "s":
-				Goto(0);
-				break;
-			default:
-				GotoStr(e[1]);
-			}
+		if (argc <= 1) {
+			msgalt("Missing position (number)");
+			break;
+		}
+		switch (argv[1]) {
+		case "e", "end":
+			hxgoto(fsize - screenl);
+			break;
+		case "h", "home":
+			hxgoto(0);
+			break;
+		default:
+			gotostr(argv[1]);
 		}
 		break;
 	case "s", "search": // Search
-		if (argl <= 1) break;
-
-		string value = e[$ - 1];
-		const bool a2 = argl > 2;
-		bool invert;
-		if (a2) invert = e[2] == "invert";
-		switch (e[1]) {
-		case "u8":
-			if (argl > 2) {
-				e[1] = value;
-				goto SEARCH_BYTE;
-			} else
-				MessageAlt("Missing argument. (Byte)");
+		if (argc <= 1) {
+			msgalt("Missing data type");
 			break;
+		}
+		if (argc <= 2) {
+			msgalt("Missing data argument");
+			break;
+		}
+
+		string value = argv[2];
+		switch (argv[1]) {
+		case "u8":
+			argv[1] = value;
+			goto SEARCH_BYTE;
 		case "u16":
-			if (argl > 2) {
-				search_u16(value, invert);
-			} else
-				MessageAlt("Missing argument. (Number)");
+			search_u16(value);
 			break;
 		case "u32":
-			if (argl > 2) {
-				search_u32(value, invert);
-			} else
-				MessageAlt("Missing argument. (Number)");
+			search_u32(value);
 			break;
 		case "u64":
-			if (argl > 2) {
-				search_u64(value, invert);
-			} else
-				MessageAlt("Missing argument. (Number)");
+			search_u64(value);
 			break;
 		case "utf8":
-			if (argl > 2)
-				search_utf8(value);
-			else
-				MessageAlt("Missing argument. (String)");
+			search_utf8(value);
 			break;
 		case "utf16":
-			if (argl > 2)
-				search_utf16(value, invert);
-			else
-				MessageAlt("Missing argument. (String)");
+			search_utf16(value);
 			break;
 		default:
-			MessageAlt(
-				argl > 1 ? "Invalid type." : "Missing type."
-			);
+			msgalt("Invalid type (%s)", argv[1]);
 			break;
 		}
 		break; // "search"
 	case "ss": // Search ASCII/UTF-8 string
-		if (argl > 1)
-			search_utf8(e[1]);
+		if (argc > 1)
+			search_utf8(argv[1]);
 		else
-			MessageAlt("Missing argument. (String)");
+			msgalt("Missing argument (utf8)");
 		break;
 	case "sw": // Search UTF-16 string
-		if (argl > 1)
-			search_utf16(e[1]);
+		if (argc > 1)
+			search_utf16(argv[1]);
 		else
-			MessageAlt("Missing argument. (String)");
+			msgalt("Missing argument (utf16)");
 		break;
 	//TODO: UTF-32 search alias
 	case "sb": // Search byte
 SEARCH_BYTE:
-		if (argl > 1) {
-			import utils : unformat;
-			long l;
-			if (unformat(e[1], l)) {
-				search_u8(l & 0xFF);
-			} else {
-				MessageAlt("Could not parse number");
-			}
+		if (argc <= 1) {
+			msgalt("Missing argument (u8)");
+			break;
+		}
+		import utils : unformat;
+		long l;
+		if (unformat(argv[1], l)) {
+			search_u8(l & 0xFF);
+		} else {
+			msgalt("Could not parse number");
 		}
 		break;
-	case "i", "info": PrintFileInfo; break;
+	case "i", "info": hxfileinfo; break;
 	case "o", "offset":
-		if (argl > 1) {
-			import settings : HandleOffset;
-			HandleOffset(e[1]);
-			UpdateOffsetBar;
-			UpdateDisplayRawMM;
+		import settings : HandleOffset;
+		if (argc <= 1) {
+			msgalt("Missing offset");
+			break;
 		}
+		HandleOffset(argv[1]);
+		hxoffsetbar;
+		hxupdate_r;
 		break;
-	case "clear":
-		Clear;
-		UpdateOffsetBar;
-		UpdateDisplayRawMM;
-		UpdateInfoBarRaw;
+	case "refresh": hxrefresh_a; break;
+	case "quit": hxexit; break;
+	case "about":
+		msgalt("Written by dd86k. Copyright (c) dd86k 2017-2019");
+		break;
+	case "version":
+		enum V = "Using ddhx " ~ APP_VERSION;
+		msgalt(V);
 		break;
 	//
 	// Setting manager
 	//
 	case "set":
-		if (argl <= 1) {
-			MessageAlt("Missing setting parameter");
+		if (argc <= 1) {
+			msgalt("Missing setting");
 			break;
 		}
-		import std.format : format;
-		switch (e[1]) {
+		if (argc <= 2) {
+			msgalt("Missing setting option");
+			break;
+		}
+		switch (argv[1]) {
 		case "width", "w":
-			if (argl > 2) {
-				HandleWidth(e[2]);
-				PrepBuffer;
-				RefreshAll;
-			}
+			HandleWidth(argv[2]);
+			hxprep;
+			hxrefresh_a;
 			break;
 		case "offset", "o":
-			if (argl > 2) {
-				HandleOffset(e[2]);
-				Clear;
-				RefreshAll;
-			}
+			HandleOffset(argv[2]);
+			screenclear;
+			hxrefresh_a;
 			break;
 		default:
-			MessageAlt("Unknown setting parameter: %s", e[1]);
+			msgalt("Unknown setting: %s", argv[1]);
 			break;
 		}
 		break;
-	case "refresh": RefreshAll; break;
-	case "quit": Exit; break;
-	case "about": ShowAbout; break;
-	case "version": ShowInfo; break;
-	default: MessageAlt("Unknown command: %s", e[0]); break;
+	default: msgalt("Unknown command: %s", argv[0]); break;
 	}
-}
-
-private void ShowAbout() {
-	MessageAlt("Written by dd86k. Copyright (c) dd86k 2017-2019");
-}
-
-private void ShowInfo() {
-	MessageAlt("Using ddhx " ~ APP_VERSION); // const string
 }

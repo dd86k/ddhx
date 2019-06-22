@@ -60,34 +60,34 @@ __gshared DisplayMode CurrentDisplayMode = void;
 // Internal
 //
 
-__gshared MmFile MMFile = void;
-__gshared ubyte* mmbuf = void;
-__gshared uint screenl = void; // screen size
+__gshared MmFile MMFile = void;	/// Main mmfile
+__gshared ubyte* mmbuf = void;	/// mmfile buffer address
+__gshared uint screenl = void;	/// screen size
 
-__gshared string fname = void;
-__gshared long fpos = void; /// Current file position
-__gshared long fsize = void; /// File size
+__gshared string fname = void;	/// filename
+__gshared long fpos = void;	/// Current file position
+__gshared long fsize = void;	/// File size
 
-private __gshared char[30] tfsizebuf; /// total formatted size buffer
-private __gshared char[] tfsize; /// total formatted size (pointer)
+private __gshared char[30] tfsizebuf;	/// total formatted size buffer
+private __gshared char[] tfsize;	/// total formatted size (pointer)
 
 /// Main app entry point
 void Start() {
 	fpos = 0;
 	tfsize = formatsize(tfsizebuf, fsize);
-	InitConsole;
-	PrepBuffer;
-	Clear;
-	UpdateOffsetBar;
-	UpdateDisplayRawMM;
-	UpdateInfoBarRaw;
+	screeninit;
+	hxprep;
+	screenclear;
+	hxoffsetbar;
+	hxupdate_r;
+	hxinfobar_r;
 
 	KeyInfo k = void;
 KEY:
-	ReadKey(k);
+	screenkey(k);
 	//TODO: Handle resize event
 	if (k.keyCode)
-		HandleKey(k);
+		hxkey(k);
 	goto KEY;
 }
 
@@ -118,7 +118,7 @@ KEY:
  * Params: k = KeyInfo (ddcon)
  */
 extern (C)
-void HandleKey(const ref KeyInfo k) {
+void hxkey(const ref KeyInfo k) {
 	import settings : HandleWidth;
 
 	switch (k.keyCode) {
@@ -129,55 +129,55 @@ void HandleKey(const ref KeyInfo k) {
 
 	case Key.UpArrow:
 		if (fpos - BytesPerRow >= 0)
-			Goto(fpos - BytesPerRow);
+			hxgoto(fpos - BytesPerRow);
 		else
-			Goto(0);
+			hxgoto(0);
 		break;
 	case Key.DownArrow:
 		if (fpos + screenl + BytesPerRow <= fsize)
-			Goto(fpos + BytesPerRow);
+			hxgoto(fpos + BytesPerRow);
 		else
-			Goto(fsize - screenl);
+			hxgoto(fsize - screenl);
 		break;
 	case Key.LeftArrow:
 		if (fpos - 1 >= 0) // Else already at 0
-			Goto(fpos - 1);
+			hxgoto(fpos - 1);
 		break;
 	case Key.RightArrow:
 		if (fpos + screenl + 1 <= fsize)
-			Goto(fpos + 1);
+			hxgoto(fpos + 1);
 		else
-			Goto(fsize - screenl);
+			hxgoto(fsize - screenl);
 		break;
 	case Key.PageUp:
 		if (fpos - cast(long)screenl >= 0)
-			Goto(fpos - screenl);
+			hxgoto(fpos - screenl);
 		else
-			Goto(0);
+			hxgoto(0);
 		break;
 	case Key.PageDown:
 		if (fpos + screenl + screenl <= fsize)
-			Goto(fpos + screenl);
+			hxgoto(fpos + screenl);
 		else
-			Goto(fsize - screenl);
+			hxgoto(fsize - screenl);
 		break;
 	case Key.Home:
 		if (k.ctrl)
-			Goto(0);
+			hxgoto(0);
 		else
-			Goto(fpos - (fpos % BytesPerRow));
+			hxgoto(fpos - (fpos % BytesPerRow));
 		break;
 	case Key.End:
 		if (k.ctrl)
-			Goto(fsize - screenl);
+			hxgoto(fsize - screenl);
 		else {
 			const long np = fpos +
 				(BytesPerRow - fpos % BytesPerRow);
 
 			if (np + screenl <= fsize)
-				Goto(np);
+				hxgoto(np);
 			else
-				Goto(fsize - screenl);
+				hxgoto(fsize - screenl);
 		}
 		break;
 
@@ -186,45 +186,45 @@ void HandleKey(const ref KeyInfo k) {
 	//
 
 	case Key.Escape, Key.Enter:
-		Menu;
+		hxmenu;
 		break;
 	case Key.G:
-		Menu("g ");
-		UpdateOffsetBar();
+		hxmenu("g ");
+		hxoffsetbar();
 		break;
 	case Key.I:
-		PrintFileInfo;
+		hxfileinfo;
 		break;
 	case Key.R, Key.F5:
-		RefreshAll;
+		hxrefresh_a;
 		break;
 	case Key.A:
 		HandleWidth("a");
-		RefreshAll;
+		hxrefresh_a;
 		break;
-	case Key.Q: Exit; break;
+	case Key.Q: hxexit; break;
 	default:
 	}
 }
 
 /// Refresh the entire screen
 extern (C)
-void RefreshAll() {
-	PrepBuffer;
-	Clear;
-	UpdateOffsetBar;
-	UpdateDisplayRawMM;
-	UpdateInfoBarRaw;
+void hxrefresh_a() {
+	hxprep;
+	screenclear;
+	hxoffsetbar;
+	hxupdate_r;
+	hxinfobar_r;
 }
 
 /**
  * Update the upper offset bar.
  */
 extern (C)
-void UpdateOffsetBar() {
+void hxoffsetbar() {
 	char [8]format = cast(char[8])" %02X"; // default
 	format[4] = formatTable[CurrentOffsetType];
-	SetPos(0, 0);
+	screenpos(0, 0);
 	printf("Offset %c ", offsetTable[CurrentOffsetType]);
 	for (ushort i; i < BytesPerRow; ++i)
 		printf(cast(char*)format, i);
@@ -233,14 +233,14 @@ void UpdateOffsetBar() {
 
 /// Update the bottom current information bar.
 extern (C)
-void UpdateInfoBar() {
-	SetPos(0, WindowHeight - 1);
-	UpdateInfoBarRaw;
+void hxinfobar() {
+	screenpos(0, screenheight - 1);
+	hxinfobar_r;
 }
 
 /// Updates information bar without cursor position call.
 extern (C)
-void UpdateInfoBarRaw() {
+void hxinfobar_r() {
 	char[30] bl = void, cp = void;
 	writef(" %*s | %*s/%*s | %7.3f%%",
 		7,  formatsize(bl, screenl), // Buffer size
@@ -252,8 +252,8 @@ void UpdateInfoBarRaw() {
 
 /// Determine screensize
 extern (C)
-void PrepBuffer() {
-	const int bufs = (WindowHeight - 2) * BytesPerRow; // Proposed buffer size
+void hxprep() {
+	const int bufs = (screenheight - 2) * BytesPerRow; // Proposed buffer size
 	screenl = fsize >= bufs ? bufs : cast(uint)fsize;
 }
 
@@ -264,13 +264,13 @@ void PrepBuffer() {
  * Params: pos = New position
  */
 extern (C)
-void Goto(long pos) {
+void hxgoto(long pos) {
 	if (screenl < fsize) {
 		fpos = pos;
-		UpdateDisplay;
-		UpdateInfoBarRaw;
+		hxupdate;
+		hxinfobar_r;
 	} else
-		MessageAlt("Navigation disabled, buffer too small.");
+		msgalt("Navigation disabled, buffer too small.");
 }
 
 /**
@@ -279,11 +279,11 @@ void Goto(long pos) {
  * Params: pos = New position
  */
 extern (C)
-void GotoC(long pos) {
+void hxgoto_c(long pos) {
 	if (pos + screenl > fsize)
-		Goto(fsize - screenl);//Buffer.length);
+		hxgoto(fsize - screenl);//Buffer.length);
 	else
-		Goto(pos);
+		hxgoto(pos);
 }
 
 /**
@@ -291,7 +291,7 @@ void GotoC(long pos) {
  * Includes offset checking (+/- notation).
  * Params: str = String as a number
  */
-void GotoStr(string str) {
+void gotostr(string str) {
 	byte rel; // Lazy code
 	if (str[0] == '+') {
 		rel = 1;
@@ -301,39 +301,39 @@ void GotoStr(string str) {
 		str = str[1..$];
 	}
 	long l = void;
-	if (unformat(str, l)) {
-		switch (rel) {
-		case 1:
-			if (fpos + l - screenl < fsize)
-				Goto(fpos + l);
-			break;
-		case 2:
-			if (fpos - l >= 0)
-				Goto(fpos - l);
-			break;
-		default:
-			if (l >= 0 && l < fsize - screenl) {
-				Goto(l);
-			} else {
-				import std.format : format;
-				MessageAlt(format("Range too far or negative: %d (%XH)", l, l));
-			}
+	if (unformat(str, l) == false) {
+		msgalt("Could not parse number");
+		return;
+	}
+	switch (rel) {
+	case 1:
+		if (fpos + l - screenl < fsize)
+			hxgoto(fpos + l);
+		break;
+	case 2:
+		if (fpos - l >= 0)
+			hxgoto(fpos - l);
+		break;
+	default:
+		if (l >= 0 && l < fsize - screenl) {
+			hxgoto(l);
+		} else {
+			import std.format : format;
+			msgalt(format("Range too far or negative: %d (%XH)", l, l));
 		}
-	} else {
-		MessageAlt("Could not parse number");
 	}
 }
 
 /// Update display from buffer
 extern (C)
-void UpdateDisplay() {
-	SetPos(0, 1);
-	UpdateDisplayRawMM;
+void hxupdate() {
+	screenpos(0, 1);
+	hxupdate_r;
 }
 
 /// Update display from buffer without setting cursor
 extern (C)
-void UpdateDisplayRawMM() {
+void hxupdate_r() {
 	import core.stdc.string : memset;
 	char [1024]a = void;
 	char [1024]d = void;
@@ -350,7 +350,7 @@ void UpdateDisplayRawMM() {
 	//TODO: if >fsize, then slice differently
 	ubyte[] fbuf = cast(ubyte[])MMFile[p..blen];
 
-	char [16]bytef = cast(char[16])"%08X %s  %s\n";
+	char [32]bytef = cast(char[32])"%08X %s  %s\n";
 	bytef[3] = formatTable[CurrentOffsetType];
 
 	for (size_t bi; p < blen; p += brow) {
@@ -367,7 +367,7 @@ void UpdateDisplayRawMM() {
 			d[di++] = ' ';
 			d[di++] = hexTable[b >> 4];
 			d[di++] = hexTable[b & 15];
-			a[ai] = FormatChar(b);
+			a[ai] = fchar(b);
 		}
 
 		printf(cast(char*)bytef, p, cast(char*)d, cast(char*)a);
@@ -380,58 +380,45 @@ void UpdateDisplayRawMM() {
  * Message once (upper bar)
  * Params: msg = Message string
  */
-void Message(string msg) {
-	ClearMsg;
-	SetPos(0, 0);
-	write(msg);
-}
-
-/// Clear upper bar
-extern (C)
-void ClearMsg() {
-	SetPos(0, 0);
-	writef("%*s", WindowWidth - 1, " ");
+void msg(string msg) {
+	screenpos(0, 0);
+	writef("%s%*s", msg, (screenwidth - 1) - msg.length, " ");
 }
 
 /**
  * Message once (bottom bar)
  * Params: msg = Message string
  */
-void MessageAlt(string msg) {
-	ClearMsgAlt;
-	SetPos(0, WindowHeight - 1);
-	write(msg);
+void msgalt(string msg) {
+	screenpos(0, screenheight - 1);
+	writef("%s%*s", msg, (screenwidth - 1) - msg.length, " ");
 }
 
-void MessageAlt(string f, string arg) {
+/**
+ * Bottom bar message.
+ * Params:
+ *   f = Format
+ *   arg = String argument
+ */
+void msgalt(string f, string arg) {
 	import std.format : format;
-	MessageAlt(format(f, arg));
-}
-
-/// Clear bottom bar
-extern (C)
-void ClearMsgAlt() {
-	SetPos(0, WindowHeight - 1);
-	writef("%*s", WindowWidth - 1, " ");
+	msgalt(format(f, arg));
 }
 
 /// Print some file information at the bottom bar
 extern (C)
-void PrintFileInfo() {
+void hxfileinfo() {
 	import std.format : sformat;
 	import std.path : baseName;
-
 	char[512] b = void;
-
-	ClearMsgAlt;
-	MessageAlt(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
+	msgalt(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
 }
 
 /// Exits ddhx
 extern (C)
-void Exit() {
+void hxexit() {
 	import core.stdc.stdlib : exit;
-	Clear;
+	screenclear;
 	exit(0);
 }
 
@@ -442,6 +429,6 @@ void Exit() {
  * Returns: ASCII character
  */
 extern (C)
-char FormatChar(ubyte c) pure @safe @nogc nothrow { //TODO: EIBEC?
+char fchar(ubyte c) pure @safe @nogc nothrow { //TODO: EIBEC?
 	return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
 }

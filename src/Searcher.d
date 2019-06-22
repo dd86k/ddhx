@@ -67,10 +67,10 @@ void search_utf32(const char[] s, bool invert = false) {
  * Params: b = ubyte
  */
 void search_u8(const ubyte b) {
-	MessageAlt("Searching byte...");
+	msgalt("Searching byte...");
 	ubyte[1] a = [ b ];
 	search_arr(a, "byte");
-	MessageAlt("Byte not found");
+	msgalt("Byte not found");
 }
 
 /**
@@ -87,7 +87,7 @@ void search_u16(string s, bool invert = false) {
 		*(cast(ushort*)la) = u16;
 		search_arr(la, "u16");
 	} else
-		MessageAlt("Could not parse number");
+		msgalt("Could not parse number");
 }
 
 /**
@@ -104,7 +104,7 @@ void search_u32(string s, bool invert = false) {
 		*(cast(uint*)la) = u32;
 		search_arr(la, "u32");
 	} else
-		MessageAlt("Could not parse number");
+		msgalt("Could not parse number");
 }
 
 /**
@@ -121,11 +121,11 @@ void search_u64(string s, bool invert = false) {
 		*(cast(long*)la) = l;
 		search_arr(la, "u64");
 	} else
-		MessageAlt("Could not parse number");
+		msgalt("Could not parse number");
 }
 
 private void search_arr(ubyte[] data, string type) {
-	MessageAlt(" Searching %s", type);
+	msgalt(" Searching %s", type);
 	const ubyte firstbyte = data[0];
 	const size_t datal = data.length;
 	long pos = fpos + 1; // To not affect file position itself
@@ -138,7 +138,7 @@ private void search_arr(ubyte[] data, string type) {
 			const size_t ilen = i + datal;
 			if (ilen < bufl) { // Within CHUNK
 				if (buf[i..i+datal] == data) {
-					GotoC(pos + i);
+					hxgoto_c(pos + i);
 					return;
 				}
 			} else if (ilen < fsize) { // Out-of-chunk
@@ -152,5 +152,5 @@ private void search_arr(ubyte[] data, string type) {
 		}
 		pos += CHUNK_SIZE;
 	}
-	MessageAlt(" Not found (%s)", type);
+	msgalt(" Not found (%s)", type);
 }
