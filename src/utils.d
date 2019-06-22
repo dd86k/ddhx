@@ -13,6 +13,9 @@ bool unformat(string e, ref long l) {
 	import std.conv : parse, ConvException;
 	import std.algorithm.searching : startsWith;
 	//TODO: Improve unformat
+	//      h0000 - hex
+	//      o0000 - octal
+	//       0000 - decimal
 	try {
 		if (e.startsWith("0x")) {
 			l = unformatHex(e[2..$]);

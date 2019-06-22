@@ -5,13 +5,6 @@ import core.stdc.stdio : printf;
 import ddcon, ddhx, searcher;
 import settings;
 
-//TODO: count command (stat)
-//TODO: Invert aliases
-/*TODO: Aliases
-	su32: Search int
-	su64: Search long
-*/
-
 /**
  * Internal command prompt.
  * Params: prepend = Initial command

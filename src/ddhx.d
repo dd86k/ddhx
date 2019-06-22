@@ -9,8 +9,6 @@ import core.stdc.stdio : printf;
 import menu, ddcon;
 import utils : formatsize, unformat;
 
-//TODO: retain window dimensions until a new size event or something
-
 /// Copyright string
 enum COPYRIGHT = "Copyright (c) dd86k 2017-2019";
 
@@ -266,7 +264,7 @@ void hxgoto(long pos) {
 		hxrender;
 		hxinfobar_r;
 	} else
-		msgalt("Navigation disabled, buffer too small.");
+		msgalt("Navigation disabled, buffer too small");
 }
 
 /**
@@ -334,18 +332,14 @@ void hxrender_r() {
 		'0', '1', '2', '3', '4', '5', '6', '7',
 		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
 	];
-
-	char[1024] a = void, d = void;
 	
 	size_t brow = BytesPerRow; /// bytes per row
 	size_t minw = cast(int)brow * 3;
 
+	char[1024] a = void, d = void;
 	a[brow] = d[minw] = '\0';
 
 	size_t p = cast(size_t)fpos, wlen = p + screenl; /// window length
-
-	//TODO: if wlen>fsize, then slice differently
-	// range, does not allocate
 	const ubyte[] fbuf = cast(ubyte[])CFile[p..wlen];
 
 	char[12] bytef = cast(char[12])"%08X %s  %s\n";

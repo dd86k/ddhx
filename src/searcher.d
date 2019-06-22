@@ -43,13 +43,12 @@ void search_utf16(const char[] s) {
  *   s = string
  */
 void search_utf32(const char[] s) {
-	//TODO: See if we can use proper UTF-32 conversion
 	dstring ds;
 	transcode(s, ds);
 	ubyte[1024] buf = void;
-	wchar* p = cast(wchar*)buf;
+	dchar* p = cast(dchar*)buf;
 	size_t l;
-	foreach (const wchar c; ds) {
+	foreach (const dchar c; ds) {
 		p[l++] = c;
 	}
 	search_arr(buf[0..l], "dstring");
