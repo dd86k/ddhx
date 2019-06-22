@@ -67,8 +67,10 @@ private __gshared char[30] tfsizebuf;	/// total formatted size buffer
 private __gshared char[] tfsize;	/// total formatted size (pointer)
 
 /// Main app entry point
-void Start() {
-	fpos = 0;
+/// Params: pos = File position to start with
+extern (C)
+void Start(long pos) {
+	fpos = pos;
 	tfsize = formatsize(tfsizebuf, fsize);
 	screeninit;
 	hxprep;
@@ -408,7 +410,7 @@ extern (C)
 void hxfileinfo() {
 	import std.format : sformat;
 	import std.path : baseName;
-	char[512] b = void;
+	char[256] b = void;
 	msgalt(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
 }
 

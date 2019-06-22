@@ -28,6 +28,7 @@ Usage:
 Option         Description
   -w           Set the number of bytes per line, 'a' being automatic
   -o           Set offset type
+  -s           Seek to position
   --version    Print version screen and quit
   -h, --help   Print help screen and quit`
 	);
@@ -51,12 +52,15 @@ int main(string[] args) {
 	if (args.length <= 1) // FILE or OPTION required
 		phelp;
 
+	long seek;
 	try {
 		args.getopt(
 			config.caseSensitive,
 			"w", &HandleWCLI,
 			config.caseSensitive,
 			"o", &HandleOCLI,
+			config.caseSensitive,
+			"s", &seek,
 			config.caseSensitive,
 			"h|help", &phelp,
 			config.caseSensitive,
@@ -85,6 +89,6 @@ int main(string[] args) {
 		return 4;
 	}
 
-	Start; // start ddhx
+	Start(seek); // start ddhx
 	return 0;
 }
