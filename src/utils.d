@@ -101,7 +101,7 @@ char[] formatsize(ref char[30] buf, long size, bool base10 = false) { //BUG: %f 
 
 /**
  * Byte swap a 2-byte number.
- * Params: num = 2-byte number to swap.
+ * Params: n = 2-byte number to swap.
  * Returns: Byte swapped number.
  */
 extern (C)

@@ -124,30 +124,32 @@ void search_u64(string s, bool invert = false) {
 private void search_arr(ubyte[] data, string type) {
 	msgalt(" Searching %s", type);
 	const ubyte firstbyte = data[0];
-	const size_t datal = data.length;
-	long pos = fpos + 1; // To not affect file position itself
+	const size_t datalen = data.length;
+	size_t pos = cast(size_t)fpos + 1; // do not affect file position itself
+	size_t posmax = pos + CHUNK_SIZE;
 
-	outer: foreach (const ubyte[] buf; (cast(ubyte[])CFile[]).chunks(CHUNK_SIZE)) {
-		const size_t bufl = buf.length;
-		inner: for (size_t i; i < bufl; ++i) {
-			if (buf[i] != firstbyte) break inner;
+	ubyte[] buf = void;
+	outer: do {
+		buf = cast(ubyte[])CFile[pos..posmax];
+		const size_t buflen = buf.length;
+		for (size_t i; i < buflen; ++i) {
+			if (buf[i] != firstbyte) continue;
 
-			const size_t ilen = i + datal;
-			if (ilen < bufl) { // Within CHUNK
-				if (buf[i..i+datal] == data) {
+			const size_t ilen = i + datalen;
+			if (ilen < buflen) { // Within CHUNK
+				if (buf[i..i + datalen] == data) {
+S_FOUND:
 					hxgoto_c(pos + i);
 					return;
 				}
 			} else if (ilen < fsize) { // Out-of-chunk
-			//TODO:
-				/*CurrentFile.seek(pos + i);
-				if (CurrentFile.byChunk(len).front == input) {
+				if (cast(ubyte[])CFile[i..i+datalen] == data) {
 					goto S_FOUND;
-				}*/
-			} else
-				break outer; // EOF otherwise, can't continue
+				}
+			} else break outer;
 		}
-		pos += CHUNK_SIZE;
-	}
+
+		pos = posmax; posmax += CHUNK_SIZE;
+	} while (pos < fsize);
 	msgalt(" Not found (%s)", type);
 }

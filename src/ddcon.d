@@ -148,8 +148,8 @@ void screenkey(ref KeyInfo k) {
 	version (Windows) { // Sort of is like .NET's ReadKey
 		INPUT_RECORD ir = void;
 		DWORD num = void;
-		k.keyCode = 0;
 		if (ReadConsoleInput(hIn, &ir, 1, &num)) {
+			k.keyCode = 0;
 			if (ir.KeyEvent.bKeyDown && ir.EventType == KEY_EVENT) {
 				const DWORD state = ir.KeyEvent.dwControlKeyState;
 				k.alt   = (state & ALT_PRESSED)   != 0;
