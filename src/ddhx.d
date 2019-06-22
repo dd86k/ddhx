@@ -3,15 +3,17 @@
  */
 module ddhx;
 
-import std.stdio : write, writef, writeln;
+import std.stdio : write, writeln, writef, writefln;
 import std.mmfile;
-import core.stdc.stdio : printf, puts;
-import core.stdc.stdlib;
+import core.stdc.stdio : printf;
 import core.stdc.string : memset;
 import menu, ddcon;
 import utils : formatsize, unformat;
 
 //TODO: retain window dimensions until a new size event or something
+
+/// Copyright string
+enum COPYRIGHT = "Copyright (c) dd86k 2017-2019";
 
 /// App version
 enum APP_VERSION = "0.2.0";
@@ -28,13 +30,6 @@ enum DisplayMode : ubyte {
 
 /// Default character for non-displayable characters
 enum DEFAULT_CHAR = '.';
-
-/// Preferred table over computing the same values again$(BR)
-/// Hint: Fast
-private __gshared const char[] hexTable = [
-	'0', '1', '2', '3', '4', '5', '6', '7',
-	'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-];
 
 /// For header
 private __gshared const char[] offsetTable = [
@@ -60,9 +55,9 @@ __gshared DisplayMode CurrentDisplayMode = void;
 // Internal
 //
 
-__gshared MmFile MMFile = void;	/// Main mmfile
+__gshared MmFile CFile = void;	/// Current file
 __gshared ubyte* mmbuf = void;	/// mmfile buffer address
-__gshared uint screenl = void;	/// screen size
+__gshared uint screenl = void;	/// screen size in bytes, 1 dimensional buffer
 
 __gshared string fname = void;	/// filename
 __gshared long fpos = void;	/// Current file position
@@ -79,7 +74,7 @@ void Start() {
 	hxprep;
 	screenclear;
 	hxoffsetbar;
-	hxupdate_r;
+	hxrender_r;
 	hxinfobar_r;
 
 	KeyInfo k = void;
@@ -213,7 +208,7 @@ void hxrefresh_a() {
 	hxprep;
 	screenclear;
 	hxoffsetbar;
-	hxupdate_r;
+	hxrender_r;
 	hxinfobar_r;
 }
 
@@ -267,7 +262,7 @@ extern (C)
 void hxgoto(long pos) {
 	if (screenl < fsize) {
 		fpos = pos;
-		hxupdate;
+		hxrender;
 		hxinfobar_r;
 	} else
 		msgalt("Navigation disabled, buffer too small.");
@@ -281,7 +276,7 @@ void hxgoto(long pos) {
 extern (C)
 void hxgoto_c(long pos) {
 	if (pos + screenl > fsize)
-		hxgoto(fsize - screenl);//Buffer.length);
+		hxgoto(fsize - screenl);
 	else
 		hxgoto(pos);
 }
@@ -292,8 +287,8 @@ void hxgoto_c(long pos) {
  * Params: str = String as a number
  */
 void gotostr(string str) {
-	byte rel; // Lazy code
-	if (str[0] == '+') {
+	byte rel = void; // Lazy code
+	if (str[0] == '+') { // relative position
 		rel = 1;
 		str = str[1..$];
 	} else if (str[0] == '-') {
@@ -326,40 +321,43 @@ void gotostr(string str) {
 
 /// Update display from buffer
 extern (C)
-void hxupdate() {
+void hxrender() {
 	screenpos(0, 1);
-	hxupdate_r;
+	hxrender_r;
 }
 
 /// Update display from buffer without setting cursor
 extern (C)
-void hxupdate_r() {
+void hxrender_r() {
 	import core.stdc.string : memset;
-	char [1024]a = void;
-	char [1024]d = void;
+
+	__gshared char[] hexTable = [
+		'0', '1', '2', '3', '4', '5', '6', '7',
+		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+	];
+
+	char[1024] a = void, d = void;
 	
 	size_t brow = BytesPerRow; /// bytes per row
 	int minw = cast(int)brow * 3;
 
-	a[brow] = '\0';
-	d[minw] = '\0';
+	a[brow] = d[minw] = '\0';
 
-	long p = fpos;
-	const long blen = p + screenl;
+	size_t p = cast(size_t)fpos, wlen = p + screenl; /// window length
 
-	//TODO: if >fsize, then slice differently
-	ubyte[] fbuf = cast(ubyte[])MMFile[p..blen];
+	//TODO: if wlen>fsize, then slice differently
+	// range, does not allocate
+	const ubyte[] fbuf = cast(ubyte[])CFile[p..wlen];
 
-	char [32]bytef = cast(char[32])"%08X %s  %s\n";
+	char[12] bytef = cast(char[12])"%08X %s  %s\n";
 	bytef[3] = formatTable[CurrentOffsetType];
 
-	for (size_t bi; p < blen; p += brow) {
+	for (size_t bi; p < wlen; p += brow) {
 		const bool over = p + brow > fsize;
 
 		if (over) {
 			brow = cast(uint)(fsize - p);
-			memset(cast(char*)a, ' ', BytesPerRow);
-			memset(cast(char*)d, ' ', minw);
+			minw = brow * 3;
 		}
 
 		for (size_t di, ai; ai < brow; ++ai) {
@@ -367,10 +365,10 @@ void hxupdate_r() {
 			d[di++] = ' ';
 			d[di++] = hexTable[b >> 4];
 			d[di++] = hexTable[b & 15];
-			a[ai] = fchar(b);
+			a[ai] = b > 0x7E || b < 0x20 ? DEFAULT_CHAR : b;
 		}
 
-		printf(cast(char*)bytef, p, cast(char*)d, cast(char*)a);
+		writef(bytef, p, d[0..minw], a[0..brow]);
 
 		if (over) return;
 	}
@@ -420,15 +418,4 @@ void hxexit() {
 	import core.stdc.stdlib : exit;
 	screenclear;
 	exit(0);
-}
-
-/**
- * Converts an unsigned byte to an ASCII character. If the byte is outside of
- * the ASCII range, $(D DEFAULT_CHAR) will be returned.
- * Params: c = Unsigned byte
- * Returns: ASCII character
- */
-extern (C)
-char fchar(ubyte c) pure @safe @nogc nothrow { //TODO: EIBEC?
-	return c > 0x7E || c < 0x20 ? DEFAULT_CHAR : c;
 }

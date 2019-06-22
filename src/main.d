@@ -40,7 +40,7 @@ void pversion() {
 	writefln(
 		"ddhx " ~ APP_VERSION ~ "  (" ~ __TIMESTAMP__  ~ ")\n" ~
 		"Compiler: " ~ __VENDOR__ ~ " v%d\n" ~
-		"MIT License: Copyright (c) dd86k 2017-2019\n" ~
+		"MIT License: "~COPYRIGHT~"\n" ~
 		"Project page: <https://git.dd86k.space/dd86k/ddhx>",
 		__VERSION__
 	);
@@ -78,9 +78,9 @@ int main(string[] args) {
 		return 3;
 	}
 
-	MMFile = new MmFile((fname = file), MmFile.Mode.read, 0, mmbuf);
+	CFile = new MmFile((fname = file), MmFile.Mode.read, 0, mmbuf);
 
-	if ((fsize = MMFile.length) <= 0) {
+	if ((fsize = CFile.length) <= 0) {
 		stderr.writeln("Empty file, aborting");
 		return 4;
 	}

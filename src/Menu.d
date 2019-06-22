@@ -133,15 +133,16 @@ SEARCH_BYTE:
 		}
 		HandleOffset(argv[1]);
 		hxoffsetbar;
-		hxupdate_r;
+		hxrender_r;
 		break;
 	case "refresh": hxrefresh_a; break;
 	case "quit": hxexit; break;
 	case "about":
-		msgalt("Written by dd86k. Copyright (c) dd86k 2017-2019");
+		enum C = "Written by dd86k. " ~ COPYRIGHT;
+		msgalt(C);
 		break;
 	case "version":
-		enum V = "Using ddhx " ~ APP_VERSION;
+		enum V = "ddhx " ~ APP_VERSION ~ ", " ~ __TIMESTAMP__;
 		msgalt(V);
 		break;
 	//

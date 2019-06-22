@@ -1,7 +1,5 @@
 # ddhx, Interactive Hexadecimal File Viewer
 
-**NOTE:** Please note that ddhx is an inactive project.
-
 ![Screenshot of ddhx](https://dd86k.github.io/imgs/ddhx3.png)
 
 ddhx is a replacement for [0xdd](https://github.com/dd86k/0xdd) as a native tool.
@@ -11,9 +9,9 @@ ddhx is a replacement for [0xdd](https://github.com/dd86k/0xdd) as a native tool
 Searching for an ASCII string? Press the return key, or escape, type in `ss IEND` and ddhx will search for "IEND"!
 
 Notes:
-- Some commands take in sub-command parameters, e.g. `search u8 0xdd`.
+- Some commands take command parameters, e.g. `search u8 0xdd`.
 - Some commands have _aliases_, e.g. `sb 0xdd` is the same as `search u8 0xdd`.
-- Some commands have a key binded as a command, e.g. pressing `r` while not in command-mode executes the equivelent of `refresh`.
+- Some commands have a shortcut, e.g. pressing `r` while outside of command mode executes `refresh`.
 
 Here is a brief list of commands:
 
