@@ -4,11 +4,9 @@
 module searcher;
 
 import std.stdio;
-import core.stdc.string : memcpy;
 import std.encoding : transcode;
 import ddhx;
 import utils : unformat;
-import std.range : chunks;
 import utils;
 
 /// File search chunk buffer size

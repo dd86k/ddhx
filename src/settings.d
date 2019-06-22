@@ -89,7 +89,7 @@ void HandleOffset(string val, bool cli = false) {
 			writef("Unknown mode parameter: %s", val);
 			exit(1);
 		} else {
-			msgalt(format(" Invalid offset type: %s", val));
+			msgalt(" Invalid offset type: %s", val);
 		}
 		break;
 	}

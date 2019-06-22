@@ -3,7 +3,6 @@ module menu;
 import std.stdio : readln, write;
 import core.stdc.stdio : printf;
 import ddcon, ddhx, searcher;
-import std.format : format;
 import settings;
 
 //TODO: count command (stat)

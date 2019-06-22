@@ -6,7 +6,6 @@ module ddhx;
 import std.stdio : write, writeln, writef, writefln;
 import std.mmfile;
 import core.stdc.stdio : printf;
-import core.stdc.string : memset;
 import menu, ddcon;
 import utils : formatsize, unformat;
 
@@ -331,8 +330,6 @@ void hxrender() {
 /// Update display from buffer without setting cursor
 extern (C)
 void hxrender_r() {
-	import core.stdc.string : memset;
-
 	__gshared char[] hexTable = [
 		'0', '1', '2', '3', '4', '5', '6', '7',
 		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
