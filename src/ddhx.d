@@ -338,7 +338,7 @@ void hxrender_r() {
 	char[1024] a = void, d = void;
 	
 	size_t brow = BytesPerRow; /// bytes per row
-	int minw = cast(int)brow * 3;
+	size_t minw = cast(int)brow * 3;
 
 	a[brow] = d[minw] = '\0';
 
