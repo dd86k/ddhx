@@ -241,6 +241,7 @@ enum Key : ushort {
 	D7 = 55,
 	D8 = 56,
 	D9 = 57,
+	Colon = 58,
 	A = 65,
 	B = 66,
 	C = 67,

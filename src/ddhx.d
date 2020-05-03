@@ -183,7 +183,7 @@ void hxkey(const ref KeyInfo k) {
 	// Actions/Shortcuts
 	//
 
-	case Key.Escape, Key.Enter:
+	case Key.Escape, Key.Enter, Key.Colon:
 		hxmenu;
 		break;
 	case Key.G:
