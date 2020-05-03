@@ -121,27 +121,23 @@ void hxkey(const ref KeyInfo k) {
 	// Navigation
 	//
 
-	case Key.UpArrow:
-	case Key.K:
+	case Key.UpArrow, Key.K:
 		if (fpos - BytesPerRow >= 0)
 			hxgoto(fpos - BytesPerRow);
 		else
 			hxgoto(0);
 		break;
-	case Key.DownArrow:
-	case Key.J:
+	case Key.DownArrow, Key.J:
 		if (fpos + screenl + BytesPerRow <= fsize)
 			hxgoto(fpos + BytesPerRow);
 		else
 			hxgoto(fsize - screenl);
 		break;
-	case Key.LeftArrow:
-	case Key.H:
+	case Key.LeftArrow, Key.H:
 		if (fpos - 1 >= 0) // Else already at 0
 			hxgoto(fpos - 1);
 		break;
-	case Key.RightArrow:
-	case Key.L:
+	case Key.RightArrow, Key.L:
 		if (fpos + screenl + 1 <= fsize)
 			hxgoto(fpos + 1);
 		else
