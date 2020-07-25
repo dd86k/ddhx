@@ -10,7 +10,7 @@ import menu, ddcon;
 import utils : formatsize, unformat;
 
 /// Copyright string
-enum COPYRIGHT = "Copyright (c) dd86k 2017-2019";
+enum COPYRIGHT = "Copyright (c) dd86k 2017-2020";
 
 /// App version
 enum APP_VERSION = "0.2.0";
@@ -60,13 +60,13 @@ __gshared string fname = void;	/// filename
 __gshared long fpos = void;	/// Current file position
 __gshared long fsize = void;	/// File size
 
-private __gshared char[30] tfsizebuf;	/// total formatted size buffer
-private __gshared char[] tfsize;	/// total formatted size (pointer)
+private __gshared char[32] tfsizebuf;	/// total formatted size buffer
+private __gshared char[] tfsize;	/// total formatted size (slice)
 
 /// Main app entry point
 /// Params: pos = File position to start with
 extern (C)
-void Start(long pos) {
+void ddhx_main(long pos) {
 	fpos = pos;
 	tfsize = formatsize(tfsizebuf, fsize);
 	screeninit;
@@ -235,7 +235,7 @@ void hxinfobar() {
 /// Updates information bar without cursor position call.
 extern (C)
 void hxinfobar_r() {
-	char[30] bl = void, cp = void;
+	char[32] bl = void, cp = void;
 	writef(" %*s | %*s/%*s | %7.3f%%",
 		7,  formatsize(bl, screenl), // Buffer size
 		10, formatsize(cp, fpos), // Formatted position

@@ -9,28 +9,25 @@ import ddhx;
  *   l = Long number as a reference
  * Returns: Returns true if successful.
  */
-bool unformat(string e, ref long l) {
-	import std.conv : parse, ConvException;
-	import std.algorithm.searching : startsWith;
-	//TODO: Improve unformat
-	//      h0000 - hex
-	//      o0000 - octal
-	//       0000 - decimal
-	try {
-		if (e.startsWith("0x")) {
-			l = unformatHex(e[2..$]);
-		} /*else if (e[0] == '0') {
-			//TODO: UNFORMAT OCTAL
-		} */else {
-			switch (e[$ - 1]) {
-			case 'h', 'H': l = unformatHex(e[0..$ - 1]); break;
-			default: l = parse!long(e); break;
-			}
-		}
-		return true;
-	} catch (Exception) {
+bool unformat(string e, ref long l) nothrow pure @nogc @safe {
+	if (e.length == 0)
 		return false;
+
+	if (e[0] == '0') {
+		if (e.length == 1) {
+			l = 0;
+			return true;
+		}
+		if (e[1] == 'x') { // hexadecimal
+			l = unformatHex(e[2..$]);
+		} else { // octal
+			l = unformatOct(e[1..$]);
+		}
+	} else { // Decimal
+		l = unformatDec(e);
 	}
+
+	return true;
 }
 
 /**
@@ -38,17 +35,40 @@ bool unformat(string e, ref long l) {
  * Params: e = Input string
  * Returns: Unformatted number.
  */
-ulong unformatHex(string e) nothrow @nogc pure {
+ulong unformatHex(string e) nothrow @nogc pure @safe {
 	enum C_MINOR = '0' + 39, C_MAJOR = '0' + 7;
-	int s; long l;
-	foreach_reverse (c; e) {
-		switch (c) {
-			case '1': .. case '9': l |= (c - '0') << s; break;
-			case 'A': .. case 'F': l |= (c - C_MAJOR) << s; break;
-			case 'a': .. case 'f': l |= (c - C_MINOR) << s; break;
-			default:
-		}
+	int s;
+	long l;
+	foreach_reverse (char c; e) {
+		if (c >= '1' && c <= '9')
+			l |= (c - '0') << s;
+		else if (c >= 'a' && c <= 'f')
+			l |= (c - C_MINOR) << s;
+		else if (c >= 'A' && c <= 'F')
+			l |= (c - C_MAJOR) << s;
 		s += 4;
+	}
+	return l;
+}
+
+long unformatOct(string e) nothrow @nogc pure @safe {
+	int s = 1;
+	long l;
+	foreach_reverse (char c; e) {
+		if (c >= '1' && c <= '7')
+			l |= (c - '0') * s;
+		s *= 8;
+	}
+	return l;
+}
+
+long unformatDec(string e) nothrow @nogc pure @safe {
+	int s = 1;
+	long l;
+	foreach_reverse (char c; e) {
+		if (c >= '1' && c <= '9')
+			l += (c - '0') * s;
+		s *= 10;
 	}
 	return l;
 }
@@ -58,48 +78,47 @@ ulong unformatHex(string e) nothrow @nogc pure {
  * Params:
  *   buf = character buffer
  *   size = Long number
- *   base10 = Use x1000 instead
+ *   b10  = Use base-1000 instead of base-1024
  * Returns: Range
  */
-char[] formatsize(ref char[30] buf, long size, bool base10 = false) { //BUG: %f is unpure?
+char[] formatsize(ref char[32] buf, long size, bool b10 = false) @safe {
+	//BUG: %f is unpure?
 	import std.format : sformat;
 
 	enum : long {
-		KB = 1024,      /// Represents one KiloByte
-		MB = KB * 1024, /// Represents one MegaByte
-		GB = MB * 1024, /// Represents one GigaByte
-		TB = GB * 1024, /// Represents one TeraByte
-		KiB = 1000,       /// Represents one KibiByte
-		MiB = KiB * 1000, /// Represents one MebiByte
-		GiB = MiB * 1000, /// Represents one GibiByte
-		TiB = GiB * 1000  /// Represents one TebiByte
+		KB = 1024,	/// Represents one KiloByte
+		MB = KB * 1024,	/// Represents one MegaByte
+		GB = MB * 1024,	/// Represents one GigaByte
+		TB = GB * 1024,	/// Represents one TeraByte
+		KiB = 1000,	/// Represents one KibiByte
+		MiB = KiB * 1000,	/// Represents one MebiByte
+		GiB = MiB * 1000,	/// Represents one GibiByte
+		TiB = GiB * 1000	/// Represents one TebiByte
 	}
 
 	const float s = size;
 
-	if (base10) {
-		if (size > TiB)
-			return buf.sformat!"%0.2f TiB"(s / TiB);
-		else if (size > GiB)
-			return buf.sformat!"%0.2f GiB"(s / GiB);
-		else if (size > MiB)
-			return buf.sformat!"%0.2f MiB"(s / MiB);
-		else if (size > KiB)
-			return buf.sformat!"%0.2f KiB"(s / KiB);
-		else
-			return buf.sformat!"%u B"(size);
-	} else {
-		if (size > TB)
-			return buf.sformat!"%0.2f TB"(s / TB);
-		else if (size > GB)
-			return buf.sformat!"%0.2f GB"(s / GB);
-		else if (size > MB)
-			return buf.sformat!"%0.2f MB"(s / MB);
-		else if (size > KB)
-			return buf.sformat!"%0.2f KB"(s / KB);
-		else
-			return buf.sformat!"%u B"(size);
-	}
+	if (size > TB)
+		return b10 ?
+			buf.sformat!"%0.2f TiB"(s / TiB) :
+			buf.sformat!"%0.2f TB"(s / TB);
+
+	if (size > GB)
+		return b10 ?
+			buf.sformat!"%0.2f GiB"(s / GiB) :
+			buf.sformat!"%0.2f GB"(s / GB);
+
+	if (size > MB)
+		return b10 ?
+			buf.sformat!"%0.2f MiB"(s / MiB) :
+			buf.sformat!"%0.2f MB"(s / MB);
+
+	if (size > KB)
+		return b10 ?
+			buf.sformat!"%0.2f KiB"(s / KiB) :
+			buf.sformat!"%0.2f KB"(s / KB);
+
+	return buf.sformat!"%u B"(size);
 }
 
 /**
@@ -108,7 +127,7 @@ char[] formatsize(ref char[30] buf, long size, bool base10 = false) { //BUG: %f 
  * Returns: Byte swapped number.
  */
 extern (C)
-ushort bswap16(ushort n) pure nothrow @nogc {
+ushort bswap16(ushort n) pure nothrow @nogc @safe {
 	return cast(ushort)(n >> 8 | n << 8);
 }
 
@@ -118,25 +137,9 @@ ushort bswap16(ushort n) pure nothrow @nogc {
  * Returns: Byte swapped number.
  */
 extern (C)
-uint bswap32(uint n) pure nothrow @nogc {
-	version (D_InlineAsm_X86) {
-		asm pure nothrow @nogc {
-			mov EAX, n;
-			bswap EAX;
-			ret;
-		}
-	} else
-	version (D_InlineAsm_X86_64) {
-		asm pure nothrow @nogc {
-			mov EAX, n;
-			bswap EAX;
-			ret;
-		}
-	} else
-		return  (n & 0xFF00_0000) >> 24 |
-			(n & 0x00FF_0000) >>  8 |
-			(n & 0x0000_FF00) <<  8 |
-			(cast(ubyte)n)    << 24;
+uint bswap32(uint v) pure nothrow @nogc @safe {
+	v = (v >> 16) | (v << 16);
+	return ((v & 0xFF00FF00) >> 8) | ((v & 0x00FF00FF) << 8);
 }
 
 /**
@@ -145,18 +148,27 @@ uint bswap32(uint n) pure nothrow @nogc {
  * Returns: Byte swapped number.
  */
 extern (C)
-ulong bswap64(ulong n) pure nothrow @nogc {
-	version (D_InlineAsm_X86_64) {
-		asm pure nothrow @nogc {
-			mov RAX, n;
-			bswap RAX;
-			ret;
-		}
-	} else {
-		uint *p = cast(uint*)&n;
-		const uint a = bswap32(p[0]);
-		p[1] = bswap32(p[0]);
-		p[0] = a;
-		return n;
-	}
+ulong bswap64(ulong v) pure nothrow @nogc @safe {
+	v = (v >> 32) | (v << 32);
+	v = ((v & 0xFFFF0000FFFF0000) >> 16) | ((v & 0x0000FFFF0000FFFF) << 16);
+	return ((v & 0xFF00FF00FF00FF00) >> 8) | ((v & 0x00FF00FF00FF00FF) << 8);
+}
+
+@safe unittest {
+	// bswap
+	assert(0xAABB == bswap16(0xBBAA), "bswap16 failed");
+	assert(0xAABBCCDD == bswap32(0xDDCCBBAA), "bswap32 failed");
+	assert(0xAABBCCDD_11223344 == bswap64(0x44332211_DDCCBBAA), "bswap64 failed");
+	// unformat core
+	assert(unformatHex("AA")    == 0xAA, "unformatHex failed");
+	assert(unformatOct("10222") == 4242, "unformatOctal failed");
+	assert(unformatDec("4242")  == 4242, "unformatDec failed");
+	// unformat
+	long l;
+	assert(unformat("0xAA", l));
+	assert(l == 0xAA, "unformat::hex failed");
+	assert(unformat("010222", l));
+	assert(l == 4242, "unformat::octal failed");
+	assert(unformat("4242", l));
+	assert(l == 4242, "unformat::dec failed");
 }

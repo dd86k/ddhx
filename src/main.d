@@ -89,6 +89,6 @@ int main(string[] args) {
 		return 4;
 	}
 
-	Start(seek); // start ddhx
+	ddhx_main(seek); // start ddhx
 	return 0;
 }

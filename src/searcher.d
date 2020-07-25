@@ -109,13 +109,14 @@ void search_u32(string s, bool invert = false) {
  */
 void search_u64(string s, bool invert = false) {
 	long l = void;
-	if (unformat(s, l)) {
-		if (invert) l = bswap64(l);
-		ubyte[8] la = void;
-		*(cast(long*)la) = l;
-		search_arr(la, "u64");
-	} else
+	if (unformat(s, l) == false) {
 		msgalt("Could not parse number");
+		return;
+	}
+	if (invert) l = bswap64(l);
+	ubyte[8] la = void;
+	*(cast(long*)la) = l;
+	search_arr(la, "u64");
 }
 
 private void search_arr(ubyte[] data, string type) {
