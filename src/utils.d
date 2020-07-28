@@ -31,7 +31,7 @@ bool unformat(string e, ref long l) nothrow pure @nogc @safe {
 }
 
 /**
- * Converts a string HEX number to a long number.
+ * Converts a string HEX number to a long number, without the prefix.
  * Params: e = Input string
  * Returns: Unformatted number.
  */
@@ -51,6 +51,11 @@ ulong unformatHex(string e) nothrow @nogc pure @safe {
 	return l;
 }
 
+/**
+ * Convert octal string to a long number, without the prefix.
+ * Params: e = Input string
+ * Returns: Unformatted number.
+ */
 long unformatOct(string e) nothrow @nogc pure @safe {
 	int s = 1;
 	long l;
@@ -62,6 +67,11 @@ long unformatOct(string e) nothrow @nogc pure @safe {
 	return l;
 }
 
+/**
+ * Convert deical string to a long number.
+ * Params: e = Input string
+ * Returns: Unformatted number.
+ */
 long unformatDec(string e) nothrow @nogc pure @safe {
 	int s = 1;
 	long l;
@@ -79,7 +89,7 @@ long unformatDec(string e) nothrow @nogc pure @safe {
  *   buf = character buffer
  *   size = Long number
  *   b10  = Use base-1000 instead of base-1024
- * Returns: Range
+ * Returns: Character slice using sformat
  */
 char[] formatsize(ref char[32] buf, long size, bool b10 = false) @safe {
 	//BUG: %f is unpure?

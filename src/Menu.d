@@ -17,9 +17,9 @@ void hxmenu(string prepend = null) {
 	import std.algorithm : joiner;
 	import std.format : sformat;
 
-	screenpos(0, 0);
-	printf("%*s", screenwidth - 1, cast(char*)" ");
-	screenpos(0, 0);
+	conpos(0, 0);
+	printf("%*s", conwidth - 1, cast(char*)" ");
+	conpos(0, 0);
 	printf(">");
 	if (prepend)
 		write(prepend);
@@ -157,7 +157,7 @@ SEARCH_BYTE:
 			break;
 		case "offset", "o":
 			HandleOffset(argv[2]);
-			screenclear;
+			conclear;
 			hxrefresh_a;
 			break;
 		default:

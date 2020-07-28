@@ -96,12 +96,12 @@ void HandleOffset(string val, bool cli = false) {
 }
 
 private ushort getBytesPerRow() {
-	import ddcon : screenwidth;
+	import ddcon : conwidth;
 	final switch (CurrentDisplayMode)
 	{
 		case DisplayMode.Default:
-			return cast(ushort)((screenwidth - 11) / 4);
+			return cast(ushort)((conwidth - 11) / 4);
 		case DisplayMode.Text, DisplayMode.Data:
-			return cast(ushort)((screenwidth - 11) / 3);
+			return cast(ushort)((conwidth - 11) / 3);
 	}
 }

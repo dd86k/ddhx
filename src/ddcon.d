@@ -27,21 +27,18 @@ version (Posix) {
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
-	private enum TERM_ATTR = ~ICANON & ~ECHO;
+	private enum TERM_ATTR = ~(ICANON | ECHO);
 	private __gshared termios old_tio, new_tio;
 }
 
 extern (C):
 
-/*******************************************************************
- * Initiation
- *******************************************************************/
-
 /// Initiate ddcon
-void screeninit() {
+void coninit() {
 	version (Windows) {
 		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 		hIn  = GetStdHandle(STD_INPUT_HANDLE);
+		SetConsoleMode(hIn, ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
 	}
 	version (Posix) {
 		tcgetattr(STDIN_FILENO, &old_tio);
@@ -50,12 +47,13 @@ void screeninit() {
 	}
 }
 
-/*******************************************************************
- * Clear
- *******************************************************************/
+void conrestore() {
+	version (Windows) {
+	}
+}
 
 /// Clear screen
-void screenclear() {
+void conclear() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO csbi = void;
 		COORD c;
@@ -65,7 +63,7 @@ void screenclear() {
 		if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
 			/*|| // .NET uses this but no idea why yet.
 			FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/) {
-			screenpos(0, 0);
+			conpos(0, 0);
 		}
 		else // If that fails, run cls.
 			sys ("cls");
@@ -75,15 +73,10 @@ void screenclear() {
 	else static assert(0, "Clear: Not implemented");
 }
 
-/*******************************************************************
- * Window dimensions
- *******************************************************************/
-
-// Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
-
 /// Window width
 /// Returns: Window width in characters
-@property ushort screenwidth() {
+@property ushort conwidth() {
+	// Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
 		GetConsoleScreenBufferInfo(hOut, &c);
@@ -99,7 +92,7 @@ void screenclear() {
 
 /// Window height
 /// Returns: Window height in characters
-@property ushort screenheight() {
+@property ushort conheight() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
 		GetConsoleScreenBufferInfo(hOut, &c);
@@ -113,10 +106,6 @@ void screenclear() {
 	}
 }
 
-/*******************************************************************
- * Cursor management
- *******************************************************************/
-
 /**
  * Set cursor position x and y position respectively from the top left corner,
  * 0-based.
@@ -124,7 +113,7 @@ void screenclear() {
  *   x = X position (horizontal)
  *   y = Y position (vertical)
  */
-void screenpos(int x, int y) {
+void conpos(int x, int y) {
 	version (Windows) { // 0-based
 		__gshared COORD c = void;
 		c.X = cast(short)x;
@@ -135,30 +124,43 @@ void screenpos(int x, int y) {
 	}
 }
 
-/*******************************************************************
- * Input
- *******************************************************************/
-
 /**
- * Read a single character.
+ * Read an input event. This function is blocking.
  * Params:
- *   k = KeyInfo struct
+ *   k = InputInfo struct
  */
-void screenkey(ref KeyInfo k) {
+void coninput(ref InputInfo k) {
 	version (Windows) { // Sort of is like .NET's ReadKey
 		INPUT_RECORD ir = void;
 		DWORD num = void;
-		if (ReadConsoleInput(hIn, &ir, 1, &num)) {
-			k.keyCode = 0;
-			if (ir.KeyEvent.bKeyDown && ir.EventType == KEY_EVENT) {
-				const DWORD state = ir.KeyEvent.dwControlKeyState;
-				k.alt   = (state & ALT_PRESSED)   != 0;
-				k.ctrl  = (state & CTRL_PRESSED)  != 0;
-				k.shift = (state & SHIFT_PRESSED) != 0;
-				k.keyChar  = ir.KeyEvent.AsciiChar;
-				k.keyCode  = ir.KeyEvent.wVirtualKeyCode;
+L_READ:
+		if (ReadConsoleInput(hIn, &ir, 1, &num) == 0)
+			goto L_READ;
+		// Despite being bit fields, a switch is recommended
+		switch (ir.EventType) {
+		case KEY_EVENT:
+			if (ir.KeyEvent.bKeyDown == FALSE)
+				goto L_READ;
+			const DWORD state = ir.KeyEvent.dwControlKeyState;
+			k.key.alt   = (state & ALT_PRESSED)   != 0;
+			k.key.ctrl  = (state & CTRL_PRESSED)  != 0;
+			k.key.shift = (state & SHIFT_PRESSED) != 0;
+			k.value = ir.KeyEvent.wVirtualKeyCode;
+			return;
+		case MOUSE_EVENT:
+			switch (ir.MouseEvent.dwEventFlags) {
+			case MOUSE_WHEELED:
+				// Down=0xFF880000 Up=0x00780000
+				k.value = ir.MouseEvent.dwButtonState == 0xFF880000 ?
+					Mouse.ScrollDown : Mouse.ScrollUp;
+				return;
+			default:
 			}
+			break;
+		default: goto L_READ;
 		}
+L_RETURN:
+		k.value = 0;
 	} else version (Posix) {
 		//TODO: Get modifier keys states
 
@@ -170,36 +172,36 @@ void screenkey(ref KeyInfo k) {
 
 		with (k) switch (c) {
 		case '\n': // \n (ENTER)
-			keyCode = Key.Enter;
+			value = Key.Enter;
 			goto _READKEY_END;
 		case 27: // ESC
 			switch (c = getchar) {
 			case '[':
 				switch (c = getchar) {
-				case 'A': keyCode = Key.UpArrow; goto _READKEY_END;
-				case 'B': keyCode = Key.DownArrow; goto _READKEY_END;
-				case 'C': keyCode = Key.RightArrow; goto _READKEY_END;
-				case 'D': keyCode = Key.LeftArrow; goto _READKEY_END;
-				case 'F': keyCode = Key.End; goto _READKEY_END;
-				case 'H': keyCode = Key.Home; goto _READKEY_END;
+				case 'A': value = Key.UpArrow; goto _READKEY_END;
+				case 'B': value = Key.DownArrow; goto _READKEY_END;
+				case 'C': value = Key.RightArrow; goto _READKEY_END;
+				case 'D': value = Key.LeftArrow; goto _READKEY_END;
+				case 'F': value = Key.End; goto _READKEY_END;
+				case 'H': value = Key.Home; goto _READKEY_END;
 				// There is an additional getchar due to the pending '~'
-				case '2': keyCode = Key.Insert; getchar; goto _READKEY_END;
-				case '3': keyCode = Key.Delete; getchar; goto _READKEY_END;
-				case '5': keyCode = Key.PageUp; getchar; goto _READKEY_END;
-				case '6': keyCode = Key.PageDown; getchar; goto _READKEY_END;
+				case '2': value = Key.Insert; getchar; goto _READKEY_END;
+				case '3': value = Key.Delete; getchar; goto _READKEY_END;
+				case '5': value = Key.PageUp; getchar; goto _READKEY_END;
+				case '6': value = Key.PageDown; getchar; goto _READKEY_END;
 				default: goto _READKEY_DEFAULT;
 				} // [
 			default: goto _READKEY_DEFAULT;
 			} // ESC
 		default:
 			if (c >= 'a' && c <= 'z') {
-				k.keyCode = cast(Key)(c - 32);
+				k.value = cast(Key)(c - 32);
 				goto _READKEY_END;
 			}
 		}
 
 _READKEY_DEFAULT:
-		k.keyCode = cast(ushort)c;
+		k.value = cast(ushort)c;
 
 _READKEY_END:
 		tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
@@ -355,18 +357,31 @@ enum Key : ushort {
 	Pa1 = 253,
 	OemClear = 254
 }
+enum Mouse : ushort {
+	Click	= 0x100,
+	ScrollUp	= 0x200,
+	ScrollDown	= 0x300,
+}
 
 /*******************************************************************
  * Structs
  *******************************************************************/
 
 /// Key information structure
-struct KeyInfo {
-	char keyChar;	/// UTF-8 Character.
-	ushort keyCode;	/// Key code.
-	ubyte ctrl;	/// If either CTRL was held down.
-	ubyte alt;	/// If either ALT was held down.
-	ubyte shift;	/// If SHIFT was held down.
+struct InputInfo {
+	ushort value;	/// Character or mouse event
+	union {
+		struct key_t {
+			ubyte ctrl;	/// If either CTRL was held down.
+			ubyte alt;	/// If either ALT was held down.
+			ubyte shift;	/// If SHIFT was held down.
+		}
+		struct mouse_t {
+			ushort x, y;
+		}
+		key_t key;
+		mouse_t mouse;
+	}
 }
 
 /// 

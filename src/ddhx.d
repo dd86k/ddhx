@@ -67,55 +67,21 @@ private __gshared char[] tfsize;	/// total formatted size (slice)
 /// Params: pos = File position to start with
 extern (C)
 void ddhx_main(long pos) {
+	import settings : HandleWidth;
+
 	fpos = pos;
 	tfsize = formatsize(tfsizebuf, fsize);
-	screeninit;
+	coninit;
 	hxprep;
-	screenclear;
+	conclear;
 	hxoffsetbar;
 	hxrender_r;
 	hxinfobar_r;
 
-	KeyInfo k = void;
+	InputInfo k = void;
 KEY:
-	screenkey(k);
-	//TODO: Handle resize event
-	if (k.keyCode)
-		hxkey(k);
-	goto KEY;
-}
-
-/*void HandleMouse(const MouseInfo* mi)
-{
-	size_t bs = BufferLength;
-
-	switch (mi.Type) {
-	case MouseEventType.Wheel:
-		if (mi.ButtonState > 0) { // Up
-			if (CurrentPosition - BytesPerRow >= 0)
-				Goto(CurrentPosition - BytesPerRow);
-			else
-				Goto(0);
-		} else { // Down
-			if (CurrentPosition + bs + BytesPerRow <= fs)
-				Goto(CurrentPosition + BytesPerRow);
-			else
-				Goto(fs - bs);
-		}
-		break;
-	default:
-	}
-}*/
-
-/**
- * Handles a user key-stroke
- * Params: k = KeyInfo (ddcon)
- */
-extern (C)
-void hxkey(const ref KeyInfo k) {
-	import settings : HandleWidth;
-
-	switch (k.keyCode) {
+	coninput(k);
+	switch (k.value) {
 
 	//
 	// Navigation
@@ -143,35 +109,28 @@ void hxkey(const ref KeyInfo k) {
 		else
 			hxgoto(fsize - screenl);
 		break;
-	case Key.PageUp:
+	case Key.PageUp, Mouse.ScrollUp:
 		if (fpos - cast(long)screenl >= 0)
 			hxgoto(fpos - screenl);
 		else
 			hxgoto(0);
 		break;
-	case Key.PageDown:
+	case Key.PageDown, Mouse.ScrollDown:
 		if (fpos + screenl + screenl <= fsize)
 			hxgoto(fpos + screenl);
 		else
 			hxgoto(fsize - screenl);
 		break;
 	case Key.Home:
-		if (k.ctrl)
-			hxgoto(0);
-		else
-			hxgoto(fpos - (fpos % BytesPerRow));
+		hxgoto(k.key.ctrl ? 0 : fpos - (fpos % BytesPerRow));
 		break;
 	case Key.End:
-		if (k.ctrl)
+		if (k.key.ctrl) {
 			hxgoto(fsize - screenl);
-		else {
+		} else {
 			const long np = fpos +
 				(BytesPerRow - fpos % BytesPerRow);
-
-			if (np + screenl <= fsize)
-				hxgoto(np);
-			else
-				hxgoto(fsize - screenl);
+			hxgoto(np + screenl <= fsize ? np : fsize - screenl);
 		}
 		break;
 
@@ -199,13 +158,14 @@ void hxkey(const ref KeyInfo k) {
 	case Key.Q: hxexit; break;
 	default:
 	}
+	goto KEY;
 }
 
 /// Refresh the entire screen
 extern (C)
 void hxrefresh_a() {
 	hxprep;
-	screenclear;
+	conclear;
 	hxoffsetbar;
 	hxrender_r;
 	hxinfobar_r;
@@ -218,7 +178,7 @@ extern (C)
 void hxoffsetbar() {
 	char [8]format = cast(char[8])" %02X"; // default
 	format[4] = formatTable[CurrentOffsetType];
-	screenpos(0, 0);
+	conpos(0, 0);
 	printf("Offset %c ", offsetTable[CurrentOffsetType]);
 	for (ushort i; i < BytesPerRow; ++i)
 		printf(cast(char*)format, i);
@@ -228,7 +188,7 @@ void hxoffsetbar() {
 /// Update the bottom current information bar.
 extern (C)
 void hxinfobar() {
-	screenpos(0, screenheight - 1);
+	conpos(0, conheight - 1);
 	hxinfobar_r;
 }
 
@@ -247,7 +207,7 @@ void hxinfobar_r() {
 /// Determine screensize
 extern (C)
 void hxprep() {
-	const int bufs = (screenheight - 2) * BytesPerRow; // Proposed buffer size
+	const int bufs = (conheight - 2) * BytesPerRow; // Proposed buffer size
 	screenl = fsize >= bufs ? bufs : cast(uint)fsize;
 }
 
@@ -321,7 +281,7 @@ void gotostr(string str) {
 /// Update display from buffer
 extern (C)
 void hxrender() {
-	screenpos(0, 1);
+	conpos(0, 1);
 	hxrender_r;
 }
 
@@ -372,8 +332,8 @@ void hxrender_r() {
  * Params: msg = Message string
  */
 void msg(string msg) {
-	screenpos(0, 0);
-	writef("%s%*s", msg, (screenwidth - 1) - msg.length, " ");
+	conpos(0, 0);
+	writef("%s%*s", msg, (conwidth - 1) - msg.length, " ");
 }
 
 /**
@@ -381,8 +341,8 @@ void msg(string msg) {
  * Params: msg = Message string
  */
 void msgalt(string msg) {
-	screenpos(0, screenheight - 1);
-	writef("%s%*s", msg, (screenwidth - 1) - msg.length, " ");
+	conpos(0, conheight - 1);
+	writef("%s%*s", msg, (conwidth - 1) - msg.length, " ");
 }
 
 /**
@@ -409,6 +369,6 @@ void hxfileinfo() {
 extern (C)
 void hxexit() {
 	import core.stdc.stdlib : exit;
-	screenclear;
+	conclear;
 	exit(0);
 }
