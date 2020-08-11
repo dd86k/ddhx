@@ -12,6 +12,17 @@ import utils;
 /// File search chunk buffer size
 private enum CHUNK_SIZE = 4096;
 
+private struct search_t {
+	union {
+		ubyte[2] a16;
+		short i16;
+		ubyte[4] a32;
+		int i32;
+		ubyte[8] a64;
+		long i64;
+	}
+}
+
 /**
  * Search an UTF-8/ASCII string
  * Params: s = string
@@ -59,68 +70,65 @@ void search_utf32(const char[] s) {
  * Params: b = ubyte
  */
 void search_u8(const ubyte b) {
-	msgalt("Searching byte...");
-	ubyte[1] a = [ b ];
+	ddhx_msglow("Searching byte...");
+	ubyte[1] a = void;
+	a[0] = b;
 	search_arr(a, "byte");
-	msgalt("Byte not found");
 }
 
 /**
  * Search for a 16-bit value.
  * Params:
- *   s = Input
+ *   input = Input
  *   invert = Invert endianness
  */
-void search_u16(string s, bool invert = false) {
+void search_u16(string input, bool invert = false) {
 	long l = void;
-	if (unformat(s, l) == false) {
-		msgalt("Could not parse number");
+	if (unformat(input, l) == false) {
+		ddhx_msglow("Could not parse number");
 		return;
 	}
-	const ushort u16 = invert ? bswap16(cast(ushort)l) : cast(ushort)l;
-	ubyte[2] la = void;
-	*(cast(ushort*)la) = u16;
-	search_arr(la, "u16");
+	search_t s = void;
+	s.i32 = invert ? bswap16(cast(short)l) : cast(short)l;
+	search_arr(s.a16, "u16");
 }
 
 /**
  * Search for a 32-bit value.
  * Params:
- *   s = Input
+ *   input = Input
  *   invert = Invert endianness
  */
-void search_u32(string s, bool invert = false) {
+void search_u32(string input, bool invert = false) {
 	long l = void;
-	if (unformat(s, l) == false) {
-		msgalt("Could not parse number");
+	if (unformat(input, l) == false) {
+		ddhx_msglow("Could not parse number");
 		return;
 	}
-	const uint u32 = invert ? bswap32(cast(uint)l) : cast(uint)l;
-	ubyte[4] la = void;
-	*(cast(uint*)la) = u32;
-	search_arr(la, "u32");
+	search_t s = void;
+	s.i32 = invert ? bswap32(cast(int)l) : cast(int)l;
+	search_arr(s.a32, "u32");
 }
 
 /**
  * Search for a 64-bit value.
  * Params:
- *   s = Input
+ *   input = Input
  *   invert = Invert endianness
  */
-void search_u64(string s, bool invert = false) {
+void search_u64(string input, bool invert = false) {
 	long l = void;
-	if (unformat(s, l) == false) {
-		msgalt("Could not parse number");
+	if (unformat(input, l) == false) {
+		ddhx_msglow("Could not parse number");
 		return;
 	}
-	if (invert) l = bswap64(l);
-	ubyte[8] la = void;
-	*(cast(long*)la) = l;
-	search_arr(la, "u64");
+	search_t s = void;
+	s.i64 = invert ? bswap64(l) : l;
+	search_arr(s.a64, "u64");
 }
 
 private void search_arr(ubyte[] data, string type) {
-	msgalt(" Searching %s", type);
+	ddhx_msglow(" Searching %s...", type);
 	const ubyte firstbyte = data[0];
 	const size_t datalen = data.length;
 	size_t pos = cast(size_t)fpos + 1; // do not affect file position itself
@@ -137,7 +145,7 @@ private void search_arr(ubyte[] data, string type) {
 			if (ilen < buflen) { // Within CHUNK
 				if (buf[i..i + datalen] == data) {
 S_FOUND:
-					hxgoto_c(pos + i);
+					ddhx_seek(pos + i);
 					return;
 				}
 			} else if (ilen < fsize) { // Out-of-chunk
@@ -149,5 +157,5 @@ S_FOUND:
 
 		pos = posmax; posmax += CHUNK_SIZE;
 	} while (pos < fsize);
-	msgalt(" Not found (%s)", type);
+	ddhx_msglow(" Not found (%s)", type);
 }

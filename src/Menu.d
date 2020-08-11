@@ -32,7 +32,7 @@ void hxmenu(string prepend = null) {
 	//TODO: GC-free merge prepend and readln(buf), then split
 	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 
-	hxoffsetbar;
+	ddhx_update_offsetbar;
 
 	const size_t argc = argv.length;
 	if (argc == 0) return;
@@ -40,27 +40,27 @@ void hxmenu(string prepend = null) {
 	switch (argv[0]) {
 	case "g", "goto":
 		if (argc <= 1) {
-			msgalt("Missing position (number)");
+			ddhx_msglow("Missing position (number)");
 			break;
 		}
 		switch (argv[1]) {
 		case "e", "end":
-			hxgoto(fsize - screenl);
+			ddhx_seek_unsafe(fsize - screenl);
 			break;
 		case "h", "home":
-			hxgoto(0);
+			ddhx_seek_unsafe(0);
 			break;
 		default:
-			gotostr(argv[1]);
+			ddhx_seek(argv[1]);
 		}
 		break;
 	case "s", "search": // Search
 		if (argc <= 1) {
-			msgalt("Missing data type");
+			ddhx_msglow("Missing data type");
 			break;
 		}
 		if (argc <= 2) {
-			msgalt("Missing data argument");
+			ddhx_msglow("Missing data argument");
 			break;
 		}
 
@@ -85,7 +85,7 @@ void hxmenu(string prepend = null) {
 			search_utf16(value);
 			break;
 		default:
-			msgalt("Invalid type (%s)", argv[1]);
+			ddhx_msglow("Invalid type (%s)", argv[1]);
 			break;
 		}
 		break; // "search"
@@ -93,19 +93,19 @@ void hxmenu(string prepend = null) {
 		if (argc > 1)
 			search_utf8(argv[1]);
 		else
-			msgalt("Missing argument (utf8)");
+			ddhx_msglow("Missing argument (utf8)");
 		break;
 	case "sw": // Search UTF-16 string
 		if (argc > 1)
 			search_utf16(argv[1]);
 		else
-			msgalt("Missing argument (utf16)");
+			ddhx_msglow("Missing argument (utf16)");
 		break;
 	//TODO: UTF-32 search alias
 	case "sb": // Search byte
 SEARCH_BYTE:
 		if (argc <= 1) {
-			msgalt("Missing argument (u8)");
+			ddhx_msglow("Missing argument (u8)");
 			break;
 		}
 		import utils : unformat;
@@ -113,58 +113,58 @@ SEARCH_BYTE:
 		if (unformat(argv[1], l)) {
 			search_u8(l & 0xFF);
 		} else {
-			msgalt("Could not parse number");
+			ddhx_msglow("Could not parse number");
 		}
 		break;
-	case "i", "info": hxfileinfo; break;
+	case "i", "info": ddhx_fileinfo; break;
 	case "o", "offset":
 		import settings : HandleOffset;
 		if (argc <= 1) {
-			msgalt("Missing offset");
+			ddhx_msglow("Missing offset");
 			break;
 		}
 		HandleOffset(argv[1]);
-		hxoffsetbar;
-		hxrender_r;
+		ddhx_update_offsetbar;
+		ddhx_render_raw;
 		break;
-	case "refresh": hxrefresh_a; break;
-	case "quit": hxexit; break;
+	case "refresh": ddhx_refresh; break;
+	case "quit": ddhx_exit; break;
 	case "about":
 		enum C = "Written by dd86k. " ~ COPYRIGHT;
-		msgalt(C);
+		ddhx_msglow(C);
 		break;
 	case "version":
 		enum V = "ddhx " ~ APP_VERSION ~ ", " ~ __TIMESTAMP__;
-		msgalt(V);
+		ddhx_msglow(V);
 		break;
 	//
 	// Setting manager
 	//
 	case "set":
 		if (argc <= 1) {
-			msgalt("Missing setting");
+			ddhx_msglow("Missing setting");
 			break;
 		}
 		if (argc <= 2) {
-			msgalt("Missing setting option");
+			ddhx_msglow("Missing setting option");
 			break;
 		}
 		switch (argv[1]) {
 		case "width", "w":
 			HandleWidth(argv[2]);
-			hxprep;
-			hxrefresh_a;
+			ddhx_prep;
+			ddhx_refresh;
 			break;
 		case "offset", "o":
 			HandleOffset(argv[2]);
 			conclear;
-			hxrefresh_a;
+			ddhx_refresh;
 			break;
 		default:
-			msgalt("Unknown setting: %s", argv[1]);
+			ddhx_msglow("Unknown setting: %s", argv[1]);
 			break;
 		}
 		break;
-	default: msgalt("Unknown command: %s", argv[0]); break;
+	default: ddhx_msglow("Unknown command: %s", argv[0]); break;
 	}
 }

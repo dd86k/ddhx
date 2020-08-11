@@ -27,20 +27,16 @@ void HandleWCLI(string opt, string val) {
  *   cli = From CLI (Assumes false by default)
  */
 void HandleWidth(string val, bool cli = false) {
+	import ddcon : coninit;
 	switch (val[0]) {
 	case 'a': // Automatic
-		version (Windows) {
-//TODO: Fix with CLI, returns 65535 (why can't Windows work?)
-		if (!cli) BytesPerRow = getBytesPerRow;
-		} else {
+		version (Windows)
+			if (cli) coninit;
 		BytesPerRow = getBytesPerRow;
-		}
 		break;
-
 	case 'd': // Default
 		BytesPerRow = 16;
 		break;
-	
 	default:
 		long l;
 		if (unformat(val, l)) {
@@ -49,7 +45,7 @@ void HandleWidth(string val, bool cli = false) {
 					writefln(ETRANGE, l, ushort.max);
 					exit(1);
 				} else
-					msgalt("Number out of range");
+					ddhx_msglow("Number out of range");
 					return;
 			}
 			BytesPerRow = l & 0xFFFF;
@@ -58,7 +54,7 @@ void HandleWidth(string val, bool cli = false) {
 				writeln(ENOPARSE);
 				exit(1);
 			} else 
-				msgalt(ENOPARSE);
+				ddhx_msglow(ENOPARSE);
 		}
 	}
 }
@@ -89,7 +85,7 @@ void HandleOffset(string val, bool cli = false) {
 			writef("Unknown mode parameter: %s", val);
 			exit(1);
 		} else {
-			msgalt(" Invalid offset type: %s", val);
+			ddhx_msglow(" Invalid offset type: %s", val);
 		}
 		break;
 	}

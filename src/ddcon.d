@@ -150,22 +150,19 @@ L_READ:
 		case MOUSE_EVENT:
 			switch (ir.MouseEvent.dwEventFlags) {
 			case MOUSE_WHEELED:
-				// Down=0xFF880000 Up=0x00780000
-				k.value = ir.MouseEvent.dwButtonState == 0xFF880000 ?
+				// Up=0x00780000 Down=0xFF880000
+				k.value = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
 					Mouse.ScrollDown : Mouse.ScrollUp;
 				return;
-			default:
+			default: goto L_READ;
 			}
-			break;
 		default: goto L_READ;
 		}
-L_RETURN:
-		k.value = 0;
 	} else version (Posix) {
 		//TODO: Get modifier keys states
 
-		// Commenting this section will echo the character
-		// And also it won't do anything to getchar
+		// Commenting this section will echo the character and make
+		// getchar unusable
 		tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
 
 		int c = getchar;

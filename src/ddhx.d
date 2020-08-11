@@ -65,18 +65,19 @@ private __gshared char[] tfsize;	/// total formatted size (slice)
 
 /// Main app entry point
 /// Params: pos = File position to start with
-extern (C)
 void ddhx_main(long pos) {
 	import settings : HandleWidth;
 
 	fpos = pos;
 	tfsize = formatsize(tfsizebuf, fsize);
 	coninit;
-	hxprep;
+	ddhx_prep;
 	conclear;
-	hxoffsetbar;
-	hxrender_r;
-	hxinfobar_r;
+	ddhx_update_offsetbar;
+	if (ddhx_render_raw < conheight - 2)
+		ddhx_update_infobar;
+	else
+		ddhx_update_infobar_raw;
 
 	InputInfo k = void;
 KEY:
@@ -89,48 +90,48 @@ KEY:
 
 	case Key.UpArrow, Key.K:
 		if (fpos - BytesPerRow >= 0)
-			hxgoto(fpos - BytesPerRow);
+			ddhx_seek_unsafe(fpos - BytesPerRow);
 		else
-			hxgoto(0);
+			ddhx_seek_unsafe(0);
 		break;
 	case Key.DownArrow, Key.J:
 		if (fpos + screenl + BytesPerRow <= fsize)
-			hxgoto(fpos + BytesPerRow);
+			ddhx_seek_unsafe(fpos + BytesPerRow);
 		else
-			hxgoto(fsize - screenl);
+			ddhx_seek_unsafe(fsize - screenl);
 		break;
 	case Key.LeftArrow, Key.H:
 		if (fpos - 1 >= 0) // Else already at 0
-			hxgoto(fpos - 1);
+			ddhx_seek_unsafe(fpos - 1);
 		break;
 	case Key.RightArrow, Key.L:
 		if (fpos + screenl + 1 <= fsize)
-			hxgoto(fpos + 1);
+			ddhx_seek_unsafe(fpos + 1);
 		else
-			hxgoto(fsize - screenl);
+			ddhx_seek_unsafe(fsize - screenl);
 		break;
 	case Key.PageUp, Mouse.ScrollUp:
 		if (fpos - cast(long)screenl >= 0)
-			hxgoto(fpos - screenl);
+			ddhx_seek_unsafe(fpos - screenl);
 		else
-			hxgoto(0);
+			ddhx_seek_unsafe(0);
 		break;
 	case Key.PageDown, Mouse.ScrollDown:
 		if (fpos + screenl + screenl <= fsize)
-			hxgoto(fpos + screenl);
+			ddhx_seek_unsafe(fpos + screenl);
 		else
-			hxgoto(fsize - screenl);
+			ddhx_seek_unsafe(fsize - screenl);
 		break;
 	case Key.Home:
-		hxgoto(k.key.ctrl ? 0 : fpos - (fpos % BytesPerRow));
+		ddhx_seek_unsafe(k.key.ctrl ? 0 : fpos - (fpos % BytesPerRow));
 		break;
 	case Key.End:
 		if (k.key.ctrl) {
-			hxgoto(fsize - screenl);
+			ddhx_seek_unsafe(fsize - screenl);
 		} else {
 			const long np = fpos +
 				(BytesPerRow - fpos % BytesPerRow);
-			hxgoto(np + screenl <= fsize ? np : fsize - screenl);
+			ddhx_seek_unsafe(np + screenl <= fsize ? np : fsize - screenl);
 		}
 		break;
 
@@ -143,39 +144,39 @@ KEY:
 		break;
 	case Key.G:
 		hxmenu("g ");
-		hxoffsetbar();
+		ddhx_update_offsetbar();
 		break;
 	case Key.I:
-		hxfileinfo;
+		ddhx_fileinfo;
 		break;
 	case Key.R, Key.F5:
-		hxrefresh_a;
+		ddhx_refresh;
 		break;
 	case Key.A:
 		HandleWidth("a");
-		hxrefresh_a;
+		ddhx_refresh;
 		break;
-	case Key.Q: hxexit; break;
+	case Key.Q: ddhx_exit; break;
 	default:
 	}
 	goto KEY;
 }
 
 /// Refresh the entire screen
-extern (C)
-void hxrefresh_a() {
-	hxprep;
+void ddhx_refresh() {
+	ddhx_prep;
 	conclear;
-	hxoffsetbar;
-	hxrender_r;
-	hxinfobar_r;
+	ddhx_update_offsetbar;
+	if (ddhx_render_raw < conheight - 2)
+		ddhx_update_infobar;
+	else
+		ddhx_update_infobar_raw;
 }
 
 /**
  * Update the upper offset bar.
  */
-extern (C)
-void hxoffsetbar() {
+void ddhx_update_offsetbar() {
 	char [8]format = cast(char[8])" %02X"; // default
 	format[4] = formatTable[CurrentOffsetType];
 	conpos(0, 0);
@@ -186,15 +187,13 @@ void hxoffsetbar() {
 }
 
 /// Update the bottom current information bar.
-extern (C)
-void hxinfobar() {
+void ddhx_update_infobar() {
 	conpos(0, conheight - 1);
-	hxinfobar_r;
+	ddhx_update_infobar_raw;
 }
 
 /// Updates information bar without cursor position call.
-extern (C)
-void hxinfobar_r() {
+void ddhx_update_infobar_raw() {
 	char[32] bl = void, cp = void;
 	writef(" %*s | %*s/%*s | %7.3f%%",
 		7,  formatsize(bl, screenl), // Buffer size
@@ -205,8 +204,7 @@ void hxinfobar_r() {
 }
 
 /// Determine screensize
-extern (C)
-void hxprep() {
+void ddhx_prep() {
 	const int bufs = (conheight - 2) * BytesPerRow; // Proposed buffer size
 	screenl = fsize >= bufs ? bufs : cast(uint)fsize;
 }
@@ -217,14 +215,15 @@ void hxprep() {
  * Sets CurrentPosition.
  * Params: pos = New position
  */
-extern (C)
-void hxgoto(long pos) {
+void ddhx_seek_unsafe(long pos) {
 	if (screenl < fsize) {
 		fpos = pos;
-		hxrender;
-		hxinfobar_r;
+		if (ddhx_render < conheight - 2)
+			ddhx_update_infobar;
+		else
+			ddhx_update_infobar_raw;
 	} else
-		msgalt("Navigation disabled, buffer too small");
+		ddhx_msglow("Navigation disabled, buffer too small");
 }
 
 /**
@@ -232,12 +231,11 @@ void hxgoto(long pos) {
  * Checks bounds and calls Goto.
  * Params: pos = New position
  */
-extern (C)
-void hxgoto_c(long pos) {
+void ddhx_seek(long pos) {
 	if (pos + screenl > fsize)
-		hxgoto(fsize - screenl);
+		ddhx_seek_unsafe(fsize - screenl);
 	else
-		hxgoto(pos);
+		ddhx_seek_unsafe(pos);
 }
 
 /**
@@ -245,7 +243,7 @@ void hxgoto_c(long pos) {
  * Includes offset checking (+/- notation).
  * Params: str = String as a number
  */
-void gotostr(string str) {
+void ddhx_seek(string str) {
 	byte rel = void; // Lazy code
 	if (str[0] == '+') { // relative position
 		rel = 1;
@@ -256,45 +254,44 @@ void gotostr(string str) {
 	}
 	long l = void;
 	if (unformat(str, l) == false) {
-		msgalt("Could not parse number");
+		ddhx_msglow("Could not parse number");
 		return;
 	}
 	switch (rel) {
 	case 1:
 		if (fpos + l - screenl < fsize)
-			hxgoto(fpos + l);
+			ddhx_seek_unsafe(fpos + l);
 		break;
 	case 2:
 		if (fpos - l >= 0)
-			hxgoto(fpos - l);
+			ddhx_seek_unsafe(fpos - l);
 		break;
 	default:
 		if (l >= 0 && l < fsize - screenl) {
-			hxgoto(l);
+			ddhx_seek_unsafe(l);
 		} else {
 			import std.format : format;
-			msgalt(format("Range too far or negative: %d (%XH)", l, l));
+			ddhx_msglow(format("Range too far or negative: %d (%XH)", l, l));
 		}
 	}
 }
 
 /// Update display from buffer
-extern (C)
-void hxrender() {
+uint ddhx_render() {
 	conpos(0, 1);
-	hxrender_r;
+	return ddhx_render_raw;
 }
 
 /// Update display from buffer without setting cursor
-extern (C)
-void hxrender_r() {
+/// Returns: The number of lines printed on screen
+uint ddhx_render_raw() {
 	__gshared char[] hexTable = [
 		'0', '1', '2', '3', '4', '5', '6', '7',
 		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
 	];
 	
-	size_t brow = BytesPerRow; /// bytes per row
-	size_t minw = cast(int)brow * 3;
+	int brow = BytesPerRow; /// bytes per row
+	int minw = cast(int)brow * 3;
 
 	char[1024] a = void, d = void;
 	a[brow] = d[minw] = '\0';
@@ -302,36 +299,46 @@ void hxrender_r() {
 	size_t p = cast(size_t)fpos, wlen = p + screenl; /// window length
 	const ubyte[] fbuf = cast(ubyte[])CFile[p..wlen];
 
-	char[12] bytef = cast(char[12])"%08X %s  %s\n";
+	char[18] bytef = cast(char[18])"%8zX %.*s  %.*s\n";
 	bytef[3] = formatTable[CurrentOffsetType];
 
+	//TODO: Rework loop
+	uint ld; /// number of lines printed
+	bool over = void;
+	ubyte b = void;
 	for (size_t bi; p < wlen; p += brow) {
-		const bool over = p + brow > fsize;
+		over = p + brow > fsize;
 
 		if (over) {
 			brow = cast(uint)(fsize - p);
 			minw = brow * 3;
 		}
 
-		for (size_t di, ai; ai < brow; ++ai) {
-			const ubyte b = fbuf[bi++];
+		size_t ai;
+		for (size_t di; ai < brow; ++ai) {
+			b = fbuf[bi++];
 			d[di++] = ' ';
 			d[di++] = hexTable[b >> 4];
 			d[di++] = hexTable[b & 15];
 			a[ai] = b > 0x7E || b < 0x20 ? DEFAULT_CHAR : b;
 		}
 
-		writef(bytef, p, d[0..minw], a[0..brow]);
+		//TODO: Row remainder
 
-		if (over) return;
+		printf(cast(char*)bytef, p, minw, cast(char*)d, brow, cast(char*)a);
+
+		++ld;
+
+		if (over) break;
 	}
+	return ld;
 }
 
 /**
  * Message once (upper bar)
  * Params: msg = Message string
  */
-void msg(string msg) {
+void ddhx_msgtop(string msg) {
 	conpos(0, 0);
 	writef("%s%*s", msg, (conwidth - 1) - msg.length, " ");
 }
@@ -340,7 +347,7 @@ void msg(string msg) {
  * Message once (bottom bar)
  * Params: msg = Message string
  */
-void msgalt(string msg) {
+void ddhx_msglow(string msg) {
 	conpos(0, conheight - 1);
 	writef("%s%*s", msg, (conwidth - 1) - msg.length, " ");
 }
@@ -351,23 +358,22 @@ void msgalt(string msg) {
  *   f = Format
  *   arg = String argument
  */
-void msgalt(string f, string arg) {
+void ddhx_msglow(string f, string arg) {
+	//TODO: (string format, ...)
 	import std.format : format;
-	msgalt(format(f, arg));
+	ddhx_msglow(format(f, arg));
 }
 
 /// Print some file information at the bottom bar
-extern (C)
-void hxfileinfo() {
+void ddhx_fileinfo() {
 	import std.format : sformat;
 	import std.path : baseName;
 	char[256] b = void;
-	msgalt(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
+	ddhx_msglow(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
 }
 
 /// Exits ddhx
-extern (C)
-void hxexit() {
+void ddhx_exit() {
 	import core.stdc.stdlib : exit;
 	conclear;
 	exit(0);

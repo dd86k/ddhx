@@ -27,9 +27,12 @@ Offset h  00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
    352 B |        0 B/ 708.00 KB |   0.049%
 ```
 
-ddhx is a simple, fast hexadecimal file viewer meant to replace my
+ddhx is a simple TUI hexadecimal file viewer meant to replace my
 [0xdd](https://github.com/dd86k/0xdd) utility, written in a proper system
 language, mostly for myself to use.
+
+A lot of the code is pretty crappy, but this was mostly written on in a whim,
+so I don't entirely care.
 
 # View
 
