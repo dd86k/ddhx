@@ -278,16 +278,14 @@ void ddhx_seek(string str) {
 }
 
 /// Update display from buffer
+/// Returns: See ddhx_render_raw
 uint ddhx_render() {
 	conpos(0, 1);
 	return ddhx_render_raw;
 }
 
-version = NewRenderer;
-
 /// Update display from buffer without setting cursor
 /// Returns: The number of lines printed on screen
-version (NewRenderer)
 uint ddhx_render_raw() {
 	__gshared char[] hexTable = [
 		'0', '1', '2', '3', '4', '5', '6', '7',
@@ -309,8 +307,6 @@ uint ddhx_render_raw() {
 	case Decimal:	fposfmt = "%8zd "; break;
 	}
 
-	uint hexlen = BytesPerRow * 3; // hex part length
-
 	// vi: view index
 	for (size_t vi; vi < screenl; viewpos += BytesPerRow) {
 		// Offset column: Cannot be negative since the buffer will
@@ -330,7 +326,7 @@ uint ddhx_render_raw() {
 		// hi: hex buffer offset
 		// ai: ascii buffer offset
 		size_t hi = bufindex;
-		size_t ai = bufindex + hexlen;// + 2;
+		size_t ai = bufindex + (BytesPerRow * 3);
 		buf[ai] = ' ';
 		buf[ai+1] = ' ';
 		for (ai += 2; left > 0; --left, hi += 3, ++ai) {
@@ -346,56 +342,10 @@ uint ddhx_render_raw() {
 
 		// Output
 		puts(buf.ptr);
+		++linesp;
 	}
 
 	return linesp;
-}
-else
-uint ddhx_render_raw() {
-	__gshared char[] hexTable = [
-		'0', '1', '2', '3', '4', '5', '6', '7',
-		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-	];
-	
-	int brow = BytesPerRow; /// bytes per row
-	int minw = cast(int)brow * 3;
-
-	char[1024] a = void, d = void;
-	a[brow] = d[minw] = '\0';
-
-	size_t p = cast(size_t)fpos, wlen = p + screenl; /// window length
-	const ubyte[] fbuf = cast(ubyte[])CFile[p..wlen];
-
-	char[18] bytef = cast(char[18])"%8zX %.*s  %.*s\n";
-	bytef[3] = formatTable[CurrentOffsetType];
-
-	uint ld; /// number of lines printed
-	bool over = void;
-	ubyte b = void;
-	for (size_t bi; p < wlen; p += brow) {
-		over = p + brow > fsize;
-
-		if (over) {
-			brow = cast(uint)(fsize - p);
-			minw = brow * 3;
-		}
-
-		size_t ai;
-		for (size_t di; ai < brow; ++ai) {
-			b = fbuf[bi++];
-			d[di++] = ' ';
-			d[di++] = hexTable[b >> 4];
-			d[di++] = hexTable[b & 15];
-			a[ai] = b > 0x7E || b < 0x20 ? DEFAULT_CHAR : b;
-		}
-
-		printf(cast(char*)bytef, p, minw, cast(char*)d, brow, cast(char*)a);
-
-		++ld;
-
-		if (over) break;
-	}
-	return ld;
 }
 
 /**
@@ -423,7 +373,7 @@ void ddhx_msglow(string msg) {
  *   arg = String argument
  */
 void ddhx_msglow(string f, string arg) {
-	//TODO: (string format, ...)
+	//TODO: (string format, ...) format, remove other (string) func
 	import std.format : format;
 	ddhx_msglow(format(f, arg));
 }
@@ -433,6 +383,7 @@ void ddhx_fileinfo() {
 	import std.format : sformat;
 	import std.path : baseName;
 	char[256] b = void;
+	//TODO: Use ddhx_msglow(string fmt, ...) whenever available
 	ddhx_msglow(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
 }
 
