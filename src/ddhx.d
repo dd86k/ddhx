@@ -5,7 +5,8 @@ module ddhx;
 
 import std.stdio : write, writeln, writef, writefln;
 import std.mmfile;
-import core.stdc.stdio : printf;
+import core.stdc.stdio : printf, fflush, puts, snprintf;
+import core.stdc.string : memset;
 import menu, ddcon;
 import utils : formatsize, unformat;
 
@@ -17,7 +18,7 @@ enum APP_VERSION = "0.2.0";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType : size_t {
-	Hexadecimal, Decimal, Octal
+	Hex, Decimal, Octal
 }
 
 /// 
@@ -282,8 +283,74 @@ uint ddhx_render() {
 	return ddhx_render_raw;
 }
 
+version = NewRenderer;
+
 /// Update display from buffer without setting cursor
 /// Returns: The number of lines printed on screen
+version (NewRenderer)
+uint ddhx_render_raw() {
+	__gshared char[] hexTable = [
+		'0', '1', '2', '3', '4', '5', '6', '7',
+		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+	];
+
+	uint linesp; /// Lines printed
+	char[2048] buf = void;
+
+	size_t viewpos = cast(size_t)fpos;
+	size_t viewend = viewpos + screenl; /// window length
+	ubyte *filebuf = cast(ubyte*)CFile[viewpos..viewend].ptr;
+
+	const(char) *fposfmt = void;
+	with (OffsetType)
+	final switch (CurrentOffsetType) {
+	case Hex:	fposfmt = "%8zX "; break;
+	case Octal:	fposfmt = "%8zo "; break;
+	case Decimal:	fposfmt = "%8zd "; break;
+	}
+
+	uint hexlen = BytesPerRow * 3; // hex part length
+
+	// vi: view index
+	for (size_t vi; vi < screenl; viewpos += BytesPerRow) {
+		// Offset column: Cannot be negative since the buffer will
+		// always be large enough
+		size_t bufindex = snprintf(buf.ptr, 32, fposfmt, viewpos);
+
+		// data bytes left to be treated for the row
+		size_t left = screenl - vi;
+
+		if (left >= BytesPerRow) {
+			left = BytesPerRow;
+		} else { // left < BytesPerRow
+			memset(buf.ptr + bufindex, ' ', 2048);
+		}
+
+		// Data buffering (hexadecimal and ascii)
+		// hi: hex buffer offset
+		// ai: ascii buffer offset
+		size_t hi = bufindex;
+		size_t ai = bufindex + hexlen;// + 2;
+		buf[ai] = ' ';
+		buf[ai+1] = ' ';
+		for (ai += 2; left > 0; --left, hi += 3, ++ai) {
+			ubyte b = filebuf[vi++];
+			buf[hi] = ' ';
+			buf[hi+1] = hexTable[b >> 4];
+			buf[hi+2] = hexTable[b & 15];
+			buf[ai] = b > 0x7E || b < 0x20 ? DEFAULT_CHAR : b;
+		}
+
+		// null terminator
+		buf[ai] = 0;
+
+		// Output
+		puts(buf.ptr);
+	}
+
+	return linesp;
+}
+else
 uint ddhx_render_raw() {
 	__gshared char[] hexTable = [
 		'0', '1', '2', '3', '4', '5', '6', '7',
@@ -302,7 +369,6 @@ uint ddhx_render_raw() {
 	char[18] bytef = cast(char[18])"%8zX %.*s  %.*s\n";
 	bytef[3] = formatTable[CurrentOffsetType];
 
-	//TODO: Rework loop
 	uint ld; /// number of lines printed
 	bool over = void;
 	ubyte b = void;
@@ -322,8 +388,6 @@ uint ddhx_render_raw() {
 			d[di++] = hexTable[b & 15];
 			a[ai] = b > 0x7E || b < 0x20 ? DEFAULT_CHAR : b;
 		}
-
-		//TODO: Row remainder
 
 		printf(cast(char*)bytef, p, minw, cast(char*)d, brow, cast(char*)a);
 

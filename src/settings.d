@@ -79,7 +79,7 @@ void HandleOffset(string val, bool cli = false) {
 	switch (val[0]) {
 	case 'o','O': CurrentOffsetType = OffsetType.Octal; break;
 	case 'd','D': CurrentOffsetType = OffsetType.Decimal; break;
-	case 'h','H': CurrentOffsetType = OffsetType.Hexadecimal; break;
+	case 'h','H': CurrentOffsetType = OffsetType.Hex; break;
 	default:
 		if (cli) {
 			writef("Unknown mode parameter: %s", val);
