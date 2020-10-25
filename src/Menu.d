@@ -45,7 +45,7 @@ void hxmenu(string prepend = null) {
 		}
 		switch (argv[1]) {
 		case "e", "end":
-			ddhx_seek_unsafe(fsize - screenl);
+			ddhx_seek_unsafe(g_fsize - g_screenl);
 			break;
 		case "h", "home":
 			ddhx_seek_unsafe(0);

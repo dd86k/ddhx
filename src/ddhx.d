@@ -29,48 +29,51 @@ enum DisplayMode : ubyte {
 /// Default character for non-displayable characters
 enum DEFAULT_CHAR = '.';
 
-/// For header
+/// Character table for header row
 private __gshared const char[] offsetTable = [
 	'h', 'd', 'o'
 ];
-/// For formatting
+/// Character table for the main panel for printf
 private __gshared const char[] formatTable = [
 	'X', 'u', 'o'
 ];
+
+//
+// WARNING: Horrible globals ahead
+//
 
 //
 // User settings
 //
 
 /// Bytes shown per row
-__gshared ushort BytesPerRow = 16;
+__gshared ushort g_bytesrow = 16;
 /// Current offset view type
-__gshared OffsetType CurrentOffsetType = void;
+__gshared OffsetType g_offsettype = void;
 /// Current display view type
-__gshared DisplayMode CurrentDisplayMode = void;
+__gshared DisplayMode g_displaymode = void;
 
 //
 // Internal
 //
 
-__gshared MmFile CFile = void;	/// Current file
-__gshared ubyte* mmbuf = void;	/// mmfile buffer address
-__gshared uint screenl = void;	/// screen size in bytes, 1 dimensional buffer
+__gshared MmFile g_fhandle = void;	/// Current file handle
+__gshared ubyte* g_fmmbuf = void;	/// mmfile buffer address
+__gshared uint g_screenl = void;	/// screen size in bytes, 1 dimensional buffer
+__gshared string g_fname = void;	/// filename
+__gshared long g_fpos = void;	/// Current file position
+__gshared long g_fsize = void;	/// File size
 
-__gshared string fname = void;	/// filename
-__gshared long fpos = void;	/// Current file position
-__gshared long fsize = void;	/// File size
-
-private __gshared char[32] tfsizebuf;	/// total formatted size buffer
-private __gshared char[] tfsize;	/// total formatted size (slice)
+private __gshared char[32] g_fsizebuf;	/// total formatted size buffer
+private __gshared char[] g_fsizeout;	/// total formatted size (slice)
 
 /// Main app entry point
 /// Params: pos = File position to start with
 void ddhx_main(long pos) {
 	import settings : HandleWidth;
 
-	fpos = pos;
-	tfsize = formatsize(tfsizebuf, fsize);
+	g_fpos = pos;
+	g_fsizeout = formatsize(g_fsizebuf, g_fsize);
 	coninit;
 	ddhx_prep;
 	conclear;
@@ -90,49 +93,49 @@ KEY:
 	//
 
 	case Key.UpArrow, Key.K:
-		if (fpos - BytesPerRow >= 0)
-			ddhx_seek_unsafe(fpos - BytesPerRow);
+		if (g_fpos - g_bytesrow >= 0)
+			ddhx_seek_unsafe(g_fpos - g_bytesrow);
 		else
 			ddhx_seek_unsafe(0);
 		break;
 	case Key.DownArrow, Key.J:
-		if (fpos + screenl + BytesPerRow <= fsize)
-			ddhx_seek_unsafe(fpos + BytesPerRow);
+		if (g_fpos + g_screenl + g_bytesrow <= g_fsize)
+			ddhx_seek_unsafe(g_fpos + g_bytesrow);
 		else
-			ddhx_seek_unsafe(fsize - screenl);
+			ddhx_seek_unsafe(g_fsize - g_screenl);
 		break;
 	case Key.LeftArrow, Key.H:
-		if (fpos - 1 >= 0) // Else already at 0
-			ddhx_seek_unsafe(fpos - 1);
+		if (g_fpos - 1 >= 0) // Else already at 0
+			ddhx_seek_unsafe(g_fpos - 1);
 		break;
 	case Key.RightArrow, Key.L:
-		if (fpos + screenl + 1 <= fsize)
-			ddhx_seek_unsafe(fpos + 1);
+		if (g_fpos + g_screenl + 1 <= g_fsize)
+			ddhx_seek_unsafe(g_fpos + 1);
 		else
-			ddhx_seek_unsafe(fsize - screenl);
+			ddhx_seek_unsafe(g_fsize - g_screenl);
 		break;
 	case Key.PageUp, Mouse.ScrollUp:
-		if (fpos - cast(long)screenl >= 0)
-			ddhx_seek_unsafe(fpos - screenl);
+		if (g_fpos - cast(long)g_screenl >= 0)
+			ddhx_seek_unsafe(g_fpos - g_screenl);
 		else
 			ddhx_seek_unsafe(0);
 		break;
 	case Key.PageDown, Mouse.ScrollDown:
-		if (fpos + screenl + screenl <= fsize)
-			ddhx_seek_unsafe(fpos + screenl);
+		if (g_fpos + g_screenl + g_screenl <= g_fsize)
+			ddhx_seek_unsafe(g_fpos + g_screenl);
 		else
-			ddhx_seek_unsafe(fsize - screenl);
+			ddhx_seek_unsafe(g_fsize - g_screenl);
 		break;
 	case Key.Home:
-		ddhx_seek_unsafe(k.key.ctrl ? 0 : fpos - (fpos % BytesPerRow));
+		ddhx_seek_unsafe(k.key.ctrl ? 0 : g_fpos - (g_fpos % g_bytesrow));
 		break;
 	case Key.End:
 		if (k.key.ctrl) {
-			ddhx_seek_unsafe(fsize - screenl);
+			ddhx_seek_unsafe(g_fsize - g_screenl);
 		} else {
-			const long np = fpos +
-				(BytesPerRow - fpos % BytesPerRow);
-			ddhx_seek_unsafe(np + screenl <= fsize ? np : fsize - screenl);
+			const long np = g_fpos +
+				(g_bytesrow - g_fpos % g_bytesrow);
+			ddhx_seek_unsafe(np + g_screenl <= g_fsize ? np : g_fsize - g_screenl);
 		}
 		break;
 
@@ -179,10 +182,10 @@ void ddhx_refresh() {
  */
 void ddhx_update_offsetbar() {
 	char [8]format = cast(char[8])" %02X"; // default
-	format[4] = formatTable[CurrentOffsetType];
+	format[4] = formatTable[g_offsettype];
 	conpos(0, 0);
-	printf("Offset %c ", offsetTable[CurrentOffsetType]);
-	for (ushort i; i < BytesPerRow; ++i)
+	printf("Offset %c ", offsetTable[g_offsettype]);
+	for (ushort i; i < g_bytesrow; ++i)
 		printf(cast(char*)format, i);
 	putchar('\n');
 }
@@ -197,17 +200,17 @@ void ddhx_update_infobar() {
 void ddhx_update_infobar_raw() {
 	char[32] bl = void, cp = void;
 	writef(" %*s | %*s/%*s | %7.3f%%",
-		7,  formatsize(bl, screenl), // Buffer size
-		10, formatsize(cp, fpos), // Formatted position
-		10, tfsize, // Total file size
-		((cast(float)fpos + screenl) / fsize) * 100 // Pos/filesize%
+		7,  formatsize(bl, g_screenl), // Buffer size
+		10, formatsize(cp, g_fpos), // Formatted position
+		10, g_fsizeout, // Total file size
+		((cast(float)g_fpos + g_screenl) / g_fsize) * 100 // Pos/filesize%
 	);
 }
 
 /// Determine screensize
 void ddhx_prep() {
-	const int bufs = (conheight - 2) * BytesPerRow; // Proposed buffer size
-	screenl = fsize >= bufs ? bufs : cast(uint)fsize;
+	const int bufs = (conheight - 2) * g_bytesrow; // Proposed buffer size
+	g_screenl = g_fsize >= bufs ? bufs : cast(uint)g_fsize;
 }
 
 /**
@@ -217,8 +220,8 @@ void ddhx_prep() {
  * Params: pos = New position
  */
 void ddhx_seek_unsafe(long pos) {
-	if (screenl < fsize) {
-		fpos = pos;
+	if (g_screenl < g_fsize) {
+		g_fpos = pos;
 		if (ddhx_render < conheight - 2)
 			ddhx_update_infobar;
 		else
@@ -233,8 +236,8 @@ void ddhx_seek_unsafe(long pos) {
  * Params: pos = New position
  */
 void ddhx_seek(long pos) {
-	if (pos + screenl > fsize)
-		ddhx_seek_unsafe(fsize - screenl);
+	if (pos + g_screenl > g_fsize)
+		ddhx_seek_unsafe(g_fsize - g_screenl);
 	else
 		ddhx_seek_unsafe(pos);
 }
@@ -260,15 +263,15 @@ void ddhx_seek(string str) {
 	}
 	switch (rel) {
 	case 1:
-		if (fpos + l - screenl < fsize)
-			ddhx_seek_unsafe(fpos + l);
+		if (g_fpos + l - g_screenl < g_fsize)
+			ddhx_seek_unsafe(g_fpos + l);
 		break;
 	case 2:
-		if (fpos - l >= 0)
-			ddhx_seek_unsafe(fpos - l);
+		if (g_fpos - l >= 0)
+			ddhx_seek_unsafe(g_fpos - l);
 		break;
 	default:
-		if (l >= 0 && l < fsize - screenl) {
+		if (l >= 0 && l < g_fsize - g_screenl) {
 			ddhx_seek_unsafe(l);
 		} else {
 			import std.format : format;
@@ -295,30 +298,30 @@ uint ddhx_render_raw() {
 	uint linesp; /// Lines printed
 	char[2048] buf = void;
 
-	size_t viewpos = cast(size_t)fpos;
-	size_t viewend = viewpos + screenl; /// window length
-	ubyte *filebuf = cast(ubyte*)CFile[viewpos..viewend].ptr;
+	size_t viewpos = cast(size_t)g_fpos;
+	size_t viewend = viewpos + g_screenl; /// window length
+	ubyte *filebuf = cast(ubyte*)g_fhandle[viewpos..viewend].ptr;
 
 	const(char) *fposfmt = void;
 	with (OffsetType)
-	final switch (CurrentOffsetType) {
+	final switch (g_offsettype) {
 	case Hex:	fposfmt = "%8zX "; break;
 	case Octal:	fposfmt = "%8zo "; break;
 	case Decimal:	fposfmt = "%8zd "; break;
 	}
 
 	// vi: view index
-	for (size_t vi; vi < screenl; viewpos += BytesPerRow) {
+	for (size_t vi; vi < g_screenl; viewpos += g_bytesrow) {
 		// Offset column: Cannot be negative since the buffer will
 		// always be large enough
 		size_t bufindex = snprintf(buf.ptr, 32, fposfmt, viewpos);
 
 		// data bytes left to be treated for the row
-		size_t left = screenl - vi;
+		size_t left = g_screenl - vi;
 
-		if (left >= BytesPerRow) {
-			left = BytesPerRow;
-		} else { // left < BytesPerRow
+		if (left >= g_bytesrow) {
+			left = g_bytesrow;
+		} else { // left < g_bytesrow
 			memset(buf.ptr + bufindex, ' ', 2048);
 		}
 
@@ -326,7 +329,7 @@ uint ddhx_render_raw() {
 		// hi: hex buffer offset
 		// ai: ascii buffer offset
 		size_t hi = bufindex;
-		size_t ai = bufindex + (BytesPerRow * 3);
+		size_t ai = bufindex + (g_bytesrow * 3);
 		buf[ai] = ' ';
 		buf[ai+1] = ' ';
 		for (ai += 2; left > 0; --left, hi += 3, ++ai) {
@@ -384,7 +387,7 @@ void ddhx_fileinfo() {
 	import std.path : baseName;
 	char[256] b = void;
 	//TODO: Use ddhx_msglow(string fmt, ...) whenever available
-	ddhx_msglow(cast(string)b.sformat!"%s  %s"(tfsize, fname.baseName));
+	ddhx_msglow(cast(string)b.sformat!"%s  %s"(g_fsizeout, g_fname.baseName));
 }
 
 /// Exits ddhx

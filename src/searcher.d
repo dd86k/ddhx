@@ -131,12 +131,12 @@ private void search_arr(ubyte[] data, string type) {
 	ddhx_msglow(" Searching %s...", type);
 	const ubyte firstbyte = data[0];
 	const size_t datalen = data.length;
-	size_t pos = cast(size_t)fpos + 1; // do not affect file position itself
+	size_t pos = cast(size_t)g_fpos + 1; // do not affect file position itself
 	size_t posmax = pos + CHUNK_SIZE;
 
 	ubyte[] buf = void;
 	outer: do {
-		buf = cast(ubyte[])CFile[pos..posmax];
+		buf = cast(ubyte[])g_fhandle[pos..posmax];
 		const size_t buflen = buf.length;
 		for (size_t i; i < buflen; ++i) {
 			if (buf[i] != firstbyte) continue;
@@ -148,14 +148,14 @@ S_FOUND:
 					ddhx_seek(pos + i);
 					return;
 				}
-			} else if (ilen < fsize) { // Out-of-chunk
-				if (cast(ubyte[])CFile[i..i+datalen] == data) {
+			} else if (ilen < g_fsize) { // Out-of-chunk
+				if (cast(ubyte[])g_fhandle[i..i+datalen] == data) {
 					goto S_FOUND;
 				}
 			} else break outer;
 		}
 
 		pos = posmax; posmax += CHUNK_SIZE;
-	} while (pos < fsize);
+	} while (pos < g_fsize);
 	ddhx_msglow(" Not found (%s)", type);
 }

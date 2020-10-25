@@ -82,9 +82,9 @@ int main(string[] args) {
 		return 3;
 	}
 
-	CFile = new MmFile((fname = file), MmFile.Mode.read, 0, mmbuf);
+	g_fhandle = new MmFile((g_fname = file), MmFile.Mode.read, 0, g_fmmbuf);
 
-	if ((fsize = CFile.length) <= 0) {
+	if ((g_fsize = g_fhandle.length) <= 0) {
 		stderr.writeln("Empty file, aborting");
 		return 4;
 	}

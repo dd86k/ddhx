@@ -32,10 +32,10 @@ void HandleWidth(string val, bool cli = false) {
 	case 'a': // Automatic
 		version (Windows)
 			if (cli) coninit;
-		BytesPerRow = getBytesPerRow;
+		g_bytesrow = getBytesPerRow;
 		break;
 	case 'd': // Default
-		BytesPerRow = 16;
+		g_bytesrow = 16;
 		break;
 	default:
 		long l;
@@ -48,7 +48,7 @@ void HandleWidth(string val, bool cli = false) {
 					ddhx_msglow("Number out of range");
 					return;
 			}
-			BytesPerRow = l & 0xFFFF;
+			g_bytesrow = l & 0xFFFF;
 		} else {
 			if (cli) {
 				writeln(ENOPARSE);
@@ -77,9 +77,9 @@ void HandleOCLI(string opt, string val) {
  */
 void HandleOffset(string val, bool cli = false) {
 	switch (val[0]) {
-	case 'o','O': CurrentOffsetType = OffsetType.Octal; break;
-	case 'd','D': CurrentOffsetType = OffsetType.Decimal; break;
-	case 'h','H': CurrentOffsetType = OffsetType.Hex; break;
+	case 'o','O': g_offsettype = OffsetType.Octal; break;
+	case 'd','D': g_offsettype = OffsetType.Decimal; break;
+	case 'h','H': g_offsettype = OffsetType.Hex; break;
 	default:
 		if (cli) {
 			writef("Unknown mode parameter: %s", val);
@@ -93,7 +93,7 @@ void HandleOffset(string val, bool cli = false) {
 
 private ushort getBytesPerRow() {
 	import ddcon : conwidth;
-	final switch (CurrentDisplayMode)
+	final switch (g_displaymode)
 	{
 		case DisplayMode.Default:
 			return cast(ushort)((conwidth - 11) / 4);
