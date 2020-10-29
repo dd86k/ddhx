@@ -108,13 +108,7 @@ SEARCH_BYTE:
 			ddhx_msglow("Missing argument (u8)");
 			break;
 		}
-		import utils : unformat;
-		long l;
-		if (unformat(argv[1], l)) {
-			search_u8(l & 0xFF);
-		} else {
-			ddhx_msglow("Could not parse number");
-		}
+		search_u8(argv[1]);
 		break;
 	case "i", "info": ddhx_fileinfo; break;
 	case "o", "offset":
@@ -151,7 +145,7 @@ SEARCH_BYTE:
 		}
 		switch (argv[1]) {
 		case "width", "w":
-			HandleWidth(argv[2]);
+			ddhx_setting_handle_rowwidth(argv[2]);
 			ddhx_prep;
 			ddhx_refresh;
 			break;

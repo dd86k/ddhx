@@ -56,7 +56,7 @@ int main(string[] args) {
 	try {
 		args.getopt(
 			config.caseSensitive,
-			"w", &HandleWCLI,
+			"w", &ddhx_setting_handle_cli,
 			config.caseSensitive,
 			"o", &HandleOCLI,
 			config.caseSensitive,

@@ -17,12 +17,12 @@ enum COPYRIGHT = "Copyright (c) dd86k 2017-2020";
 enum APP_VERSION = "0.2.0";
 
 /// Offset type (hex, dec, etc.)
-enum OffsetType : size_t {
+enum OffsetType {
 	Hex, Decimal, Octal
 }
 
 /// 
-enum DisplayMode : ubyte {
+enum DisplayMode {
 	Default, Text, Data
 }
 
@@ -46,23 +46,23 @@ private __gshared const char[] formatTable = [
 // User settings
 //
 
-/// Bytes shown per row
-__gshared ushort g_bytesrow = 16;
+/// How many bytes are shown per row
+__gshared ushort g_rowwidth = 16;
 /// Current offset view type
 __gshared OffsetType g_offsettype = void;
 /// Current display view type
 __gshared DisplayMode g_displaymode = void;
 
 //
-// Internal
+// Internals
 //
 
-__gshared MmFile g_fhandle = void;	/// Current file handle
-__gshared ubyte* g_fmmbuf = void;	/// mmfile buffer address
-__gshared uint g_screenl = void;	/// screen size in bytes, 1 dimensional buffer
-__gshared string g_fname = void;	/// filename
-__gshared long g_fpos = void;	/// Current file position
-__gshared long g_fsize = void;	/// File size
+__gshared MmFile g_fhandle;	/// Current file handle
+__gshared ubyte* g_fmmbuf;	/// mmfile buffer address
+__gshared uint g_screenl;	/// screen size in bytes, 1 dimensional buffer
+__gshared string g_fname;	/// filename
+__gshared long g_fpos;	/// Current file position
+__gshared long g_fsize;	/// File size
 
 private __gshared char[32] g_fsizebuf;	/// total formatted size buffer
 private __gshared char[] g_fsizeout;	/// total formatted size (slice)
@@ -70,7 +70,7 @@ private __gshared char[] g_fsizeout;	/// total formatted size (slice)
 /// Main app entry point
 /// Params: pos = File position to start with
 void ddhx_main(long pos) {
-	import settings : HandleWidth;
+	import settings : ddhx_setting_handle_rowwidth;
 
 	g_fpos = pos;
 	g_fsizeout = formatsize(g_fsizebuf, g_fsize);
@@ -93,14 +93,14 @@ KEY:
 	//
 
 	case Key.UpArrow, Key.K:
-		if (g_fpos - g_bytesrow >= 0)
-			ddhx_seek_unsafe(g_fpos - g_bytesrow);
+		if (g_fpos - g_rowwidth >= 0)
+			ddhx_seek_unsafe(g_fpos - g_rowwidth);
 		else
 			ddhx_seek_unsafe(0);
 		break;
 	case Key.DownArrow, Key.J:
-		if (g_fpos + g_screenl + g_bytesrow <= g_fsize)
-			ddhx_seek_unsafe(g_fpos + g_bytesrow);
+		if (g_fpos + g_screenl + g_rowwidth <= g_fsize)
+			ddhx_seek_unsafe(g_fpos + g_rowwidth);
 		else
 			ddhx_seek_unsafe(g_fsize - g_screenl);
 		break;
@@ -127,14 +127,14 @@ KEY:
 			ddhx_seek_unsafe(g_fsize - g_screenl);
 		break;
 	case Key.Home:
-		ddhx_seek_unsafe(k.key.ctrl ? 0 : g_fpos - (g_fpos % g_bytesrow));
+		ddhx_seek_unsafe(k.key.ctrl ? 0 : g_fpos - (g_fpos % g_rowwidth));
 		break;
 	case Key.End:
 		if (k.key.ctrl) {
 			ddhx_seek_unsafe(g_fsize - g_screenl);
 		} else {
 			const long np = g_fpos +
-				(g_bytesrow - g_fpos % g_bytesrow);
+				(g_rowwidth - g_fpos % g_rowwidth);
 			ddhx_seek_unsafe(np + g_screenl <= g_fsize ? np : g_fsize - g_screenl);
 		}
 		break;
@@ -157,7 +157,7 @@ KEY:
 		ddhx_refresh;
 		break;
 	case Key.A:
-		HandleWidth("a");
+		ddhx_setting_handle_rowwidth("a");
 		ddhx_refresh;
 		break;
 	case Key.Q: ddhx_exit; break;
@@ -185,7 +185,7 @@ void ddhx_update_offsetbar() {
 	format[4] = formatTable[g_offsettype];
 	conpos(0, 0);
 	printf("Offset %c ", offsetTable[g_offsettype]);
-	for (ushort i; i < g_bytesrow; ++i)
+	for (ushort i; i < g_rowwidth; ++i)
 		printf(cast(char*)format, i);
 	putchar('\n');
 }
@@ -209,7 +209,7 @@ void ddhx_update_infobar_raw() {
 
 /// Determine screensize
 void ddhx_prep() {
-	const int bufs = (conheight - 2) * g_bytesrow; // Proposed buffer size
+	const int bufs = (conheight - 2) * g_rowwidth; // Proposed buffer size
 	g_screenl = g_fsize >= bufs ? bufs : cast(uint)g_fsize;
 }
 
@@ -311,7 +311,7 @@ uint ddhx_render_raw() {
 	}
 
 	// vi: view index
-	for (size_t vi; vi < g_screenl; viewpos += g_bytesrow) {
+	for (size_t vi; vi < g_screenl; viewpos += g_rowwidth) {
 		// Offset column: Cannot be negative since the buffer will
 		// always be large enough
 		size_t bufindex = snprintf(buf.ptr, 32, fposfmt, viewpos);
@@ -319,9 +319,9 @@ uint ddhx_render_raw() {
 		// data bytes left to be treated for the row
 		size_t left = g_screenl - vi;
 
-		if (left >= g_bytesrow) {
-			left = g_bytesrow;
-		} else { // left < g_bytesrow
+		if (left >= g_rowwidth) {
+			left = g_rowwidth;
+		} else { // left < g_rowwidth
 			memset(buf.ptr + bufindex, ' ', 2048);
 		}
 
@@ -329,7 +329,7 @@ uint ddhx_render_raw() {
 		// hi: hex buffer offset
 		// ai: ascii buffer offset
 		size_t hi = bufindex;
-		size_t ai = bufindex + (g_bytesrow * 3);
+		size_t ai = bufindex + (g_rowwidth * 3);
 		buf[ai] = ' ';
 		buf[ai+1] = ' ';
 		for (ai += 2; left > 0; --left, hi += 3, ++ai) {

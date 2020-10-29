@@ -35,17 +35,17 @@ bool unformat(string e, ref long l) nothrow pure @nogc @safe {
  * Params: e = Input string
  * Returns: Unformatted number.
  */
-ulong unformatHex(string e) nothrow @nogc pure @safe {
-	enum C_MINOR = '0' + 39, C_MAJOR = '0' + 7;
-	int s;
-	long l;
+private ulong unformatHex(string e) nothrow @nogc pure @safe {
+	enum MINOR = '0' + 39, MAJOR = '0' + 7;
+	int s;	// shift
+	long l;	// result
 	foreach_reverse (char c; e) {
 		if (c >= '1' && c <= '9')
 			l |= (c - '0') << s;
 		else if (c >= 'a' && c <= 'f')
-			l |= (c - C_MINOR) << s;
+			l |= (c - MINOR) << s;
 		else if (c >= 'A' && c <= 'F')
-			l |= (c - C_MAJOR) << s;
+			l |= (c - MAJOR) << s;
 		s += 4;
 	}
 	return l;
@@ -56,9 +56,9 @@ ulong unformatHex(string e) nothrow @nogc pure @safe {
  * Params: e = Input string
  * Returns: Unformatted number.
  */
-long unformatOct(string e) nothrow @nogc pure @safe {
-	int s = 1;
-	long l;
+private long unformatOct(string e) nothrow @nogc pure @safe {
+	int s = 1;	// shift
+	long l;	// result
 	foreach_reverse (char c; e) {
 		if (c >= '1' && c <= '7')
 			l |= (c - '0') * s;
@@ -72,14 +72,16 @@ long unformatOct(string e) nothrow @nogc pure @safe {
  * Params: e = Input string
  * Returns: Unformatted number.
  */
-long unformatDec(string e) nothrow @nogc pure @safe {
-	int s = 1;
-	long l;
+private long unformatDec(string e) nothrow @nogc pure @safe {
+	int s = 1;	// shift
+	long l;	// result
 	foreach_reverse (char c; e) {
 		if (c >= '1' && c <= '9')
 			l += (c - '0') * s;
 		s *= 10;
 	}
+	if (e[0] == '-')
+		l = -l;
 	return l;
 }
 

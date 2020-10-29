@@ -16,8 +16,8 @@ private enum
  *   opt = Usually "w|width"
  *   val = Value to assign
  */
-void HandleWCLI(string opt, string val) {
-	HandleWidth(val, true);
+void ddhx_setting_handle_cli(string opt, string val) {
+	ddhx_setting_handle_rowwidth(val, true);
 }
 
 /**
@@ -26,16 +26,16 @@ void HandleWCLI(string opt, string val) {
  *   val = Value to assign
  *   cli = From CLI (Assumes false by default)
  */
-void HandleWidth(string val, bool cli = false) {
+void ddhx_setting_handle_rowwidth(string val, bool cli = false) {
 	import ddcon : coninit;
 	switch (val[0]) {
 	case 'a': // Automatic
 		version (Windows)
 			if (cli) coninit;
-		g_bytesrow = getBytesPerRow;
+		g_rowwidth = getBytesPerRow;
 		break;
 	case 'd': // Default
-		g_bytesrow = 16;
+		g_rowwidth = 16;
 		break;
 	default:
 		long l;
@@ -48,7 +48,7 @@ void HandleWidth(string val, bool cli = false) {
 					ddhx_msglow("Number out of range");
 					return;
 			}
-			g_bytesrow = l & 0xFFFF;
+			g_rowwidth = l & 0xFFFF;
 		} else {
 			if (cli) {
 				writeln(ENOPARSE);
