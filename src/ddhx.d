@@ -14,7 +14,7 @@ import utils : formatsize, unformat;
 enum COPYRIGHT = "Copyright (c) dd86k 2017-2020";
 
 /// App version
-enum APP_VERSION = "0.2.0";
+enum APP_VERSION = "0.2.1";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType {
