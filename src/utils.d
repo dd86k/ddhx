@@ -138,6 +138,7 @@ char[] formatsize(ref char[32] buf, long size, bool b10 = false) @safe {
  * Params: n = 2-byte number to swap.
  * Returns: Byte swapped number.
  */
+deprecated ("Use core.bitops.bswap")
 extern (C)
 ushort bswap16(ushort n) pure nothrow @nogc @safe {
 	return cast(ushort)(n >> 8 | n << 8);
@@ -148,6 +149,7 @@ ushort bswap16(ushort n) pure nothrow @nogc @safe {
  * Params: n = 4-byte number to swap.
  * Returns: Byte swapped number.
  */
+deprecated ("Use core.bitops.bswap")
 extern (C)
 uint bswap32(uint v) pure nothrow @nogc @safe {
 	v = (v >> 16) | (v << 16);
@@ -159,6 +161,7 @@ uint bswap32(uint v) pure nothrow @nogc @safe {
  * Params: n = 8-byte number to swap.
  * Returns: Byte swapped number.
  */
+deprecated ("Use core.bitops.bswap")
 extern (C)
 ulong bswap64(ulong v) pure nothrow @nogc @safe {
 	v = (v >> 32) | (v << 32);

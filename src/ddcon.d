@@ -47,11 +47,6 @@ void coninit() {
 	}
 }
 
-void conrestore() {
-	version (Windows) {
-	}
-}
-
 /// Clear screen
 void conclear() {
 	version (Windows) {
@@ -67,8 +62,8 @@ void conclear() {
 		}
 		else // If that fails, run cls.
 			sys ("cls");
-	} else version (Posix) { //TODO: Clear (Posix)
-		sys ("clear");
+	} else version (Posix) {
+		printf("\033c");
 	}
 	else static assert(0, "Clear: Not implemented");
 }
@@ -130,7 +125,7 @@ void conpos(int x, int y) {
  *   k = InputInfo struct
  */
 void coninput(ref InputInfo k) {
-	version (Windows) { // Sort of is like .NET's ReadKey
+	version (Windows) {
 		INPUT_RECORD ir = void;
 		DWORD num = void;
 L_READ:

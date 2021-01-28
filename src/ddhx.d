@@ -4,17 +4,20 @@
 module ddhx;
 
 import std.stdio : write, writeln, writef, writefln;
+import std.file : getSize;
 import std.mmfile;
 import core.stdc.stdio : printf, fflush, puts, snprintf;
 import core.stdc.string : memset;
 import menu, ddcon;
 import utils : formatsize, unformat;
 
+__gshared:
+
 /// Copyright string
-enum COPYRIGHT = "Copyright (c) dd86k 2017-2020";
+enum COPYRIGHT = "Copyright (c) dd86k <dd@dax.moe> 2017-2021";
 
 /// App version
-enum APP_VERSION = "0.2.1";
+enum APP_VERSION = "0.2.2";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType {
@@ -30,60 +33,82 @@ enum DisplayMode {
 enum DEFAULT_CHAR = '.';
 
 /// Character table for header row
-private __gshared const char[] offsetTable = [
+private immutable char[] offsetTable = [
 	'h', 'd', 'o'
 ];
 /// Character table for the main panel for printf
-private __gshared const char[] formatTable = [
+private immutable char[] formatTable = [
 	'X', 'u', 'o'
 ];
-
-//
-// WARNING: Horrible globals ahead
-//
 
 //
 // User settings
 //
 
+//TODO: Mark these as private and have a function to set them
+
 /// How many bytes are shown per row
-__gshared ushort g_rowwidth = 16;
+ushort g_rowwidth = 16;
 /// Current offset view type
-__gshared OffsetType g_offsettype = void;
+OffsetType g_offsettype = void;
 /// Current display view type
-__gshared DisplayMode g_displaymode = void;
+DisplayMode g_displaymode = void;
 
-//
-// Internals
-//
+MmFile g_fhandle;	/// Current file handle
+ubyte* g_fmmbuf;	/// mmfile buffer address
+uint g_screenl;	/// screen size in bytes, 1 dimensional buffer
+string g_fname;	/// filename
+long g_fpos;	/// Current file position
+long g_fsize;	/// File size
 
-__gshared MmFile g_fhandle;	/// Current file handle
-__gshared ubyte* g_fmmbuf;	/// mmfile buffer address
-__gshared uint g_screenl;	/// screen size in bytes, 1 dimensional buffer
-__gshared string g_fname;	/// filename
-__gshared long g_fpos;	/// Current file position
-__gshared long g_fsize;	/// File size
+private char[32] g_fsizebuf;	/// total formatted size buffer
+private char[] g_fsizeout;	/// total formatted size (slice)
+private Exception lastEx;	/// Last exception
 
-private __gshared char[32] g_fsizebuf;	/// total formatted size buffer
-private __gshared char[] g_fsizeout;	/// total formatted size (slice)
+/// Load file
+/// Params: path = Path of file to open
+/// Returns: true on error
+bool ddhx_file(string path) {
+	try {
+		// NOTE: zero-length file errors are weird so manual check here
+		if ((g_fsize = getSize(path)) == 0)
+			throw new Exception("Empty file");
+		
+		g_fhandle = new MmFile((g_fname = path), MmFile.Mode.read, 0, g_fmmbuf);
+	} catch (Exception ex) {
+		lastEx = ex;
+		return true;
+	}
+	
+	return false;
+}
+
+/// Print lastException to stderr.
+/// Params: mod = Module or function name
+void ddhx_error(string mod) {
+	import std.stdio : stderr;
+	debug stderr.writefln("%s: (%s L%d) %s",
+		mod, lastEx.file, lastEx.line, lastEx.msg);
+	else  stderr.writefln("%s: %s",
+		mod, lastEx.msg);
+}
 
 /// Main app entry point
-/// Params: pos = File position to start with
-void ddhx_main(long pos) {
+void ddhx_main() {
 	import settings : ddhx_setting_handle_rowwidth;
 
-	g_fpos = pos;
 	g_fsizeout = formatsize(g_fsizebuf, g_fsize);
 	coninit;
 	ddhx_prep;
 	conclear;
 	ddhx_update_offsetbar;
+	
 	if (ddhx_render_raw < conheight - 2)
 		ddhx_update_infobar;
 	else
 		ddhx_update_infobar_raw;
 
-	InputInfo k = void;
+	InputInfo k;
 KEY:
 	coninput(k);
 	switch (k.value) {

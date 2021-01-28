@@ -6,9 +6,15 @@ import utils : unformat;
 import core.stdc.stdlib : exit;
 import std.format : format;
 
+//TODO: Delete this module
+//      ddhx module should be the one with external functions
+//      main (cli) should have getopt handlers
+
 private enum
 	ENOPARSE = "Could not parse number",
 	ETRANGE = "Number %d out of range (1-%d)";
+
+deprecated:
 
 /**
  * Handles the Width setting from getopt.
@@ -27,11 +33,13 @@ void ddhx_setting_handle_cli(string opt, string val) {
  *   cli = From CLI (Assumes false by default)
  */
 void ddhx_setting_handle_rowwidth(string val, bool cli = false) {
-	import ddcon : coninit;
 	switch (val[0]) {
 	case 'a': // Automatic
-		version (Windows)
+		// NOTE: I forgot why this is there
+		version (Windows) {
+			import ddcon : coninit;
 			if (cli) coninit;
+		}
 		g_rowwidth = getBytesPerRow;
 		break;
 	case 'd': // Default
@@ -48,7 +56,7 @@ void ddhx_setting_handle_rowwidth(string val, bool cli = false) {
 					ddhx_msglow("Number out of range");
 					return;
 			}
-			g_rowwidth = l & 0xFFFF;
+			g_rowwidth = cast(ushort)l;
 		} else {
 			if (cli) {
 				writeln(ENOPARSE);
