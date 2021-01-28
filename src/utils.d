@@ -94,96 +94,53 @@ private long unformatDec(string e) nothrow @nogc pure @safe {
  * Returns: Character slice using sformat
  */
 char[] formatsize(ref char[32] buf, long size, bool b10 = false) @safe {
-	//BUG: %f is unpure?
 	import std.format : sformat;
 
-	enum : long {
-		KB = 1024,	/// Represents one KiloByte
-		MB = KB * 1024,	/// Represents one MegaByte
-		GB = MB * 1024,	/// Represents one GigaByte
-		TB = GB * 1024,	/// Represents one TeraByte
+	enum : float {
+		KB  = 1024,	/// Represents one KiloByte
+		MB  = KB * 1024,	/// Represents one MegaByte
+		GB  = MB * 1024,	/// Represents one GigaByte
+		TB  = GB * 1024,	/// Represents one TeraByte
 		KiB = 1000,	/// Represents one KibiByte
 		MiB = KiB * 1000,	/// Represents one MebiByte
 		GiB = MiB * 1000,	/// Represents one GibiByte
 		TiB = GiB * 1000	/// Represents one TebiByte
 	}
 
-	const float s = size;
-
 	if (size > TB)
 		return b10 ?
-			buf.sformat!"%0.2f TiB"(s / TiB) :
-			buf.sformat!"%0.2f TB"(s / TB);
+			buf.sformat!"%0.2f TiB"(size / TiB) :
+			buf.sformat!"%0.2f TB"(size / TB);
 
 	if (size > GB)
 		return b10 ?
-			buf.sformat!"%0.2f GiB"(s / GiB) :
-			buf.sformat!"%0.2f GB"(s / GB);
+			buf.sformat!"%0.2f GiB"(size / GiB) :
+			buf.sformat!"%0.2f GB"(size / GB);
 
 	if (size > MB)
 		return b10 ?
-			buf.sformat!"%0.2f MiB"(s / MiB) :
-			buf.sformat!"%0.2f MB"(s / MB);
+			buf.sformat!"%0.1f MiB"(size / MiB) :
+			buf.sformat!"%0.1f MB"(size / MB);
 
 	if (size > KB)
 		return b10 ?
-			buf.sformat!"%0.2f KiB"(s / KiB) :
-			buf.sformat!"%0.2f KB"(s / KB);
+			buf.sformat!"%0.1f KiB"(size / KiB) :
+			buf.sformat!"%0.1f KB"(size / KB);
 
 	return buf.sformat!"%u B"(size);
 }
 
-/**
- * Byte swap a 2-byte number.
- * Params: n = 2-byte number to swap.
- * Returns: Byte swapped number.
- */
-deprecated ("Use core.bitops.bswap")
-extern (C)
-ushort bswap16(ushort n) pure nothrow @nogc @safe {
-	return cast(ushort)(n >> 8 | n << 8);
-}
-
-/**
- * Byte swap a 4-byte number.
- * Params: n = 4-byte number to swap.
- * Returns: Byte swapped number.
- */
-deprecated ("Use core.bitops.bswap")
-extern (C)
-uint bswap32(uint v) pure nothrow @nogc @safe {
-	v = (v >> 16) | (v << 16);
-	return ((v & 0xFF00FF00) >> 8) | ((v & 0x00FF00FF) << 8);
-}
-
-/**
- * Byte swap a 8-byte number.
- * Params: n = 8-byte number to swap.
- * Returns: Byte swapped number.
- */
-deprecated ("Use core.bitops.bswap")
-extern (C)
-ulong bswap64(ulong v) pure nothrow @nogc @safe {
-	v = (v >> 32) | (v << 32);
-	v = ((v & 0xFFFF0000FFFF0000) >> 16) | ((v & 0x0000FFFF0000FFFF) << 16);
-	return ((v & 0xFF00FF00FF00FF00) >> 8) | ((v & 0x00FF00FF00FF00FF) << 8);
-}
-
 @safe unittest {
-	// bswap
-	assert(0xAABB == bswap16(0xBBAA), "bswap16 failed");
-	assert(0xAABBCCDD == bswap32(0xDDCCBBAA), "bswap32 failed");
-	assert(0xAABBCCDD_11223344 == bswap64(0x44332211_DDCCBBAA), "bswap64 failed");
 	// unformat core
 	assert(unformatHex("AA")    == 0xAA, "unformatHex failed");
 	assert(unformatOct("10222") == 4242, "unformatOctal failed");
 	assert(unformatDec("4242")  == 4242, "unformatDec failed");
 	// unformat
-	long l;
+	long l = void;
 	assert(unformat("0xAA", l));
-	assert(l == 0xAA, "unformat::hex failed");
+	assert(l == 0xAA, "unformat(hex) failed");
 	assert(unformat("010222", l));
-	assert(l == 4242, "unformat::octal failed");
+	assert(l == 4242, "unformat(octal) failed");
 	assert(unformat("4242", l));
-	assert(l == 4242, "unformat::dec failed");
+	assert(l == 4242, "unformat(dec) failed");
 }

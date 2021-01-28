@@ -8,6 +8,7 @@ module searcher;
 
 import std.stdio;
 import std.encoding : transcode;
+import core.bitop;
 import ddhx;
 import utils;
 	
@@ -101,7 +102,7 @@ void search_u16(string input, bool invert = false) {
 	}
 	short data = cast(short)l;
 	if (invert)
-		data = bswap16(data);
+		data = byteswap(data);
 	search_internal(&data, 2, "u16");
 }
 
@@ -123,7 +124,7 @@ void search_u32(string input, bool invert = false) {
 	}
 	int data = cast(int)l;
 	if (invert)
-		data = bswap32(data);
+		data = bswap(data);
 	search_internal(&data, 4, "u32");
 }
 
@@ -140,7 +141,7 @@ void search_u64(string input, bool invert = false) {
 		return;
 	}
 	if (invert)
-		l = bswap64(l);
+		l = bswap(l);
 	search_internal(&l, 8, "u64");
 }
 
