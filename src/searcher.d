@@ -8,9 +8,13 @@ module searcher;
 
 import std.stdio;
 import std.encoding : transcode;
-import core.bitop;
+import core.bitop; // NOTE: byteswap was only in 2.092
 import ddhx;
 import utils;
+
+private ushort bswap16(ushort v) pure {
+	return cast(ushort)((v << 8) | (v >> 8));
+}
 	
 align(1) private struct search_settings_t {
 	align(1) struct data_t {
@@ -102,7 +106,7 @@ void search_u16(string input, bool invert = false) {
 	}
 	short data = cast(short)l;
 	if (invert)
-		data = byteswap(data);
+		data = bswap16(data);
 	search_internal(&data, 2, "u16");
 }
 
