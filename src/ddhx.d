@@ -83,7 +83,7 @@ bool ddhx_file(string path) {
 	return false;
 }
 
-/// Print lastException to stderr.
+/// Print lastException to stderr. Useful for command-line.
 /// Params: mod = Module or function name
 void ddhx_error(string mod) {
 	import std.stdio : stderr;
@@ -93,14 +93,17 @@ void ddhx_error(string mod) {
 		mod, lastEx.msg);
 }
 
+/// Get last exception.
+/// Returns: Last exception
+Exception ddhx_exception() {
+	return lastEx;
+}
+
 /// Main app entry point
 void ddhx_main() {
-	import settings : ddhx_setting_handle_rowwidth;
-
 	g_fsizeout = formatsize(g_fsizebuf, g_fsize);
-	coninit;
-	ddhx_prep;
 	conclear;
+	ddhx_prep;
 	ddhx_update_offsetbar;
 	
 	if (ddhx_render_raw < conheight - 2)
@@ -182,13 +185,60 @@ KEY:
 		ddhx_refresh;
 		break;
 	case Key.A:
-		ddhx_setting_handle_rowwidth("a");
+		ddhx_setting_width("a");
 		ddhx_refresh;
 		break;
 	case Key.Q: ddhx_exit; break;
 	default:
 	}
 	goto KEY;
+}
+
+/// Set the ouput mode.
+/// Params: v = Setting value
+/// Returns: true on error
+bool ddhx_setting_output(string v) {
+	switch (v[0]) {
+	case 'o', 'O': g_offsettype = OffsetType.Octal; break;
+	case 'd', 'D': g_offsettype = OffsetType.Decimal; break;
+	case 'h', 'H': g_offsettype = OffsetType.Hex; break;
+	default: return true;
+	}
+	return false;
+}
+
+/// Set the column width in bytes
+/// Params: v = Value
+/// Returns: true on error
+bool ddhx_setting_width(string v) {
+	switch (v[0]) {
+	case 'a': // Automatic
+		final switch (g_displaymode)
+		{
+		case DisplayMode.Default:
+			g_rowwidth = cast(ushort)((conwidth - 11) / 4);
+			break;
+		case DisplayMode.Text, DisplayMode.Data:
+			g_rowwidth = cast(ushort)((conwidth - 11) / 3);
+			break;
+		}
+		break;
+	case 'd': // Default
+		g_rowwidth = 16;
+		break;
+	default:
+		long l;
+		if (unformat(v, l) == false) {
+			lastEx = new Exception("width: Number could not be formatted");
+			return true;
+		}
+		if (l < 1 || l > ushort.max) {
+			lastEx = new Exception("width: Number out of range");
+			return true;
+		}
+		g_rowwidth = cast(ushort)l;
+	}
+	return false;
 }
 
 /// Refresh the entire screen

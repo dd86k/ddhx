@@ -3,7 +3,6 @@ module menu;
 import std.stdio : readln, write;
 import core.stdc.stdio : printf;
 import ddcon, ddhx, searcher;
-import settings;
 
 /**
  * Internal command prompt.
@@ -66,23 +65,26 @@ void hxmenu(string prepend = null) {
 
 		string value = argv[2];
 		switch (argv[1]) {
-		case "u8":
+		case "u8", "byte":
 			argv[1] = value;
 			goto SEARCH_BYTE;
-		case "u16":
+		case "u16", "short":
 			search_u16(value);
 			break;
-		case "u32":
+		case "u32", "int":
 			search_u32(value);
 			break;
-		case "u64":
+		case "u64", "long":
 			search_u64(value);
 			break;
-		case "utf8":
+		case "utf8", "string":
 			search_utf8(value);
 			break;
-		case "utf16":
+		case "utf16", "wstring":
 			search_utf16(value);
+			break;
+		case "utf32", "dstring":
+			search_utf32(value);
 			break;
 		default:
 			ddhx_msglow("Invalid type (%s)", argv[1]);
@@ -101,7 +103,12 @@ void hxmenu(string prepend = null) {
 		else
 			ddhx_msglow("Missing argument (utf16)");
 		break;
-	//TODO: UTF-32 search alias
+	case "sd": // Search UTF-32 string
+		if (argc > 1)
+			search_utf32(argv[1]);
+		else
+			ddhx_msglow("Missing argument (utf16)");
+		break;
 	case "sb": // Search byte
 SEARCH_BYTE:
 		if (argc <= 1) {
@@ -112,12 +119,14 @@ SEARCH_BYTE:
 		break;
 	case "i", "info": ddhx_fileinfo; break;
 	case "o", "offset":
-		import settings : HandleOffset;
 		if (argc <= 1) {
 			ddhx_msglow("Missing offset");
 			break;
 		}
-		HandleOffset(argv[1]);
+		if (ddhx_setting_output(argv[1])) {
+			ddhx_msglow(ddhx_exception.msg);
+			break;
+		}
 		ddhx_update_offsetbar;
 		ddhx_render_raw;
 		break;
@@ -135,22 +144,26 @@ SEARCH_BYTE:
 	// Setting manager
 	//
 	case "set":
-		if (argc <= 1) {
-			ddhx_msglow("Missing setting");
-			break;
-		}
 		if (argc <= 2) {
-			ddhx_msglow("Missing setting option");
+			ddhx_msglow(argc <= 1 ?
+				"Missing setting" :
+				"Missing setting option");
 			break;
 		}
 		switch (argv[1]) {
 		case "width", "w":
-			ddhx_setting_handle_rowwidth(argv[2]);
+			if (ddhx_setting_width(argv[2])) {
+				ddhx_msglow(ddhx_exception.msg);
+				break;
+			}
 			ddhx_prep;
 			ddhx_refresh;
 			break;
 		case "offset", "o":
-			HandleOffset(argv[2]);
+			if (ddhx_setting_output(argv[2])) {
+				ddhx_msglow(ddhx_exception.msg);
+				break;
+			}
 			conclear;
 			ddhx_refresh;
 			break;

@@ -5,23 +5,26 @@
 
 module main;
 
-import std.stdio, std.mmfile;
+import std.stdio, std.mmfile, std.format, std.getopt;
 import core.stdc.stdlib : exit;
-import ddhx, settings;
-import std.file : exists, isDir;
-import std.getopt;
+import ddhx, ddcon;
 
 private:
 
 //TODO: CLI SWITCHES
-// --dump: Dump into stdout (which then user can redirect)
-// -sb: Search byte, e.g. -sb ffh -> init -> Echo result
+// --dump: Dump to stdout
+
+void handleOptWidth(string, string val) {
+	if (ddhx_setting_width(val))
+		throw ddhx_exception;
+}
+void handleOptOutput(string, string val) {
+	if (ddhx_setting_output(val))
+		throw new Exception(format("Unknown mode parameter: %s", val));
+}
 
 extern (C)
 void pversion() {
-	import core.stdc.stdlib : exit;
-	import std.conv : text;
-	import std.format : format;
 	import std.compiler : version_major, version_minor;
 	enum VERSTR = 
 		"ddhx " ~ APP_VERSION ~ "  (" ~ __TIMESTAMP__  ~ ")\n" ~
@@ -34,22 +37,25 @@ void pversion() {
 
 int main(string[] args) {
 	if (args.length <= 1) { // FILE or OPTION required
-		writeln("error: File required");
+L_FILE_REQ:
+		writeln("ddhx: File required");
 		return 1;
 	}
+	
+	coninit;
 
 	long seek;
 	GetoptResult r;
 	try {
 		r = args.getopt(
 			config.caseSensitive,
-			"w", "Set column width in bytes, 'a' being automatic (default=16)", &ddhx_setting_handle_cli,
-			"o", "Set output mode (decimal, hex, or octal)", &HandleOCLI,
-			"s", "Seek at position", &seek,
+			"w", "Set column width in bytes, 'a' being automatic (default=16)", &handleOptWidth,
+			"o", "Set output mode (decimal, hex, or octal)", &handleOptOutput,
+			"s|seek", "Seek at position", &seek,
 			"version", "Print the version screen and exit", &pversion
 		);
-	} catch (GetOptException ex) {
-		stderr.writefln("%s, aborting", ex.msg);
+	} catch (Exception ex) {
+		stderr.writefln("ddhx: %s", ex.msg);
 		return 1;
 	}
 	
@@ -68,10 +74,11 @@ int main(string[] args) {
 		}
 		return 0;
 	}
-
-	string file = args[$ - 1];
 	
-	if (ddhx_file(file)) {
+	if (args.length <= 1) // if missing file
+		goto L_FILE_REQ;
+	
+	if (ddhx_file(args[1])) {
 		ddhx_error("ddhx_file");
 		return 1;
 	}
