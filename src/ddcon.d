@@ -18,8 +18,6 @@ version (Windows) {
 	private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
 	private enum DEFAULT_COLOR =
 		FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
-	/// Necessary handles.
-	//TODO: Get external handles from C runtime instead if possible
 	private __gshared HANDLE hIn, hOut;
 	private __gshared USHORT defaultColor = DEFAULT_COLOR;
 }

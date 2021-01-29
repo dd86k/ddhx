@@ -158,8 +158,6 @@ void search_array(ubyte[] v) {
 }
 
 private void search_sample(ref search_settings_t s, void *data, ulong len) {
-	//TODO: Use D_SIMD
-	
 	s.data.p = data;
 	s.data.len = len;
 	

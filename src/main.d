@@ -11,8 +11,7 @@ import ddhx, ddcon;
 
 private:
 
-//TODO: CLI SWITCHES
-// --dump: Dump to stdout
+//TODO: --dump: Dump to stdout
 
 void handleOptWidth(string, string val) {
 	if (ddhx_setting_width(val))
@@ -70,7 +69,7 @@ L_FILE_REQ:
 			if (optShort)
 				writefln("%s, %-12s %s", optShort, optLong, help);
 			else
-				writefln("%-15s %s", optLong, help);
+				writefln("%-16s %s", optLong, help);
 		}
 		return 0;
 	}
