@@ -17,7 +17,7 @@ __gshared:
 enum COPYRIGHT = "Copyright (c) dd86k <dd@dax.moe> 2017-2021";
 
 /// App version
-enum APP_VERSION = "0.2.2";
+enum APP_VERSION = "0.2.2-1";
 
 /// Offset type (hex, dec, etc.)
 enum OffsetType {
