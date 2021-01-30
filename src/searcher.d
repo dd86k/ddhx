@@ -8,36 +8,14 @@ module searcher;
 
 import std.stdio;
 import std.encoding : transcode;
-import core.bitop; // NOTE: byteswap was only in 2.092
+import core.bitop;
 import ddhx;
 import utils;
 
-private ushort bswap16(ushort v) pure {
+// NOTE: core.bitop.byteswap only appeared recently
+pragma(inline, true)
+private ushort bswap16(ushort v) pure nothrow @nogc @safe {
 	return cast(ushort)((v << 8) | (v >> 8));
-}
-	
-align(1) private struct search_settings_t {
-	align(1) struct data_t {
-		align(1) union {
-			void *p;	/// Data void pointer
-			ubyte *pu8;	/// Data 8-bit pointer
-			ushort *pu16;	/// Data 16-bit pointer
-			uint *pu32;	/// Data 32-bit pointer
-			ulong *pu64;	/// Data 64-bit pointer
-		}
-		void* _ptr;
-		size_t len;
-	} data_t data;
-	align(1) struct sample_t {
-		align(1) union {
-			ubyte u8;	/// 8-bit sample data
-			ushort u16;	/// 16-bit sample data
-			uint u32;	/// 32-bit sample data
-			ulong u64;	/// 64-bit sample data
-		}
-		uint size;	/// Sample size
-		bool same;	/// Is sample size the same as input data?
-	} sample_t sample;
 }
 
 /**
@@ -157,64 +135,61 @@ void search_array(ubyte[] v) {
 	search_internal(v.ptr, v.length, "u8 array");
 }
 
-private void search_sample(ref search_settings_t s, void *data, ulong len) {
-	s.data.p = data;
-	s.data.len = len;
-	
-	version (D_LP64)
-	if (len >= 8) {	// ulong.sizeof
-		s.sample.size = 8;
-		s.sample.same = len == 8;
-		s.sample.u64  = *s.data.pu64;
-		return;
-	}
-	if (len >= 4) {	// uint.sizeof
-		s.sample.size = 4;
-		s.sample.same = len == 4;
-		s.sample.u32  = *s.data.pu32;
-	} else if (len >= 2) {	// ushort.sizeof
-		s.sample.size = 2;
-		s.sample.same = len == 2;
-		s.sample.u16  = *s.data.pu16;
-	} else {
-		s.sample.size = 1;
-		s.sample.same = len == 1;
-		s.sample.u8   = *s.data.pu8;
-	}
-}
-
-private void search_internal(void *data, ulong len, string type) {
+//TODO: Consider converting this to a ubyte[]
+//      Calling memcmp may be inlined with this
+private void search_internal(void *data, size_t len, string type) {
 	import core.stdc.string : memcmp;
 	
 	if (len == 0) {
-		ddhx_msglow(" Empty input, cancelled");
+		ddhx_msglow("Empty input, cancelled");
 		return;
 	}
 	
-	search_settings_t s = void;
-	search_sample(s, data, len);
-	
 	ddhx_msglow(" Searching %s...", type);
 	
-	//TODO: Use D_SIMD
+	enum CHUNK_SIZE = 64 * 1024;
+	const ubyte s8 = (cast(ubyte*)data)[0];
+	const ulong flimit = g_fhandle.length;	/// file size
+	const ulong dlimit = flimit - len; 	/// data limit
+	const ulong climit = flimit - CHUNK_SIZE;	/// chunk limit
+	long pos = g_fpos + 1;
 	
-	long i = g_fpos + 1;
-	ubyte[] a = cast(ubyte[])g_fhandle[g_fpos + 1..$];
-	ubyte * b = a.ptr;
-	const ulong alen = a.length;
-	ulong o;	/// File offset
-	
-	for (; o < alen; ++o, ++i) {
-		if (a[o] == s.sample.u8) {
-			if (i + s.data.len >= g_fsize)
-				goto L_BOUND;
-			if (memcmp(b + o, s.data.p, s.data.len) == 0) {
-				ddhx_seek(i);
+	// per chunk
+	while (pos < climit) {
+		const(ubyte)[] chunk = cast(ubyte[])g_fhandle[pos..pos+CHUNK_SIZE];
+		foreach (size_t o, ubyte b; chunk) {
+			// first byte does not correspond
+			if (b != s8) continue;
+			
+			// compare data
+			const long npos = pos + o;
+			const(ubyte)[] d = cast(ubyte[])g_fhandle[npos .. npos + len];
+			if (memcmp(d.ptr, data, len) == 0) {
+				ddhx_seek(npos);
 				return;
 			}
 		}
+		pos += CHUNK_SIZE;
 	}
-
-L_BOUND:
-	ddhx_msglow(" Not found (%s)", type);
+	
+	// rest of data
+	const(ubyte)[] chunk = cast(ubyte[])g_fhandle[pos..$];
+	foreach (size_t o, ubyte b; chunk) {
+		// first byte does not correspond
+		if (b != s8) continue;
+		
+		// if data still fits within file
+		if (pos + o >= dlimit) break;
+		
+		// compare data
+		const long npos = pos + o;
+		const(ubyte)[] d = cast(ubyte[])g_fhandle[npos .. npos + len];
+		if (memcmp(d.ptr, data, len) == 0) {
+			ddhx_seek(npos);
+			return;
+		}
+	}
+	
+	// not found
+	ddhx_msglow("Not found (%s)", type);
 }
