@@ -19,17 +19,22 @@ enum COPYRIGHT = "Copyright (c) dd86k <dd@dax.moe> 2017-2021";
 /// App version
 enum APP_VERSION = "0.2.2-1";
 
-/// Offset type (hex, dec, etc.)
+/// Offset types
 enum OffsetType {
-	Hex, Decimal, Octal
+	hex,	/// Hexadecimal
+	dec,	/// Decimal
+	oct	/// Octal
 }
 
 /// 
 enum DisplayMode {
-	Default, Text, Data
+	all,	/// Default
+	text,	/// Text only
+	data	/// Hex view only
 }
 
 /// Default character for non-displayable characters
+deprecated
 enum DEFAULT_CHAR = '.';
 
 /// Character table for header row
@@ -47,21 +52,17 @@ private immutable char[] formatTable = [
 
 //TODO: Mark these as private and have a function to set them
 
-/// How many bytes are shown per row
-ushort g_rowwidth = 16;
-/// Current offset view type
-OffsetType g_offsettype = void;
-/// Current display view type
-DisplayMode g_displaymode = void;
-
+ushort g_rowwidth = 16;	/// How many bytes are shown per row
+OffsetType g_offsettype = void;	/// Current offset view type
+DisplayMode g_displaymode = void;	/// Current display view type
 MmFile g_fhandle;	/// Current file handle
 ubyte* g_fmmbuf;	/// mmfile buffer address
 uint g_screenl;	/// screen size in bytes, 1 dimensional buffer
 string g_fname;	/// filename
 long g_fpos;	/// Current file position
 long g_fsize;	/// File size
+char g_defaultchar = '.';	/// Default character to use for non-ascii characters
 
-private char[32] g_fsizebuf;	/// total formatted size buffer
 private char[] g_fsizeout;	/// total formatted size (slice)
 private Exception lastEx;	/// Last exception
 
@@ -101,6 +102,7 @@ Exception ddhx_exception() {
 
 /// Main app entry point
 void ddhx_main() {
+	__gshared char[32] g_fsizebuf;	/// total formatted size buffer
 	g_fsizeout = formatsize(g_fsizebuf, g_fsize);
 	conclear;
 	ddhx_prep;
@@ -199,9 +201,9 @@ KEY:
 /// Returns: true on error
 bool ddhx_setting_output(string v) {
 	switch (v[0]) {
-	case 'o', 'O': g_offsettype = OffsetType.Octal; break;
-	case 'd', 'D': g_offsettype = OffsetType.Decimal; break;
-	case 'h', 'H': g_offsettype = OffsetType.Hex; break;
+	case 'o', 'O': g_offsettype = OffsetType.oct; break;
+	case 'd', 'D': g_offsettype = OffsetType.dec; break;
+	case 'h', 'H': g_offsettype = OffsetType.hex; break;
 	default: return true;
 	}
 	return false;
@@ -215,10 +217,10 @@ bool ddhx_setting_width(string v) {
 	case 'a': // Automatic
 		final switch (g_displaymode)
 		{
-		case DisplayMode.Default:
+		case DisplayMode.all:
 			g_rowwidth = cast(ushort)((conwidth - 11) / 4);
 			break;
-		case DisplayMode.Text, DisplayMode.Data:
+		case DisplayMode.text, DisplayMode.data:
 			g_rowwidth = cast(ushort)((conwidth - 11) / 3);
 			break;
 		}
@@ -237,6 +239,24 @@ bool ddhx_setting_width(string v) {
 			return true;
 		}
 		g_rowwidth = cast(ushort)l;
+	}
+	return false;
+}
+
+/// Set default character
+/// Params: v = value
+/// Returns: true on error
+bool ddhx_setting_defaultchar(string v) {
+	if (v == null || v.length == 0) {
+		lastEx = new Exception("defaultchar: Empty string");
+		return true;
+	}
+	// Because I'm too assed to do proper argv parsing
+	// Also why not, hey, aliases
+	switch (v) {
+	case "space":	g_defaultchar = ' '; break;
+	case "dot":	g_defaultchar = '.'; break;
+	default:	g_defaultchar = v[0];
 	}
 	return false;
 }
@@ -369,6 +389,9 @@ uint ddhx_render_raw() {
 		'0', '1', '2', '3', '4', '5', '6', '7',
 		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
 	];
+	__gshared const(char)*[] offTable = [
+		"%8zX ", "%8zo ", "%8zd "
+	];
 
 	uint linesp; /// Lines printed
 	char[2048] buf = void;
@@ -377,13 +400,7 @@ uint ddhx_render_raw() {
 	size_t viewend = viewpos + g_screenl; /// window length
 	ubyte *filebuf = cast(ubyte*)g_fhandle[viewpos..viewend].ptr;
 
-	const(char) *fposfmt = void;
-	with (OffsetType)
-	final switch (g_offsettype) {
-	case Hex:	fposfmt = "%8zX "; break;
-	case Octal:	fposfmt = "%8zo "; break;
-	case Decimal:	fposfmt = "%8zd "; break;
-	}
+	const(char) *fposfmt = offTable[g_offsettype];
 
 	// vi: view index
 	for (size_t vi; vi < g_screenl; viewpos += g_rowwidth) {
@@ -408,11 +425,11 @@ uint ddhx_render_raw() {
 		buf[ai] = ' ';
 		buf[ai+1] = ' ';
 		for (ai += 2; left > 0; --left, hi += 3, ++ai) {
-			ubyte b = filebuf[vi++];
+			const ubyte b = filebuf[vi++];
 			buf[hi] = ' ';
 			buf[hi+1] = hexTable[b >> 4];
 			buf[hi+2] = hexTable[b & 15];
-			buf[ai] = b > 0x7E || b < 0x20 ? DEFAULT_CHAR : b;
+			buf[ai] = b > 0x7E || b < 0x20 ? g_defaultchar : b;
 		}
 
 		// null terminator

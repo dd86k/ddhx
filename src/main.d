@@ -21,6 +21,10 @@ void handleOptOutput(string, string val) {
 	if (ddhx_setting_output(val))
 		throw new Exception(format("Unknown mode parameter: %s", val));
 }
+void handleOptDefaultChar(string, string val) {
+	if (ddhx_setting_defaultchar(val))
+		throw ddhx_exception;
+}
 
 extern (C)
 void pversion() {
@@ -48,8 +52,9 @@ L_FILE_REQ:
 	try {
 		r = args.getopt(
 			config.caseSensitive,
-			"w", "Set column width in bytes, 'a' being automatic (default=16)", &handleOptWidth,
-			"o", "Set output mode (decimal, hex, or octal)", &handleOptOutput,
+			"w|width", "Set column width in bytes, 'a' being automatic (default=16)", &handleOptWidth,
+			"o|offset", "Set offset mode (decimal, hex, or octal)", &handleOptOutput,
+			"C|defaultchar", "Set default character for non-ascii characters", &handleOptDefaultChar,
 			"s|seek", "Seek at position", &seek,
 			"version", "Print the version screen and exit", &pversion
 		);

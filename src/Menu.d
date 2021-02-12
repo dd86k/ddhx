@@ -137,7 +137,7 @@ SEARCH_BYTE:
 		ddhx_msglow(C);
 		break;
 	case "version":
-		enum V = "ddhx " ~ APP_VERSION ~ ", " ~ __TIMESTAMP__;
+		enum V = "ddhx " ~ APP_VERSION ~ ", built " ~ __TIMESTAMP__;
 		ddhx_msglow(V);
 		break;
 	//
@@ -164,7 +164,13 @@ SEARCH_BYTE:
 				ddhx_msglow(ddhx_exception.msg);
 				break;
 			}
-			conclear;
+			ddhx_refresh;
+			break;
+		case "defaultchar", "C":
+			if (ddhx_setting_defaultchar(argv[2])) {
+				ddhx_msglow(ddhx_exception.msg);
+				break;
+			}
 			ddhx_refresh;
 			break;
 		default:
