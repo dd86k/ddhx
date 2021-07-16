@@ -1,6 +1,7 @@
 module menu;
 
 import std.stdio : readln, write;
+import std.string : toStringz;
 import core.stdc.stdio : printf;
 import ddcon, ddhx, searcher;
 
@@ -87,7 +88,7 @@ void hxmenu(string prepend = null) {
 			search_utf32(value);
 			break;
 		default:
-			ddhx_msglow("Invalid type (%s)", argv[1]);
+			ddhx_msglowf("Invalid type (%s)", argv[1].toStringz);
 			break;
 		}
 		break; // "search"
@@ -174,10 +175,10 @@ SEARCH_BYTE:
 			ddhx_refresh;
 			break;
 		default:
-			ddhx_msglow("Unknown setting: %s", argv[1]);
+			ddhx_msglowf("Unknown setting: %s", argv[1].toStringz);
 			break;
 		}
 		break;
-	default: ddhx_msglow("Unknown command: %s", argv[0]); break;
+	default: ddhx_msglowf("Unknown command: %s", argv[0].toStringz); break;
 	}
 }

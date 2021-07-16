@@ -6,6 +6,8 @@ module ddhx;
 import std.stdio : write, writeln, writef, writefln;
 import std.file : getSize;
 import std.mmfile;
+import std.string : toStringz;
+import std.path : baseName;
 import core.stdc.stdio : printf, fflush, puts, snprintf;
 import core.stdc.string : memset;
 import menu, ddcon;
@@ -43,7 +45,7 @@ private immutable char[] offsetTable = [
 ];
 /// Character table for the main panel for printf
 private immutable char[] formatTable = [
-	'X', 'u', 'o'
+	'x', 'u', 'o'
 ];
 
 //
@@ -229,7 +231,7 @@ bool ddhx_setting_width(string v) {
 		g_rowwidth = 16;
 		break;
 	default:
-		long l;
+		long l = void;
 		if (unformat(v, l) == false) {
 			lastEx = new Exception("width: Number could not be formatted");
 			return true;
@@ -276,12 +278,12 @@ void ddhx_refresh() {
  * Update the upper offset bar.
  */
 void ddhx_update_offsetbar() {
-	char [8]format = cast(char[8])" %02X"; // default
-	format[4] = formatTable[g_offsettype];
+	static char[8] fmt = " %02x";
+	fmt[4] = formatTable[g_offsettype];
 	conpos(0, 0);
 	printf("Offset %c ", offsetTable[g_offsettype]);
 	for (ushort i; i < g_rowwidth; ++i)
-		printf(cast(char*)format, i);
+		printf(cast(char*)fmt, i);
 	putchar('\n');
 }
 
@@ -370,7 +372,7 @@ void ddhx_seek(string str) {
 			ddhx_seek_unsafe(l);
 		} else {
 			import std.format : format;
-			ddhx_msglow(format("Range too far or negative: %d (%XH)", l, l));
+			ddhx_msglowf("Range too far or negative: %d (%xH)", l, l);
 		}
 	}
 }
@@ -385,13 +387,8 @@ uint ddhx_render() {
 /// Update display from buffer without setting cursor
 /// Returns: The number of lines printed on screen
 uint ddhx_render_raw() {
-	__gshared char[] hexTable = [
-		'0', '1', '2', '3', '4', '5', '6', '7',
-		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-	];
-	__gshared const(char)*[] offTable = [
-		"%8zX ", "%8zo ", "%8zd "
-	];
+	static immutable string hexTable = "0123456789abcdef";
+	static immutable const(char)*[] offTable = [ "%8zx ", "%8zo ", "%8zd " ];
 
 	uint linesp; /// Lines printed
 	char[2048] buf = void;
@@ -422,8 +419,7 @@ uint ddhx_render_raw() {
 		// ai: ascii buffer offset
 		size_t hi = bufindex;
 		size_t ai = bufindex + (g_rowwidth * 3);
-		buf[ai] = ' ';
-		buf[ai+1] = ' ';
+		buf[ai] = buf[ai + 1] = ' ';
 		for (ai += 2; left > 0; --left, hi += 3, ++ai) {
 			const ubyte b = filebuf[vi++];
 			buf[hi] = ' ';
@@ -452,34 +448,22 @@ void ddhx_msgtop(string msg) {
 	writef("%s%*s", msg, (conwidth - 1) - msg.length, " ");
 }
 
-/**
- * Message once (bottom bar)
- * Params: msg = Message string
- */
 void ddhx_msglow(string msg) {
-	conpos(0, conheight - 1);
 	writef("%s%*s", msg, (conwidth - 1) - msg.length, " ");
 }
 
-/**
- * Bottom bar message.
- * Params:
- *   f = Format
- *   arg = String argument
- */
-void ddhx_msglow(string f, string arg) {
-	//TODO: (string format, ...) format, remove other (string) func
-	import std.format : format;
-	ddhx_msglow(format(f, arg));
+void ddhx_msglowf(const(char) *fmt, ...) {
+	import core.stdc.stdarg : va_start, va_list;
+	import core.stdc.stdio : vprintf;
+	conpos(0, conheight - 1);
+	va_list va;
+	va_start(va, fmt);
+	writef("%*s", (conwidth - 1) - vprintf(fmt, va), " ");
 }
 
 /// Print some file information at the bottom bar
 void ddhx_fileinfo() {
-	import std.format : sformat;
-	import std.path : baseName;
-	char[256] b = void;
-	//TODO: Use ddhx_msglow(string fmt, ...) whenever available
-	ddhx_msglow(cast(string)b.sformat!"%s  %s"(g_fsizeout, g_fname.baseName));
+	ddhx_msglowf("%s  %s", g_fsizeout.toStringz, baseName(g_fname).toStringz);
 }
 
 /// Exits ddhx

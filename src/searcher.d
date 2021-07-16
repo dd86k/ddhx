@@ -8,6 +8,7 @@ module searcher;
 
 import std.stdio;
 import std.encoding : transcode;
+import std.string : toStringz;
 import core.bitop;
 import ddhx;
 import utils;
@@ -63,7 +64,7 @@ void search_u8(string v) {
 		return;
 	}
 	byte data = cast(byte)l;
-	search_internal(&data, 1, "u8");
+	search_internal(&data, byte.sizeof, "u8");
 }
 
 /**
@@ -85,7 +86,7 @@ void search_u16(string input, bool invert = false) {
 	short data = cast(short)l;
 	if (invert)
 		data = bswap16(data);
-	search_internal(&data, 2, "u16");
+	search_internal(&data, short.sizeof, "u16");
 }
 
 /**
@@ -107,7 +108,7 @@ void search_u32(string input, bool invert = false) {
 	int data = cast(int)l;
 	if (invert)
 		data = bswap(data);
-	search_internal(&data, 4, "u32");
+	search_internal(&data, int.sizeof, "u32");
 }
 
 /**
@@ -124,7 +125,7 @@ void search_u64(string input, bool invert = false) {
 	}
 	if (invert)
 		l = bswap(l);
-	search_internal(&l, 8, "u64");
+	search_internal(&l, long.sizeof, "u64");
 }
 
 /**
@@ -137,7 +138,7 @@ void search_array(ubyte[] v) {
 
 //TODO: Consider converting this to a ubyte[]
 //      Calling memcmp may be inlined with this
-private void search_internal(void *data, size_t len, string type) {
+private void search_internal(void *data, size_t len, const(char) *type) {
 	import core.stdc.string : memcmp;
 	
 	if (len == 0) {
@@ -145,7 +146,7 @@ private void search_internal(void *data, size_t len, string type) {
 		return;
 	}
 	
-	ddhx_msglow(" Searching %s...", type);
+	ddhx_msglowf(" Searching %s...", type);
 	
 	enum CHUNK_SIZE = 64 * 1024;
 	const ubyte s8 = (cast(ubyte*)data)[0];
@@ -191,5 +192,5 @@ private void search_internal(void *data, size_t len, string type) {
 	}
 	
 	// not found
-	ddhx_msglow("Not found (%s)", type);
+	ddhx_msglowf("Not found (%s)", type);
 }
