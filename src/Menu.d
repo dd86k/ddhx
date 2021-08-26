@@ -1,9 +1,8 @@
 module menu;
 
 import std.stdio : readln, write;
-import std.string : toStringz;
 import core.stdc.stdio : printf;
-import ddcon, ddhx, searcher;
+import ddcon, ddhx, searcher, settings, error;
 
 /**
  * Internal command prompt.
@@ -31,36 +30,36 @@ void hxmenu(string prepend = null) {
 
 	//TODO: GC-free merge prepend and readln(buf), then split
 	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
-
-	ddhx_update_offsetbar;
-
+	
+	ddhxUpdateOffsetbar;
+	
 	const size_t argc = argv.length;
 	if (argc == 0) return;
-
+	
 	switch (argv[0]) {
 	case "g", "goto":
 		if (argc <= 1) {
-			ddhx_msglow("Missing position (number)");
+			ddhxMsgLow("Missing position (number)");
 			break;
 		}
 		switch (argv[1]) {
 		case "e", "end":
-			ddhx_seek_unsafe(g_fsize - g_screenl);
+			with (globals) ddhxSeek(fileSize - bufferSize);
 			break;
 		case "h", "home":
-			ddhx_seek_unsafe(0);
+			ddhxSeek(0);
 			break;
 		default:
-			ddhx_seek(argv[1]);
+			ddhxSeek(argv[1]);
 		}
 		break;
 	case "s", "search": // Search
 		if (argc <= 1) {
-			ddhx_msglow("Missing data type");
+			ddhxMsgLow("Missing data type");
 			break;
 		}
 		if (argc <= 2) {
-			ddhx_msglow("Missing data argument");
+			ddhxMsgLow("Missing data argument");
 			break;
 		}
 
@@ -88,7 +87,7 @@ void hxmenu(string prepend = null) {
 			search_utf32(value);
 			break;
 		default:
-			ddhx_msglowf("Invalid type (%s)", argv[1].toStringz);
+			ddhxMsgLow("Invalid type (%s)", argv[1]);
 			break;
 		}
 		break; // "search"
@@ -96,89 +95,89 @@ void hxmenu(string prepend = null) {
 		if (argc > 1)
 			search_utf8(argv[1]);
 		else
-			ddhx_msglow("Missing argument (utf8)");
+			ddhxMsgLow("Missing argument (utf8)");
 		break;
 	case "sw": // Search UTF-16 string
 		if (argc > 1)
 			search_utf16(argv[1]);
 		else
-			ddhx_msglow("Missing argument (utf16)");
+			ddhxMsgLow("Missing argument (utf16)");
 		break;
 	case "sd": // Search UTF-32 string
 		if (argc > 1)
 			search_utf32(argv[1]);
 		else
-			ddhx_msglow("Missing argument (utf16)");
+			ddhxMsgLow("Missing argument (utf16)");
 		break;
 	case "sb": // Search byte
 SEARCH_BYTE:
 		if (argc <= 1) {
-			ddhx_msglow("Missing argument (u8)");
+			ddhxMsgLow("Missing argument (u8)");
 			break;
 		}
 		search_u8(argv[1]);
 		break;
-	case "i", "info": ddhx_fileinfo; break;
+	case "i", "info": ddhxShowFileInfo; break;
 	case "o", "offset":
 		if (argc <= 1) {
-			ddhx_msglow("Missing offset");
+			ddhxMsgLow("Missing offset");
 			break;
 		}
-		if (ddhx_setting_output(argv[1])) {
-			ddhx_msglow(ddhx_exception.msg);
+		if (optionOffset(argv[1])) {
+			ddhxMsgLow(ddhxErrorMsg);
 			break;
 		}
-		ddhx_update_offsetbar;
-		ddhx_render_raw;
+		ddhxUpdateOffsetbar;
+		ddhxDrawRaw;
 		break;
-	case "refresh": ddhx_refresh; break;
+	case "refresh": ddhxRefresh; break;
 	case "quit": ddhx_exit; break;
 	case "about":
-		enum C = "Written by dd86k. " ~ COPYRIGHT;
-		ddhx_msglow(C);
+		enum C = "Written by dd86k. " ~ DDHX_COPYRIGHT;
+		ddhxMsgLow(C);
 		break;
 	case "version":
-		enum V = "ddhx " ~ APP_VERSION ~ ", built " ~ __TIMESTAMP__;
-		ddhx_msglow(V);
+		enum V = "ddhx " ~ DDHX_VERSION ~ ", built " ~ __TIMESTAMP__;
+		ddhxMsgLow(V);
 		break;
 	//
 	// Setting manager
 	//
 	case "set":
 		if (argc <= 2) {
-			ddhx_msglow(argc <= 1 ?
+			ddhxMsgLow(argc <= 1 ?
 				"Missing setting" :
 				"Missing setting option");
 			break;
 		}
 		switch (argv[1]) {
 		case "width", "w":
-			if (ddhx_setting_width(argv[2])) {
-				ddhx_msglow(ddhx_exception.msg);
+			if (optionWidth(argv[2])) {
+				ddhxMsgLow(ddhxErrorMsg);
 				break;
 			}
-			ddhx_prep;
-			ddhx_refresh;
+			ddhxPrepBuffer;
+			ddhxRefresh;
 			break;
 		case "offset", "o":
-			if (ddhx_setting_output(argv[2])) {
-				ddhx_msglow(ddhx_exception.msg);
+			if (optionOffset(argv[2])) {
+				ddhxMsgLow(ddhxErrorMsg);
 				break;
 			}
-			ddhx_refresh;
+			ddhxRefresh;
 			break;
 		case "defaultchar", "C":
-			if (ddhx_setting_defaultchar(argv[2])) {
-				ddhx_msglow(ddhx_exception.msg);
+			if (optionDefaultChar(argv[2])) {
+				ddhxMsgLow(ddhxErrorMsg);
 				break;
 			}
-			ddhx_refresh;
+			ddhxRefresh;
 			break;
 		default:
-			ddhx_msglowf("Unknown setting: %s", argv[1].toStringz);
+			ddhxMsgLow("Unknown setting: %s", argv[1]);
 			break;
 		}
 		break;
-	default: ddhx_msglowf("Unknown command: %s", argv[0].toStringz); break;
+	default: ddhxMsgLow("Unknown command: %s", argv[0]); break;
 	}
 }

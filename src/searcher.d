@@ -8,7 +8,6 @@ module searcher;
 
 import std.stdio;
 import std.encoding : transcode;
-import std.string : toStringz;
 import core.bitop;
 import ddhx;
 import utils;
@@ -56,11 +55,11 @@ void search_utf32(const char[] v) {
 void search_u8(string v) {
 	long l = void;
 	if (unformat(v, l) == false) {
-		ddhx_msglow("Could not parse number");
+		ddhxMsgLow("Could not parse number");
 		return;
 	}
 	if (l < byte.min || l > ubyte.max) {
-		ddhx_msglow("Integer too large for a byte");
+		ddhxMsgLow("Integer too large for a byte");
 		return;
 	}
 	byte data = cast(byte)l;
@@ -76,11 +75,11 @@ void search_u8(string v) {
 void search_u16(string input, bool invert = false) {
 	long l = void;
 	if (unformat(input, l) == false) {
-		ddhx_msglow("Could not parse number");
+		ddhxMsgLow("Could not parse number");
 		return;
 	}
 	if (l < short.min || l > ushort.max) {
-		ddhx_msglow("Integer too large for a u16 value");
+		ddhxMsgLow("Integer too large for a u16 value");
 		return;
 	}
 	short data = cast(short)l;
@@ -98,11 +97,11 @@ void search_u16(string input, bool invert = false) {
 void search_u32(string input, bool invert = false) {
 	long l = void;
 	if (unformat(input, l) == false) {
-		ddhx_msglow("Could not parse number");
+		ddhxMsgLow("Could not parse number");
 		return;
 	}
 	if (l < int.min || l > uint.max) {
-		ddhx_msglow("Integer too large for a u16 value");
+		ddhxMsgLow("Integer too large for a u16 value");
 		return;
 	}
 	int data = cast(int)l;
@@ -120,7 +119,7 @@ void search_u32(string input, bool invert = false) {
 void search_u64(string input, bool invert = false) {
 	long l = void;
 	if (unformat(input, l) == false) {
-		ddhx_msglow("Could not parse number");
+		ddhxMsgLow("Could not parse number");
 		return;
 	}
 	if (invert)
@@ -142,31 +141,31 @@ private void search_internal(void *data, size_t len, const(char) *type) {
 	import core.stdc.string : memcmp;
 	
 	if (len == 0) {
-		ddhx_msglow("Empty input, cancelled");
+		ddhxMsgLow("Empty input, cancelled");
 		return;
 	}
 	
-	ddhx_msglowf(" Searching %s...", type);
+	ddhxMsgLow(" Searching %s...", type);
 	
 	enum CHUNK_SIZE = 64 * 1024;
 	const ubyte s8 = (cast(ubyte*)data)[0];
-	const ulong flimit = g_fhandle.length;	/// file size
+	const ulong flimit = globals.fileSize;	/// file size
 	const ulong dlimit = flimit - len; 	/// data limit
 	const ulong climit = flimit - CHUNK_SIZE;	/// chunk limit
-	long pos = g_fpos + 1;
+	long pos = globals.position + 1;
 	
 	// per chunk
 	while (pos < climit) {
-		const(ubyte)[] chunk = cast(ubyte[])g_fhandle[pos..pos+CHUNK_SIZE];
+		const(ubyte)[] chunk = cast(ubyte[])globals.mmHandle[pos..pos+CHUNK_SIZE];
 		foreach (size_t o, ubyte b; chunk) {
 			// first byte does not correspond
 			if (b != s8) continue;
 			
 			// compare data
 			const long npos = pos + o;
-			const(ubyte)[] d = cast(ubyte[])g_fhandle[npos .. npos + len];
+			const(ubyte)[] d = cast(ubyte[])globals.mmHandle[npos .. npos + len];
 			if (memcmp(d.ptr, data, len) == 0) {
-				ddhx_seek(npos);
+				ddhxSeek(npos);
 				return;
 			}
 		}
@@ -174,7 +173,7 @@ private void search_internal(void *data, size_t len, const(char) *type) {
 	}
 	
 	// rest of data
-	const(ubyte)[] chunk = cast(ubyte[])g_fhandle[pos..$];
+	const(ubyte)[] chunk = cast(ubyte[])globals.mmHandle[pos..$];
 	foreach (size_t o, ubyte b; chunk) {
 		// first byte does not correspond
 		if (b != s8) continue;
@@ -184,13 +183,13 @@ private void search_internal(void *data, size_t len, const(char) *type) {
 		
 		// compare data
 		const long npos = pos + o;
-		const(ubyte)[] d = cast(ubyte[])g_fhandle[npos .. npos + len];
+		const(ubyte)[] d = cast(ubyte[])globals.mmHandle[npos .. npos + len];
 		if (memcmp(d.ptr, data, len) == 0) {
-			ddhx_seek(npos);
+			ddhxSeek(npos);
 			return;
 		}
 	}
 	
 	// not found
-	ddhx_msglowf("Not found (%s)", type);
+	ddhxMsgLow("Not found (%s)", type);
 }

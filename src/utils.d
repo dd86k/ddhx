@@ -93,9 +93,9 @@ private long unformatDec(string e) nothrow @nogc pure @safe {
  *   b10  = Use base-1000 instead of base-1024
  * Returns: Character slice using sformat
  */
-char[] formatsize(ref char[32] buf, long size, bool b10 = false) @safe {
+char[] formatsize(ref char[32] buf, long size, bool b10 = false) {
 	import std.format : sformat;
-
+	
 	enum : float {
 		KB  = 1024,	/// Represents one KiloByte
 		MB  = KB * 1024,	/// Represents one MegaByte
@@ -106,27 +106,27 @@ char[] formatsize(ref char[32] buf, long size, bool b10 = false) @safe {
 		GiB = MiB * 1000,	/// Represents one GibiByte
 		TiB = GiB * 1000	/// Represents one TebiByte
 	}
-
+	
 	if (size > TB)
 		return b10 ?
 			buf.sformat!"%0.2f TiB"(size / TiB) :
 			buf.sformat!"%0.2f TB"(size / TB);
-
+	
 	if (size > GB)
 		return b10 ?
 			buf.sformat!"%0.2f GiB"(size / GiB) :
 			buf.sformat!"%0.2f GB"(size / GB);
-
+	
 	if (size > MB)
 		return b10 ?
 			buf.sformat!"%0.1f MiB"(size / MiB) :
 			buf.sformat!"%0.1f MB"(size / MB);
-
+	
 	if (size > KB)
 		return b10 ?
 			buf.sformat!"%0.1f KiB"(size / KiB) :
 			buf.sformat!"%0.1f KB"(size / KB);
-
+	
 	return buf.sformat!"%u B"(size);
 }
 
