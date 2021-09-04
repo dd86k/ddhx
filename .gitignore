@@ -5,13 +5,14 @@ __dummy.html
 *.o
 *.obj
 __test__*__
-t
 *.exe
 dub.selections.json
-ddhx
+./ddhx
 *.zip
 *.gz
 *.xz
 *.tar
 
+# Personal
 NOTES
+examples/

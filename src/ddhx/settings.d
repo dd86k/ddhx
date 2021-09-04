@@ -1,6 +1,7 @@
-module settings;
+module ddhx.settings;
 
-import ddhx, error, ddcon, utils;
+import ddhx.ddhx : globals;
+import ddhx.input, ddhx.error, ddhx.terminal, ddhx.utils;
 
 /// Offset types
 enum OffsetType {
@@ -20,12 +21,13 @@ int optionWidth(string val) {
 	with (globals)
 	switch (val[0]) {
 	case 'a': // Automatic
+		const int w = conwidth - 11;
 		final switch (display) {
 		case DisplayMode.all:
-			rowWidth = cast(ushort)((conwidth - 11) / 4);
+			rowWidth = cast(ushort)(w / 4);
 			break;
 		case DisplayMode.text, DisplayMode.data:
-			rowWidth = cast(ushort)((conwidth - 11) / 3);
+			rowWidth = cast(ushort)(w / 3);
 			break;
 		}
 		break;

@@ -1,8 +1,7 @@
-/*
- * ddcon.d : In-house console library
+/**
+ * In-house console library
  */
-
-module ddcon;
+module ddhx.terminal;
 
 ///
 extern (C) int putchar(int);

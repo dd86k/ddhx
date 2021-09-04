@@ -6,25 +6,23 @@ module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;
 import core.stdc.stdlib : exit;
-import ddhx, ddcon, settings, error;
+import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.error, ddhx.utils;
 
 private:
 
-//TODO: --dump [start[,length]]: Dump to stdout
-
-void cliOptionWidth(string opt, string val) {
+void cliOptionWidth(string, string val) {
 	if (optionWidth(val)) {
 		writeln("main: invalid 'width' value: ", val);
 		exit(1);
 	}
 }
-void cliOptionOffset(string opt, string val) {
+void cliOptionOffset(string, string val) {
 	if (optionOffset(val)) {
 		writeln("main: invalid 'offset' value: ", val);
 		exit(1);
 	}
 }
-void cliOptionDefaultChar(string opt, string val) {
+void cliOptionDefaultChar(string, string val) {
 	if (optionDefaultChar(val)) {
 		writeln("main: invalid 'defaultchar' value: ", val);
 		exit(1);
@@ -34,7 +32,7 @@ void cliOptionDefaultChar(string opt, string val) {
 void cliVersion() {
 	import std.compiler : version_major, version_minor;
 	enum VERSTR = 
-		"ddhx "~DDHX_VERSION~"  ("~__TIMESTAMP__~")\n"~
+		DDHX_VERSION~"\n"~
 		"Compiler: "~__VENDOR__~" v"~format("%d.%03d", version_major, version_minor)~"\n"~
 		"MIT License: "~DDHX_COPYRIGHT~"\n"~
 		"Project page: <https://git.dd86k.space/dd86k/ddhx>";
@@ -48,15 +46,14 @@ void cliVer() {
 }
 
 int main(string[] args) {
-	if (args.length <= 1) { // FILE or OPTION required
-L_FILE_REQ:
-		writeln("main: File required");
-		return 0;
+	if (args.length <= 1) {
+L_NOFILES:
+		stderr.writeln("main: Missing file or stream argument");
+		return 1;
 	}
 	
-	coninit;
-
-	long seek;
+	bool cliMmfile, cliFile, cliDump, cliStdin;
+	string cliSeek, cliLength;
 	GetoptResult res = void;
 	try {
 		res = args.getopt(
@@ -64,7 +61,12 @@ L_FILE_REQ:
 			"w|width", "Set column width in bytes ('a'=terminal width,default=16)", &cliOptionWidth,
 			"o|offset", "Set offset mode (decimal, hex, or octal)", &cliOptionOffset,
 			"C|defaultchar", "Set default character for non-ascii characters", &cliOptionDefaultChar,
-			"s|seek", "Seek at position", &seek,
+			"m|mmfile", "Force mmfile mode", &cliMmfile,
+			"f|file", "Force file mode", &cliFile,
+			"stdin", "Force standard input mode", &cliStdin,
+			"s|seek", "Seek at position", &cliSeek,
+			"D|dump", "Non-interactive dump", &cliDump,
+			"l|length", "Dump: Length of data to read", &cliLength,
 			"version", "Print the version screen and exit", &cliVersion,
 			"ver", "Print only the version and exit", &cliVer
 		);
@@ -87,14 +89,41 @@ L_FILE_REQ:
 		return 0;
 	}
 	
-	if (args.length <= 1) // if missing file
-		goto L_FILE_REQ;
-	
-	if (ddhxLoad(args[1])) {
-		stderr.writeln(ddhxErrorMsg);
-		return 1;
+	if (args.length <= 1 && cliStdin == false) {
+		goto L_NOFILES;
 	}
 	
-	ddhxStart(seek); // start ddhx
+	int e = void;
+	if (cliStdin) {
+		e = ddhxOpenStdin();
+	} else if (cliFile ? false : cliMmfile) {
+		e = ddhxOpenMmfile(args[1]);
+	} else {
+		e = ddhxOpenFile(args[1]);
+	}
+	
+	if (e) {
+		stderr.writeln("ddhx: ", ddhxErrorMsg);
+		return 2;
+	}
+	
+	long seek;
+	if (cliSeek) {
+		if (unformat(cliSeek, seek) == false) {
+			stderr.writeln("main: ", ddhxErrorMsg);
+			return 1;
+		}
+	} else seek = 0;
+	
+	if (cliDump) {
+		long length = void;
+		if (cliLength) {
+			if (unformat(cliLength, length) == false) {
+				stderr.writeln("main: ", ddhxErrorMsg);
+				return 1;
+			}
+		} else length = 0;
+		ddhxDump(seek, length);
+	} else ddhxInteractive(seek);
 	return 0;
 }

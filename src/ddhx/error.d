@@ -1,4 +1,4 @@
-module error;
+module ddhx.error;
 
 enum DdhxError {
 	none,
@@ -7,6 +7,7 @@ enum DdhxError {
 	fileEmpty,
 	invalidParameter,
 	invalidNumber,
+	eof,
 }
 
 private __gshared DdhxError errorCode;
@@ -32,6 +33,7 @@ string ddhxErrorMsg() {
 	case exception: return errorMsg;
 	case fileEmpty: return "File is empty.";
 	case invalidParameter: return "Parameter is invalid.";
+	case eof: return "Unexpected end of file (EOF).";
 	case none: return "No errors occured.";
 	default: return "Unknown error occured.";
 	}

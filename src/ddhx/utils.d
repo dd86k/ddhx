@@ -1,6 +1,4 @@
-module utils;
-
-import ddhx;
+module ddhx.utils;
 
 /**
  * Converts a string number to a long number.

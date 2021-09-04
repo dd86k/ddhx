@@ -1,8 +1,8 @@
-module menu;
+module ddhx.menu;
 
 import std.stdio : readln, write;
 import core.stdc.stdio : printf;
-import ddcon, ddhx, searcher, settings, error;
+import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.searcher, ddhx.error;
 
 /**
  * Internal command prompt.
@@ -44,7 +44,7 @@ void hxmenu(string prepend = null) {
 		}
 		switch (argv[1]) {
 		case "e", "end":
-			with (globals) ddhxSeek(fileSize - bufferSize);
+			with (globals) ddhxSeek(input.size - input.bufferSize);
 			break;
 		case "h", "home":
 			ddhxSeek(0);
@@ -69,22 +69,22 @@ void hxmenu(string prepend = null) {
 			argv[1] = value;
 			goto SEARCH_BYTE;
 		case "u16", "short":
-			search_u16(value);
+			search!ushort(value);
 			break;
 		case "u32", "int":
-			search_u32(value);
+			search!uint(value);
 			break;
 		case "u64", "long":
-			search_u64(value);
+			search!ulong(value);
 			break;
 		case "utf8", "string":
-			search_utf8(value);
+			search!string(value);
 			break;
 		case "utf16", "wstring":
-			search_utf16(value);
+			search!wstring(value);
 			break;
 		case "utf32", "dstring":
-			search_utf32(value);
+			search!dstring(value);
 			break;
 		default:
 			ddhxMsgLow("Invalid type (%s)", argv[1]);
@@ -92,22 +92,25 @@ void hxmenu(string prepend = null) {
 		}
 		break; // "search"
 	case "ss": // Search ASCII/UTF-8 string
-		if (argc > 1)
-			search_utf8(argv[1]);
-		else
-			ddhxMsgLow("Missing argument (utf8)");
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (string)");
+			break;
+		}
+		search!string(argv[1]);
 		break;
 	case "sw": // Search UTF-16 string
-		if (argc > 1)
-			search_utf16(argv[1]);
-		else
-			ddhxMsgLow("Missing argument (utf16)");
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (wstring)");
+			break;
+		}
+		search!wstring(argv[1]);
 		break;
 	case "sd": // Search UTF-32 string
-		if (argc > 1)
-			search_utf32(argv[1]);
-		else
-			ddhxMsgLow("Missing argument (utf16)");
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (dstring)");
+			break;
+		}
+		search!dstring(argv[1]);
 		break;
 	case "sb": // Search byte
 SEARCH_BYTE:
@@ -115,9 +118,9 @@ SEARCH_BYTE:
 			ddhxMsgLow("Missing argument (u8)");
 			break;
 		}
-		search_u8(argv[1]);
+		search!ubyte(argv[1]);
 		break;
-	case "i", "info": ddhxShowFileInfo; break;
+	case "i", "info": ddhxMsgFileInfo; break;
 	case "o", "offset":
 		if (argc <= 1) {
 			ddhxMsgLow("Missing offset");
@@ -131,14 +134,13 @@ SEARCH_BYTE:
 		ddhxDrawRaw;
 		break;
 	case "refresh": ddhxRefresh; break;
-	case "quit": ddhx_exit; break;
+	case "quit": ddhxExit; break;
 	case "about":
 		enum C = "Written by dd86k. " ~ DDHX_COPYRIGHT;
 		ddhxMsgLow(C);
 		break;
 	case "version":
-		enum V = "ddhx " ~ DDHX_VERSION ~ ", built " ~ __TIMESTAMP__;
-		ddhxMsgLow(V);
+		ddhxMsgLow(DDHX_VERSION);
 		break;
 	//
 	// Setting manager
