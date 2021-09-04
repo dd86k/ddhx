@@ -548,7 +548,7 @@ uint ddhxDrawRaw() {
 			l[lpos] = ' ';
 			l[lpos+1] = hexTable[bt >> 4];
 			l[lpos+2] = hexTable[bt & 15];
-			lpos += 3; // = formatData(bt);
+			lpos += 3; // += formatData(bt);
 			l[apos] = bt > 0x7E || bt < 0x20 ? globals.defaultChar : bt;
 		}
 		
@@ -566,7 +566,7 @@ uint ddhxDrawRaw() {
 				lpos += 3;
 			} while (--bytesLeft > 0);
 			left = 0;
-		} else lbuf[lpos + globals.rowWidth + 2] = 0;
+		} else lbuf[lpos + globals.rowWidth] = 0;
 		
 		puts(l);	// out with it + newline
 	}
