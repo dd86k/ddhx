@@ -4,8 +4,6 @@
 module ddhx.terminal;
 
 ///
-extern (C) int putchar(int);
-///
 private extern (C) int getchar();
 
 private import core.stdc.stdio : printf;
@@ -32,6 +30,7 @@ extern (C):
 
 /// Initiate ddcon
 void coninit() {
+	import std.format : format;
 	version (Windows) {
 		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 		hIn  = GetStdHandle(STD_INPUT_HANDLE);
@@ -67,12 +66,11 @@ void conclear() {
 
 /// Window width
 /// Returns: Window width in characters
-@property ushort conwidth() {
-	// Note: A COORD uses SHORT (short) and Linux uses unsigned shorts.
+int conwidth() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
 		GetConsoleScreenBufferInfo(hOut, &c);
-		return cast(ushort)(c.srWindow.Right - c.srWindow.Left + 1);
+		return c.srWindow.Right - c.srWindow.Left + 1;
 	} else version (Posix) {
 		winsize ws = void;
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
@@ -84,11 +82,11 @@ void conclear() {
 
 /// Window height
 /// Returns: Window height in characters
-@property ushort conheight() {
+int conheight() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
 		GetConsoleScreenBufferInfo(hOut, &c);
-		return cast(ushort)(c.srWindow.Bottom - c.srWindow.Top + 1);
+		return c.srWindow.Bottom - c.srWindow.Top + 1;
 	} else version (Posix) {
 		winsize ws = void;
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
@@ -107,7 +105,7 @@ void conclear() {
  */
 void conpos(int x, int y) {
 	version (Windows) { // 0-based
-		__gshared COORD c = void;
+		COORD c = void;
 		c.X = cast(short)x;
 		c.Y = cast(short)y;
 		SetConsoleCursorPosition(hOut, c);

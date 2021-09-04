@@ -48,8 +48,8 @@ struct Globals {
 	string fileName;	/// 
 	const(ubyte)[] buffer;	/// 
 	// Internals
-	short termHeight;	/// Last known terminal height
-	short termWidth;	/// Last known terminal width
+	int termHeight;	/// Last known terminal height
+	int termWidth;	/// Last known terminal width
 	const(char)[] fileSizeString;	/// Formatted binary size
 }
 
@@ -267,7 +267,8 @@ void ddhxRefresh() {
 	globals.buffer = input.read();
 	conclear();
 	ddhxUpdateOffsetbar();
-	if (ddhxDrawRaw() < globals.termHeight - 2)
+	ddhxDrawRaw();
+	if (ddhxDrawRaw() < conheight - 2)
 		ddhxUpdateInfobar;
 	else
 		ddhxUpdateInfobarRaw;
@@ -307,7 +308,7 @@ void ddhxUpdateInfobar() {
 	ddhxUpdateInfobarRaw;
 }
 
-/// Updates information bar without cursor input.position call.
+/// Updates information bar without cursor position call.
 void ddhxUpdateInfobarRaw() {
 	char[32] c = void, t = void;
 	with (globals) writef(" %*s | %*s | %*s | %7.3f%%",
@@ -316,6 +317,7 @@ void ddhxUpdateInfobarRaw() {
 		10, fileSizeString, // Total file size
 		((cast(float)input.position + input.bufferSize) / input.size) * 100 // Pos/input.size%
 	);
+	version (CRuntime_DigitalMars) stdout.flush();
 }
 
 /// Determine input.bufferSize and buffer size
