@@ -42,7 +42,7 @@ int optionWidth(string val) {
 			return ddhxError(DdhxError.invalidNumber);
 		rowWidth = cast(ushort)l;
 	}
-	return false;
+	return 0;
 }
 
 int optionOffset(string val) {
@@ -50,19 +50,18 @@ int optionOffset(string val) {
 	case 'o', 'O': globals.offset = OffsetType.octal; break;
 	case 'd', 'D': globals.offset = OffsetType.decimal; break;
 	case 'h', 'H': globals.offset = OffsetType.hexadecimal; break;
-	default: return true;
+	default: return ddhxError(DdhxError.invalidParameter);
 	}
-	return false;
+	return 0;
 }
 
 int optionDefaultChar(string val) {
-	if (val == null || val.length == 0) {
+	if (val == null || val.length == 0)
 		return ddhxError(DdhxError.invalidParameter);
-	}
 	switch (val) { // aliases
 	case "space":	globals.defaultChar = ' '; break;
 	case "dot":	globals.defaultChar = '.'; break;
 	default:	globals.defaultChar = val[0];
 	}
-	return false;
+	return 0;
 }

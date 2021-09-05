@@ -22,13 +22,19 @@ enum DDHX_VER = "0.3.0";
 /// Version line
 enum DDHX_VERSION = "ddhx " ~ DDHX_VER ~ " (built " ~ __TIMESTAMP__~")";
 
+private extern (C) int putchar(int);
+
 /// Character table for header row
 private immutable char[3] offsetTable = [ 'h', 'd', 'o' ];
 /// Character table for the main panel for printf
 private immutable char[3] formatTable = [ 'x', 'u', 'o' ];
+/// Offset format functions
+private immutable size_t function(char*,long)[3] offsetFuncs =
+	[ &format8lux, &format8lud, &format8luo ];
+/// Data format functions
+//private immutable size_t function(char*,long)[] dataFuncs =
+//	[ &format2x, &format3d, &format3o ];
 
-private
-extern (C) int putchar(int);
 
 //
 // User settings
@@ -544,11 +550,6 @@ uint ddhxDraw() {
 /// Write to stdout from file buffer
 /// Returns: The number of lines printed
 uint ddhxDrawRaw() {
-	static immutable size_t function(char*,long)[3] offsetFuncs =
-		[ &format8lux, &format8lud, &format8luo ];
-	//static immutable size_t function(char*,long)[] dataFuncs =
-	//	[ &format2x, &format3d, &format3o ];
-	
 	// data
 	const(ubyte) *b    = globals.buffer.ptr;
 	int           bsz  = cast(int)globals.buffer.length;
@@ -559,7 +560,6 @@ uint ddhxDrawRaw() {
 	char[2048] lbuf   = void;	/// line buffer
 	char      *l      = lbuf.ptr;
 	uint       ls;	/// lines printed
-	const int  lw;	/// 
 	
 	// formatting
 	const int row = globals.rowWidth;
