@@ -81,16 +81,12 @@ Here is a brief list of commands:
 
 ## Supported Platforms
 
-| Platform | Progress |
-|---|---|
-| Windows XP | Doesn't work |
-| Windows Vista+ | Works! |
-| macOS | Unknown |
-| Linux | Works! |
-| *BSD | Unknown |
+Confirmed to work on:
+- Windows XP (x86-omf builds)
+- Windows Vista+ (x86-mscoff and x86-64)
+- Linux
 
 ## Planned features
 
 - UTF-32 string searching
-- Dump to file
 - Scrollwheel support

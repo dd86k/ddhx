@@ -5,9 +5,9 @@ import ddhx.input, ddhx.error, ddhx.terminal, ddhx.utils;
 
 /// Offset types
 enum OffsetType {
-	hex,	/// Hexadecimal
-	dec,	/// Decimal
-	oct	/// Octal
+	hexadecimal,
+	decimal,
+	octal
 }
 
 /// 
@@ -47,9 +47,9 @@ int optionWidth(string val) {
 
 int optionOffset(string val) {
 	switch (val[0]) {
-	case 'o', 'O': globals.offset = OffsetType.oct; break;
-	case 'd', 'D': globals.offset = OffsetType.dec; break;
-	case 'h', 'H': globals.offset = OffsetType.hex; break;
+	case 'o', 'O': globals.offset = OffsetType.octal; break;
+	case 'd', 'D': globals.offset = OffsetType.decimal; break;
+	case 'h', 'H': globals.offset = OffsetType.hexadecimal; break;
 	default: return true;
 	}
 	return false;

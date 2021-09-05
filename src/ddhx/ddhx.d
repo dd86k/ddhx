@@ -351,9 +351,9 @@ void ddhxSeek(long pos) {
 }
 
 /**
- * Goes to the specified input.position in the file.
+ * Goes to the specified position in the file.
  * Checks bounds and calls Goto.
- * Params: pos = New input.position
+ * Params: pos = New position
  */
 void ddhxSeekSafe(long pos) {
 	if (pos + input.bufferSize > input.size)
@@ -398,10 +398,10 @@ void ddhxSeek(string str) {
 	}
 }
 
-private static immutable string hexTable = "0123456789abcdef";
+private immutable static string hexTable = "0123456789abcdef";
 private
 size_t format8lux(char *buffer, long v) {
-	int pos;
+	size_t pos;
 	bool pad = true;
 	for (int shift = 60; shift >= 0; shift -= 4) {
 		const ubyte b = (v >> shift) & 15;
@@ -444,9 +444,69 @@ size_t format8lux(char *buffer, long v) {
 	assert(b[0..format8lux(p, 0x1010101010101010)] == "1010101010101010");
 }
 private
+size_t format8lud(char *buffer, long v) {
+	debug import std.conv : text;
+	enum I64MAX = 10_000_000_000_000_000_000;
+	immutable static string decTable = "0123456789";
+	size_t pos;
+	bool pad = true;
+	for (ulong d = I64MAX; d > 0; d /= 10) {
+		const long r = (v / d) % 10;
+		if (r == 0) {
+			if (pad && d >= 100_000_000) {
+				continue; // cut
+			} else if (pad && d >= 10) {
+				buffer[pos++] = pad ? ' ' : '0';
+				continue;
+			}
+		} else pad = false;
+		debug assert(r >= 0 && r < 10, "r="~r.text);
+		buffer[pos++] = decTable[r];
+	}
+	return pos;
+}
+/// 
+@system unittest {
+	char[32] b = void;
+	char *p = b.ptr;
+	assert(b[0..format8lud(p, 0)]                 ==      "       0");
+	assert(b[0..format8lud(p, 1)]                 ==      "       1");
+	assert(b[0..format8lud(p, 10)]                ==      "      10");
+	assert(b[0..format8lud(p, 100)]               ==      "     100");
+	assert(b[0..format8lud(p, 1000)]              ==      "    1000");
+	assert(b[0..format8lud(p, 10_000)]            ==      "   10000");
+	assert(b[0..format8lud(p, 100_000)]           ==      "  100000");
+	assert(b[0..format8lud(p, 1000_000)]          ==      " 1000000");
+	assert(b[0..format8lud(p, 10_000_000)]        ==      "10000000");
+	assert(b[0..format8lud(p, 100_000_000)]       ==     "100000000");
+	assert(b[0..format8lud(p, 1000_000_000)]      ==    "1000000000");
+	assert(b[0..format8lud(p, 10_000_000_000)]    ==   "10000000000");
+	assert(b[0..format8lud(p, 100_000_000_000)]   ==  "100000000000");
+	assert(b[0..format8lud(p, 1000_000_000_000)]  == "1000000000000");
+	assert(b[0..format8lud(p, ubyte.max)]  ==             "     255");
+	assert(b[0..format8lud(p, ushort.max)] ==             "   65535");
+	assert(b[0..format8lud(p, uint.max)]   ==           "4294967295");
+	assert(b[0..format8lud(p, ulong.max)]  == "18446744073709551615");
+	assert(b[0..format8lud(p, 1010)]       ==             "    1010");
+}
+private
 size_t format8luo(char *buffer, long v) {
-	
-	return 0;
+	size_t pos;
+	if (v >> 63) buffer[pos++] = '1'; // ulong.max coverage
+	bool pad = true;
+	for (int shift = 60; shift >= 0; shift -= 3) {
+		const ubyte b = (v >> shift) & 7;
+		if (b == 0) {
+			if (pad && shift >= 24) {
+				continue; // cut
+			} else if (pad && shift >= 3) {
+				buffer[pos++] = pad ? ' ' : '0';
+				continue;
+			}
+		} else pad = false;
+		buffer[pos++] = hexTable[b];
+	}
+	return pos;
 }
 /// 
 @system unittest {
@@ -467,40 +527,11 @@ size_t format8luo(char *buffer, long v) {
 	assert(b[0..format8luo(p, octal!1000_000_000)]    ==   "1000000000");
 	assert(b[0..format8luo(p, octal!10_000_000_000)]  ==  "10000000000");
 	assert(b[0..format8luo(p, octal!100_000_000_000)] == "100000000000");
-	assert(b[0..format8luo(p, ubyte.max)]  ==               "     377");
-	assert(b[0..format8luo(p, ushort.max)] ==               "  177777");
-	assert(b[0..format8luo(p, uint.max)]   ==            "37777777777");
-	assert(b[0..format8luo(p, ulong.max)]  == "1777777777777777777777");
-	assert(b[0..format8luo(p, octal!101_010)] == "  101010");
-}
-private
-size_t format8lud(char *buffer, long v) {
-	
-	return 0;
-}
-/// 
-@system unittest {
-	char[32] b = void;
-	char *p = b.ptr;
-	assert(b[0..format8lud(p, 0)]                ==      "       0");
-	assert(b[0..format8lud(p, 1)]                ==      "       1");
-	assert(b[0..format8lud(p, 10)]               ==      "      10");
-	assert(b[0..format8lud(p, 100)]              ==      "     100");
-	assert(b[0..format8lud(p, 1000)]             ==      "    1000");
-	assert(b[0..format8lud(p, 10_000)]           ==      "   10000");
-	assert(b[0..format8lud(p, 100_000)]          ==      "  100000");
-	assert(b[0..format8lud(p, 1000_000)]         ==      " 1000000");
-	assert(b[0..format8lud(p, 10_000_000)]       ==      "10000000");
-	assert(b[0..format8lud(p, 100_000_000)]      ==     "100000000");
-	assert(b[0..format8lud(p, 1000_000_000)]     ==    "1000000000");
-	assert(b[0..format8lud(p, 10_000_000_000)]   ==   "10000000000");
-	assert(b[0..format8lud(p, 100_000_000_000)]  ==  "100000000000");
-	assert(b[0..format8lud(p, 1000_000_000_000)] == "1000000000000");
-	assert(b[0..format8lud(p, ubyte.max)]  ==         "     255");
-	assert(b[0..format8lud(p, ushort.max)] ==         "   65535");
-	assert(b[0..format8lud(p, uint.max)]   ==       "4294967295");
-	assert(b[0..format8lud(p, ulong.max)]  == "ffffffffffffffff");
-	assert(b[0..format8lud(p, 1010)] == "    1010");
+	assert(b[0..format8luo(p, ubyte.max)]   ==               "     377");
+	assert(b[0..format8luo(p, ushort.max)]  ==               "  177777");
+	assert(b[0..format8luo(p, uint.max)]    ==            "37777777777");
+	assert(b[0..format8luo(p, ulong.max)]   == "1777777777777777777777");
+	assert(b[0..format8luo(p, octal!101_010)]             == "  101010");
 }
 
 /// Update display from buffer
@@ -514,7 +545,7 @@ uint ddhxDraw() {
 /// Returns: The number of lines printed
 uint ddhxDrawRaw() {
 	static immutable size_t function(char*,long)[3] offsetFuncs =
-		[ &format8lux, &format8luo, &format8lud ];
+		[ &format8lux, &format8lud, &format8luo ];
 	//static immutable size_t function(char*,long)[] dataFuncs =
 	//	[ &format2x, &format3d, &format3o ];
 	
