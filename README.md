@@ -36,7 +36,7 @@ It also supports dumping.
 A lot of the code is pretty crappy, but this was mostly written on in a whim,
 so I don't entirely care.
 
-# View
+## View
 
 ```text
 1 - Offset h  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
@@ -54,8 +54,3 @@ Confirmed to work on:
 - Windows XP (x86-omf builds)
 - Windows Vista+ (x86-mscoff and x86-64)
 - Linux
-
-## Planned features
-
-- UTF-32 string searching
-- Scrollwheel support
