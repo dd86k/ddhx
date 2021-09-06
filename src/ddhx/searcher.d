@@ -59,18 +59,18 @@ int search(T)(string v) {
 //		if (invert)
 //			l = bswap(l);
 		return search(&l, ulong.sizeof, "u64");
-	} else static if (is(T == ubyte[])) {
+	} /*else static if (is(T == ubyte[])) {
 		return search(v.ptr, v.length, "u8[]");
-	} else static if (is(T == string)) {
-		return search(cast(void*)v.ptr, v.length, "utf-8 string");
+	}*/ else static if (is(T == string)) {
+		return search(v.ptr, v.length, "utf-8 string");
 	} else static if (is(T == wstring)) {
 		wstring ws;
 		transcode(v, ws);
-		return search(cast(void*)ws.ptr, ws.length, "utf-16 string");
+		return search(ws.ptr, ws.length, "utf-16 string");
 	} else static if (is(T == dstring)) {
 		dstring ds;
 		transcode(v, ds);
-		return search(cast(void*)ds.ptr, ds.length, "utf-32 string");
+		return search(ds.ptr, ds.length, "utf-32 string");
 	}
 }
 
@@ -81,7 +81,7 @@ int searchLast() {
 		return ddhxError(DdhxError.noLastItem);
 }
 
-private int search(void *data, size_t len, string type) {
+private int search(const(void) *data, size_t len, string type) {
 	import ddhx.terminal : conheight;
 	import core.stdc.string : memcpy;
 	debug import std.conv : text;
@@ -96,7 +96,7 @@ private int search(void *data, size_t len, string type) {
 	return search2(data, len, type);
 }
 
-private int search2(void *data, size_t len, string type) {
+private int search2(const(void) *data, size_t len, string type) {
 	ddhxMsgLow(" Searching %s...", type);
 	long pos = void;
 	const int e = searchInternal(data, len, pos);
@@ -111,7 +111,9 @@ private int search2(void *data, size_t len, string type) {
 	return e;
 }
 
-private int searchInternal(void *data, size_t len, out long pos) {
+//TODO: Add direction
+//      bool backward
+private int searchInternal(const(void) *data, size_t len, out long pos) {
 	enum BUFFER_SIZE = 16 * 1024;
 	import core.stdc.string : memcmp;
 	

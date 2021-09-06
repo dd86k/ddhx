@@ -4,9 +4,6 @@ import std.stdio : readln, write;
 import core.stdc.stdio : printf;
 import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.searcher, ddhx.error;
 
-//TODO: search auto ...
-//      Auto-guess type (integer/"string"/byte array/etc.)
-
 /**
  * Internal command prompt.
  * Params: prepend = Initial command
@@ -64,6 +61,8 @@ void hxmenu(string prepend = null) {
 			break;
 		}
 		
+		//TODO: search auto ...
+		//      Auto-guess type (integer/"string"/byte array/etc.)
 		value = argv[2];
 		switch (argv[1]) {
 		case "u8", "byte":

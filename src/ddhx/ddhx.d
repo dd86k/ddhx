@@ -54,6 +54,9 @@ struct Globals {
 	// File
 	string fileName;	/// 
 	const(ubyte)[] buffer;	/// 
+//	bool omitHeader;	/// 
+//	bool omitOffset;	/// 
+//	bool omitOffset;	/// 
 	// Internals
 	int termHeight;	/// Last known terminal height
 	int termWidth;	/// Last known terminal width
