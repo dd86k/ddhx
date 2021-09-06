@@ -22,6 +22,35 @@ version (Posix) {
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
+	version (CRuntime_Musl) {
+		alias uint tcflag_t;
+		alias uint speed_t;
+		alias char cc_t;
+		private enum TCSANOW	= 0;
+		private enum NCCS	= 32;
+		private enum ICANON	= 2;
+		private enum ECHO	= 10;
+		private enum TIOCGWINSZ	= 0x5413;
+		private struct termios {
+			tcflag_t c_iflag;
+			tcflag_t c_oflag;
+			tcflag_t c_cflag;
+			tcflag_t c_lflag;
+			cc_t c_line;
+			cc_t[NCCS] c_cc;
+			speed_t __c_ispeed;
+			speed_t __c_ospeed;
+		}
+		private struct winsize {
+			ushort ws_row;
+			ushort ws_col;
+			ushort ws_xpixel;
+			ushort ws_ypixel;
+		}
+		private extern (C) int tcgetattr(int fd, termios *termios_p);
+		private extern (C) int tcsetattr(int fd, int a, termios *termios_p);
+		private extern (C) int ioctl(int fd, ulong request, ...);
+	}
 	private enum TERM_ATTR = ~(ICANON | ECHO);
 	private __gshared termios old_tio, new_tio;
 }

@@ -460,7 +460,7 @@ size_t format8lux(char *buffer, long v) {
 private
 size_t format8lud(char *buffer, long v) {
 	debug import std.conv : text;
-	enum I64MAX = 10_000_000_000_000_000_000;
+	enum ulong I64MAX = 10_000_000_000_000_000_000UL;
 	immutable static string decTable = "0123456789";
 	size_t pos;
 	bool pad = true;
