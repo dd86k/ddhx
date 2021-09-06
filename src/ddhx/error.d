@@ -5,8 +5,12 @@ enum DdhxError {
 	unknown,
 	exception,
 	fileEmpty,
+	inputEmpty,
 	invalidParameter,
 	invalidNumber,
+	notFound,
+	overflow,
+	unparsable,
 	eof,
 }
 
@@ -32,15 +36,13 @@ string ddhxErrorMsg() {
 	switch (errorCode) with (DdhxError) {
 	case exception: return errorMsg;
 	case fileEmpty: return "File is empty.";
+	case inputEmpty: return "Input is empty.";
 	case invalidParameter: return "Parameter is invalid.";
 	case eof: return "Unexpected end of file (EOF).";
+	case notFound: return "Input not found.";
+	case overflow: return "Integer overflow.";
+	case unparsable: return "Integer could not be parsed.";
 	case none: return "No errors occured.";
 	default: return "Unknown error occured.";
 	}
-}
-
-int ddhxPrintError(string func = __FUNCTION__) {
-	import std.stdio : stderr, writefln;
-	
-	return 0;
 }

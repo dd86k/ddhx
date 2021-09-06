@@ -102,9 +102,9 @@ int ddhxInteractive(long skip = 0) {
 	ddhxUpdateOffsetbar;
 	
 	if (ddhxDrawRaw < globals.termHeight - 2)
-		ddhxUpdateInfobar;
+		ddhxUpdateStatusbar;
 	else
-		ddhxUpdateInfobarRaw;
+		ddhxUpdateStatusbarRaw;
 
 	InputInfo k;
 L_KEY:
@@ -270,14 +270,14 @@ int ddhxDump(long skip, long length) {
 /// Refresh the entire screen
 void ddhxRefresh() {
 	ddhxPrepBuffer();
+	input.seek(input.position);
 	globals.buffer = input.read();
 	conclear();
 	ddhxUpdateOffsetbar();
-	ddhxDrawRaw();
 	if (ddhxDrawRaw() < conheight - 2)
-		ddhxUpdateInfobar;
+		ddhxUpdateStatusbar;
 	else
-		ddhxUpdateInfobarRaw;
+		ddhxUpdateStatusbarRaw;
 }
 
 /// Update the upper offset bar.
@@ -309,15 +309,15 @@ void ddhxUpdateOffsetbarRaw() {
 }
 
 /// Update the bottom current information bar.
-void ddhxUpdateInfobar() {
+void ddhxUpdateStatusbar() {
 	conpos(0, conheight - 1);
-	ddhxUpdateInfobarRaw;
+	ddhxUpdateStatusbarRaw;
 }
 
 /// Updates information bar without cursor position call.
-void ddhxUpdateInfobarRaw() {
+void ddhxUpdateStatusbarRaw() {
 	char[32] c = void, t = void;
-	with (globals) writef(" %*s | %*s | %*s | %7.3f%%",
+	with (globals) writef(" %*s | %*s/%*s | %7.4f%%",
 		7,  formatsize(c, input.bufferSize), // Buffer size
 		10, formatsize(t, input.position), // Formatted position
 		10, fileSizeString, // Total file size
@@ -349,9 +349,9 @@ void ddhxSeek(long pos) {
 		input.seek(pos);
 		globals.buffer = input.read();
 		if (ddhxDraw < conheight - 2)
-			ddhxUpdateInfobar();
+			ddhxUpdateStatusbar();
 		else
-			ddhxUpdateInfobarRaw();
+			ddhxUpdateStatusbarRaw();
 	} else
 		ddhxMsgLow("Navigation disabled, buffer too small");
 }

@@ -4,6 +4,9 @@ import std.stdio : readln, write;
 import core.stdc.stdio : printf;
 import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.searcher, ddhx.error;
 
+//TODO: search auto ...
+//      Auto-guess type (integer/"string"/byte array/etc.)
+
 /**
  * Internal command prompt.
  * Params: prepend = Initial command
@@ -23,12 +26,8 @@ void hxmenu(string prepend = null) {
 	if (prepend)
 		write(prepend);
 
-//	size_t argc;
-//	char[1024] inbuf = void;
-//	string[12] argv  = void;
-//	const size_t inbufl = readln(inbuf);
-
 	//TODO: GC-free merge prepend and readln(buf), then split
+	//TODO: Smarter argv handling with quotes
 	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 	
 	ddhxUpdateOffsetbar;
@@ -36,10 +35,12 @@ void hxmenu(string prepend = null) {
 	const size_t argc = argv.length;
 	if (argc == 0) return;
 	
+	int error;
+	string value = void;
 	switch (argv[0]) {
 	case "g", "goto":
 		if (argc <= 1) {
-			ddhxMsgLow("Missing position (number)");
+			ddhxMsgLow("Missing argument (position)");
 			break;
 		}
 		switch (argv[1]) {
@@ -55,81 +56,99 @@ void hxmenu(string prepend = null) {
 		break;
 	case "s", "search": // Search
 		if (argc <= 1) {
-			ddhxMsgLow("Missing data type");
+			ddhxMsgLow("Missing argument (type)");
 			break;
 		}
 		if (argc <= 2) {
-			ddhxMsgLow("Missing data argument");
+			ddhxMsgLow("Missing argument (needle)");
 			break;
 		}
-
-		string value = argv[2];
+		
+		value = argv[2];
 		switch (argv[1]) {
 		case "u8", "byte":
-			argv[1] = value;
-			goto SEARCH_BYTE;
+			error = search!ubyte(value);
+			break;
 		case "u16", "short":
-			search!ushort(value);
+			error = search!ushort(value);
 			break;
 		case "u32", "int":
-			search!uint(value);
+			error = search!uint(value);
 			break;
 		case "u64", "long":
-			search!ulong(value);
+			error = search!ulong(value);
 			break;
 		case "utf8", "string":
-			search!string(value);
+			error = search!string(value);
 			break;
 		case "utf16", "wstring":
-			search!wstring(value);
+			error = search!wstring(value);
 			break;
 		case "utf32", "dstring":
-			search!dstring(value);
+			error = search!dstring(value);
 			break;
 		default:
 			ddhxMsgLow("Invalid type (%s)", argv[1]);
 			break;
 		}
 		break; // "search"
+	case "sb": // Search byte
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (u8)");
+			break;
+		}
+		error = search!ubyte(argv[1]);
+		break;
+	case "sw": // Search word
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (u8)");
+			break;
+		}
+		error = search!ushort(argv[1]);
+		break;
+	case "sd": // Search dword
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (u8)");
+			break;
+		}
+		error = search!uint(argv[1]);
+		break;
+	case "sl": // Search long
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (u8)");
+			break;
+		}
+		error = search!ulong(argv[1]);
+		break;
 	case "ss": // Search ASCII/UTF-8 string
 		if (argc <= 1) {
 			ddhxMsgLow("Missing argument (string)");
 			break;
 		}
-		search!string(argv[1]);
+		error = search!string(argv[1]);
 		break;
-	case "sw": // Search UTF-16 string
+	case "sws": // Search UTF-16 string
 		if (argc <= 1) {
 			ddhxMsgLow("Missing argument (wstring)");
 			break;
 		}
-		search!wstring(argv[1]);
+		error = search!wstring(argv[1]);
 		break;
-	case "sd": // Search UTF-32 string
+	case "sds": // Search UTF-32 string
 		if (argc <= 1) {
 			ddhxMsgLow("Missing argument (dstring)");
 			break;
 		}
-		search!dstring(argv[1]);
-		break;
-	case "sb": // Search byte
-SEARCH_BYTE:
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (u8)");
-			break;
-		}
-		search!ubyte(argv[1]);
+		error = search!dstring(argv[1]);
 		break;
 	case "i", "info": ddhxMsgFileInfo; break;
 	case "o", "offset":
 		if (argc <= 1) {
-			ddhxMsgLow("Missing offset");
+			ddhxMsgLow("Missing argument (offset)");
 			break;
 		}
-		if (optionOffset(argv[1])) {
-			ddhxMsgLow(ddhxErrorMsg);
+		if ((error = optionOffset(argv[1])) != 0)
 			break;
-		}
 		ddhxUpdateOffsetbar;
 		ddhxDrawRaw;
 		break;
@@ -148,8 +167,8 @@ SEARCH_BYTE:
 	case "set":
 		if (argc <= 2) {
 			ddhxMsgLow(argc <= 1 ?
-				"Missing setting" :
-				"Missing setting option");
+				"Missing argument (setting)" :
+				"Missing argument (value)");
 			break;
 		}
 		switch (argv[1]) {
@@ -182,4 +201,7 @@ SEARCH_BYTE:
 		break;
 	default: ddhxMsgLow("Unknown command: %s", argv[0]); break;
 	}
+	
+	if (error)
+		ddhxMsgLow(ddhxErrorMsg);
 }

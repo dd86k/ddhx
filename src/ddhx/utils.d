@@ -27,6 +27,12 @@ bool unformat(string e, ref long l) nothrow pure @nogc @safe {
 
 	return true;
 }
+///
+@system unittest {
+	long l = void;
+	assert(unformat("0xffff", l));
+	assert(cast(ushort)l == 0xffff);
+}
 
 /**
  * Converts a string HEX number to a long number, without the prefix.

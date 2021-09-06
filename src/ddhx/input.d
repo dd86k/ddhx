@@ -37,9 +37,10 @@ struct Input {
 			size = file.size();
 			if (size == 0)
 				return ddhxError(DdhxError.fileEmpty);
-			read = &readFile;
-			seek = &seekFile;
 			mode = InputMode.file;
+			seek = &seekFile;
+			read = &readFile;
+			readBuffer = &readBufferFile;
 			return 0;
 		} catch (Exception ex) {
 			return ddhxError(ex);
@@ -51,19 +52,21 @@ struct Input {
 			if (size == 0)
 				return ddhxError(DdhxError.fileEmpty);
 			mmfile = new MmFile(path, MmFile.Mode.read, 0, mmAddress);
-			read = &readMmfile;
-			seek = &seekMmfile;
 			mode = InputMode.mmfile;
+			seek = &seekMmfile;
+			read = &readMmfile;
+			readBuffer = &readBufferMmfile;
 			return 0;
 		} catch (Exception ex) {
 			return ddhxError(ex);
 		}
 	}
 	int openStdin() {
-		read = &readStdin;
-		seek = null;
-		bufferSize = DEFAULT_BUFFER_SIZE;
 		mode = InputMode.stdin;
+		seek = null;
+		read = &readStdin;
+		readBuffer = &readBufferStdin;
+		bufferSize = DEFAULT_BUFFER_SIZE;
 		return 0;
 	}
 	
@@ -96,6 +99,18 @@ struct Input {
 	}
 	private ubyte[] readStdin() {
 		return stdin.rawRead(fBuffer);
+	}
+	
+	ubyte[] delegate(ubyte[]) readBuffer;
+	
+	private ubyte[] readBufferFile(ubyte[] buffer) {
+		return file.rawRead(buffer);
+	}
+	private ubyte[] readBufferMmfile(ubyte[] buffer) {
+		return cast(ubyte[])mmfile[position..position+buffer.length];
+	}
+	private ubyte[] readBufferStdin(ubyte[] buffer) {
+		return stdin.rawRead(buffer);
 	}
 	
 	const(char)[] formatSize() {
