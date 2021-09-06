@@ -9,9 +9,10 @@ __test__*__
 dub.selections.json
 /ddhx
 *.zip
+*.tar
 *.gz
 *.xz
-*.tar
+*.bzip2
 
 # Personal
 NOTES
