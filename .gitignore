@@ -7,7 +7,7 @@ __dummy.html
 __test__*__
 *.exe
 dub.selections.json
-./ddhx
+/ddhx
 *.zip
 *.gz
 *.xz
