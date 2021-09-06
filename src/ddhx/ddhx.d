@@ -9,6 +9,7 @@ import core.stdc.stdio : printf, fflush, puts, snprintf;
 import core.stdc.string : memset;
 import ddhx.utils : formatsize, unformat;
 import ddhx.input, ddhx.menu, ddhx.terminal, ddhx.settings, ddhx.error;
+import ddhx.searcher : searchLast;
 
 //TODO: View display mode (hex+ascii, hex, ascii)
 //TODO: Data display mode (hex, octal, dec)
@@ -165,6 +166,10 @@ L_KEY:
 	// Actions/Shortcuts
 	//
 
+	case Key.N:
+		if (searchLast())
+			ddhxMsgLow(ddhxErrorMsg);
+		break;
 	case Key.Escape, Key.Enter, Key.Colon:
 		hxmenu;
 		break;

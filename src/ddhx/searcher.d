@@ -11,6 +11,12 @@ import std.encoding : transcode;
 import core.bitop;
 import ddhx.ddhx, ddhx.utils, ddhx.error;
 
+private enum LAST_BUFFER_SIZE = 128;
+private __gshared ubyte[128] lastItem;
+private __gshared size_t lastSize;
+private __gshared string lastType;
+private __gshared bool hasLast;
+
 // NOTE: core.bitop.byteswap only appeared recently
 pragma(inline, true)
 private ushort bswap16(ushort v) pure nothrow @nogc @safe {
@@ -68,13 +74,29 @@ int search(T)(string v) {
 	}
 }
 
-//TODO: bool save = true
+int searchLast() {
+	if (hasLast)
+		return search2(lastItem.ptr, lastSize, lastType);
+	else
+		return ddhxError(DdhxError.noLastItem);
+}
+
 private int search(void *data, size_t len, string type) {
 	import ddhx.terminal : conheight;
+	import core.stdc.string : memcpy;
 	debug import std.conv : text;
 	
 	debug assert(len, "len="~len.text);
 	
+	lastType = type;
+	lastSize = len;
+	memcpy(lastItem.ptr, data, len);
+	hasLast = true;
+	
+	return search2(data, len, type);
+}
+
+private int search2(void *data, size_t len, string type) {
 	ddhxMsgLow(" Searching %s...", type);
 	long pos = void;
 	const int e = searchInternal(data, len, pos);
@@ -113,26 +135,18 @@ private int searchInternal(void *data, size_t len, out long pos) {
 		for (size_t i_; i_ < in_.length; ++i_, ++p) {
 			if (in_[i_] != mark) continue;
 			
-			if (byteSearch) {
-				pos = p;
-				return 0;
-			}
+			if (byteSearch)
+				goto L_FOUND;
 			
 			// in buffer?
 			if (i_ + len < in_.length) { // in-buffer check
-				//if (ptr[0..len] == in_[i_..i_+len]) {
-				if (memcmp(in_.ptr + i_, ptr, len) == 0) {
-					pos = p;
-					return 0;
-				}
+				if (memcmp(in_.ptr + i_, ptr, len) == 0)
+					goto L_FOUND;
 			} else { // out-buffer check
 				input.seek(p);
 				input.readBuffer(dataBuffer);
-				//if (ptr[0..len] == dataBuffer[0..len]) {
-				if (memcmp(dataBuffer.ptr, ptr, len) == 0) {
-					pos = p;
-					return 0;
-				}
+				if (memcmp(dataBuffer.ptr, ptr, len) == 0)
+					goto L_FOUND;
 				input.seek(o);
 			}
 		}
@@ -140,4 +154,7 @@ private int searchInternal(void *data, size_t len, out long pos) {
 	
 	input.seek(oldpos);
 	return ddhxError(DdhxError.notFound);
+L_FOUND:
+	pos = p;
+	return 0;
 }

@@ -56,12 +56,11 @@ L_NOFILES:
 	string cliSeek, cliLength;
 	GetoptResult res = void;
 	try {
-		res = args.getopt(
-			config.caseSensitive,
-			"w|width", "Set column width in bytes ('a'=terminal width,default=16)", &cliOptionWidth,
+		res = args.getopt(config.caseSensitive,
+			"w|width", "Set column width in bytes ('a'=automatic,default=16)", &cliOptionWidth,
 			"o|offset", "Set offset mode (decimal, hex, or octal)", &cliOptionOffset,
 			"C|defaultchar", "Set default character for non-ascii characters", &cliOptionDefaultChar,
-			"m|mmfile", "Force mmfile mode", &cliMmfile,
+			"m|mmfile", "Force mmfile mode, recommended for large files", &cliMmfile,
 			"f|file", "Force file mode", &cliFile,
 			"stdin", "Force standard input mode", &cliStdin,
 			"s|seek", "Seek at position", &cliSeek,

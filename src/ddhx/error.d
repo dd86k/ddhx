@@ -11,6 +11,7 @@ enum DdhxError {
 	notFound,
 	overflow,
 	unparsable,
+	noLastItem,
 	eof,
 }
 
@@ -42,6 +43,7 @@ string ddhxErrorMsg() {
 	case notFound: return "Input not found.";
 	case overflow: return "Integer overflow.";
 	case unparsable: return "Integer could not be parsed.";
+	case noLastItem: return "No previous search items saved.";
 	case none: return "No errors occured.";
 	default: return "Unknown error occured.";
 	}
