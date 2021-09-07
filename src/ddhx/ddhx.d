@@ -103,12 +103,7 @@ int ddhxInteractive(long skip = 0) {
 	globals.termHeight = conheight;
 	ddhxPrepBuffer(true);
 	globals.buffer = input.read();
-	ddhxUpdateOffsetbar;
-	
-	if (ddhxDrawRaw < globals.termHeight - 2)
-		ddhxUpdateStatusbar;
-	else
-		ddhxUpdateStatusbarRaw;
+	ddhxRender();
 
 	InputInfo k;
 L_KEY:
@@ -281,6 +276,11 @@ void ddhxRefresh() {
 	input.seek(input.position);
 	globals.buffer = input.read();
 	conclear();
+	ddhxRender();
+}
+
+/// Render all
+void ddhxRender() {
 	ddhxUpdateOffsetbar();
 	if (ddhxDrawRaw() < conheight - 2)
 		ddhxUpdateStatusbar;
@@ -367,10 +367,7 @@ void ddhxSeek(long pos) {
 	if (input.bufferSize < input.size) {
 		input.seek(pos);
 		globals.buffer = input.read();
-		if (ddhxDraw < conheight - 2)
-			ddhxUpdateStatusbar();
-		else
-			ddhxUpdateStatusbarRaw();
+		ddhxRender();
 	} else
 		ddhxMsgLow("Navigation disabled, buffer too small");
 }

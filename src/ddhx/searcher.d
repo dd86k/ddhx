@@ -105,7 +105,8 @@ private int search2(const(void) *data, size_t len, string type) {
 			pos = input.size - input.bufferSize;
 		input.seek(pos);
 		globals.buffer = input.read();
-		ddhxDraw();
+		ddhxUpdateOffsetbar();
+		ddhxDrawRaw();
 		ddhxMsgLow(" Found at 0x%x", pos);
 	}
 	return e;
