@@ -18,7 +18,7 @@ import ddhx.searcher : searchLast;
 enum DDHX_COPYRIGHT = "Copyright (c) dd86k <dd@dax.moe> 2017-2021";
 
 /// App version
-enum DDHX_VER = "0.3.0";
+enum DDHX_VER = "0.3.1";
 
 /// Version line
 enum DDHX_VERSION = "ddhx " ~ DDHX_VER ~ " (built " ~ __TIMESTAMP__~")";
