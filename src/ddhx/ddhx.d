@@ -376,18 +376,6 @@ void ddhxSeek(long pos) {
 }
 
 /**
- * Goes to the specified position in the file.
- * Checks bounds and calls Goto.
- * Params: pos = New position
- */
-void ddhxSeekSafe(long pos) {
-	if (pos + input.bufferSize > input.size)
-		ddhxSeek(input.size - input.bufferSize);
-	else
-		ddhxSeek(pos);
-}
-
-/**
  * Parses the string as a long and navigates to the file location.
  * Includes offset checking (+/- notation).
  * Params: str = String as a number
@@ -414,13 +402,26 @@ void ddhxSeek(string str) {
 			ddhxSeek(newPos);
 		break;
 	default:
-		if (newPos >= 0 && newPos < input.size - input.bufferSize) {
-			ddhxSeek(newPos);
+		if (newPos < 0) {
+			ddhxMsgLow("Range underflow: %d (0x%x)", newPos, newPos);
+		} else if (newPos >= input.size - input.bufferSize) {
+			ddhxMsgLow("Range overflow: %d (0x%x)", newPos, newPos);
 		} else {
-			import std.format : format;
-			ddhxMsgLow("Range too far or negative: %d (%xH)", newPos, newPos);
+			ddhxSeek(newPos);
 		}
 	}
+}
+
+/**
+ * Goes to the specified position in the file.
+ * Checks bounds and calls Goto.
+ * Params: pos = New position
+ */
+void ddhxSeekSafe(long pos) {
+	if (pos + input.bufferSize > input.size)
+		ddhxSeek(input.size - input.bufferSize);
+	else
+		ddhxSeek(pos);
 }
 
 private immutable static string hexTable = "0123456789abcdef";
