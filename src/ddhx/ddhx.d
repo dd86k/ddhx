@@ -311,6 +311,7 @@ void ddhxUpdateOffsetbarRaw() {
 	static char[8] fmt = " %02x";
 	fmt[4] = formatTable[globals.offset];
 	printf("Offset %c ", offsetTable[globals.offset]);
+	if (input.position > 0xffff_ffff) putchar(' ');
 	for (ushort i; i < globals.rowWidth; ++i)
 		printf(cast(char*)fmt, i);
 	putchar('\n');
