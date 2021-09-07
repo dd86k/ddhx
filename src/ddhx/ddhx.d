@@ -237,11 +237,21 @@ int ddhxDump(long skip, long length) {
 			return 2;
 		}
 		
-		input.adjust(DEFAULT_BUFFER_SIZE);
+		size_t l = void;
+		if (skip) {
+			if (skip > DEFAULT_BUFFER_SIZE) {
+				input.adjust(DEFAULT_BUFFER_SIZE);
+			} else {
+				input.adjust(cast(uint)(skip));
+			}
+			do {
+				l = input.read().length;
+			} while (l >= DEFAULT_BUFFER_SIZE);
+		}
 		
+		input.adjust(DEFAULT_BUFFER_SIZE);
 		ddhxUpdateOffsetbarRaw;
 		
-		size_t l = void;
 		do {
 			globals.buffer = input.read();
 			ddhxDrawRaw;
