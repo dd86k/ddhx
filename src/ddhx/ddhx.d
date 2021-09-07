@@ -338,6 +338,7 @@ void ddhxUpdateStatusbarRaw() {
 	}
 	last = f.length;
 	version (CRuntime_DigitalMars) stdout.flush();
+	version (CRuntime_Musl) stdout.flush();
 }
 
 /// Determine input.bufferSize and buffer size
