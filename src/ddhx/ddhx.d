@@ -324,13 +324,23 @@ void ddhxUpdateStatusbar() {
 
 /// Updates information bar without cursor position call.
 void ddhxUpdateStatusbarRaw() {
+	import std.format : sformat;
+	__gshared size_t last;
 	char[32] c = void, t = void;
-	with (globals) writef(" %*s | %*s/%*s | %7.4f%%",
+	char[128] b = void;
+	char[] f = sformat!" %*s | %*s/%*s | %7.4f%%"(b,
 		7,  formatsize(c, input.bufferSize), // Buffer size
 		10, formatsize(t, input.position), // Formatted position
-		10, fileSizeString, // Total file size
+		10, globals.fileSizeString, // Total file size
 		((cast(float)input.position + input.bufferSize) / input.size) * 100 // Pos/input.size%
 	);
+	if (last > f.length) {
+		int p = cast(int)(f.length + (last - f.length));
+		writef("%*s", -p, f);
+	} else {
+		write(f);
+	}
+	last = f.length;
 	version (CRuntime_DigitalMars) stdout.flush();
 }
 
