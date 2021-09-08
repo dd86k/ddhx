@@ -7,7 +7,7 @@ module ddhx.terminal;
 private extern (C) int getchar();
 
 private import core.stdc.stdio : printf;
-private alias sys = core.stdc.stdlib.system;
+private import core.stdc.stdlib : system;
 
 version (Windows) {
 	private import core.sys.windows.windows;
