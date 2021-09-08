@@ -46,12 +46,6 @@ void cliVer() {
 }
 
 int main(string[] args) {
-	if (args.length <= 1) {
-L_NOFILES:
-		stderr.writeln("main: Missing file or stream argument");
-		return 1;
-	}
-	
 	bool cliMmfile, cliFile, cliDump, cliStdin;
 	string cliSeek, cliLength;
 	GetoptResult res = void;
@@ -88,25 +82,22 @@ L_NOFILES:
 		return 0;
 	}
 	
-	if (args.length <= 1 && cliStdin == false) {
-		goto L_NOFILES;
-	}
-	
+	if (cliStdin == false) cliStdin = args.length <= 1;
+	string cliInput = cliStdin ? "-" : args[1];
+
+	long seek, length;
 	int e = void;
 	if (cliStdin) {
-		e = ddhxOpenStdin();
+		if (ddhxOpenStdin())
+			goto L_ERROR;
 	} else if (cliFile ? false : cliMmfile) {
-		e = ddhxOpenMmfile(args[1]);
+		if (ddhxOpenMmfile(cliInput))
+			goto L_ERROR;
 	} else {
-		e = ddhxOpenFile(args[1]);
+		if (ddhxOpenFile(cliInput))
+			goto L_ERROR;
 	}
 	
-	if (e) {
-		stderr.writeln("ddhx: ", ddhxErrorMsg);
-		return 2;
-	}
-	
-	long seek;
 	if (cliSeek) {
 		if (unformat(cliSeek, seek) == false) {
 			stderr.writeln("main: ", ddhxErrorMsg);
@@ -115,7 +106,6 @@ L_NOFILES:
 	} else seek = 0;
 	
 	if (cliDump) {
-		long length = void;
 		if (cliLength) {
 			if (unformat(cliLength, length) == false) {
 				stderr.writeln("main: ", ddhxErrorMsg);
@@ -125,4 +115,7 @@ L_NOFILES:
 		ddhxDump(seek, length);
 	} else ddhxInteractive(seek);
 	return 0;
+L_ERROR:
+	stderr.writeln("ddhx: ", ddhxErrorMsg);
+	return 2;
 }
