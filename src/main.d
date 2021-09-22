@@ -32,7 +32,7 @@ void cliOptionDefaultChar(string, string val) {
 void cliVersion() {
 	import std.compiler : version_major, version_minor;
 	enum VERSTR = 
-		DDHX_VERSION~"\n"~
+		DDHX_VERSION_LINE~"\n"~
 		"Compiler: "~__VENDOR__~" v"~format("%d.%03d", version_major, version_minor)~"\n"~
 		"MIT License: "~DDHX_COPYRIGHT~"\n"~
 		"Project page: <https://git.dd86k.space/dd86k/ddhx>";

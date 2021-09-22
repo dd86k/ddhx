@@ -158,7 +158,7 @@ void hxmenu(string prepend = null) {
 		ddhxMsgLow(C);
 		break;
 	case "version":
-		ddhxMsgLow(DDHX_VERSION);
+		ddhxMsgLow(DDHX_VERSION_LINE);
 		break;
 	//
 	// Setting manager

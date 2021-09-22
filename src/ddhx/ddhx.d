@@ -18,10 +18,10 @@ import ddhx.searcher : searchLast;
 enum DDHX_COPYRIGHT = "Copyright (c) dd86k <dd@dax.moe> 2017-2021";
 
 /// App version
-enum DDHX_VER = "0.3.1";
+enum DDHX_VERSION = "0.3.1";
 
 /// Version line
-enum DDHX_VERSION = "ddhx " ~ DDHX_VER ~ " (built " ~ __TIMESTAMP__~")";
+enum DDHX_VERSION_LINE = "ddhx " ~ DDHX_VERSION ~ " (built " ~ __TIMESTAMP__~")";
 
 private extern (C) int putchar(int);
 

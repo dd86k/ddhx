@@ -86,7 +86,7 @@ void conclear() {
 			conpos(0, 0);
 		}
 		else // If that fails, run cls.
-			sys ("cls");
+			system("cls");
 	} else version (Posix) {
 		printf("\033c");
 	}
