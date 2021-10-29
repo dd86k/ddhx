@@ -48,3 +48,18 @@ string ddhxErrorMsg() {
 	default: return "Unknown error occured.";
 	}
 }
+
+version (Trace) {
+	import std.stdio;
+	
+	private __gshared File log;
+	
+	void traceInit() {
+		log.open("ddhx.log", "w");
+	}
+	void trace(string func = __FUNCTION__, int line = __LINE__, A...)(string fmt, A args) {
+		log.writef("TRACE:%s:%u: ", func, line);
+		log.writefln(fmt, args);
+		log.flush;
+	}
+}

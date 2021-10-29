@@ -55,7 +55,7 @@ struct Globals {
 	string fileName;	/// 
 	const(ubyte)[] buffer;	/// 
 //	bool omitHeader;	/// 
-//	bool omitOffset;	/// 
+//	bool omitOffsetBar;	/// 
 //	bool omitOffset;	/// 
 	// Internals
 	int termHeight;	/// Last known terminal height
@@ -66,18 +66,30 @@ struct Globals {
 __gshared Globals globals; /// Single-instance of globals.
 __gshared Input   input;   /// Input file/stream
 
+int printError(int code = 1, A...)(string fmt, A args) {
+	stderr.write("error: ");
+	stderr.writefln(fmt, args);
+	return code;
+}
+
 int ddhxOpenFile(string path) {
+	version (Trace) trace("path=%s", path);
+	
 	import std.path : baseName;
 	globals.fileName = baseName(path);
 	return input.openFile(path);
 }
 int ddhxOpenMmfile(string path) {
+	version (Trace) trace("path=%s", path);
+	
 	import std.path : baseName;
 	globals.fileName = baseName(path);
 	return input.openMmfile(path);
 }
 int ddhxOpenStdin() {
-	globals.fileName = "--";
+	version (Trace) trace("-");
+	
+	globals.fileName = "-";
 	return input.openStdin();
 }
 
@@ -86,34 +98,42 @@ int ddhxInteractive(long skip = 0) {
 	//TODO: Consider hiding terminal cursor
 	//TODO: Consider changing the buffering strategy
 	//      e.g., flush+setvbuf/puts+flush
-	if (input.mode == InputMode.stdin) {
-		stderr.writeln("ddhx: Stdin not supported in interactive mode");
-		return 2;
-	}
 	
 	if (skip < 0) {
 		skip = +skip;
 	}
 	
+	if (input.mode == InputMode.stdin) {
+		version (Trace) trace("slurp +skip=%u", skip);
+		input.slurpStdin(skip);
+	}
+	
 	input.position = skip;
 	globals.fileSizeString = input.formatSize();
 	
+	version (Trace) trace("coninit");
 	coninit;
+	version (Trace) trace("conclear");
 	conclear;
+	version (Trace) trace("conheight");
 	globals.termHeight = conheight;
 	ddhxPrepBuffer(true);
 	globals.buffer = input.read();
+	version (Trace) trace("buffer+read=%u", globals.buffer.length);
 	ddhxRender();
-
+	
 	InputInfo k;
+	version (Trace) trace("loop");
 L_KEY:
 	coninput(k);
+	version (Trace) trace("key=%d", k.value);
+	
 	with (globals) switch (k.value) {
-
+	
 	//
 	// Navigation
 	//
-
+	
 	case Key.UpArrow, Key.K:
 		if (input.position - rowWidth >= 0)
 			ddhxSeek(input.position - rowWidth);
@@ -187,29 +207,27 @@ L_KEY:
 		break;
 	case Key.Q: ddhxExit; break;
 	default:
+		version (Trace) trace("unknown key=%u", k.value);
 	}
 	goto L_KEY;
 }
 
 /// 
 int ddhxDump(long skip, long length) {
-	if (length < 0) {
-		stderr.writefln("dump: length cannot be negative");
-		return 2;
-	}
+	if (length < 0)
+		return printError!2("length negative");
+	
+	version (Trace) trace("skip=%d length=%d", skip, length);
 	
 	final switch (input.mode) {
 	case InputMode.file, InputMode.mmfile:
 		if (skip < 0) {
 			skip = input.size + skip;
 		}
-		if (skip + length > input.size) {
-			stderr.writefln("dump: length is overflowed");
-			return 2;
-		}
-		if (length == 0) {
+		if (skip + length > input.size)
+			return printError!2("length overflow");
+		if (length == 0)
 			length = input.size - skip;
-		}
 		if (skip)
 			input.seek(skip);
 		
@@ -232,10 +250,8 @@ int ddhxDump(long skip, long length) {
 	
 		break;
 	case InputMode.stdin:
-		if (skip < 0) {
-			stderr.writefln("dump: skip cannot be negative with stdin mode");
-			return 2;
-		}
+		if (skip < 0)
+			return printError!2("skip value negative in stdin mode");
 		
 		size_t l = void;
 		if (skip) {
@@ -263,8 +279,6 @@ int ddhxDump(long skip, long length) {
 	return 0;
 }
 
-//int ddhxPeek(string def, long skip, long length)
-
 /// Refresh the entire screen
 void ddhxRefresh() {
 	ddhxPrepBuffer();
@@ -291,6 +305,7 @@ void ddhxUpdateOffsetbar() {
 
 /// 
 void ddhxUpdateOffsetbarRaw() {
+	//TODO: Redo ddhxUpdateOffsetbarRaw
 	/*enum OFFSET = "Offset ";
 	__gshared char[512] line = "Offset ";
 	size_t lineindex = OFFSET.sizeof;
@@ -306,6 +321,7 @@ void ddhxUpdateOffsetbarRaw() {
 	static char[8] fmt = " %02x";
 	fmt[4] = formatTable[globals.offset];
 	printf("Offset %c ", offsetTable[globals.offset]);
+	//TODO: Better rendering for large positions
 	if (input.position > 0xffff_ffff) putchar(' ');
 	for (ushort i; i < globals.rowWidth; ++i)
 		printf(cast(char*)fmt, i);
@@ -343,6 +359,8 @@ void ddhxUpdateStatusbarRaw() {
 
 /// Determine input.bufferSize and buffer size
 void ddhxPrepBuffer(bool skipTerm = false) {
+	version (Trace) trace("skip=%s", skipTerm);
+	
 	debug import std.conv : text;
 	const int h = (skipTerm ? globals.termHeight : conheight) - 2;
 	debug assert(h > 0);
@@ -350,6 +368,7 @@ void ddhxPrepBuffer(bool skipTerm = false) {
 	int newSize = h * globals.rowWidth; // Proposed buffer size
 	if (newSize >= input.size)
 		newSize = cast(uint)(input.size - input.position);
+	version (Trace) trace("newSize=%u", newSize);
 	input.adjust(newSize);
 }
 
@@ -360,6 +379,8 @@ void ddhxPrepBuffer(bool skipTerm = false) {
  * Params: pos = New position
  */
 void ddhxSeek(long pos) {
+	version (Trace) trace("pos=%d", pos);
+	
 	if (input.bufferSize < input.size) {
 		input.seek(pos);
 		globals.buffer = input.read();
@@ -374,6 +395,8 @@ void ddhxSeek(long pos) {
  * Params: str = String as a number
  */
 void ddhxSeek(string str) {
+	version (Trace) trace("str=%s", str);
+	
 	const char seekmode = str[0];
 	if (seekmode == '+' || seekmode == '-') { // relative input.position
 		str = str[1..$];
@@ -411,6 +434,8 @@ void ddhxSeek(string str) {
  * Params: pos = New position
  */
 void ddhxSeekSafe(long pos) {
+	version (Trace) trace("pos=%s", pos);
+	
 	if (pos + input.bufferSize > input.size)
 		ddhxSeek(input.size - input.bufferSize);
 	else

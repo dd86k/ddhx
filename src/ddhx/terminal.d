@@ -3,14 +3,17 @@
  */
 module ddhx.terminal;
 
+import ddhx.error;
+
 ///
 private extern (C) int getchar();
 
-private import core.stdc.stdio : printf;
+private import std.stdio;
 private import core.stdc.stdlib : system;
 
 version (Windows) {
 	private import core.sys.windows.windows;
+	private import std.windows.syserror : WindowsException;
 	private enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
 	private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
 	private enum DEFAULT_COLOR =
@@ -19,6 +22,7 @@ version (Windows) {
 	private __gshared USHORT defaultColor = DEFAULT_COLOR;
 }
 version (Posix) {
+	private import core.sys.posix.sys.stat;
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
@@ -63,9 +67,20 @@ void coninit() {
 	version (Windows) {
 		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 		hIn  = GetStdHandle(STD_INPUT_HANDLE);
-		SetConsoleMode(hIn, ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
+		if (GetFileType(hIn) == FILE_TYPE_PIPE) {
+			version (Trace) trace("stdin is pipe");
+			hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+			if (hIn == INVALID_HANDLE_VALUE)
+				throw new WindowsException(GetLastError);
+			stdin.windowsHandleOpen(hIn, "r");
+		}
+		SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
 	}
 	version (Posix) {
+		stat_t s = void;
+		fstat(STDIN_FILENO, &s);
+		if (S_ISFIFO(s.st_mode))
+			stdin.reopen("/dev/tty", "r");
 		tcgetattr(STDIN_FILENO, &old_tio);
 		new_tio = old_tio;
 		new_tio.c_lflag &= TERM_ATTR;
@@ -152,10 +167,12 @@ void coninput(ref InputInfo k) {
 	version (Windows) {
 		INPUT_RECORD ir = void;
 		DWORD num = void;
+		char i = void;
 L_READ:
-		if (ReadConsoleInput(hIn, &ir, 1, &num) == 0)
+		if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
+			throw new WindowsException(GetLastError);
+		if (num == 0)
 			goto L_READ;
-		// Despite being bit fields, a switch is recommended
 		switch (ir.EventType) {
 		case KEY_EVENT:
 			if (ir.KeyEvent.bKeyDown == FALSE)
@@ -391,12 +408,10 @@ struct InputInfo {
 			ubyte ctrl;	/// If either CTRL was held down.
 			ubyte alt;	/// If either ALT was held down.
 			ubyte shift;	/// If SHIFT was held down.
-		}
+		} key_t key;
 		struct mouse_t {
 			ushort x, y;
-		}
-		key_t key;
-		mouse_t mouse;
+		} mouse_t mouse;
 	}
 }
 

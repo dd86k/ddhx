@@ -8,6 +8,7 @@ __test__*__
 *.exe
 dub.selections.json
 /ddhx
+ddhx.log
 *.zip
 *.tar
 *.gz

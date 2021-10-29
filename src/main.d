@@ -12,19 +12,19 @@ private:
 
 void cliOptionWidth(string, string val) {
 	if (optionWidth(val)) {
-		writeln("main: invalid 'width' value: ", val);
+		stderr.writeln("error: invalid 'width' value: ", val);
 		exit(1);
 	}
 }
 void cliOptionOffset(string, string val) {
 	if (optionOffset(val)) {
-		writeln("main: invalid 'offset' value: ", val);
+		stderr.writeln("error: invalid 'offset' value: ", val);
 		exit(1);
 	}
 }
 void cliOptionDefaultChar(string, string val) {
 	if (optionDefaultChar(val)) {
-		writeln("main: invalid 'defaultchar' value: ", val);
+		stderr.writeln("error: invalid 'defaultchar' value: ", val);
 		exit(1);
 	}
 }
@@ -64,8 +64,7 @@ int main(string[] args) {
 			"ver", "Print only the version and exit", &cliVer
 		);
 	} catch (Exception ex) {
-		stderr.writefln("main: %s", ex.msg);
-		return 1;
+		return printError(ex.msg);
 	}
 	
 	if (res.helpWanted) {
@@ -84,9 +83,10 @@ int main(string[] args) {
 	
 	if (cliStdin == false) cliStdin = args.length <= 1;
 	string cliInput = cliStdin ? "-" : args[1];
-
+	
+	version (Trace) traceInit;
+	
 	long seek, length;
-	int e = void;
 	if (cliStdin) {
 		if (ddhxOpenStdin())
 			goto L_ERROR;
@@ -99,23 +99,18 @@ int main(string[] args) {
 	}
 	
 	if (cliSeek) {
-		if (unformat(cliSeek, seek) == false) {
-			stderr.writeln("main: ", ddhxErrorMsg);
-			return 1;
-		}
+		if (unformat(cliSeek, seek) == false)
+			return printError(ddhxErrorMsg);
 	} else seek = 0;
 	
 	if (cliDump) {
 		if (cliLength) {
-			if (unformat(cliLength, length) == false) {
-				stderr.writeln("main: ", ddhxErrorMsg);
-				return 1;
-			}
+			if (unformat(cliLength, length) == false)
+				return printError(ddhxErrorMsg);
 		} else length = 0;
 		ddhxDump(seek, length);
 	} else ddhxInteractive(seek);
 	return 0;
 L_ERROR:
-	stderr.writeln("ddhx: ", ddhxErrorMsg);
-	return 2;
+	return printError!2(ddhxErrorMsg);
 }

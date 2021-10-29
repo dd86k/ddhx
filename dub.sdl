@@ -7,3 +7,8 @@ license "MIT"
 buildType "verbose" {
 	dflags "-vgc" "-vtls"
 }
+
+buildType "trace" {
+	versions "Trace"
+	buildOptions "debugMode" "debugInfo"
+}
