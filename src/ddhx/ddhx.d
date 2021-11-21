@@ -649,21 +649,22 @@ uint ddhxDrawRaw() {
  * Message once (upper bar)
  * Params: msg = Message string
  */
-void ddhxMsgTop(A ...)(string fmt, A args) {
+void ddhxMsgTop(A...)(string fmt, A args) {
 	conpos(0, 0);
 	ddhxMsg(fmt, args);
 }
 
-void ddhxMsgLow(A ...)(string fmt, A args) {
+void ddhxMsgLow(A...)(string fmt, A args) {
 	conpos(0, conheight - 1);
 	ddhxMsg(fmt, args);
 }
 
-private void ddhxMsg(A ...)(string fmt, A args) {
+private void ddhxMsg(A...)(string fmt, A args) {
 	import std.format : sformat;
 	char[256] outbuf = void;
 	char[] outs = outbuf[].sformat(fmt, args);
 	writef("%s%*s", outs, (conwidth - 1) - outs.length, " ");
+	stdout.flush();
 }
 
 /// Print some file information at the bottom bar
