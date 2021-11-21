@@ -33,9 +33,10 @@ void cliVersion() {
 	import std.compiler : version_major, version_minor;
 	enum VERSTR = 
 		DDHX_VERSION_LINE~"\n"~
-		"Compiler: "~__VENDOR__~" v"~format("%d.%03d", version_major, version_minor)~"\n"~
-		"MIT License: "~DDHX_COPYRIGHT~"\n"~
-		"Project page: <https://git.dd86k.space/dd86k/ddhx>";
+		DDHX_COPYRIGHT~"\n"~
+		"License: MIT <https://mit-license.org/>\n"~
+		"Homepage: <https://git.dd86k.space/dd86k/ddhx>\n"~
+		"Compiler: "~__VENDOR__~" "~format("%d.%03d", version_major, version_minor);
 	writeln(VERSTR);
 	exit(0); // getopt hack
 }

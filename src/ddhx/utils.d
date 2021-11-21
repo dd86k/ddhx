@@ -1,5 +1,7 @@
 module ddhx.utils;
 
+import ddhx.error;
+
 /**
  * Converts a string number to a long number.
  * Params:
@@ -17,6 +19,17 @@ bool unformat(string e, ref long l) {
 	return sscanf(e.toStringz, "%lli", &l) == 1;
 }
 
+/*int (string s, out long l) {
+	import core.stdc.stdio : sscanf;
+	import std.string : toStringz;
+	
+	if (s.length == 0)
+		return false;
+	
+	return sscanf(s.toStringz, "%lli", &l) != 1 ?
+		ddhxError(DdhxError.unparsable) : 0;
+}*/
+
 /**
  * Format byte size.
  * Params:
@@ -25,7 +38,7 @@ bool unformat(string e, ref long l) {
  *   b10  = Use base-1000 instead of base-1024
  * Returns: Character slice using sformat
  */
-char[] formatsize(ref char[32] buf, long size, bool b10 = false) {
+char[] formatSize(ref char[32] buf, long size, bool b10 = false) {
 	import std.format : sformat;
 	
 	enum : float {

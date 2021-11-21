@@ -5,7 +5,7 @@ import std.mmfile;
 import std.file : getSize;
 import std.container : Array;
 import ddhx.error;
-import ddhx.utils : formatsize;
+import ddhx.utils : formatSize;
 
 /// Dump default size
 enum DEFAULT_BUFFER_SIZE = 4 * 1024;
@@ -165,8 +165,8 @@ struct Input {
 		size = inBuffer.length;
 	}
 	
-	const(char)[] formatSize() {
+	const(char)[] binarySize() {
 		__gshared char[32] b = void;
-		return formatsize(b, size);
+		return formatSize(b, size);
 	}
 }

@@ -7,7 +7,7 @@ import std.stdio;
 import std.file : getSize;
 import core.stdc.stdio : printf, fflush, puts, snprintf;
 import core.stdc.string : memset;
-import ddhx.utils : formatsize, unformat;
+import ddhx.utils : formatSize, unformat;
 import ddhx.input, ddhx.menu, ddhx.terminal, ddhx.settings, ddhx.error;
 import ddhx.searcher : searchLast;
 
@@ -15,13 +15,13 @@ import ddhx.searcher : searchLast;
 //TODO: Data display mode (hex, octal, dec)
 
 /// Copyright string
-enum DDHX_COPYRIGHT = "Copyright (c) dd86k <dd@dax.moe> 2017-2021";
+enum DDHX_COPYRIGHT = "Copyright (c) 2017-2021 dd86k <dd@dax.moe>";
 
 /// App version
 enum DDHX_VERSION = "0.3.1";
 
 /// Version line
-enum DDHX_VERSION_LINE = "ddhx " ~ DDHX_VERSION ~ " (built " ~ __TIMESTAMP__~")";
+enum DDHX_VERSION_LINE = "ddhx " ~ DDHX_VERSION ~ " (built: " ~ __TIMESTAMP__~")";
 
 private extern (C) int putchar(int);
 
@@ -99,17 +99,17 @@ int ddhxInteractive(long skip = 0) {
 	//TODO: Consider changing the buffering strategy
 	//      e.g., flush+setvbuf/puts+flush
 	
-	if (skip < 0) {
+	//TODO: negative should be starting from end of file (if not stdin)
+	if (skip < 0)
 		skip = +skip;
-	}
 	
 	if (input.mode == InputMode.stdin) {
-		version (Trace) trace("slurp +skip=%u", skip);
+		version (Trace) trace("slurp skip=%u", skip);
 		input.slurpStdin(skip);
 	}
 	
 	input.position = skip;
-	globals.fileSizeString = input.formatSize();
+	globals.fileSizeString = input.binarySize();
 	
 	version (Trace) trace("coninit");
 	coninit;
@@ -341,8 +341,8 @@ void ddhxUpdateStatusbarRaw() {
 	char[32] c = void, t = void;
 	char[128] b = void;
 	char[] f = sformat!" %*s | %*s/%*s | %7.4f%%"(b,
-		7,  formatsize(c, input.bufferSize), // Buffer size
-		10, formatsize(t, input.position), // Formatted position
+		7,  formatSize(c, input.bufferSize), // Buffer size
+		10, formatSize(t, input.position), // Formatted position
 		10, globals.fileSizeString, // Total file size
 		((cast(float)input.position + input.bufferSize) / input.size) * 100 // Pos/input.size%
 	);

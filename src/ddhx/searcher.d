@@ -1,8 +1,5 @@
 /**
  * Search module.
- * 
- * As crappy as it may be written, this is actually "sort of" of an extension
- * to the menu module, being an extension of the ddhx module.
  */
 module ddhx.searcher;
 
@@ -128,13 +125,11 @@ private int searchInternal(const(void) *data, size_t len, out long pos) {
 		dataBuffer = new ubyte[len];
 	
 	ubyte[] in_ = void;
-	long oldpos = input.position, p = oldpos + 1;
-	long o = void;
+	long p = input.position + 1;
 	input.seek(p);
 	do {
 		in_ = input.readBuffer(inputBuffer);
 		
-		o = p;
 		for (size_t i_; i_ < in_.length; ++i_, ++p) {
 			if (in_[i_] != mark) continue;
 			
@@ -150,12 +145,12 @@ private int searchInternal(const(void) *data, size_t len, out long pos) {
 				input.readBuffer(dataBuffer);
 				if (memcmp(dataBuffer.ptr, ptr, len) == 0)
 					goto L_FOUND;
-				input.seek(o);
+				input.seek(p);
 			}
 		}
 	} while (in_.length == BUFFER_SIZE);
 	
-	input.seek(oldpos);
+	input.seek(input.position);
 	return ddhxError(DdhxError.notFound);
 L_FOUND:
 	pos = p;

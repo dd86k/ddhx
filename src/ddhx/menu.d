@@ -51,6 +51,9 @@ void hxmenu(string prepend = null) {
 			ddhxSeek(argv[1]);
 		}
 		break;
+	//TODO: Consider compacting keywords
+	//      like "search "u8"" may confuse the module
+	//      searchu8 seems a little appropriate
 	case "s", "search": // Search
 		if (argc <= 1) {
 			ddhxMsgLow("Missing argument (type)");
