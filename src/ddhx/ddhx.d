@@ -66,7 +66,7 @@ struct Globals {
 __gshared Globals globals; /// Single-instance of globals.
 __gshared Input   input;   /// Input file/stream
 
-int printError(int code = 1, A...)(string fmt, A args) {
+int printError(A...)(int code, string fmt, A args) {
 	stderr.write("error: ");
 	stderr.writefln(fmt, args);
 	return code;
@@ -215,7 +215,7 @@ L_KEY:
 /// 
 int ddhxDump(long skip, long length) {
 	if (length < 0)
-		return printError!2("length negative");
+		return printError(2, "length negative");
 	
 	version (Trace) trace("skip=%d length=%d", skip, length);
 	
@@ -225,7 +225,7 @@ int ddhxDump(long skip, long length) {
 			skip = input.size + skip;
 		}
 		if (skip + length > input.size)
-			return printError!2("length overflow");
+			return printError(3, "length overflow");
 		if (length == 0)
 			length = input.size - skip;
 		if (skip)
@@ -251,7 +251,7 @@ int ddhxDump(long skip, long length) {
 		break;
 	case InputMode.stdin:
 		if (skip < 0)
-			return printError!2("skip value negative in stdin mode");
+			return printError(4, "skip value negative in stdin mode");
 		
 		size_t l = void;
 		if (skip) {
