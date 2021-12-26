@@ -3,7 +3,7 @@ module ddhx.input;
 import std.stdio : File, stdin, FILE;
 import std.mmfile;
 import std.file : getSize;
-import std.container : Array;
+import std.path : baseName;
 import ddhx.error;
 import ddhx.utils : formatSize;
 
@@ -19,19 +19,24 @@ enum InputMode {
 
 /// 
 struct Input {
-	InputMode mode;
+	union { // Input internals or buffer
+		private File file;	/// File input
+		private MmFile mmfile;	/// Mmfile input
+		private ubyte[] stdinBuffer;	/// Stdin read-all buffer
+	}
+	union { // Input buffer
+		private ubyte[] fBuffer;	/// 
+		private ubyte *mmAddress;
+	}
+	union { // Read buffer
+		ubyte[] result;	
+	}
 	ulong size;	/// file size
-	union {
-		File file;
-		MmFile mmfile;
-		ubyte[] inBuffer; // or //Array!ubyte inBuffer;
-	}
-	union {
-		ubyte[] fBuffer;
-		ubyte *mmAddress;
-	}
 	long position;	/// file/buffer position
 	uint bufferSize;	/// buffer size
+	string fileName;	/// File basename
+	const(char)[] sizeString;	/// Binary file size as string
+	InputMode mode;	/// Current input mode
 	
 	int openFile(string path) {
 		try {
@@ -39,6 +44,8 @@ struct Input {
 			size = file.size();
 			if (size == 0)
 				return ddhxError(DdhxError.fileEmpty);
+			fileName = baseName(path);
+			sizeString = binarySize();
 			mode = InputMode.file;
 			seek = &seekFile;
 			read = &readFile;
@@ -54,6 +61,8 @@ struct Input {
 			if (size == 0)
 				return ddhxError(DdhxError.fileEmpty);
 			mmfile = new MmFile(path, MmFile.Mode.read, 0, mmAddress);
+			fileName = baseName(path);
+			sizeString = binarySize();
 			mode = InputMode.mmfile;
 			seek = &seekMmfile;
 			read = &readMmfile;
@@ -64,6 +73,7 @@ struct Input {
 		}
 	}
 	int openStdin() {
+		fileName = "-";
 		mode = InputMode.stdin;
 		seek = null;
 		read = &readStdin;
@@ -96,19 +106,19 @@ struct Input {
 	ubyte[] delegate() read;
 	
 	private ubyte[] readFile() {
-		return file.rawRead(fBuffer);
+		return (result = file.rawRead(fBuffer));
 	}
 	private ubyte[] readMmfile() {
-		return cast(ubyte[])mmfile[position..position+bufferSize];
+		return (result = cast(ubyte[])mmfile[position..position+bufferSize]);
 	}
 	private ubyte[] readStdin() {
-		return stdin.rawRead(fBuffer);
+		return (result = stdin.rawRead(fBuffer));
 	}
 	private ubyte[] readStdin2() {
 		version (D_LP64)
-			return inBuffer[position..position+bufferSize];
+			return stdinBuffer[position..position+bufferSize];
 		else
-			return inBuffer[cast(uint)position..cast(uint)position+bufferSize];
+			return stdinBuffer[cast(uint)position..cast(uint)position+bufferSize];
 	}
 	
 	/// Read into a buffer.
@@ -125,9 +135,9 @@ struct Input {
 	}
 	private ubyte[] readBufferStdin2(ubyte[] buffer) {
 		version (D_LP64)
-			return inBuffer[position..position+buffer.length];
+			return stdinBuffer[position..position+buffer.length];
 		else
-			return inBuffer[cast(uint)position..cast(uint)position+buffer.length];
+			return stdinBuffer[cast(uint)position..cast(uint)position+buffer.length];
 	}
 	
 	void slurpStdin(long skip = 0, long length = 0) {
@@ -155,14 +165,14 @@ struct Input {
 		import core.stdc.stdio : fread;
 		FILE *_stdin = stdin.getFP;
 		do {
-			//inBuffer ~= stdin.rawRead(buffer);
+			//stdinBuffer ~= stdin.rawRead(buffer);
 			l = fread(buffer.ptr, 1, innerBufferSize, _stdin);
 			if (l == 0) break;
-			inBuffer ~= buffer[0..l];
+			stdinBuffer ~= buffer[0..l];
 		//} while (stdin.eof() == false);
 		} while (l);
 		
-		size = inBuffer.length;
+		size = stdinBuffer.length;
 	}
 	
 	const(char)[] binarySize() {

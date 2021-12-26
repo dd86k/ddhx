@@ -6,9 +6,11 @@ enum DdhxError {
 	exception,
 	fileEmpty,
 	inputEmpty,
+	invalidCommand,
 	invalidParameter,
 	invalidNumber,
 	invalidType,
+	invalidCharset,
 	notFound,
 	overflow,
 	unparsable,
@@ -39,6 +41,7 @@ string ddhxErrorMsg() {
 	case exception: return errorMsg;
 	case fileEmpty: return "File is empty.";
 	case inputEmpty: return "Input is empty.";
+	case invalidCommand: return "Command not found.";
 	case invalidParameter: return "Parameter is invalid.";
 	case invalidType: return "Invalid type.";
 	case eof: return "Unexpected end of file (EOF).";

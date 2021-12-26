@@ -94,6 +94,7 @@ private int search(const(void) *data, size_t len, string type) {
 }
 
 private int search2(const(void) *data, size_t len, string type) {
+	import ddhx.engine : ddhxUpdateOffsetbar, ddhxDrawRaw;
 	ddhxMsgLow(" Searching %s...", type);
 	long pos = void;
 	const int e = searchInternal(data, len, pos);
@@ -101,7 +102,7 @@ private int search2(const(void) *data, size_t len, string type) {
 		if (pos + input.bufferSize > input.size)
 			pos = input.size - input.bufferSize;
 		input.seek(pos);
-		globals.buffer = input.read();
+		input.read();
 		ddhxUpdateOffsetbar();
 		ddhxDrawRaw();
 		ddhxMsgLow(" Found at 0x%x", pos);
@@ -118,10 +119,11 @@ private int searchInternal(const(void) *data, size_t len, out long pos) {
 	ubyte *ptr = cast(ubyte*)data;
 	const ubyte mark = ptr[0];
 	const bool byteSearch = len == 1;
-	ubyte[] inputBuffer = new ubyte[BUFFER_SIZE];
+	ubyte[] inputBuffer = new ubyte[BUFFER_SIZE]; //TODO: malloc
 	ubyte[] dataBuffer;
 	
 	if (byteSearch == false)
+		//TODO: malloc
 		dataBuffer = new ubyte[len];
 	
 	ubyte[] in_ = void;

@@ -1,124 +1,89 @@
 /**
  * Type awareness.
  */
-/+module ddhx.types;
+module ddhx.types;
 
-import core.builtins;
 import ddhx.error;
 
+// NOTE: USE CASES
+//       - Parse data from menu
+//       - Search data in memory
+//       - Parse data from file (sdl?)
+
+enum DataMode : ubyte {
+	scalar, array
+}
 enum DataType : ubyte {
-	ubyte_,
-	byte_,
-	ushort_,
-	short_,
-	uint_,
-	int_,
-	ulong_,
-	long_,
-	float_,
-	double_,
-	real_,	// extended to 80-bit for convenience
-	//TODO: Array
+	u8, u16, u32, u64,
+	i8, i16, i32, i64,
+}
+enum DATATYPE_LENGTH = DataType.max;
+
+struct DataDefinition {
+	DataType type;
+	string name;
+	size_t length;
 }
 
-private immutable string[2][11] typeNames = [
-	[ "ubyte",	"u8"  ],
-	[ "byte",	"s8"  ],
-	[ "ushort",	"u16" ],
-	[ "short",	"s16" ],
-	[ "uint",	"u32" ],
-	[ "int",	"s32" ],
-	[ "ulong",	"u64" ],
-	[ "long",	"s64" ],
-	[ "float",	"f32" ],
-	[ "double",	"f64" ],
-	[ "real",	"f80" ],
+private
+immutable DataDefinition[] definitions = [
+	{ DataType.u8,	"u8",	1 },
+	{ DataType.u16,	"u16",	2 },
+	{ DataType.u32,	"u32",	4 },
+	{ DataType.u64,	"u64",	8 },
+	{ DataType.i8,	"i8",	1 },
+	{ DataType.i16,	"i16",	2 },
+	{ DataType.i32,	"i32",	4 },
+	{ DataType.i64,	"i64",	8 },
 ];
 
 struct Data {
-	size_t len;
 	void  *data;
+	alias data this;
+	size_t len;
 	DataType type;
+	string name;
 	
-	string typeString(bool simplified = false) {
-		return typeNames[type][simplified];
+	string typeName() {
+		return "";
 	}
 	
-	// auto
-	/*int Parse(string data) {
-	}*/
+	void update(void *pos) {
+		
+		
+	}
 	
-	int Parse(string type, string data) {
+	int parse(string data) {
+		
+		return 0;
+	}
+	
+	int parse(wstring data) {
+		
+		return 0;
+	}
+	
+	int parse(dstring data) {
+		
+		return 0;
+	}
+	
+	int parse(DataType type)(string data) {
+		
+		return 0;
+	}
+	
+	int parse(string type, string data) {
 		DataType t = void;
 		
-		switch (type) with (DataType) {
-		case "u8", "ubyte", "byte":
-			t = byte_;
-			break;
-		case "u16", "ushort", "short":
-			t = short_;
-			break;
-		case "u32", "uint", "int":
-			t = int_;
-			break;
-		case "u64", "ulong", "long":
-			t = long_;
-			break;
-		case "f32", "float":
-			t = byte_;
-			break;
-		case "f64", "double":
-			t = byte_;
-			break;
-		case "f80", "real":
-			t = byte_;
-			break;
-		default: return ddhxError(DdhxError.invalidType);
-		}
 		
-		return Parse(t, data);
+		
+		return parse(t, data);
 	}
 	
-	int Parse(DataType type, string data) {
+	int parse(DataType type, string data) {
 		if (data == null || data.length == 0) {
 			
-		}
-		
-		switch (type) with (DataType) {
-		case ubyte_:
-		
-			break;
-		case byte_:
-		
-			break;
-		case ushort_:
-		
-			break;
-		case short_:
-		
-			break;
-		case uint_:
-		
-			break;
-		case int_:
-		
-			break;
-		case ulong_:
-		
-			break;
-		case long_:
-		
-			break;
-		case float_:
-		
-			break;
-		case double_:
-		
-			break;
-		case real_:
-		
-			break;
-		default: return ddhxError(DdhxError.invalidParameter);
 		}
 		
 		return 0;
@@ -129,4 +94,3 @@ struct Data {
 @safe unittest {
 	
 }
-+/

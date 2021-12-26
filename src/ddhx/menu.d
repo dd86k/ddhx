@@ -3,12 +3,13 @@ module ddhx.menu;
 import std.stdio : readln, write;
 import core.stdc.stdio : printf;
 import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.searcher, ddhx.error;
+import ddhx.engine;
 
 /**
  * Internal command prompt.
  * Params: prepend = Initial command
  */
-void hxmenu(string prepend = null) {
+void ddhxmenu(string prepend = null) {
 	import std.array : split;
 	import std.algorithm.iteration : splitter;
 	import std.algorithm.sorting : merge;
@@ -24,7 +25,7 @@ void hxmenu(string prepend = null) {
 		write(prepend);
 
 	//TODO: GC-free merge prepend and readln(buf), then split
-	//TODO: Smarter argv handling with quotes
+	//TODO: Smarter argv handling with single and double quotes
 	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 	
 	ddhxUpdateOffsetbar;
@@ -34,7 +35,7 @@ void hxmenu(string prepend = null) {
 	
 	int error;
 	string value = void;
-	switch (argv[0]) {
+	menu: switch (argv[0]) {
 	case "g", "goto":
 		if (argc <= 1) {
 			ddhxMsgLow("Missing argument (position)");
@@ -144,16 +145,6 @@ void hxmenu(string prepend = null) {
 		error = search!dstring(argv[1]);
 		break;
 	case "i", "info": ddhxMsgFileInfo; break;
-	case "o", "offset":
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (offset)");
-			break;
-		}
-		if ((error = optionOffset(argv[1])) != 0)
-			break;
-		ddhxUpdateOffsetbar;
-		ddhxDrawRaw;
-		break;
 	case "refresh": ddhxRefresh; break;
 	case "quit": ddhxExit; break;
 	case "about":
@@ -164,44 +155,44 @@ void hxmenu(string prepend = null) {
 		ddhxMsgLow(DDHX_VERSION_LINE);
 		break;
 	//
-	// Setting manager
+	// Settings
 	//
-	case "set":
-		if (argc <= 2) {
-			ddhxMsgLow(argc <= 1 ?
-				"Missing argument (setting)" :
-				"Missing argument (value)");
+	case "w", "width":
+		if (optionWidth(argv[1])) {
+			ddhxMsgLow(ddhxErrorMsg);
 			break;
 		}
-		switch (argv[1]) {
-		case "width", "w":
-			if (optionWidth(argv[2])) {
-				ddhxMsgLow(ddhxErrorMsg);
-				break;
-			}
-			ddhxPrepBuffer;
-			ddhxRefresh;
-			break;
-		case "offset", "o":
-			if (optionOffset(argv[2])) {
-				ddhxMsgLow(ddhxErrorMsg);
-				break;
-			}
-			ddhxRefresh;
-			break;
-		case "defaultchar", "C":
-			if (optionDefaultChar(argv[2])) {
-				ddhxMsgLow(ddhxErrorMsg);
-				break;
-			}
-			ddhxRefresh;
-			break;
-		default:
-			ddhxMsgLow("Unknown setting: %s", argv[1]);
-			break;
-		}
+		ddhxPrepBuffer;
+		ddhxRefresh;
 		break;
-	default: ddhxMsgLow("Unknown command: %s", argv[0]); break;
+	case "o", "offset":
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (offset)");
+			break;
+		}
+		if ((error = optionOffset(argv[1])) != 0)
+			break;
+		ddhxUpdateOffsetbar;
+		ddhxDrawRaw;
+		break;
+	case "C", "defaultchar":
+		if (optionDefaultChar(argv[1])) {
+			ddhxMsgLow(ddhxErrorMsg);
+			break;
+		}
+		ddhxRefresh;
+		break;
+	case "c", "charset":
+		if (argc <= 1) {
+			ddhxMsgLow("Missing argument (charset)");
+			break;
+		}
+		
+		if ((error = optionCharset(argv[1])) != 0)
+			break;
+		ddhxDraw;
+		break;
+	default: error = DdhxError.invalidCommand;
 	}
 	
 	if (error)

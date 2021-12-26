@@ -18,8 +18,13 @@ version (Windows) {
 	private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
 	private enum DEFAULT_COLOR =
 		FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
+	private enum CP_UTF16LE = 1200;
+	private enum CP_UTF16BE = 1201;
+	private enum CP_UTF7 = 65000;
+	private enum CP_UTF8 = 65001;
 	private __gshared HANDLE hIn, hOut;
 	private __gshared USHORT defaultColor = DEFAULT_COLOR;
+	private __gshared DWORD oldCP;
 }
 version (Posix) {
 	private import core.sys.posix.sys.stat;
@@ -75,6 +80,13 @@ void coninit() {
 			stdin.windowsHandleOpen(hIn, "r");
 		}
 		SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
+		oldCP = GetConsoleOutputCP();
+		// NOTE: While Windows supports UTF-16LE (1200) and UTF-32LE,
+		//       it's only for "managed applications" (.NET).
+		// LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
+		BOOL cpr = SetConsoleOutputCP(CP_UTF8);
+		version (Trace) trace("SetConsoleOutputCP=%d", cpr);
+		//TODO: Get default colors
 	}
 	version (Posix) {
 		stat_t s = void;
@@ -84,6 +96,13 @@ void coninit() {
 		tcgetattr(STDIN_FILENO, &old_tio);
 		new_tio = old_tio;
 		new_tio.c_lflag &= TERM_ATTR;
+	}
+}
+
+/// Restore CP and other settings
+void conrestore() {
+	version (Windows) {
+		SetConsoleOutputCP(oldCP);
 	}
 }
 
