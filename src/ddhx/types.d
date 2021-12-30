@@ -1,96 +1,179 @@
-/**
- * Type awareness.
- */
+/// 
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.types;
 
+import std.conv : to, parse;
+import std.format : FormatSpec, singleSpec, unformatValue;
+import std.encoding : transcode;
 import ddhx.error;
 
-// NOTE: USE CASES
-//       - Parse data from menu
-//       - Search data in memory
-//       - Parse data from file (sdl?)
+// NOTE: template to(T) can turn string values into anything.
 
-enum DataMode : ubyte {
-	scalar, array
+//TODO: More types ()
+//      - FILETIME
+//      - GUID (little-endian)/UUID (big-endian)
+
+//TODO: guessType(string)
+
+int conv(ref void *data, ref size_t len, string val, string type)
+{
+	union TypeData
+	{
+		ulong  u64;
+		long   i64;
+		uint   u32;
+		int    i32;
+		ushort u16;
+		short  i16;
+		ubyte  u8;
+		byte   i8;
+		dstring s32;
+		wstring s16;
+		string  s8;
+	}
+	__gshared TypeData types;
+	
+	//TODO: utf16le and all.
+	//      bswap all wchars?
+	
+	int e = void;
+	with (types) switch (type)
+	{
+	case "s32", "dstring":
+		e = conv(s32, val);
+		if (e) return e;
+		data = cast(void*)s32.ptr;
+		len  = s32.length * dchar.sizeof;
+		break;
+	case "s16", "wstring":
+		e = conv(s16, val);
+		if (e) return e;
+		data = cast(void*)s16.ptr;
+		len  = s16.length * wchar.sizeof;
+		break;
+	case "s8", "string":
+		data = cast(void*)val.ptr;
+		len  = val.length;
+		break;
+	case "u64", "ulong":
+		e = conv(u64, val);
+		if (e) return e;
+		data = &u64;
+		len  = u64.sizeof;
+		break;
+	case "i64", "long":
+		e = conv(i64, val);
+		if (e) return e;
+		data = &i64;
+		len  = i64.sizeof;
+		break;
+	case "u32", "uint":
+		e = conv(u32, val);
+		if (e) return e;
+		data = &u32;
+		len  = u32.sizeof;
+		break;
+	case "i32", "int":
+		e = conv(i32, val);
+		if (e) return e;
+		data = &i32;
+		len  = i32.sizeof;
+		break;
+	case "u16", "ushort":
+		e = conv(u16, val);
+		if (e) return e;
+		data = &u16;
+		len  = u16.sizeof;
+		break;
+	case "i16", "short":
+		e = conv(i16, val);
+		if (e) return e;
+		data = &i16;
+		len  = i16.sizeof;
+		break;
+	case "u8", "ubyte":
+		e = conv(u8, val);
+		if (e) return e;
+		data = &u8;
+		len  = u8.sizeof;
+		break;
+	case "i8", "byte":
+		e = conv(i8, val);
+		if (e) return e;
+		data = &i8;
+		len  = i8.sizeof;
+		break;
+	default:
+		return ddhxError(DdhxError.invalidType);
+	}
+	
+	return DdhxError.success;
 }
-enum DataType : ubyte {
-	u8, u16, u32, u64,
-	i8, i16, i32, i64,
-}
-enum DATATYPE_LENGTH = DataType.max;
 
-struct DataDefinition {
-	DataType type;
-	string name;
-	size_t length;
-}
-
-private
-immutable DataDefinition[] definitions = [
-	{ DataType.u8,	"u8",	1 },
-	{ DataType.u16,	"u16",	2 },
-	{ DataType.u32,	"u32",	4 },
-	{ DataType.u64,	"u64",	8 },
-	{ DataType.i8,	"i8",	1 },
-	{ DataType.i16,	"i16",	2 },
-	{ DataType.i32,	"i32",	4 },
-	{ DataType.i64,	"i64",	8 },
-];
-
-struct Data {
-	void  *data;
-	alias data this;
-	size_t len;
-	DataType type;
-	string name;
-	
-	string typeName() {
-		return "";
-	}
-	
-	void update(void *pos) {
-		
-		
-	}
-	
-	int parse(string data) {
-		
-		return 0;
-	}
-	
-	int parse(wstring data) {
-		
-		return 0;
-	}
-	
-	int parse(dstring data) {
-		
-		return 0;
-	}
-	
-	int parse(DataType type)(string data) {
-		
-		return 0;
-	}
-	
-	int parse(string type, string data) {
-		DataType t = void;
-		
-		
-		
-		return parse(t, data);
-	}
-	
-	int parse(DataType type, string data) {
-		if (data == null || data.length == 0) {
-			
+int conv(T)(ref T v, string val)
+{
+	try
+	{
+		static if (is(T == wstring) || is(T == dstring))
+		{
+			transcode(val, v);
+		}
+		//TODO: ubyte[]
+		else // Integral
+		{
+//			return sscanf(e.toStringz, "%lli", &l) == 1;
+			const(size_t) vallen = val.length;
+			FormatSpec!char fmt;
+			if (vallen >= 3 && val[0..2] == "0x")
+			{
+				fmt = singleSpec("%x");
+				val = val[2..$];
+			}
+			else if (vallen >= 2 && val[0] == '0')
+			{
+				fmt = singleSpec("%o");
+				val = val[1..$];
+			}
+			else
+			{
+				fmt = singleSpec("%d");
+			}
+			v = unformatValue!T(val, fmt);
 		}
 		
-		return 0;
+		return DdhxError.success;
+	}
+	catch (Exception ex)
+	{
+		return ddhxError(ex);
 	}
 }
 
+//TODO: toRaw template
+//      int toRaw(T)(ref void *ptr, ref size_t size, ref T v, string val)
+//TODO: fromRaw template
+//      int fromRaw(T)(ref T ptr, void *ptr, size_t left)
+
 /// 
-@safe unittest {
-	
+@system unittest
+{
+	int i;
+	assert(conv(i, "256") == DdhxError.success);
+	assert(i == 256);
+	assert(conv(i, "0100") == DdhxError.success);
+	assert(i == 64);
+	assert(conv(i, "0x100") == DdhxError.success);
+	assert(i == 0x100);
+	ulong l;
+	assert(conv(l, "1000000000000000") == DdhxError.success);
+	assert(l == 1000000000000000);
+	assert(conv(l, "01000000000000000") == DdhxError.success);
+	assert(l == 35184372088832);
+	assert(conv(l, "0x1000000000000000") == DdhxError.success);
+	assert(l == 0x1000000000000000);
+	wstring w;
+	assert(conv(w, "hello") == DdhxError.success);
+	assert(w == "hello"w);
 }

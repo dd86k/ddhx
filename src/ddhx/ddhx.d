@@ -1,6 +1,7 @@
-/**
- * Main rendering engine.
- */
+/// Application.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.ddhx;
 
 import std.stdio;
@@ -9,7 +10,7 @@ import core.stdc.string : memset;
 import ddhx.utils : unformat;
 import ddhx.input, ddhx.menu, ddhx.terminal, ddhx.settings, ddhx.error;
 import ddhx.searcher : searchLast;
-import ddhx.engine;
+import engine = ddhx.engine;
 
 /// Copyright string
 enum DDHX_COPYRIGHT = "Copyright (c) 2017-2021 dd86k <dd@dax.moe>";
@@ -165,7 +166,7 @@ L_KEY:
 		break;
 	case Key.G:
 		ddhxmenu("g ");
-		ddhxUpdateOffsetbar;
+		engine.renderTopBar();
 		break;
 	case Key.I:
 		ddhxMsgFileInfo;
@@ -203,13 +204,13 @@ int ddhxDump(long skip, long length) {
 		if (skip)
 			input.seek(skip);
 		
-		ddhxUpdateOffsetbarRaw;
+		engine.renderTopBarRaw();
 		
 		if (length >= DEFAULT_BUFFER_SIZE) {
 			input.adjust(DEFAULT_BUFFER_SIZE);
 			do {
 				input.read();
-				ddhxDrawRaw;
+				engine.renderMainRaw();
 				input.position += DEFAULT_BUFFER_SIZE;
 			} while (length -= DEFAULT_BUFFER_SIZE > 0);
 		}
@@ -217,7 +218,7 @@ int ddhxDump(long skip, long length) {
 		if (length > 0) {
 			input.adjust(cast(uint)length);
 			input.read();
-			ddhxDrawRaw;
+			engine.renderMainRaw();
 		}
 	
 		break;
@@ -225,7 +226,7 @@ int ddhxDump(long skip, long length) {
 		if (skip < 0)
 			return printError(4, "skip value negative in stdin mode");
 		
-		size_t l = void;
+		size_t len = void;
 		if (skip) {
 			if (skip > DEFAULT_BUFFER_SIZE) {
 				input.adjust(DEFAULT_BUFFER_SIZE);
@@ -233,22 +234,48 @@ int ddhxDump(long skip, long length) {
 				input.adjust(cast(uint)(skip));
 			}
 			do {
-				l = input.read().length;
-			} while (l >= DEFAULT_BUFFER_SIZE);
+				len = input.read().length;
+			} while (len == DEFAULT_BUFFER_SIZE);
 		}
 		
 		input.adjust(DEFAULT_BUFFER_SIZE);
-		ddhxUpdateOffsetbarRaw;
+		engine.renderTopBarRaw();
 		
 		do {
-			ubyte[] buffer = input.read();
-			ddhxDrawRaw;
+			len = input.read().length;
+			engine.renderMainRaw();
 			input.position += DEFAULT_BUFFER_SIZE;
-			l = buffer.length;
-		} while (l);
+		} while (len == DEFAULT_BUFFER_SIZE);
 		break;
 	}
 	return 0;
+}
+
+/// int ddhxDiff(string path1, string path2)
+
+/// Automatically determine new buffer size for engine from console/terminal
+/// window size.
+void ddhxPrepBuffer(bool skipTerm = false)
+{
+	debug import std.conv : text;
+	
+	version (Trace) trace("skip=%s", skipTerm);
+	
+	// Console/Terminal height
+	const int ch = conheight;
+	// New effective height
+	const int h = (skipTerm ? globals.termHeight : ch) - 2;
+	
+	debug
+	{
+		assert(h > 0);
+		assert(h < ch, "h="~h.text~" >= conheight="~ch.text);
+	}
+	
+	int newSize = h * globals.rowWidth; // Proposed buffer size
+	if (newSize >= input.size)
+		newSize = cast(uint)(input.size - input.position);
+	engine.resizeBuffer(newSize);
 }
 
 /// Refresh the entire screen
@@ -262,11 +289,9 @@ void ddhxRefresh() {
 
 /// Render all
 void ddhxRender() {
-	ddhxUpdateOffsetbar();
-	if (ddhxDrawRaw() < conheight - 2)
-		ddhxUpdateStatusbar;
-	else
-		ddhxUpdateStatusbarRaw;
+	engine.renderTopBar();
+	engine.renderMainRaw();
+	engine.renderStatusBar();
 }
 
 /**

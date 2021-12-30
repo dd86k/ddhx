@@ -1,6 +1,7 @@
-/**
- * Search module.
- */
+/// Search module.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.searcher;
 
 import std.stdio;
@@ -9,18 +10,21 @@ import core.bitop;
 import ddhx.ddhx, ddhx.utils, ddhx.error;
 
 private enum LAST_BUFFER_SIZE = 128;
-private __gshared ubyte[128] lastItem;
+private __gshared ubyte[LAST_BUFFER_SIZE] lastItem;
 private __gshared size_t lastSize;
 private __gshared string lastType;
 private __gshared bool hasLast;
 
 // NOTE: core.bitop.byteswap only appeared recently
 pragma(inline, true)
-private ushort bswap16(ushort v) pure nothrow @nogc @safe {
+private ushort bswap16(ushort v) pure nothrow @nogc @safe
+{
 	return cast(ushort)((v << 8) | (v >> 8));
 }
 
-int search(T)(string v) {
+deprecated("Use ddhx.types")
+int search(T)(string v)
+{
 	static if (is(T == ubyte)) {
 		long l = void;
 		if (unformat(v, l) == false)
@@ -71,40 +75,56 @@ int search(T)(string v) {
 	}
 }
 
-int searchLast() {
+int searchLast()
+{
 	if (hasLast)
 		return search2(lastItem.ptr, lastSize, lastType);
 	else
 		return ddhxError(DdhxError.noLastItem);
 }
 
-private int search(const(void) *data, size_t len, string type) {
+/// Binary search.
+/// Params:
+/// 	data = Needle pointer.
+/// 	len = Needle length.
+/// 	type = Needle name.
+/// Returns: 
+int search(const(void) *data, size_t len, string type)
+{
 	import ddhx.terminal : conheight;
 	import core.stdc.string : memcpy;
-	debug import std.conv : text;
 	
-	debug assert(len, "len="~len.text);
+	debug
+	{
+		import std.conv : text;
+		assert(len, "len="~len.text);
+	}
 	
 	lastType = type;
 	lastSize = len;
+	//TODO: Check length again LAST_BUFFER_SIZE
 	memcpy(lastItem.ptr, data, len);
 	hasLast = true;
 	
 	return search2(data, len, type);
 }
 
-private int search2(const(void) *data, size_t len, string type) {
-	import ddhx.engine : ddhxUpdateOffsetbar, ddhxDrawRaw;
+private int search2(const(void) *data, size_t len, string type)
+{
+	import engine = ddhx.engine;
 	ddhxMsgLow(" Searching %s...", type);
 	long pos = void;
 	const int e = searchInternal(data, len, pos);
-	if (e == 0) {
+	if (e) {
+		ddhxMsgLow(" Type %s not found", type);
+	} else {
 		if (pos + input.bufferSize > input.size)
 			pos = input.size - input.bufferSize;
 		input.seek(pos);
 		input.read();
-		ddhxUpdateOffsetbar();
-		ddhxDrawRaw();
+		engine.renderTopBar();
+		engine.renderMainRaw();
+		//TODO: Format depending on current offset format
 		ddhxMsgLow(" Found at 0x%x", pos);
 	}
 	return e;
@@ -112,49 +132,102 @@ private int search2(const(void) *data, size_t len, string type) {
 
 //TODO: Add direction
 //      bool backward
-private int searchInternal(const(void) *data, size_t len, out long pos) {
-	enum BUFFER_SIZE = 16 * 1024;
+//TODO: Add comparer
+//      We're already 'wasting' a call to memcpy, so might as well have
+//      comparer functions.
+//      struct Comparer
+//      - needle data
+//      - lots of unions for needle samples (first cmp)
+//      - support SIMD when possible (D_SIMD)
+//      sample(ref Comparer,ubyte[]) (via function pointer)
+//      compare(ref Comparer,ubyte[]) (via function pointer)
+//      - haystack slice vs. needle
+//      - 1,2,4,8 bytes -> direct
+//      - 16,32 bytes   -> simd
+//      - default       -> memcmp
+/// (Internal) Binary search.
+/// Params:
+/// 	data = Data pointer.
+/// 	len = Data length.
+/// 	pos = Absolute position in file.
+/// Returns: Error code if set
+private int searchInternal(const(void) *data, size_t len, out long newPos)
+{
+	import std.array : uninitializedArray;
 	import core.stdc.string : memcmp;
+	alias compare = memcmp; // avoids confusion with memcpy/memcmp
 	
-	ubyte *ptr = cast(ubyte*)data;
-	const ubyte mark = ptr[0];
-	const bool byteSearch = len == 1;
-	ubyte[] inputBuffer = new ubyte[BUFFER_SIZE]; //TODO: malloc
-	ubyte[] dataBuffer;
+	/// Default haystack buffer size.
+	enum BUFFER_SIZE = 16 * 1024;
 	
-	if (byteSearch == false)
-		//TODO: malloc
-		dataBuffer = new ubyte[len];
+	ubyte *needle = cast(ubyte*)data;
+	/// First byte for data to compare with haystack.
+	const ubyte firstByte = needle[0];
+	const bool firstByteOnly = len == 1;
+	/// File buffer.
+	ubyte[] fileBuffer = uninitializedArray!(ubyte[])(BUFFER_SIZE);
+	/// Allocated if size is higher than one.
+	/// Used to read file data to compare with needle if needle extends
+	/// across haystack chunks.
+	ubyte[] needleBuffer;
 	
-	ubyte[] in_ = void;
-	long p = input.position + 1;
-	input.seek(p);
-	do {
-		in_ = input.readBuffer(inputBuffer);
+	if (firstByteOnly == false)
+		needleBuffer = uninitializedArray!(ubyte[])(len);
+	
+	/// Current search position
+	const long oldPos = input.position;
+	long pos = input.position + 1;
+	input.seek(pos);
+	
+	size_t haystackIndex = void;
+	
+L_CONTINUE:
+	ubyte[] haystack = input.readBuffer(fileBuffer);
+	const size_t haystackLen = haystack.length;
+	
+	// For every byte
+	for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex)
+	{
+		// Check first byte
+		if (haystack[haystackIndex] != firstByte) continue;
 		
-		for (size_t i_; i_ < in_.length; ++i_, ++p) {
-			if (in_[i_] != mark) continue;
-			
-			if (byteSearch)
+		// If first byte is indifferent and length is of 1, then
+		// we're done.
+		if (firstByteOnly)
+			goto L_FOUND;
+		
+		// In-haystack or out-haystack check
+		// Determined if needle fits within haystack
+		if (haystackIndex + len < haystackLen) // fits inside haystack
+		{
+			if (compare(haystack.ptr + haystackIndex, needle, len) == 0)
 				goto L_FOUND;
-			
-			// in buffer?
-			if (i_ + len < in_.length) { // in-buffer check
-				if (memcmp(in_.ptr + i_, ptr, len) == 0)
-					goto L_FOUND;
-			} else { // out-buffer check
-				input.seek(p);
-				input.readBuffer(dataBuffer);
-				if (memcmp(dataBuffer.ptr, ptr, len) == 0)
-					goto L_FOUND;
-				input.seek(p);
-			}
 		}
-	} while (in_.length == BUFFER_SIZE);
+		else // needle spans across haystacks
+		{
+			const long t = pos + haystackIndex; // temporary seek
+			input.seek(t); // Go at chunk index
+			//TODO: Check length in case of EOF
+			input.readBuffer(needleBuffer); // Read needle length
+			if (compare(needleBuffer.ptr, needle, len) == 0)
+				goto L_FOUND;
+			input.seek(pos); // Go back where we read
+		}
+	}
 	
-	input.seek(input.position);
+	// Increase (search) position with chunk length.
+	pos += haystackLen;
+	
+	// Check if last haystack.
+	// If haystack length is lower than the default size,
+	// this simply means it's the last haystack since it reached
+	// OEF (by having read less data).
+	if (haystackLen == BUFFER_SIZE) goto L_CONTINUE;
+	
+	// Not found
+	input.seek(oldPos); // Revert to old position before search
 	return ddhxError(DdhxError.notFound);
-L_FOUND:
-	pos = p;
-	return 0;
+L_FOUND: // Found
+	newPos = pos + haystackIndex; // Position + Chunk index = Found position
+	return DdhxError.success;
 }

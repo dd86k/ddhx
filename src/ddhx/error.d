@@ -1,7 +1,11 @@
+/// Error handling.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.error;
 
 enum DdhxError {
-	none,
+	success,
 	unknown,
 	exception,
 	fileEmpty,
@@ -16,6 +20,7 @@ enum DdhxError {
 	unparsable,
 	noLastItem,
 	eof,
+	unimplemented,
 }
 
 private __gshared DdhxError errorCode;
@@ -30,6 +35,16 @@ int ddhxError(DdhxError code, string file = __FILE__, int line = __LINE__) {
 }
 
 int ddhxError(Exception ex) {
+	version (unittest)
+	{
+		import std.stdio : writeln;
+		writeln(ex);
+	}
+	version (Trace)
+	{
+		debug trace("%s", ex);
+		else  trace("%s", ex.msg);
+	}
 	errorFile = ex.file;
 	errorLine = cast(int)ex.line;
 	errorMsg  = ex.msg;
@@ -49,8 +64,8 @@ string ddhxErrorMsg() {
 	case overflow: return "Integer overflow.";
 	case unparsable: return "Integer could not be parsed.";
 	case noLastItem: return "No previous search items saved.";
-	case none: return "No errors occured.";
-	default: return "Unknown error occured.";
+	case success: return "No errors occured.";
+	default: return "Internal error occured.";
 	}
 }
 

@@ -1,7 +1,9 @@
-/*
- * main.d : CLI entry point
- * Some of these functions are private for linter reasons
- */
+/// Command-line interface.
+///
+/// Some of these functions are private for linter reasons
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;

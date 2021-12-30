@@ -1,21 +1,20 @@
+/// Menu system.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.menu;
 
+import std.array : split;
 import std.stdio : readln, write;
 import core.stdc.stdio : printf;
-import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.searcher, ddhx.error;
-import ddhx.engine;
+import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.searcher, ddhx.error, ddhx.types;
+import engine = ddhx.engine;
 
 /**
  * Internal command prompt.
  * Params: prepend = Initial command
  */
 void ddhxmenu(string prepend = null) {
-	import std.array : split;
-	import std.algorithm.iteration : splitter;
-	import std.algorithm.sorting : merge;
-	import std.range : chain;
-	import std.algorithm : joiner;
-	import std.format : sformat;
 
 	conpos(0, 0);
 	printf("%*s", conwidth - 1, cast(char*)" ");
@@ -23,12 +22,13 @@ void ddhxmenu(string prepend = null) {
 	printf(">");
 	if (prepend)
 		write(prepend);
-
+	
 	//TODO: GC-free merge prepend and readln(buf), then split
 	//TODO: Smarter argv handling with single and double quotes
+	//TODO: Consider std.getopt
 	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 	
-	ddhxUpdateOffsetbar;
+	engine.renderTopBar();
 	
 	const size_t argc = argv.length;
 	if (argc == 0) return;
@@ -67,83 +67,20 @@ void ddhxmenu(string prepend = null) {
 		
 		//TODO: search auto ...
 		//      Auto-guess type (integer/"string"/byte array/etc.)
-		value = argv[2];
-		switch (argv[1]) {
-		case "u8", "byte":
-			error = search!ubyte(value);
-			break;
-		case "u16", "short":
-			error = search!ushort(value);
-			break;
-		case "u32", "int":
-			error = search!uint(value);
-			break;
-		case "u64", "long":
-			error = search!ulong(value);
-			break;
-		case "utf8", "string":
-			error = search!string(value);
-			break;
-		case "utf16", "wstring":
-			error = search!wstring(value);
-			break;
-		case "utf32", "dstring":
-			error = search!dstring(value);
-			break;
-		default:
-			ddhxMsgLow("Invalid type (%s)", argv[1]);
+		void *p = void;
+		size_t plen = void;
+		string type = argv[1];
+		string data = argv[2];
+		
+		error = conv(p, plen, data, type);
+		if (error)
+		{
+			ddhxMsgLow(ddhxErrorMsg());
 			break;
 		}
+		
+		search(p, plen, type);
 		break; // "search"
-	case "sb": // Search byte
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (u8)");
-			break;
-		}
-		error = search!ubyte(argv[1]);
-		break;
-	case "sw": // Search word
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (u8)");
-			break;
-		}
-		error = search!ushort(argv[1]);
-		break;
-	case "sd": // Search dword
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (u8)");
-			break;
-		}
-		error = search!uint(argv[1]);
-		break;
-	case "sl": // Search long
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (u8)");
-			break;
-		}
-		error = search!ulong(argv[1]);
-		break;
-	case "ss": // Search ASCII/UTF-8 string
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (string)");
-			break;
-		}
-		error = search!string(argv[1]);
-		break;
-	case "sws": // Search UTF-16 string
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (wstring)");
-			break;
-		}
-		error = search!wstring(argv[1]);
-		break;
-	case "sds": // Search UTF-32 string
-		if (argc <= 1) {
-			ddhxMsgLow("Missing argument (dstring)");
-			break;
-		}
-		error = search!dstring(argv[1]);
-		break;
 	case "i", "info": ddhxMsgFileInfo; break;
 	case "refresh": ddhxRefresh; break;
 	case "quit": ddhxExit; break;
@@ -172,8 +109,8 @@ void ddhxmenu(string prepend = null) {
 		}
 		if ((error = optionOffset(argv[1])) != 0)
 			break;
-		ddhxUpdateOffsetbar;
-		ddhxDrawRaw;
+		engine.renderTopBar();
+		engine.renderMainRaw();
 		break;
 	case "C", "defaultchar":
 		if (optionDefaultChar(argv[1])) {
@@ -190,7 +127,7 @@ void ddhxmenu(string prepend = null) {
 		
 		if ((error = optionCharset(argv[1])) != 0)
 			break;
-		ddhxDraw;
+		engine.renderMain();
 		break;
 	default: error = DdhxError.invalidCommand;
 	}

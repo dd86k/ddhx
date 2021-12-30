@@ -1,3 +1,7 @@
+/// File input handling.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.input;
 
 import std.stdio : File, stdin, FILE;

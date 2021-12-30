@@ -1,9 +1,10 @@
-/**
- * In-house console library
- */
+/// Terminal/console handling.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.terminal;
 
-import ddhx.error;
+//TODO: Make stdout stream to avoid disrupting screen before app.
 
 ///
 private extern (C) int getchar();

@@ -1,7 +1,11 @@
 /// The heart of the machine, the rendering engine.
 /// 
 /// This accommodates all functions related to rendering elements on screen,
-/// which includes 
+/// which includes the upper offset bar, data view (offsets, data, and text),
+/// and bottom message bar.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.engine;
 
 import std.stdio : stdout;
@@ -201,7 +205,8 @@ size_t format8luo(char *buffer, long v) {
 //      Could be:
 //      - uint
 //      - char[3]
-//      - char[] (length embedded) + codeUnits!char('.'), or a custom structure (yay?)
+//      - char[] (length embedded) + codeUnits!char('.'), or a custom structure (best?)
+//TODO: size_t insertCP437(char *data, size_t left);
 //TODO: Other translations
 //      - Mac OS Roman (Windows-10000) "mac"
 //        https://en.wikipedia.org/wiki/Mac_OS_Roman
@@ -264,37 +269,25 @@ private
 wchar_t translateCP437(ubyte data) {
 	return charsCP437[data];
 }
-//TODO: size_t insertCP437(char *data, size_t left);
 
 // !SECTION
 
-//
-// Engine rendering
-//
-
-/// Determine input.bufferSize and buffer size
-void ddhxPrepBuffer(bool skipTerm = false) {
-	version (Trace) trace("skip=%s", skipTerm);
-	
-	debug import std.conv : text;
-	const int h = (skipTerm ? globals.termHeight : conheight) - 2;
-	debug assert(h > 0);
-	debug assert(h < conheight, "h="~h.text~" >= conheight="~conheight.text);
-	int newSize = h * globals.rowWidth; // Proposed buffer size
-	if (newSize >= input.size)
-		newSize = cast(uint)(input.size - input.position);
-	version (Trace) trace("newSize=%u", newSize);
-	input.adjust(newSize);
+void resizeBuffer(uint size) 
+{
+	version (Trace) trace("size=%u", size);
+	input.adjust(size);
 }
 
 /// Update the upper offset bar.
-void ddhxUpdateOffsetbar() {
+void renderTopBar()
+{
 	conpos(0, 0);
-	ddhxUpdateOffsetbarRaw;
+	renderTopBarRaw();
 }
 
 /// 
-void ddhxUpdateOffsetbarRaw() {
+void renderTopBarRaw()
+{
 	//TODO: Redo ddhxUpdateOffsetbarRaw
 	/*enum OFFSET = "Offset ";
 	__gshared char[512] line = "Offset ";
@@ -312,28 +305,22 @@ void ddhxUpdateOffsetbarRaw() {
 	int type = globals.offsetType;
 	fmt[3] = formatTable[type];
 	printf("Offset %c ", offsetTable[type]);
-	//TODO: Better rendering for large positions
 	if (input.position > 0xffff_ffff) putchar(' ');
 	for (ushort i; i < globals.rowWidth; ++i)
 		printf(cast(char*)fmt, i);
 	putchar('\n');
 }
 
-/// Update display from buffer
-/// Returns: See ddhx_render_raw
-uint ddhxDraw() {
-	conpos(0, 1);
-	return ddhxDrawRaw;
-}
-
 /// Update the bottom current information bar.
-void ddhxUpdateStatusbar() {
+void renderStatusBar()
+{
 	conpos(0, conheight - 1);
-	ddhxUpdateStatusbarRaw;
+	renderStatusBarRaw;
 }
 
 /// Updates information bar without cursor position call.
-void ddhxUpdateStatusbarRaw() {
+void renderStatusBarRaw()
+{
 	import std.format : sformat;
 	import std.stdio : writef, write;
 	__gshared size_t last;
@@ -356,9 +343,18 @@ void ddhxUpdateStatusbarRaw() {
 	version (CRuntime_Musl) stdout.flush();
 }
 
-/// Write to stdout from file buffer
-/// Returns: The number of lines printed
-uint ddhxDrawRaw() {
+/// Update display from buffer.
+/// Returns: Numbers of row written.
+uint renderMain()
+{
+	conpos(0, 1);
+	return renderMainRaw;
+}
+
+/// Update display from buffer.
+/// Returns: Numbers of row written.
+uint renderMainRaw()
+{
 	// data
 	const(ubyte) *b    = input.result.ptr;	/// data buffer pointer
 	int           bsz  = cast(int)input.result.length;	/// data buffer size

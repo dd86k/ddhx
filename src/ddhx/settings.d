@@ -1,3 +1,7 @@
+/// Settings handler.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.settings;
 
 import ddhx.ddhx : globals;
