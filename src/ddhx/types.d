@@ -1,10 +1,9 @@
-/// 
+/// Custom types and conversion routines.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.types;
 
-import std.conv : to, parse;
 import std.format : FormatSpec, singleSpec, unformatValue;
 import std.encoding : transcode;
 import ddhx.error;
@@ -17,7 +16,14 @@ import ddhx.error;
 
 //TODO: guessType(string)
 
-int conv(ref void *data, ref size_t len, string val, string type)
+/// Convert data to a raw pointer dynamically.
+/// Params:
+/// 	data = Data pointer receiver.
+/// 	len = Data length receiver.
+/// 	val = Value to parse.
+/// 	type = Type name.
+/// Returns: Error code.
+int convert(ref void *data, ref size_t len, string val, string type)
 {
 	union TypeData
 	{
@@ -42,13 +48,13 @@ int conv(ref void *data, ref size_t len, string val, string type)
 	with (types) switch (type)
 	{
 	case "s32", "dstring":
-		e = conv(s32, val);
+		e = convert(s32, val);
 		if (e) return e;
 		data = cast(void*)s32.ptr;
 		len  = s32.length * dchar.sizeof;
 		break;
 	case "s16", "wstring":
-		e = conv(s16, val);
+		e = convert(s16, val);
 		if (e) return e;
 		data = cast(void*)s16.ptr;
 		len  = s16.length * wchar.sizeof;
@@ -58,61 +64,66 @@ int conv(ref void *data, ref size_t len, string val, string type)
 		len  = val.length;
 		break;
 	case "u64", "ulong":
-		e = conv(u64, val);
+		e = convert(u64, val);
 		if (e) return e;
 		data = &u64;
 		len  = u64.sizeof;
 		break;
 	case "i64", "long":
-		e = conv(i64, val);
+		e = convert(i64, val);
 		if (e) return e;
 		data = &i64;
 		len  = i64.sizeof;
 		break;
 	case "u32", "uint":
-		e = conv(u32, val);
+		e = convert(u32, val);
 		if (e) return e;
 		data = &u32;
 		len  = u32.sizeof;
 		break;
 	case "i32", "int":
-		e = conv(i32, val);
+		e = convert(i32, val);
 		if (e) return e;
 		data = &i32;
 		len  = i32.sizeof;
 		break;
 	case "u16", "ushort":
-		e = conv(u16, val);
+		e = convert(u16, val);
 		if (e) return e;
 		data = &u16;
 		len  = u16.sizeof;
 		break;
 	case "i16", "short":
-		e = conv(i16, val);
+		e = convert(i16, val);
 		if (e) return e;
 		data = &i16;
 		len  = i16.sizeof;
 		break;
 	case "u8", "ubyte":
-		e = conv(u8, val);
+		e = convert(u8, val);
 		if (e) return e;
 		data = &u8;
 		len  = u8.sizeof;
 		break;
 	case "i8", "byte":
-		e = conv(i8, val);
+		e = convert(i8, val);
 		if (e) return e;
 		data = &i8;
 		len  = i8.sizeof;
 		break;
 	default:
-		return ddhxError(DdhxError.invalidType);
+		return errorSet(ErrorCode.invalidType);
 	}
 	
-	return DdhxError.success;
+	return ErrorCode.success;
 }
 
-int conv(T)(ref T v, string val)
+/// Convert data depending on the type supplied at compile-time.
+/// Params:
+/// 	v = 
+/// 	val = 
+/// Returns: Error code.
+int convert(T)(ref T v, string val)
 {
 	try
 	{
@@ -143,11 +154,11 @@ int conv(T)(ref T v, string val)
 			v = unformatValue!T(val, fmt);
 		}
 		
-		return DdhxError.success;
+		return ErrorCode.success;
 	}
 	catch (Exception ex)
 	{
-		return ddhxError(ex);
+		return errorSet(ex);
 	}
 }
 
@@ -160,20 +171,20 @@ int conv(T)(ref T v, string val)
 @system unittest
 {
 	int i;
-	assert(conv(i, "256") == DdhxError.success);
+	assert(conv(i, "256") == ErrorCode.success);
 	assert(i == 256);
-	assert(conv(i, "0100") == DdhxError.success);
+	assert(conv(i, "0100") == ErrorCode.success);
 	assert(i == 64);
-	assert(conv(i, "0x100") == DdhxError.success);
+	assert(conv(i, "0x100") == ErrorCode.success);
 	assert(i == 0x100);
 	ulong l;
-	assert(conv(l, "1000000000000000") == DdhxError.success);
+	assert(conv(l, "1000000000000000") == ErrorCode.success);
 	assert(l == 1000000000000000);
-	assert(conv(l, "01000000000000000") == DdhxError.success);
+	assert(conv(l, "01000000000000000") == ErrorCode.success);
 	assert(l == 35184372088832);
-	assert(conv(l, "0x1000000000000000") == DdhxError.success);
+	assert(conv(l, "0x1000000000000000") == ErrorCode.success);
 	assert(l == 0x1000000000000000);
 	wstring w;
-	assert(conv(w, "hello") == DdhxError.success);
+	assert(conv(w, "hello") == ErrorCode.success);
 	assert(w == "hello"w);
 }

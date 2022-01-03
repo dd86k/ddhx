@@ -1,4 +1,4 @@
-/// The heart of the machine, the rendering engine.
+/// The heart of the machine, the rendering display.
 /// 
 /// This accommodates all functions related to rendering elements on screen,
 /// which includes the upper offset bar, data view (offsets, data, and text),
@@ -6,14 +6,12 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module ddhx.engine;
+module ddhx.display;
 
 import std.stdio : stdout;
-import core.stdc.stdio : printf, fflush, puts, snprintf;
+import core.stdc.stdio : printf, puts;
 import core.stdc.wchar_ : wchar_t;
-import ddhx.ddhx;
-import ddhx.terminal;
-import ddhx.utils : formatSize;
+import ddhx;
 
 //TODO: Engine struct settings
 //      Pre-assign formatting functions when changing options
@@ -46,7 +44,7 @@ private immutable size_t function(char*,long)[3] offsetFuncs =
 //private immutable size_t function(char*,long)[] dataFuncs =
 //	[ &format2x, &format3d, &format3o ];
 /// Character translations functions
-private immutable wchar_t function(ubyte)[4] charFuncs = [
+private immutable dchar function(ubyte)[4] charFuncs = [
 	&translateASCII,
 	&translateCP437,
 	&translateEBCDIC,
@@ -205,7 +203,8 @@ size_t format8luo(char *buffer, long v) {
 //      Could be:
 //      - uint
 //      - char[3]
-//      - char[] (length embedded) + codeUnits!char('.'), or a custom structure (best?)
+//      - char[] (length embedded) + codeUnits!char('.')
+//      - a custom structure (how?)
 //TODO: size_t insertCP437(char *data, size_t left);
 //TODO: Other translations
 //      - Mac OS Roman (Windows-10000) "mac"
@@ -219,7 +218,7 @@ size_t format8luo(char *buffer, long v) {
 //      - GSM 03.38 "gsm"
 //        https://www.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT
 
-private immutable wchar_t[256] charsCP437 = [
+private immutable dchar[256] charsCP437 = [
 //       00   01   02   03   04   05   06   07   08   09   0a   0b   0c   0d   0e   0f
 /*0x*/	  0, '☺', '☻', '♥', '♦', '♣', '♠', '•', '◘', '○', '◙', '♂', '♀', '♪', '♫', '☼',
 /*1x*/	'►', '◄', '↕', '‼', '¶', '§', '▬', '↨', '↑', '↓', '→', '←', '∟', '↔', '▲', '▼',
@@ -238,7 +237,7 @@ private immutable wchar_t[256] charsCP437 = [
 /*Ex*/	'α', 'β', 'Γ', 'π', 'Σ', 'σ', 'µ', 'τ', 'Φ', 'Θ', 'Ω', 'δ', '∞', 'φ', 'ε', '∩',
 /*Fx*/	'≡', '±', '≥', '≤', '⌠', '⌡', '÷', '≈', '°', '∙', '·', '√', 'ⁿ', '²', '■',   0
 ];
-private immutable wchar_t[256] charsEBCDIC = [
+private immutable dchar[256] charsEBCDIC = [
 //       00   01   02   03   04   05   06   07   08   09   0a   0b   0c   0d   0e   0f
 /*0x*/	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 /*1x*/	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -258,36 +257,33 @@ private immutable wchar_t[256] charsEBCDIC = [
 /*Fx*/	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '³', 'Û', 'Ü', 'Ù', 'Ú',   0
 ];
 private
-wchar_t translateASCII(ubyte data) {
+dchar translateASCII(ubyte data) {
 	return data > 0x7E || data < 0x20 ? globals.defaultChar : data;
 }
 private
-wchar_t translateEBCDIC(ubyte data) {
+dchar translateEBCDIC(ubyte data) {
 	return charsEBCDIC[data];
 }
 private
-wchar_t translateCP437(ubyte data) {
+dchar translateCP437(ubyte data) {
 	return charsCP437[data];
 }
 
 // !SECTION
 
-void resizeBuffer(uint size) 
-{
+void displayResizeBuffer(uint size) {
 	version (Trace) trace("size=%u", size);
 	input.adjust(size);
 }
 
 /// Update the upper offset bar.
-void renderTopBar()
-{
-	conpos(0, 0);
-	renderTopBarRaw();
+void displayRenderTop() {
+	terminalPos(0, 0);
+	displayRenderTopRaw();
 }
 
 /// 
-void renderTopBarRaw()
-{
+void displayRenderTopRaw() {
 	//TODO: Redo ddhxUpdateOffsetbarRaw
 	/*enum OFFSET = "Offset ";
 	__gshared char[512] line = "Offset ";
@@ -306,31 +302,31 @@ void renderTopBarRaw()
 	fmt[3] = formatTable[type];
 	printf("Offset %c ", offsetTable[type]);
 	if (input.position > 0xffff_ffff) putchar(' ');
+	if (input.position > 0xffff_ffff_f) putchar(' ');
 	for (ushort i; i < globals.rowWidth; ++i)
 		printf(cast(char*)fmt, i);
 	putchar('\n');
 }
 
 /// Update the bottom current information bar.
-void renderStatusBar()
-{
-	conpos(0, conheight - 1);
-	renderStatusBarRaw;
+void displayRenderBottom() {
+	terminalPos(0, terminalSize.height - 1);
+	displayRenderBottomRaw;
 }
 
 /// Updates information bar without cursor position call.
-void renderStatusBarRaw()
-{
+void displayRenderBottomRaw() {
 	import std.format : sformat;
 	import std.stdio : writef, write;
 	__gshared size_t last;
 	char[32] c = void, t = void;
 	char[128] b = void;
-	char[] f = sformat!" %*s | %*s/%*s | %7.4f%%"(b,
+	char[] f = sformat!" %*s | %*s/%*s | %7.4f%%-%7.4f%%"(b,
 		5,  formatSize(c, input.bufferSize), // Buffer size
 		10, formatSize(t, input.position), // Formatted position
 		10, input.sizeString, // Total file size
-		((cast(float)input.position + input.bufferSize) / input.size) * 100 // Pos/input.size%
+		((cast(float)input.position) / input.size) * 100, // Pos/input.size%
+		((cast(float)input.position + input.bufferSize) / input.size) * 100, // Pos/input.size%
 	);
 	if (last > f.length) {
 		int p = cast(int)(f.length + (last - f.length));
@@ -345,16 +341,16 @@ void renderStatusBarRaw()
 
 /// Update display from buffer.
 /// Returns: Numbers of row written.
-uint renderMain()
-{
-	conpos(0, 1);
-	return renderMainRaw;
+uint displayRenderMain() {
+	terminalPos(0, 1);
+	return displayRenderMainRaw;
 }
 
+//TODO: Possibility to only redraw a specific line.
+//      Or just bottom or top.
 /// Update display from buffer.
 /// Returns: Numbers of row written.
-uint renderMainRaw()
-{
+uint displayRenderMainRaw() {
 	// data
 	const(ubyte) *b    = input.result.ptr;	/// data buffer pointer
 	int           bsz  = cast(int)input.result.length;	/// data buffer size
@@ -374,7 +370,7 @@ uint renderMainRaw()
 	const int charset = globals.charType;
 	size_t function(char*, long) formatOffset = offsetFuncs[offsetType];
 //	size_t function(char*, ubyte) formatData = dataFuncs[globals.dataMode];
-	wchar_t function(ubyte) translateChar = charFuncs[charset];
+	dchar function(ubyte) translateChar = charFuncs[charset];
 	
 	// print lines in bulk
 	long pos = input.position;
@@ -400,7 +396,7 @@ uint renderMainRaw()
 			// NOTE: Translated to UTF-8 for these reasons:
 			//       - UTF-16 and UTF-32 on Windows is only supported for .NET.
 			//       - Most Linux terminals do UTF-8 by default.
-			wchar_t c = translateChar(byteData);
+			dchar c = translateChar(byteData);
 			if (c) {
 				import std.encoding : codeUnits, CodeUnits;
 				CodeUnits!char cu = codeUnits!char(c);

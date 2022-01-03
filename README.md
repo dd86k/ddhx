@@ -35,21 +35,26 @@ Modes supported:
 - Interactive (default).
 - Dump (`--dump`).
 
-## View
+## Screen
 
 ```text
-1 - Offset h  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
-2 - 00000000  4d 5a 78 00 01 00 00 00 04 00 00 00 00 00 00 00  MZx.............
-3 -    352 B |        0 B/ 708.00 KB |   0.049%
+ Offset                  Binary data                      Text representation
+ __^___    __________________^__________________________    ______^_______
+/      \  /                                             \  /              \
+Offset h   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+00000000  4d 5a 78 00 01 00 00 00 04 00 00 00 00 00 00 00  MZx.............
+   352 B |        0 B/ 708.00 KB |   0.0-0.049%
+    ^          ^         ^            ^    ^
+    |          |         |            |    +- File position (end of view buffer)
+    |          |         |            +- File position (start of view buffer)
+    |          |         +- File size
+    |          +- File position (start of view buffer)
+    +- View buffer size
 ```
-
-1. Offset type (h: hex, d: decimal, o: octal) and offset marks
-2. Position, binary data, and ASCII representation
-3. Screen buffer size, binary position, file binary size, and position pourcentage
 
 ## Supported Platforms
 
 Confirmed to work on:
 - Windows XP (x86-omf builds)
 - Windows Vista+ (x86-mscoff and x86-64)
-- Linux
+- Linux (glibc and musl)

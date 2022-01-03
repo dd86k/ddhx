@@ -8,7 +8,7 @@ module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;
 import core.stdc.stdlib : exit;
-import ddhx.ddhx, ddhx.terminal, ddhx.settings, ddhx.error, ddhx.utils;
+import ddhx;
 
 private:
 
@@ -23,36 +23,43 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
-void cliOptionWidth(string, string val) {
-	if (optionWidth(val)) {
-		printError(1, "invalid value for width: %s", val);
-		exit(1);
+immutable string OPT_WIDTH       = "w|width";
+immutable string OPT_OFFSET      = "o|offset";
+immutable string OPT_DEFAULTCHAR = "C|char";
+immutable string OPT_CHARSET     = "c|charset";
+
+void cliOption(string opt, string val) {
+	final switch (opt) {
+	case OPT_WIDTH:
+		if (settingWidth(val) == 0)
+			return;
+		opt = "width";
+		break;
+	case OPT_OFFSET:
+		if (settingOffset(val) == 0)
+			return;
+		opt = "offset";
+		break;
+	case OPT_DEFAULTCHAR:
+		if (settingDefaultChar(val) == 0)
+			return;
+		opt = "default character";
+		break;
+	case OPT_CHARSET:
+		if (settingCharset(val) == 0)
+			return;
+		opt = "character set";
+		break;
 	}
-}
-void cliOptionOffset(string, string val) {
-	if (optionOffset(val)) {
-		printError(1, "invalid value for offset: %s", val);
-		exit(1);
-	}
-}
-void cliOptionDefaultChar(string, string val) {
-	if (optionDefaultChar(val)) {
-		printError(1, "invalid value for defaultchar: %s", val);
-		exit(1);
-	}
-}
-void cliOptionCharset(string, string val) {
-	if (optionCharset(val)) {
-		printError(1, "invalid value for defaultchar: %s", val);
-		exit(1);
-	}
+	printError(1, "invalid value for %s: %s", opt, val);
+	exit(1);
 }
 
 void cliVersion() {
 	import std.compiler : version_major, version_minor;
 	enum VERSTR = 
-		DDHX_VERSION_LINE~"\n"~
-		DDHX_COPYRIGHT~"\n"~
+		VERSION_LINE~"\n"~
+		COPYRIGHT~"\n"~
 		"License: MIT <https://mit-license.org/>\n"~
 		"Homepage: <https://git.dd86k.space/dd86k/ddhx>\n"~
 		"Compiler: "~__VENDOR__~" "~format("%d.%03d", version_major, version_minor);
@@ -61,7 +68,7 @@ void cliVersion() {
 }
 
 void cliVer() {
-	writeln(DDHX_VERSION);
+	writeln(VERSION);
 	exit(0);
 }
 
@@ -76,19 +83,19 @@ int main(string[] args) {
 	GetoptResult res = void;
 	try {
 		res = args.getopt(config.caseSensitive,
-		"w|width", "Set column width in bytes ('a'=automatic,default=16)", &cliOptionWidth,
-		"o|offset", "Set offset mode (decimal, hex, or octal)", &cliOptionOffset,
-		"C|defaultchar", "Set default character for non-printable characters (default=.)", &cliOptionDefaultChar,
-		"c|charset", "Set character translation (default=ascii)", &cliOptionCharset,
-		"m|mmfile", "Force mmfile mode, recommended for large files", &cliMmfile,
-		"f|file", "Force file mode", &cliFile,
-		"stdin", "Force standard input mode", &cliStdin,
+		OPT_WIDTH, "Set column width in bytes ('a'=automatic,default=16)", &cliOption,
+		OPT_OFFSET, "Set offset mode (decimal, hex, or octal)", &cliOption,
+		OPT_DEFAULTCHAR, "Set default character for non-printable characters (default=.)", &cliOption,
+		OPT_CHARSET, "Set character translation (default=ascii)", &cliOption,
+		"m|mmfile", "Open file as mmfile (memory-mapped)", &cliMmfile,
+		"f|file", "Force opening file as regular", &cliFile,
+		"stdin", "Open stdin instead of file, the '-' switch also works", &cliStdin,
 		"s|seek", "Seek at position", &cliSeek,
 		"D|dump", "Non-interactive dump", &cliDump,
 		"l|length", "Dump: Length of data to read", &cliLength,
 		"version", "Print the version screen and exit", &cliVersion,
 		"ver", "Print only the version and exit", &cliVer,
-		"helpme", "", &cliSecret
+		"assistant", "", &cliSecret
 		);
 	} catch (Exception ex) {
 		return printError(1, ex.msg);
@@ -115,32 +122,35 @@ int main(string[] args) {
 	
 	version (Trace) traceInit;
 	
+	// Open file
 	long seek, length;
 	if (cliStdin) {
-		if (ddhxOpenStdin())
+		if (openStdin())
 			goto L_ERROR;
 	} else if (cliFile ? false : cliMmfile) {
-		if (ddhxOpenMmfile(cliInput))
+		if (openMmfile(cliInput))
 			goto L_ERROR;
 	} else {
-		if (ddhxOpenFile(cliInput))
+		if (openFile(cliInput))
 			goto L_ERROR;
 	}
 	
+	// Manage seek
 	if (cliSeek) {
-		if (unformat(cliSeek, seek) == false)
+		if (convert(seek, cliSeek))
 			goto L_ERROR;
 	}
 	
+	// Open app
 	if (cliDump) {
 		if (cliLength) {
-			if (unformat(cliLength, length) == false)
+			if (convert(length, cliLength))
 				goto L_ERROR;
 		}
-		ddhxDump(seek, length);
-	} else ddhxInteractive(seek);
+		enterDump(seek, length);
+	} else enterInteractive(seek);
 	return 0;
 
 L_ERROR:
-	return printError(1, ddhxErrorMsg);
+	return printError(1, errorMsg);
 }

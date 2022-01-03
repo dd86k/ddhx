@@ -7,7 +7,7 @@ module ddhx.searcher;
 import std.stdio;
 import std.encoding : transcode;
 import core.bitop;
-import ddhx.ddhx, ddhx.utils, ddhx.error;
+import ddhx;
 
 private enum LAST_BUFFER_SIZE = 128;
 private __gshared ubyte[LAST_BUFFER_SIZE] lastItem;
@@ -15,72 +15,12 @@ private __gshared size_t lastSize;
 private __gshared string lastType;
 private __gshared bool hasLast;
 
-// NOTE: core.bitop.byteswap only appeared recently
-pragma(inline, true)
-private ushort bswap16(ushort v) pure nothrow @nogc @safe
-{
-	return cast(ushort)((v << 8) | (v >> 8));
-}
-
-deprecated("Use ddhx.types")
-int search(T)(string v)
-{
-	static if (is(T == ubyte)) {
-		long l = void;
-		if (unformat(v, l) == false)
-			return ddhxError(DdhxError.unparsable);
-		if (l < byte.min || l > ubyte.max)
-			return ddhxError(DdhxError.overflow);
-		ubyte data = cast(ubyte)l;
-		return search(&data, ubyte.sizeof, "u8");
-	} else static if (is(T == ushort)) {
-		long l = void;
-		if (unformat(v, l) == false)
-			return ddhxError(DdhxError.unparsable);
-		if (l < short.min || l > ushort.max)
-			return ddhxError(DdhxError.overflow);
-		ushort data = cast(ushort)l;
-//		if (invert)
-//			data = bswap16(data);
-		return search(&data, ushort.sizeof, "u16");
-	} else static if (is(T == uint)) {
-		long l = void;
-		if (unformat(v, l) == false)
-			return ddhxError(DdhxError.unparsable);
-		if (l < int.min || l > uint.max)
-			return ddhxError(DdhxError.overflow);
-		uint data = cast(uint)l;
-//		if (invert)
-//			data = bswap(data);
-		return search(&data, uint.sizeof, "u32");
-	} else static if (is(T == ulong)) {
-		long l = void;
-		if (unformat(v, l) == false)
-			return ddhxError(DdhxError.unparsable);
-//		if (invert)
-//			l = bswap(l);
-		return search(&l, ulong.sizeof, "u64");
-	} /*else static if (is(T == ubyte[])) {
-		return search(v.ptr, v.length, "u8[]");
-	}*/ else static if (is(T == string)) {
-		return search(v.ptr, v.length, "utf-8 string");
-	} else static if (is(T == wstring)) {
-		wstring ws;
-		transcode(v, ws);
-		return search(ws.ptr, ws.length, "utf-16 string");
-	} else static if (is(T == dstring)) {
-		dstring ds;
-		transcode(v, ds);
-		return search(ds.ptr, ds.length, "utf-32 string");
-	}
-}
-
-int searchLast()
-{
-	if (hasLast)
-		return search2(lastItem.ptr, lastSize, lastType);
-	else
-		return ddhxError(DdhxError.noLastItem);
+/// Search last item.
+/// Returns: Error code if set.
+int searchLast() {
+	return hasLast ?
+		search2(lastItem.ptr, lastSize, lastType) :
+		errorSet(ErrorCode.noLastItem);
 }
 
 /// Binary search.
@@ -88,17 +28,11 @@ int searchLast()
 /// 	data = Needle pointer.
 /// 	len = Needle length.
 /// 	type = Needle name.
-/// Returns: 
-int search(const(void) *data, size_t len, string type)
-{
-	import ddhx.terminal : conheight;
+/// Returns: Error code if set.
+int search(const(void) *data, size_t len, string type) {
 	import core.stdc.string : memcpy;
 	
-	debug
-	{
-		import std.conv : text;
-		assert(len, "len="~len.text);
-	}
+	debug assert(len, "len="~len.stringof);
 	
 	lastType = type;
 	lastSize = len;
@@ -109,23 +43,21 @@ int search(const(void) *data, size_t len, string type)
 	return search2(data, len, type);
 }
 
-private int search2(const(void) *data, size_t len, string type)
-{
-	import engine = ddhx.engine;
-	ddhxMsgLow(" Searching %s...", type);
+private int search2(const(void) *data, size_t len, string type) {
+	msgBottom(" Searching %s...", type);
 	long pos = void;
 	const int e = searchInternal(data, len, pos);
 	if (e) {
-		ddhxMsgLow(" Type %s not found", type);
+		msgBottom(" Type %s not found", type);
 	} else {
 		if (pos + input.bufferSize > input.size)
 			pos = input.size - input.bufferSize;
 		input.seek(pos);
 		input.read();
-		engine.renderTopBar();
-		engine.renderMainRaw();
+		displayRenderTop();
+		displayRenderMainRaw();
 		//TODO: Format depending on current offset format
-		ddhxMsgLow(" Found at 0x%x", pos);
+		msgBottom(" Found at 0x%x", pos);
 	}
 	return e;
 }
@@ -151,8 +83,7 @@ private int search2(const(void) *data, size_t len, string type)
 /// 	len = Data length.
 /// 	pos = Absolute position in file.
 /// Returns: Error code if set
-private int searchInternal(const(void) *data, size_t len, out long newPos)
-{
+private int searchInternal(const(void) *data, size_t len, out long newPos) {
 	import std.array : uninitializedArray;
 	import core.stdc.string : memcmp;
 	alias compare = memcmp; // avoids confusion with memcpy/memcmp
@@ -186,8 +117,7 @@ L_CONTINUE:
 	const size_t haystackLen = haystack.length;
 	
 	// For every byte
-	for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex)
-	{
+	for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex) {
 		// Check first byte
 		if (haystack[haystackIndex] != firstByte) continue;
 		
@@ -226,8 +156,8 @@ L_CONTINUE:
 	
 	// Not found
 	input.seek(oldPos); // Revert to old position before search
-	return ddhxError(DdhxError.notFound);
+	return errorSet(ErrorCode.notFound);
 L_FOUND: // Found
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position
-	return DdhxError.success;
+	return 0;
 }

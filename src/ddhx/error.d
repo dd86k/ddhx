@@ -4,9 +4,10 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.error;
 
-enum DdhxError {
+enum ErrorCode {
 	success,
 	unknown,
+	negativeValue,
 	exception,
 	fileEmpty,
 	inputEmpty,
@@ -23,18 +24,18 @@ enum DdhxError {
 	unimplemented,
 }
 
-private __gshared DdhxError errorCode;
-private __gshared string errorMsg;
-private __gshared string errorFile;
-private __gshared int errorLine;
+private __gshared ErrorCode lastCode;
+private __gshared string lastMsg;
+private __gshared string lastFile;
+private __gshared int lastLine;
 
-int ddhxError(DdhxError code, string file = __FILE__, int line = __LINE__) {
-	errorFile = file;
-	errorLine = line;
-	return (errorCode = code);
+int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
+	lastFile = file;
+	lastLine = line;
+	return (lastCode = code);
 }
 
-int ddhxError(Exception ex) {
+int errorSet(Exception ex) {
 	version (unittest)
 	{
 		import std.stdio : writeln;
@@ -45,14 +46,14 @@ int ddhxError(Exception ex) {
 		debug trace("%s", ex);
 		else  trace("%s", ex.msg);
 	}
-	errorFile = ex.file;
-	errorLine = cast(int)ex.line;
-	errorMsg  = ex.msg;
-	return (errorCode = DdhxError.exception);
+	lastFile = ex.file;
+	lastLine = cast(int)ex.line;
+	lastMsg  = ex.msg;
+	return (lastCode = ErrorCode.exception);
 }
 
-string ddhxErrorMsg() {
-	switch (errorCode) with (DdhxError) {
+string errorMsg() {
+	switch (lastCode) with (ErrorCode) {
 	case exception: return errorMsg;
 	case fileEmpty: return "File is empty.";
 	case inputEmpty: return "Input is empty.";

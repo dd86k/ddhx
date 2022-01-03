@@ -65,10 +65,8 @@ version (Posix) {
 	private __gshared termios old_tio, new_tio;
 }
 
-extern (C):
-
 /// Initiate ddcon
-void coninit() {
+void terminalInit() {
 	import std.format : format;
 	version (Windows) {
 		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -87,7 +85,7 @@ void coninit() {
 		// LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
 		BOOL cpr = SetConsoleOutputCP(CP_UTF8);
 		version (Trace) trace("SetConsoleOutputCP=%d", cpr);
-		//TODO: Get default colors
+		//TODO: Get default/active colors
 	}
 	version (Posix) {
 		stat_t s = void;
@@ -101,14 +99,14 @@ void coninit() {
 }
 
 /// Restore CP and other settings
-void conrestore() {
+void terminalRestore() {
 	version (Windows) {
 		SetConsoleOutputCP(oldCP);
 	}
 }
 
 /// Clear screen
-void conclear() {
+void terminalClear() {
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO csbi = void;
 		COORD c;
@@ -118,9 +116,8 @@ void conclear() {
 		if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
 			/*|| // .NET uses this but no idea why yet.
 			FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/) {
-			conpos(0, 0);
-		}
-		else // If that fails, run cls.
+			terminalPos(0, 0);
+		} else // If that fails, run cls.
 			system("cls");
 	} else version (Posix) {
 		printf("\033c");
@@ -128,36 +125,24 @@ void conclear() {
 	else static assert(0, "Clear: Not implemented");
 }
 
-/// Window width
-/// Returns: Window width in characters
-int conwidth() {
+/// Get terminal window size in characters.
+/// Returns: Size
+TerminalSize terminalSize() {
+	TerminalSize size = void;
 	version (Windows) {
 		CONSOLE_SCREEN_BUFFER_INFO c = void;
 		GetConsoleScreenBufferInfo(hOut, &c);
-		return c.srWindow.Right - c.srWindow.Left + 1;
+		size.height = c.srWindow.Bottom - c.srWindow.Top + 1;
+		size.width  = c.srWindow.Right - c.srWindow.Left + 1;
 	} else version (Posix) {
 		winsize ws = void;
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
-		return ws.ws_col;
-	} else {
-		static assert(0, "WindowWidth : Not implemented");
-	}
-}
-
-/// Window height
-/// Returns: Window height in characters
-int conheight() {
-	version (Windows) {
-		CONSOLE_SCREEN_BUFFER_INFO c = void;
-		GetConsoleScreenBufferInfo(hOut, &c);
-		return c.srWindow.Bottom - c.srWindow.Top + 1;
-	} else version (Posix) {
-		winsize ws = void;
-		ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
-		return ws.ws_row;
+		size.height = ws.ws_row;
+		size.width  = ws.ws_col;
 	} else {
 		static assert(0, "WindowHeight : Not implemented");
 	}
+	return size;
 }
 
 /**
@@ -167,7 +152,7 @@ int conheight() {
  *   x = X position (horizontal)
  *   y = Y position (vertical)
  */
-void conpos(int x, int y) {
+void terminalPos(int x, int y) {
 	version (Windows) { // 0-based
 		COORD c = void;
 		c.X = cast(short)x;
@@ -181,9 +166,9 @@ void conpos(int x, int y) {
 /**
  * Read an input event. This function is blocking.
  * Params:
- *   k = InputInfo struct
+ *   k = TerminalInfo struct
  */
-void coninput(ref InputInfo k) {
+void terminalInput(ref TerminalInput k) {
 	version (Windows) {
 		INPUT_RECORD ir = void;
 		DWORD num = void;
@@ -216,13 +201,13 @@ L_READ:
 		}
 	} else version (Posix) {
 		//TODO: Get modifier keys states
-
+		
 		// Commenting this section will echo the character and make
 		// getchar unusable
 		tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
-
+		
 		int c = getchar;
-
+		
 		with (k) switch (c) {
 		case '\n': // \n (ENTER)
 			value = Key.Enter;
@@ -255,7 +240,7 @@ L_READ:
 
 _READKEY_DEFAULT:
 		k.value = cast(ushort)c;
-
+		
 _READKEY_END:
 		tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
 	} // version posix
@@ -411,9 +396,9 @@ enum Key : ushort {
 	OemClear = 254
 }
 enum Mouse : ushort {
-	Click	= 0x100,
-	ScrollUp	= 0x200,
-	ScrollDown	= 0x300,
+	Click	= 0x1000,
+	ScrollUp	= 0x2000,
+	ScrollDown	= 0x3000,
 }
 
 /*******************************************************************
@@ -421,7 +406,7 @@ enum Mouse : ushort {
  *******************************************************************/
 
 /// Key information structure
-struct InputInfo {
+struct TerminalInput {
 	ushort value;	/// Character or mouse event
 	union {
 		struct key_t {
@@ -436,7 +421,7 @@ struct InputInfo {
 }
 
 /// 
-struct WindowSize {
+struct TerminalSize {
 	/// 
-	ushort Width, Height;
+	int width, height;
 }

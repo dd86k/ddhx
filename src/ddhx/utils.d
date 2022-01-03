@@ -4,36 +4,6 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.utils;
 
-import ddhx.error;
-
-/**
- * Converts a string number to a long number.
- * Params:
- *   e = Input string
- *   l = Long number as a reference
- * Returns: Returns true if successful.
- */
-bool unformat(string e, ref long l) {
-	import core.stdc.stdio : sscanf;
-	import std.string : toStringz;
-	
-	if (e.length == 0)
-		return false;
-	
-	return sscanf(e.toStringz, "%lli", &l) == 1;
-}
-
-/*int (string s, out long l) {
-	import core.stdc.stdio : sscanf;
-	import std.string : toStringz;
-	
-	if (s.length == 0)
-		return false;
-	
-	return sscanf(s.toStringz, "%lli", &l) != 1 ?
-		ddhxError(DdhxError.unparsable) : 0;
-}*/
-
 /**
  * Format byte size.
  * Params:
