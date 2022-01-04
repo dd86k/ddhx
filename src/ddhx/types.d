@@ -171,20 +171,20 @@ int convert(T)(ref T v, string val)
 @system unittest
 {
 	int i;
-	assert(conv(i, "256") == ErrorCode.success);
+	assert(convert(i, "256") == ErrorCode.success);
 	assert(i == 256);
-	assert(conv(i, "0100") == ErrorCode.success);
+	assert(convert(i, "0100") == ErrorCode.success);
 	assert(i == 64);
-	assert(conv(i, "0x100") == ErrorCode.success);
+	assert(convert(i, "0x100") == ErrorCode.success);
 	assert(i == 0x100);
 	ulong l;
-	assert(conv(l, "1000000000000000") == ErrorCode.success);
+	assert(convert(l, "1000000000000000") == ErrorCode.success);
 	assert(l == 1000000000000000);
-	assert(conv(l, "01000000000000000") == ErrorCode.success);
+	assert(convert(l, "01000000000000000") == ErrorCode.success);
 	assert(l == 35184372088832);
-	assert(conv(l, "0x1000000000000000") == ErrorCode.success);
+	assert(convert(l, "0x1000000000000000") == ErrorCode.success);
 	assert(l == 0x1000000000000000);
 	wstring w;
-	assert(conv(w, "hello") == ErrorCode.success);
+	assert(convert(w, "hello") == ErrorCode.success);
 	assert(w == "hello"w);
 }
