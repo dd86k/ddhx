@@ -9,6 +9,9 @@ import std.encoding : transcode;
 import core.bitop;
 import ddhx;
 
+/// Default haystack buffer size.
+private enum BUFFER_SIZE = 16 * 1024;
+
 private enum LAST_BUFFER_SIZE = 128;
 private __gshared ubyte[LAST_BUFFER_SIZE] lastItem;
 private __gshared size_t lastSize;
@@ -83,13 +86,11 @@ private int search2(const(void) *data, size_t len, string type) {
 /// 	len = Data length.
 /// 	pos = Absolute position in file.
 /// Returns: Error code if set
-private int searchInternal(const(void) *data, size_t len, out long newPos) {
+private
+int searchInternal(const(void) *data, size_t len, out long newPos) {
 	import std.array : uninitializedArray;
 	import core.stdc.string : memcmp;
 	alias compare = memcmp; // avoids confusion with memcpy/memcmp
-	
-	/// Default haystack buffer size.
-	enum BUFFER_SIZE = 16 * 1024;
 	
 	ubyte *needle = cast(ubyte*)data;
 	/// First byte for data to compare with haystack.
@@ -143,6 +144,69 @@ L_CONTINUE:
 				goto L_FOUND;
 			input.seek(pos); // Go back where we read
 		}
+	}
+	
+	// Increase (search) position with chunk length.
+	pos += haystackLen;
+	
+	// Check if last haystack.
+	// If haystack length is lower than the default size,
+	// this simply means it's the last haystack since it reached
+	// OEF (by having read less data).
+	if (haystackLen == BUFFER_SIZE) goto L_CONTINUE;
+	
+	// Not found
+	input.seek(oldPos); // Revert to old position before search
+	return errorSet(ErrorCode.notFound);
+L_FOUND: // Found
+	newPos = pos + haystackIndex; // Position + Chunk index = Found position
+	return 0;
+}
+
+/// Finds the next position indifferent to specified byte.
+/// Params:
+/// 	data = Byte.
+/// Returns: Error code.
+int skipByte(ubyte data) {
+	msgBottom(" Skipping 0x%x...", data);
+	long pos = void;
+	const int e = skipByte(data, pos);
+	if (e) {
+		msgBottom(" Couldn't skip byte 0x%x", data);
+	} else {
+		if (pos + input.bufferSize > input.size)
+			pos = input.size - input.bufferSize;
+		input.seek(pos);
+		input.read();
+		displayRenderTop();
+		displayRenderMainRaw();
+		//TODO: Format depending on current offset format
+		msgBottom(" Found at 0x%x", pos);
+	}
+	return e;
+}
+
+private
+int skipByte(ubyte data, out long newPos) {
+	import std.array : uninitializedArray;
+	
+	/// Current search position
+	const long oldPos = input.position;
+	long pos = input.position + 1;
+	input.seek(pos);
+	
+	/// File buffer.
+	ubyte[] fileBuffer = uninitializedArray!(ubyte[])(BUFFER_SIZE);
+	size_t haystackIndex = void;
+	
+L_CONTINUE:
+	ubyte[] haystack = input.readBuffer(fileBuffer);
+	const size_t haystackLen = haystack.length;
+	
+	// For every byte
+	for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex) {
+		if (haystack[haystackIndex] != data)
+			goto L_FOUND;
 	}
 	
 	// Increase (search) position with chunk length.

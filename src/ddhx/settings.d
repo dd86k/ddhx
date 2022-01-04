@@ -20,12 +20,10 @@ int settingWidth(string val) {
 		rowWidth = 16;
 		break;
 	default:
-		long l = void;
-		if (unformat(val, l) == false)
+		ushort l = void;
+		if (convert(l, val))
 			return errorSet(ErrorCode.invalidNumber);
-		if (l < 1 || l > ushort.max)
-			return errorSet(ErrorCode.invalidNumber);
-		rowWidth = cast(ushort)l;
+		rowWidth = l;
 	}
 	return 0;
 }

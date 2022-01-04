@@ -297,18 +297,18 @@ void menuEnter(string prepend = null) {
 		
 		search(p, plen, type);
 		break; // "search"
+	//case "backskip":
 	case "skip":
-		switch (argv[1])
-		{
-		case "empty":
-		
-			break;
-		case "byte":
-		
-			break;
-		default:
-			break;
+		if (argc <= 1) {
+			msgBottom("Missing argument (byte)");
+			return;
 		}
+		ubyte byte_ = void;
+		if (argv[1] == "zero")
+			byte_ = 0;
+		else if ((error = convert(byte_, argv[1])) != 0)
+			break;
+		error = skipByte(byte_);
 		break;
 	case "i", "info": msgFileInfo; break;
 	case "refresh": refresh; break;
