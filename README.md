@@ -24,7 +24,7 @@ Offset h   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
      130  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
      140  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
      150  00 00 00 00 00 00 00 00 00 20 00 00 08 00 00 00  ......... ......
- 448 B |        0 B/    2.0 MB |  0.0211%
+ 448 B | 0 B - 448 B | 0% - 0.0211302%
 ```
 
 ddhx is a quick and dirty TUI hexadecimal viewer meant to replace my
@@ -42,14 +42,13 @@ Modes supported:
  __^___    __________________^__________________________    ______^_______
 /      \  /                                             \  /              \
 Offset h   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-00000000  4d 5a 78 00 01 00 00 00 04 00 00 00 00 00 00 00  MZx.............
-   352 B |        0 B/ 708.00 KB |   0.0-0.049%
-    ^          ^         ^            ^    ^
-    |          |         |            |    +- File position (end of view buffer)
-    |          |         |            +- File position (start of view buffer)
-    |          |         +- File size
-    |          +- File position (start of view buffer)
-    +- View buffer size
+     150  00 00 00 00 00 00 00 00 00 20 00 00 08 00 00 00  ......... ......
+ 400 B | 400 B - 800 B | 36.9004% - 73.8007%
+   ^     \_____ _____/   \________ ________/
+   |           v                  v
+   |           |                  +- Start-end view position in pourcentage
+   |           +- Start-end view buffer position
+   +- View buffer size
 ```
 
 ## Supported Platforms

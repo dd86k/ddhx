@@ -327,19 +327,19 @@ void displayRenderBottomRaw() {
 	import std.format : sformat;
 	import std.stdio : writef, write;
 	__gshared size_t last;
-	char[32] c = void, t = void;
-	char[128] b = void;
-	char[] f = sformat!" %*s | %*s/%*s | %7.4f%%-%7.4f%%"(b,
-		5,  formatSize(c, input.bufferSize), // Buffer size
-		10, formatSize(t, input.position), // Formatted position
-		10, input.sizeString, // Total file size
+	char[32] c1 = void, c2 = void, c3 = void;
+	char[128] buf = void;
+	char[] f = sformat!" %s | %s - %s | %g%% - %g%%"(buf,
+		formatSize(c1, input.bufferSize), // Buffer size
+		formatSize(c2, input.position), // Formatted position
+		formatSize(c3, input.position + input.bufferSize), // Formatted position
 		((cast(float)input.position) / input.size) * 100, // Pos/input.size%
 		((cast(float)input.position + input.bufferSize) / input.size) * 100, // Pos/input.size%
 	);
-	if (last > f.length) {
+	if (last > f.length) { // Fill by blanks
 		int p = cast(int)(f.length + (last - f.length));
 		writef("%*s", -p, f);
-	} else {
+	} else { // Overwrites by default
 		write(f);
 	}
 	last = f.length;
