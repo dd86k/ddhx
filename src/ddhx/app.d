@@ -57,16 +57,15 @@ int enterInteractive(long skip = 0) {
 	globals.termHeight = terminalSize.height;
 	resizeBuffer(true);
 	input.read();
-	version (Trace) trace("buffer+read=%u", buffer.result.length);
 	render();
 	
-	TerminalInput k;
+	TerminalInput event;
 	version (Trace) trace("loop");
 L_KEY:
-	terminalInput(k);
-	version (Trace) trace("key=%d", k.value);
+	terminalInput(event);
+	version (Trace) trace("key=%d", event.value);
 	
-	with (globals) switch (k.value) {
+	with (globals) switch (event.value) {
 	
 	//
 	// Navigation
@@ -107,10 +106,11 @@ L_KEY:
 			seek(input.size - input.bufferSize);
 		break;
 	case Key.Home:
-		seek(k.key.ctrl ? 0 : input.position - (input.position % rowWidth));
+		seek(event.ctrl ?
+			0 : input.position - (input.position % rowWidth));
 		break;
 	case Key.End:
-		if (k.key.ctrl) {
+		if (event.ctrl) {
 			seek(input.size - input.bufferSize);
 		} else {
 			const long np = input.position + (rowWidth - input.position % rowWidth);
@@ -127,7 +127,9 @@ L_KEY:
 			msgBottom(errorMsg);
 		break;
 	case Key.Escape, Key.Enter, Key.Colon:
-		menuEnter();
+		terminalPauseInput;
+		menuEnter;
+		terminalResumeInput;
 		break;
 	case Key.G:
 		menuEnter("g ");
@@ -144,8 +146,7 @@ L_KEY:
 		refresh;
 		break;
 	case Key.Q: exit; break;
-	default:
-		version (Trace) trace("unknown key=%u", k.value);
+	default: version (Trace) trace("unknown key=%u", event.value);
 	}
 	goto L_KEY;
 }
@@ -234,18 +235,16 @@ int enterDump(long skip, long length) {
 
 //TODO: Dedicated command interpreter to use for dedicated files
 void menuEnter(string prepend = null) {
-	// clear bar
+	// clear bar and command prepend
 	terminalPos(0, 0);
 	printf("%*s", terminalSize.width - 1, cast(char*)" ");
-	
-	// write command stuff
 	terminalPos(0, 0);
-	printf(">");
+	write(":");
+	if (prepend) write(prepend);
 	
 	//TODO: GC-free merge prepend and readln(buf), then split
 	//TODO: Smarter argv handling with single and double quotes
 	//TODO: Consider std.getopt
-	if (prepend) write(prepend);
 	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 	
 	displayRenderTop;
@@ -254,7 +253,6 @@ void menuEnter(string prepend = null) {
 	if (argc == 0) return;
 	
 	int error;
-	string value = void;
 	switch (argv[0]) {
 	case "g", "goto":
 		if (argc <= 1) {
@@ -501,6 +499,5 @@ void msgFileInfo() {
 void exit(int code = 0) {
 	import core.stdc.stdlib : exit;
 	terminalClear;
-	terminalRestore;
 	exit(code);
 }

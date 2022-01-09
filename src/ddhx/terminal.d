@@ -4,13 +4,17 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.terminal;
 
-//TODO: Make stdout stream to avoid disrupting screen before app.
+// NOTE: Useful links for escape codes
+//       https://man7.org/linux/man-pages/man0/termios.h.0p.html
+//       https://man7.org/linux/man-pages/man3/tcsetattr.3.html
+//       https://man7.org/linux/man-pages/man4/console_codes.4.html
 
 ///
 private extern (C) int getchar();
 
 private import std.stdio;
-private import core.stdc.stdlib : system;
+private import core.stdc.stdlib : system, atexit;
+import ddhx;
 
 version (Windows) {
 	private import core.sys.windows.windows;
@@ -61,7 +65,6 @@ version (Posix) {
 		private extern (C) int tcsetattr(int fd, int a, termios *termios_p);
 		private extern (C) int ioctl(int fd, ulong request, ...);
 	}
-	private enum TERM_ATTR = ~(ICANON | ECHO);
 	private __gshared termios old_tio, new_tio;
 }
 
@@ -85,23 +88,64 @@ void terminalInit() {
 		// LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
 		BOOL cpr = SetConsoleOutputCP(CP_UTF8);
 		version (Trace) trace("SetConsoleOutputCP=%d", cpr);
-		//TODO: Get default/active colors
-	}
-	version (Posix) {
+		//TODO: Get active (or default) colors
+	} else version (Posix) {
 		stat_t s = void;
 		fstat(STDIN_FILENO, &s);
 		if (S_ISFIFO(s.st_mode))
 			stdin.reopen("/dev/tty", "r");
 		tcgetattr(STDIN_FILENO, &old_tio);
 		new_tio = old_tio;
-		new_tio.c_lflag &= TERM_ATTR;
+		// NOTE: input modes
+		// - IXON enables ^S and ^Q
+		// - ICRNL enables ^M
+		// - BRKINT causes SIGINT (^C) on break conditions
+		// - INPCK enables parity checking
+		// - ISTRIP strips the 8th bit
+		new_tio.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
+		// NOTE: output modes
+		// - OPOST turns on output post-processing
+		//new_tio.c_oflag &= ~(OPOST);
+		// NOTE: local modes
+		// - ICANON turns on canonical mode (per-line instead of per-byte)
+		// - ECHO turns on character echo
+		// - ISIG enables ^C and ^Z signals
+		// - IEXTEN enables ^V
+		new_tio.c_lflag &= ~(ICANON | ECHO | IEXTEN);
+		// NOTE: control modes
+		// - CS8 sets Character Size to 8-bit
+		new_tio.c_cflag |= CS8;
+		// minimum amount of bytes to read,
+		// 0 being return as soon as there is data
+		//new_tio.c_cc[VMIN] = 0;
+		// maximum amount of time to wait for input,
+		// 1 being 1/10 of a second (100 milliseconds)
+		//new_tio.c_cc[VTIME] = 0;
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_tio);
 	}
+	
+	atexit(&terminalRestore);
 }
 
 /// Restore CP and other settings
+extern(C)
 void terminalRestore() {
 	version (Windows) {
 		SetConsoleOutputCP(oldCP);
+	} else version (Posix) {
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_tio);
+	}
+}
+
+void terminalPauseInput() {
+	version (Posix) {
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_tio);
+	}
+}
+
+void terminalResumeInput() {
+	version (Posix) {
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_tio);
 	}
 }
 
@@ -120,6 +164,8 @@ void terminalClear() {
 		} else // If that fails, run cls.
 			system("cls");
 	} else version (Posix) {
+		// \033c is a Reset
+		// \033[2J is "Erase whole display"
 		printf("\033c");
 	}
 	else static assert(0, "Clear: Not implemented");
@@ -153,12 +199,12 @@ TerminalSize terminalSize() {
  *   y = Y position (vertical)
  */
 void terminalPos(int x, int y) {
-	version (Windows) { // 0-based
+	version (Windows) { // 0-based, like us
 		COORD c = void;
 		c.X = cast(short)x;
 		c.Y = cast(short)y;
 		SetConsoleCursorPosition(hOut, c);
-	} else version (Posix) { // 1-based
+	} else version (Posix) { // we're 0-based but posix is 1-based
 		printf("\033[%d;%dH", ++y, ++x);
 	}
 }
@@ -168,7 +214,7 @@ void terminalPos(int x, int y) {
  * Params:
  *   k = TerminalInfo struct
  */
-void terminalInput(ref TerminalInput k) {
+void terminalInput(ref TerminalInput event) {
 	version (Windows) {
 		INPUT_RECORD ir = void;
 		DWORD num = void;
@@ -183,16 +229,16 @@ L_READ:
 			if (ir.KeyEvent.bKeyDown == FALSE)
 				goto L_READ;
 			const DWORD state = ir.KeyEvent.dwControlKeyState;
-			k.key.alt   = (state & ALT_PRESSED)   != 0;
-			k.key.ctrl  = (state & CTRL_PRESSED)  != 0;
-			k.key.shift = (state & SHIFT_PRESSED) != 0;
-			k.value = ir.KeyEvent.wVirtualKeyCode;
+			event.alt   = (state & ALT_PRESSED)   != 0;
+			event.ctrl  = (state & CTRL_PRESSED)  != 0;
+			event.shift = (state & SHIFT_PRESSED) != 0;
+			event.value = ir.KeyEvent.wVirtualKeyCode;
 			return;
 		case MOUSE_EVENT:
 			switch (ir.MouseEvent.dwEventFlags) {
 			case MOUSE_WHEELED:
 				// Up=0x00780000 Down=0xFF880000
-				k.value = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
+				event.value = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
 					Mouse.ScrollDown : Mouse.ScrollUp;
 				return;
 			default: goto L_READ;
@@ -200,49 +246,167 @@ L_READ:
 		default: goto L_READ;
 		}
 	} else version (Posix) {
-		//TODO: Get modifier keys states
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_tio);
+		scope (exit) tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_tio);
 		
-		// Commenting this section will echo the character and make
-		// getchar unusable
-		tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
+		//TODO: Mouse reporting in Posix terminals
+		//      * X10 compatbility mode (mouse-down only)
+		//      Enable: ESC [ ? 9 h
+		//      Disable: ESC [ ? 9 l
+		//      "sends ESC [ M bxy (6 characters)"
+		//      - ESC [ M button column row (1-based)
+		//      - 0,0 click: ESC [ M   ! !
+		//        ! is 0x21, so '!' - 0x21 = 0
+		//      - end,end click: ESC [ M   q ;
+		//        q is 0x71, so 'q' - 0x21 = 0x50 (column 80)
+		//        ; is 0x3b, so ';' - 0x21 = 0x1a (row 26)
+		//      - button left:   ' '
+		//      - button right:  '"'
+		//      - button middle: '!'
+		//      * Normal tracking mode
+		//      Enable: ESC [ ? 1000 h
+		//      Disable: ESC [ ? 1000 l
+		//      b bits[1:0] 0=MB1 pressed, 1=MB2 pressed, 2=MB3 pressed, 3=release
+		//      b bits[7:2] 4=Shift, 8=Meta, 16=Control
+		//TODO: Faster scanning
+		//      So we have a few choices:
+		//      - string table (current, works alright)
+		//      - string[string]
+		//      - string decoding
+		//        [ -> escape
+		//        1;2 -> shift (optional)
+		//        B -> right arrow
 		
-		int c = getchar;
-		
-		with (k) switch (c) {
-		case '\n': // \n (ENTER)
-			value = Key.Enter;
-			goto _READKEY_END;
-		case 27: // ESC
-			switch (c = getchar) {
-			case '[':
-				switch (c = getchar) {
-				case 'A': value = Key.UpArrow; goto _READKEY_END;
-				case 'B': value = Key.DownArrow; goto _READKEY_END;
-				case 'C': value = Key.RightArrow; goto _READKEY_END;
-				case 'D': value = Key.LeftArrow; goto _READKEY_END;
-				case 'F': value = Key.End; goto _READKEY_END;
-				case 'H': value = Key.Home; goto _READKEY_END;
-				// There is an additional getchar due to the pending '~'
-				case '2': value = Key.Insert; getchar; goto _READKEY_END;
-				case '3': value = Key.Delete; getchar; goto _READKEY_END;
-				case '5': value = Key.PageUp; getchar; goto _READKEY_END;
-				case '6': value = Key.PageDown; getchar; goto _READKEY_END;
-				default: goto _READKEY_DEFAULT;
-				} // [
-			default: goto _READKEY_DEFAULT;
-			} // ESC
-		default:
-			if (c >= 'a' && c <= 'z') {
-				k.value = cast(Key)(c - 32);
-				goto _READKEY_END;
-			}
+		struct KeyInfo {
+			string text;
+			ushort value;
+			bool ctrl, alt, shift;
 		}
-
-_READKEY_DEFAULT:
-		k.value = cast(ushort)c;
+		static immutable KeyInfo[] keyInputs = [
+			// text		Key value	ctrl	alt	shift
+			{ "\033[A",	Key.UpArrow,	false,	false,	false },
+			{ "\033[1;2A",	Key.UpArrow,	false,	false,	true },
+			{ "\033[1;3A",	Key.UpArrow,	false,	true,	false },
+			{ "\033[1;5A",	Key.UpArrow,	true,	false,	false },
+			{ "\033[B",	Key.DownArrow,	false,	false,	false },
+			{ "\033[1;2B",	Key.DownArrow,	false,	false,	true },
+			{ "\033[1;3B",	Key.DownArrow,	false,	true,	false },
+			{ "\033[1;5B",	Key.DownArrow,	true,	false,	false },
+			{ "\033[C",	Key.RightArrow,	false,	false,	false },
+			{ "\033[1;2C",	Key.RightArrow,	false,	false,	true },
+			{ "\033[1;3C",	Key.RightArrow,	false,	true,	false },
+			{ "\033[1;5C",	Key.RightArrow,	true,	false,	false },
+			{ "\033[D",	Key.LeftArrow,	false,	false,	false },
+			{ "\033[1;2D",	Key.LeftArrow,	false,	false,	true },
+			{ "\033[1;3D",	Key.LeftArrow,	false,	true,	false },
+			{ "\033[1;5D",	Key.LeftArrow,	true,	false,	false },
+			{ "\033[2~",	Key.Insert,	false,	false,	false },
+			{ "\033[3~",	Key.Delete,	false,	false,	false },
+			{ "\033[3;5~",	Key.Delete,	true,	false,	false },
+			{ "\033[H",	Key.Home,	false,	false,	false },
+			{ "\033[1;5H",	Key.Home,	true,	false,	false },
+			{ "\033[F",	Key.End,	false,	false,	false },
+			{ "\033[1;5F",	Key.End,	true,	false,	false },
+			{ "\033[5~",	Key.PageUp,	false,	false,	false },
+			{ "\033[5;5~",	Key.PageUp,	true,	false,	false },
+			{ "\033[6~",	Key.PageDown,	false,	false,	false },
+			{ "\033[6;5~",	Key.PageDown,	true,	false,	false },
+			{ "\033OP",	Key.F1,	false,	false,	false },
+			{ "\033[1;2P",	Key.F1,	false,	false,	true },
+			{ "\033[1;3R",	Key.F1,	false,	true,	false },
+			{ "\033[1;5P",	Key.F1,	true,	false,	false },
+			{ "\033OQ",	Key.F2,	false,	false,	false },
+			{ "\033[1;2Q",	Key.F2,	false,	false,	true },
+			{ "\033OR",	Key.F3,	false,	false,	false },
+			{ "\033[1;2R",	Key.F3,	false,	false,	true },
+			{ "\033OS",	Key.F4,	false,	false,	false },
+			{ "\033[1;2S",	Key.F4,	false,	false,	true },
+			{ "\033[15~",	Key.F5,	false,	false,	false },
+			{ "\033[15;2~",	Key.F5,	false,	false,	true },
+			{ "\033[17~",	Key.F6,	false,	false,	false },
+			{ "\033[17;2~",	Key.F6,	false,	false,	true },
+			{ "\033[18~",	Key.F7,	false,	false,	false },
+			{ "\033[18;2~",	Key.F7,	false,	false,	true },
+			{ "\033[19~",	Key.F8,	false,	false,	false },
+			{ "\033[19;2~",	Key.F8,	false,	false,	true },
+			{ "\033[20~",	Key.F9,	false,	false,	false },
+			{ "\033[20;2~",	Key.F9,	false,	false,	true },
+			{ "\033[21~",	Key.F10,	false,	false,	false },
+			{ "\033[21;2~",	Key.F10,	false,	false,	true },
+			{ "\033[23~",	Key.F11,	false,	false,	false },
+			{ "\033[23;2~",	Key.F11,	false,	false,	true },
+			{ "\033[24~",	Key.F12,	false,	false,	false },
+			{ "\033[24;2~",	Key.F12,	false,	false,	true },
+			
+		];
 		
-_READKEY_END:
-		tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
+		event.ctrl = event.alt = event.shift = false;
+		
+		enum BLEN = 8;
+		char[BLEN] b = void;
+	L_READ:
+		ssize_t r = read(STDIN_FILENO, &b, BLEN);
+		
+		switch (r) {
+		case -1: assert(0, "read failed");
+		case 0:  goto L_READ; // HOW
+		case 1:
+			char c = b[0];
+			if (c < 32) { // Control character
+				switch (c) {
+				case 0: goto L_READ; // Invalid
+				case 8: // ^H
+					event.value = Key.Backspace;
+					event.ctrl = true;
+					return;
+				case 9: // \t
+					event.value = Key.Tab;
+					return;
+				case 13: // '\r'
+					event.value = Key.Enter;
+					return;
+				case 20: // ' '
+					event.value = Key.Enter;
+					return;
+				case 27: // \033
+					event.value = Key.Escape;
+					return;
+				default:
+				}
+				event.value = cast(ushort)(c + 64);
+				event.ctrl = true;
+			} else if (c == 127) {
+				event.value = Key.Backspace;
+			} else if (c >= 'a' && c <= 'z') {
+				event.value = cast(ushort)(c - 32);
+			} else if (c >= 'A' && c <= 'Z') {
+				event.value = c;
+				event.shift = true;
+			} else if (c >= '0' && c <= '9') {
+				event.value = c; // D0-D9
+			}
+			return;
+		default:
+		}
+		
+		//TODO: Checking for mouse inputs
+		//      Starts with \033[M
+		
+		// Checking for key inputs
+		const(char)[] text = b[0..r];
+		for (size_t i; i < keyInputs.length; ++i) {
+			immutable(KeyInfo) *ki = &keyInputs[i];
+			if (r != ki.text.length) continue;
+			if (text != ki.text) continue;
+			event.value = ki.value;
+			event.ctrl  = ki.ctrl;
+			event.alt   = ki.alt;
+			event.shift = ki.shift;
+			return;
+		}
+		
+		// Matched to nothing
+		goto L_READ;
 	} // version posix
 }
 
@@ -407,16 +571,14 @@ enum Mouse : ushort {
 
 /// Key information structure
 struct TerminalInput {
-	ushort value;	/// Character or mouse event
+	ushort value;
 	union {
-		struct key_t {
-			ubyte ctrl;	/// If either CTRL was held down.
-			ubyte alt;	/// If either ALT was held down.
-			ubyte shift;	/// If SHIFT was held down.
-		} key_t key;
-		struct mouse_t {
-			ushort x, y;
-		} mouse_t mouse;
+		struct {
+			bool ctrl, alt, shift;
+		}
+		struct {
+			ushort mouseX, mouseY;
+		}
 	}
 }
 

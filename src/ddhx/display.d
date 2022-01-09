@@ -21,6 +21,14 @@ import ddhx;
 //TODO: Group endianness
 //TODO: View display mode (hex+ascii, hex, ascii)
 //TODO: Data display mode (hex, octal, dec)
+//TODO: Consider hiding cursor when drawing
+//      terminalHideCursor()
+//        windows: SetConsoleCursorInfo
+//                 https://docs.microsoft.com/en-us/windows/console/setconsolecursorinfo
+//        posix: \033[?25l
+//      terminalShowCursor()
+//        windows: SetConsoleCursorInfo
+//        posix: \033[?25h
 
 private extern (C) int putchar(int);
 
@@ -335,8 +343,7 @@ void displayRenderBottomRaw() {
 		write(f);
 	}
 	last = f.length;
-	version (CRuntime_DigitalMars) stdout.flush();
-	version (CRuntime_Musl) stdout.flush();
+	stdout.flush();
 }
 
 /// Update display from buffer.

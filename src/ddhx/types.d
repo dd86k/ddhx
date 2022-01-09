@@ -23,10 +23,8 @@ import ddhx.error;
 /// 	val = Value to parse.
 /// 	type = Type name.
 /// Returns: Error code.
-int convert(ref void *data, ref size_t len, string val, string type)
-{
-	union TypeData
-	{
+int convert(ref void *data, ref size_t len, string val, string type) {
+	union TypeData {
 		ulong  u64;
 		long   i64;
 		uint   u32;
@@ -123,17 +121,12 @@ int convert(ref void *data, ref size_t len, string val, string type)
 /// 	v = 
 /// 	val = 
 /// Returns: Error code.
-int convert(T)(ref T v, string val)
-{
-	try
-	{
-		static if (is(T == wstring) || is(T == dstring))
-		{
-			transcode(val, v);
-		}
+int convert(T)(ref T v, string val) {
+	try {
 		//TODO: ubyte[]
-		else // Integral
-		{
+		static if (is(T == wstring) || is(T == dstring)) {
+			transcode(val, v);
+		} else { // Integral
 //			return sscanf(e.toStringz, "%lli", &l) == 1;
 			const(size_t) vallen = val.length;
 			FormatSpec!char fmt;
@@ -155,9 +148,7 @@ int convert(T)(ref T v, string val)
 		}
 		
 		return ErrorCode.success;
-	}
-	catch (Exception ex)
-	{
+	} catch (Exception ex) {
 		return errorSet(ex);
 	}
 }
@@ -168,8 +159,7 @@ int convert(T)(ref T v, string val)
 //      int fromRaw(T)(ref T ptr, void *ptr, size_t left)
 
 /// 
-@system unittest
-{
+@system unittest {
 	int i;
 	assert(convert(i, "256") == ErrorCode.success);
 	assert(i == 256);
