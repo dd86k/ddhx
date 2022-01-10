@@ -193,13 +193,13 @@ int skipByte(ubyte data, out long newPos) {
 	/// Current search position
 	const long oldPos = input.position;
 	long pos = input.position + 1;
-	input.seek(pos);
 	
 	/// File buffer.
 	ubyte[] fileBuffer = uninitializedArray!(ubyte[])(BUFFER_SIZE);
 	size_t haystackIndex = void;
 	
 L_CONTINUE:
+	input.seek(pos); // Fix for mmfile
 	ubyte[] haystack = input.readBuffer(fileBuffer);
 	const size_t haystackLen = haystack.length;
 	
