@@ -9,8 +9,8 @@
 module ddhx.display;
 
 import std.stdio : stdout;
+import std.encoding : codeUnits, CodeUnits;
 import core.stdc.stdio : printf, puts;
-import core.stdc.wchar_ : wchar_t;
 import ddhx;
 
 //TODO: Engine struct settings
@@ -51,12 +51,12 @@ private immutable size_t function(char*,long)[3] offsetFuncs =
 // Data format functions
 //private immutable size_t function(char*,long)[] dataFuncs =
 //	[ &format2x, &format3d, &format3o ];
-/// Character translations functions
-private immutable dchar function(ubyte)[4] charFuncs = [
-	&translateASCII,
-	&translateCP437,
-	&translateEBCDIC,
-//	&translateGSM
+/// Character transcoding functions
+private immutable char[] function(ubyte)[4] transFuncs = [
+	&transcodeASCII,
+	&transcodeCP437,
+	&transcodeEBCDIC,
+//	&transcodeGSM
 ];
 
 //
@@ -206,13 +206,6 @@ size_t format8luo(char *buffer, long v) {
 // SECTION Character translation
 //
 
-//TODO: Directly encode utf-8 into tables
-//      In theory should be a little faster than transcoding from wchar/dchar
-//      Could be:
-//      - uint
-//      - char[3]
-//      - char[] (length embedded) + codeUnits!char('.')
-//      - a custom structure (how?)
 //TODO: size_t insertCP437(char *data, size_t left);
 //TODO: Other translations
 //      - Mac OS Roman (Windows-10000) "mac"
@@ -226,55 +219,100 @@ size_t format8luo(char *buffer, long v) {
 //      - GSM 03.38 "gsm"
 //        https://www.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT
 
-private immutable dchar[256] charsCP437 = [
-//       00   01   02   03   04   05   06   07   08   09   0a   0b   0c   0d   0e   0f
-/*0x*/	  0, '☺', '☻', '♥', '♦', '♣', '♠', '•', '◘', '○', '◙', '♂', '♀', '♪', '♫', '☼',
-/*1x*/	'►', '◄', '↕', '‼', '¶', '§', '▬', '↨', '↑', '↓', '→', '←', '∟', '↔', '▲', '▼',
-/*2x*/	' ', '!', '"', '#', '$', '%', '&','\'', '(', ')', '*', '+', ',', '-', '.', '/',
-/*3x*/	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';', '<', '>', '=', '?',
-/*4x*/	'@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'M', 'N', 'L', 'O',
-/*5x*/	'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '[','\\', ']', '^', '_',
-/*6x*/	'`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'm', 'n', 'l', 'o',
-/*7x*/	'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '{', '|', '}', '~', '⌂',
-/*8x*/	'Ç', 'ü', 'é', 'â', 'ä', 'à', 'å', 'ç', 'ê', 'ë', 'è', 'ï', 'î', 'ì', 'Ä', 'Å',
-/*9x*/	'É', 'æ', 'Æ', 'ô', 'ö', 'ò', 'û', 'ù', 'ÿ', 'Ö', 'Ü', '¢', '£', '¥', '₧', 'ƒ',
-/*Ax*/	'á', 'í', 'ó', 'ú', 'ñ', 'Ñ', 'ª', 'º', '¿', '⌐', '¬', '½', '¼', '¡', '«', '»',
-/*Bx*/	'░', '▒', '▓', '│', '┤', '╡', '╢', '╖', '╕', '╣', '║', '╗', '╝', '╜', '╛', '┐',
-/*Cx*/	'└', '┴', '┬', '├', '─', '┼', '╞', '╟', '╚', '╔', '╩', '╦', '╠', '═', '╬', '╧',
-/*Dx*/	'╨', '╤', '╥', '╙', '╘', '╒', '╓', '╫', '╪', '┘', '┌', '█', '▄', '▌', '▐', '▀',
-/*Ex*/	'α', 'β', 'Γ', 'π', 'Σ', 'σ', 'µ', 'τ', 'Φ', 'Θ', 'Ω', 'δ', '∞', 'φ', 'ε', '∩',
-/*Fx*/	'≡', '±', '≥', '≤', '⌠', '⌡', '÷', '≈', '°', '∙', '·', '√', 'ⁿ', '²', '■',   0
-];
-private immutable dchar[256] charsEBCDIC = [
-//       00   01   02   03   04   05   06   07   08   09   0a   0b   0c   0d   0e   0f
-/*0x*/	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-/*1x*/	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-/*2x*/	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-/*3x*/	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-/*4x*/	' ', ' ', 'â', 'ä', 'à', 'á', 'ã', 'å', 'ç', 'ñ', '¢', '.', '<', '(', '+', '|',
-/*5x*/	'&', 'é', 'ê', 'ë', 'è', 'í', 'î', 'ï', 'ì', 'ß', '!', '$', '*', ')', ';', '¬',
-/*6x*/	'-', '/', 'Â', 'Ä', 'À', 'Á', 'Ã', 'Å', 'Ç', 'Ñ', '¦', ',', '%', '_', '>', '?',
-/*7x*/	'ø', 'É', 'Ê', 'Ë', 'È', 'Í', 'Î', 'Ï', 'Ì', '`', ':', '#', '@','\'', '=', '"',
-/*8x*/	'Ø', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', '«', '»', 'ð', 'ý', 'þ', '±',
-/*9x*/	'°', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 'ª', 'º', 'æ', '¸', 'Æ', '¤',
-/*Ax*/	'µ', '~', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '¡', '¿', 'Ð', 'Ý', 'Þ', '®',
-/*Bx*/	'^', '£', '¥', '·', '©', '§', '¶', '¼', '½', '¾', '[', ']', '¯', '¨', '´', '×',
-/*Cx*/	'{', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',   0, 'ô', 'ö', 'ò', 'ó', 'õ',
-/*Dx*/	'}', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', '¹', 'û', 'ü', 'ù', 'ú', 'ÿ',
-/*Ex*/	'\\','÷', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '²', 'Ô', 'Ö', 'Ò', 'Ó', 'Õ',
-/*Fx*/	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '³', 'Û', 'Ü', 'Ù', 'Ú',   0
-];
-private
-dchar translateASCII(ubyte data) {
-	return data > 0x7E || data < 0x20 ? globals.defaultChar : data;
+private alias U  = char[];
+private alias CU = CodeUnits!char;
+private template C(dchar c) {
+	enum C = codeUnits!char(c).s;
 }
+
 private
-dchar translateEBCDIC(ubyte data) {
-	return charsEBCDIC[data];
+char[] transcodeASCII(ubyte data) {
+	__gshared char[]  empty;
+	__gshared char[1] c;
+	if (data > 0x7E || data < 0x20)
+		return empty;
+	
+	c[0] = data;
+	return c;
 }
+private U[256] mapCP437 = [
+//          0      1      2      3      4      5      6      7
+/*00*/	   [], C!'☺', C!'☻', C!'♥', C!'♦', C!'♣', C!'♠', C!'•',
+/*08*/	C!'◘', C!'○', C!'◙', C!'♂', C!'♀', C!'♪', C!'♫', C!'☼',
+/*10*/	C!'►', C!'◄', C!'↕', C!'‼', C!'¶', C!'§', C!'▬', C!'↨',
+/*18*/	C!'↑', C!'↓', C!'→', C!'←', C!'∟', C!'↔', C!'▲', C!'▼',
+/*20*/	C!' ', C!'!', C!'"', C!'#', C!'$', C!'%', C!'&', C!'\'',
+/*28*/	C!'(', C!')', C!'*', C!'+', C!',', C!'-', C!'.', C!'/',
+/*30*/	C!'0', C!'1', C!'2', C!'3', C!'4', C!'5', C!'6', C!'7',
+/*38*/	C!'8', C!'9', C!':', C!';', C!'<', C!'>', C!'=', C!'?',
+/*40*/	C!'@', C!'A', C!'B', C!'C', C!'D', C!'E', C!'F', C!'G',
+/*48*/	C!'H', C!'I', C!'J', C!'K', C!'M', C!'N', C!'L', C!'O',
+/*50*/	C!'P', C!'Q', C!'R', C!'S', C!'T', C!'U', C!'V', C!'W',
+/*58*/	C!'X', C!'Y', C!'Z', C!'[',C!'\\', C!']', C!'^', C!'_',
+/*60*/	C!'`', C!'a', C!'b', C!'c', C!'d', C!'e', C!'f', C!'g',
+/*68*/	C!'h', C!'i', C!'j', C!'k', C!'m', C!'n', C!'l', C!'o',
+/*70*/	C!'p', C!'q', C!'r', C!'s', C!'t', C!'u', C!'v', C!'w',
+/*78*/	C!'x', C!'y', C!'z', C!'{', C!'|', C!'}', C!'~', C!'⌂',
+/*80*/	C!'Ç', C!'ü', C!'é', C!'â', C!'ä', C!'à', C!'å', C!'ç',
+/*88*/	C!'ê', C!'ë', C!'è', C!'ï', C!'î', C!'ì', C!'Ä', C!'Å',
+/*90*/	C!'É', C!'æ', C!'Æ', C!'ô', C!'ö', C!'ò', C!'û', C!'ù',
+/*98*/	C!'ÿ', C!'Ö', C!'Ü', C!'¢', C!'£', C!'¥', C!'₧', C!'ƒ',
+/*a0*/	C!'á', C!'í', C!'ó', C!'ú', C!'ñ', C!'Ñ', C!'ª', C!'º',
+/*a8*/	C!'¿', C!'⌐', C!'¬', C!'½', C!'¼', C!'¡', C!'«', C!'»',
+/*b0*/	C!'░', C!'▒', C!'▓', C!'│', C!'┤', C!'╡', C!'╢', C!'╖',
+/*b8*/	C!'╕', C!'╣', C!'║', C!'╗', C!'╝', C!'╜', C!'╛', C!'┐',
+/*c0*/	C!'└', C!'┴', C!'┬', C!'├', C!'─', C!'┼', C!'╞', C!'╟',
+/*c8*/	C!'╚', C!'╔', C!'╩', C!'╦', C!'╠', C!'═', C!'╬', C!'╧',
+/*d0*/	C!'╨', C!'╤', C!'╥', C!'╙', C!'╘', C!'╒', C!'╓', C!'╫',
+/*d8*/	C!'╪', C!'┘', C!'┌', C!'█', C!'▄', C!'▌', C!'▐', C!'▀',
+/*e0*/	C!'α', C!'β', C!'Γ', C!'π', C!'Σ', C!'σ', C!'µ', C!'τ',
+/*e8*/	C!'Φ', C!'Θ', C!'Ω', C!'δ', C!'∞', C!'φ', C!'ε', C!'∩',
+/*f0*/	C!'≡', C!'±', C!'≥', C!'≤', C!'⌠', C!'⌡', C!'÷', C!'≈',
+/*f8*/	C!'°', C!'∙', C!'·', C!'√', C!'ⁿ', C!'²', C!'■', C!0
+];
 private
-dchar translateCP437(ubyte data) {
-	return charsCP437[data];
+char[] transcodeCP437(ubyte data) {
+	return mapCP437[data];
+}
+
+private U[256] mapEBCDIC = [
+//          0      1      2      3      4      5      6      7 
+/*00*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*08*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*10*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*18*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*20*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*28*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*30*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*38*/	   [],    [],    [],    [],    [],    [],    [],    [],
+/*40*/	C!' ', C!' ', C!'â', C!'ä', C!'à', C!'á', C!'ã', C!'å',
+/*48*/	C!'ç', C!'ñ', C!'¢', C!'.', C!'<', C!'(', C!'+', C!'|',
+/*50*/	C!'&', C!'é', C!'ê', C!'ë', C!'è', C!'í', C!'î', C!'ï',
+/*58*/	C!'ì', C!'ß', C!'!', C!'$', C!'*', C!')', C!';', C!'¬',
+/*60*/	C!'-', C!'/', C!'Â', C!'Ä', C!'À', C!'Á', C!'Ã', C!'Å',
+/*68*/	C!'Ç', C!'Ñ', C!'¦', C!',', C!'%', C!'_', C!'>', C!'?',
+/*70*/	C!'ø', C!'É', C!'Ê', C!'Ë', C!'È', C!'Í', C!'Î', C!'Ï',
+/*78*/	C!'Ì', C!'`', C!':', C!'#', C!'@', C!'\'',C!'=', C!'"',
+/*80*/	C!'Ø', C!'a', C!'b', C!'c', C!'d', C!'e', C!'f', C!'g',
+/*88*/	C!'h', C!'i', C!'«', C!'»', C!'ð', C!'ý', C!'þ', C!'±',
+/*90*/	C!'°', C!'j', C!'k', C!'l', C!'m', C!'n', C!'o', C!'p',
+/*98*/	C!'q', C!'r', C!'ª', C!'º', C!'æ', C!'¸', C!'Æ', C!'¤',
+/*a0*/	C!'µ', C!'~', C!'s', C!'t', C!'u', C!'v', C!'w', C!'x',
+/*a8*/	C!'y', C!'z', C!'¡', C!'¿', C!'Ð', C!'Ý', C!'Þ', C!'®',
+/*b0*/	C!'^', C!'£', C!'¥', C!'·', C!'©', C!'§', C!'¶', C!'¼',
+/*b8*/	C!'½', C!'¾', C!'[', C!']', C!'¯', C!'¨', C!'´', C!'×',
+/*c0*/	C!'{', C!'A', C!'B', C!'C', C!'D', C!'E', C!'F', C!'G',
+/*c8*/	C!'H', C!'I',    [], C!'ô', C!'ö', C!'ò', C!'ó', C!'õ',
+/*d0*/	C!'}', C!'J', C!'K', C!'L', C!'M', C!'N', C!'O', C!'P',
+/*d8*/	C!'Q', C!'R', C!'¹', C!'û', C!'ü', C!'ù', C!'ú', C!'ÿ',
+/*e0*/	C!'\\',C!'÷', C!'S', C!'T', C!'U', C!'V', C!'W', C!'X',
+/*e8*/	C!'Y', C!'Z', C!'²', C!'Ô', C!'Ö', C!'Ò', C!'Ó', C!'Õ',
+/*f0*/	C!'0', C!'1', C!'2', C!'3', C!'4', C!'5', C!'6', C!'7',
+/*f8*/	C!'8', C!'9', C!'³', C!'Û', C!'Ü', C!'Ù', C!'Ú',    []
+];
+private
+char[] transcodeEBCDIC(ubyte data) {
+	return mapEBCDIC[data];
 }
 
 // !SECTION
@@ -377,7 +415,7 @@ uint displayRenderMainRaw() {
 	const int charset = globals.charType;
 	size_t function(char*, long) formatOffset = offsetFuncs[offsetType];
 //	size_t function(char*, ubyte) formatData = dataFuncs[globals.dataMode];
-	dchar function(ubyte) translateChar = charFuncs[charset];
+	char[] function(ubyte) transcodeChar = transFuncs[charset];
 	
 	// print lines in bulk
 	long pos = input.position;
@@ -392,7 +430,7 @@ uint displayRenderMainRaw() {
 		
 		// Insert DATA and CHAR
 		size_t cpos = (lpos + (rowMax * 3)) + 2;
-		for (ushort r; r < bytesLeft; ++r, ++cpos, ++bpos) {
+		for (ushort r; r < bytesLeft; ++r, ++bpos) {
 			const ubyte byteData = b[bpos];
 			// Data translation
 			lbuf[lpos] = ' ';
@@ -400,24 +438,12 @@ uint displayRenderMainRaw() {
 			lbuf[lpos+2] = hexMap[byteData & 15];
 			lpos += 3;
 			// Character translation
-			// NOTE: Translated to UTF-8 for these reasons:
-			//       - UTF-16 and UTF-32 on Windows is only supported for .NET.
-			//       - Most Linux terminals do UTF-8 by default.
-			dchar c = translateChar(byteData);
-			if (c) {
-				import std.encoding : codeUnits, CodeUnits;
-				CodeUnits!char cu = codeUnits!char(c);
-				const size_t len = cu.s.length;
-				lbuf[cpos] = cu.s[0];
-				if (len < 2) continue;
-				lbuf[++cpos] = cu.s[1];
-				if (len < 3) continue;
-				lbuf[++cpos] = cu.s[2];
-				if (len < 4) continue;
-				lbuf[++cpos] = cu.s[3];
-			} else {
-				lbuf[cpos] = defaultChar;
-			}
+			char[] units = transcodeChar(byteData);
+			if (units.length)
+				for (size_t i; i < units.length; ++i, ++cpos)
+					lbuf[cpos] = units[i];
+			else
+				lbuf[cpos++] = defaultChar;
 		}
 		
 		// Spacer between DATA and CHAR panels
