@@ -4,10 +4,23 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.searcher;
 
-import std.stdio;
-import std.encoding : transcode;
-import core.bitop;
 import ddhx;
+
+//TODO: Add direction
+//      bool backward
+//TODO: Add comparer
+//      We're already 'wasting' a call to memcpy, so might as well have
+//      comparer functions.
+//      struct Comparer
+//      - needle data
+//      - lots of unions for needle samples (first cmp)
+//      - support SIMD when possible (D_SIMD)
+//      sample(ref Comparer,ubyte[]) (via function pointer)
+//      compare(ref Comparer,ubyte[]) (via function pointer)
+//      - haystack slice vs. needle
+//      - 1,2,4,8 bytes -> direct
+//      - 16,32 bytes   -> simd
+//      - default       -> memcmp
 
 /// Default haystack buffer size.
 private enum BUFFER_SIZE = 16 * 1024;
@@ -65,21 +78,6 @@ private int search2(const(void) *data, size_t len, string type) {
 	return e;
 }
 
-//TODO: Add direction
-//      bool backward
-//TODO: Add comparer
-//      We're already 'wasting' a call to memcpy, so might as well have
-//      comparer functions.
-//      struct Comparer
-//      - needle data
-//      - lots of unions for needle samples (first cmp)
-//      - support SIMD when possible (D_SIMD)
-//      sample(ref Comparer,ubyte[]) (via function pointer)
-//      compare(ref Comparer,ubyte[]) (via function pointer)
-//      - haystack slice vs. needle
-//      - 1,2,4,8 bytes -> direct
-//      - 16,32 bytes   -> simd
-//      - default       -> memcmp
 /// (Internal) Binary search.
 /// Params:
 /// 	data = Data pointer.

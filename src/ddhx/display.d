@@ -30,27 +30,24 @@ import ddhx;
 //        windows: SetConsoleCursorInfo
 //        posix: \033[?25h
 
+private enum LBUF_SIZE = 2048;
+
 private extern (C) int putchar(int);
 
 /// Character table for header row
 private immutable char[3] offsetTable = [ 'h', 'd', 'o' ];
 /// Character table for the main panel for printf
 private immutable char[3] formatTable = [ 'x', 'u', 'o' ];
-
-// For offset views
-
 /// Offset format functions
-private immutable size_t function(char*,long)[3] offsetFuncs =
-	[ &format8lux, &format8lud, &format8luo ];
-//
-//private immutable size_t function(char*,ushort) offsetUpFuncs =
-
-
-// For main data panel
-
-// Data format functions
-//private immutable size_t function(char*,long)[] dataFuncs =
-//	[ &format2x, &format3d, &format3o ];
+private immutable size_t function(char*,long)[3] offsetFuncs = [
+	&format8lux, &format8lud, &format8luo
+];
+/// Data format functions
+private immutable size_t function(char*,ubyte)[3] dataFuncs = [
+	&format02x, &format03d, &format03o
+];
+/// Data formatted size
+private immutable size_t[3] dataSizes = [ 2, 3, 3 ];
 /// Character transcoding functions
 private immutable char[] function(ubyte)[4] transFuncs = [
 	&transcodeASCII,
@@ -63,8 +60,23 @@ private immutable char[] function(ubyte)[4] transFuncs = [
 // SECTION Formatting
 //
 
-private immutable static string hexMap = "0123456789abcdef";
+private immutable static string hexMap  = "0123456789abcdef";
 
+private
+size_t format02x(char *buffer, ubyte v) {
+	buffer[1] = hexMap[v & 15];
+	buffer[0] = hexMap[v >> 4];
+	return 2;
+}
+@system unittest {
+	char[2] c = void;
+	format02x(c.ptr, 0x01);
+	assert(c[] == "01", c);
+	format02x(c.ptr, 0x20);
+	assert(c[] == "20", c);
+	format02x(c.ptr, 0xff);
+	assert(c[] == "ff", c);
+}
 private
 size_t format8lux(char *buffer, long v) {
 	size_t pos;
@@ -76,7 +88,7 @@ size_t format8lux(char *buffer, long v) {
 				continue; // cut
 			} else if (pad && shift >= 4) {
 				buffer[pos++] = pad ? ' ' : '0';
-				continue;
+				continue; // pad
 			}
 		} else pad = false;
 		buffer[pos++] = hexMap[b];
@@ -109,11 +121,28 @@ size_t format8lux(char *buffer, long v) {
 	assert(b[0..format8lux(p, 0x10101010)]         ==         "10101010");
 	assert(b[0..format8lux(p, 0x1010101010101010)] == "1010101010101010");
 }
+
+private immutable static string decMap = "0123456789";
+private
+size_t format03d(char *buffer, ubyte v) {
+	buffer[2] = (v % 10) + '0';
+	buffer[1] = (v / 10 % 10) + '0';
+	buffer[0] = (v / 100 % 10) + '0';
+	return 3;
+}
+@system unittest {
+	char[3] c = void;
+	format03d(c.ptr, 1);
+	assert(c[] == "001", c);
+	format03d(c.ptr, 10);
+	assert(c[] == "010", c);
+	format03d(c.ptr, 111);
+	assert(c[] == "111", c);
+}
 private
 size_t format8lud(char *buffer, long v) {
 	debug import std.conv : text;
 	enum ulong I64MAX = 10_000_000_000_000_000_000UL;
-	immutable static string decTable = "0123456789";
 	size_t pos;
 	bool pad = true;
 	for (ulong d = I64MAX; d > 0; d /= 10) {
@@ -127,7 +156,7 @@ size_t format8lud(char *buffer, long v) {
 			}
 		} else pad = false;
 		debug assert(r >= 0 && r < 10, "r="~r.text);
-		buffer[pos++] = decTable[r];
+		buffer[pos++] = decMap[r];
 	}
 	return pos;
 }
@@ -154,6 +183,24 @@ size_t format8lud(char *buffer, long v) {
 	assert(b[0..format8lud(p, uint.max)]   ==           "4294967295");
 	assert(b[0..format8lud(p, ulong.max)]  == "18446744073709551615");
 	assert(b[0..format8lud(p, 1010)]       ==             "    1010");
+}
+
+private
+size_t format03o(char *buffer, ubyte v) {
+	buffer[2] = (v % 8) + '0';
+	buffer[1] = (v / 8 % 8) + '0';
+	buffer[0] = (v / 64 % 8) + '0';
+	return 3;
+}
+@system unittest {
+	import std.conv : octal;
+	char[3] c = void;
+	format03o(c.ptr, 1);
+	assert(c[] == "001", c);
+	format03o(c.ptr, octal!20);
+	assert(c[] == "020", c);
+	format03o(c.ptr, octal!133);
+	assert(c[] == "133", c);
 }
 private
 size_t format8luo(char *buffer, long v) {
@@ -241,7 +288,7 @@ private U[256] mapCP437 = [
 /*08*/	C!'◘', C!'○', C!'◙', C!'♂', C!'♀', C!'♪', C!'♫', C!'☼',
 /*10*/	C!'►', C!'◄', C!'↕', C!'‼', C!'¶', C!'§', C!'▬', C!'↨',
 /*18*/	C!'↑', C!'↓', C!'→', C!'←', C!'∟', C!'↔', C!'▲', C!'▼',
-/*20*/	C!' ', C!'!', C!'"', C!'#', C!'$', C!'%', C!'&', C!'\'',
+/*20*/	C!' ', C!'!', C!'"', C!'#', C!'$', C!'%', C!'&',C!'\'',
 /*28*/	C!'(', C!')', C!'*', C!'+', C!',', C!'-', C!'.', C!'/',
 /*30*/	C!'0', C!'1', C!'2', C!'3', C!'4', C!'5', C!'6', C!'7',
 /*38*/	C!'8', C!'9', C!':', C!';', C!'<', C!'>', C!'=', C!'?',
@@ -250,7 +297,7 @@ private U[256] mapCP437 = [
 /*50*/	C!'P', C!'Q', C!'R', C!'S', C!'T', C!'U', C!'V', C!'W',
 /*58*/	C!'X', C!'Y', C!'Z', C!'[',C!'\\', C!']', C!'^', C!'_',
 /*60*/	C!'`', C!'a', C!'b', C!'c', C!'d', C!'e', C!'f', C!'g',
-/*68*/	C!'h', C!'i', C!'j', C!'k', C!'m', C!'n', C!'l', C!'o',
+/*68*/	C!'h', C!'i', C!'j', C!'k', C!'l', C!'m', C!'n', C!'o',
 /*70*/	C!'p', C!'q', C!'r', C!'s', C!'t', C!'u', C!'v', C!'w',
 /*78*/	C!'x', C!'y', C!'z', C!'{', C!'|', C!'}', C!'~', C!'⌂',
 /*80*/	C!'Ç', C!'ü', C!'é', C!'â', C!'ä', C!'à', C!'å', C!'ç',
@@ -268,7 +315,7 @@ private U[256] mapCP437 = [
 /*e0*/	C!'α', C!'β', C!'Γ', C!'π', C!'Σ', C!'σ', C!'µ', C!'τ',
 /*e8*/	C!'Φ', C!'Θ', C!'Ω', C!'δ', C!'∞', C!'φ', C!'ε', C!'∩',
 /*f0*/	C!'≡', C!'±', C!'≥', C!'≤', C!'⌠', C!'⌡', C!'÷', C!'≈',
-/*f8*/	C!'°', C!'∙', C!'·', C!'√', C!'ⁿ', C!'²', C!'■', C!0
+/*f8*/	C!'°', C!'∙', C!'·', C!'√', C!'ⁿ', C!'²', C!'■', C!' '
 ];
 private
 char[] transcodeCP437(ubyte data) {
@@ -330,25 +377,31 @@ void displayRenderTop() {
 
 /// 
 void displayRenderTopRaw() {
-	//TODO: Redo ddhxUpdateOffsetbarRaw
-	/*enum OFFSET = "Offset ";
-	__gshared char[512] line = "Offset ";
-	size_t lineindex = OFFSET.sizeof;
+	//TODO: Redo ddhxUpdateOffsetbarRaw + last formatted size
 	
-	line[lineindex] = offsetTable[globals.offset];
-	line[lineindex+1] = ' ';
-	lineindex += 2;
+	__gshared char[8] fmt = "%2x";
+	const int offsetType = globals.offsetType;
+	fmt[1] = cast(char)(dataSizes[globals.dataType] + 1 + '0');
+	fmt[2] = formatTable[offsetType];
+	printf("Offset %c ", offsetTable[offsetType]);
+	final switch (offsetType) with (NumberType) {
+	case hexadecimal:
+		if (input.position >= 0x1000_0000_0000_0000) putchar(' ');
+		if (input.position >= 0x100_0000_0000_0000) putchar(' ');
+		if (input.position >= 0x10_0000_0000_0000) putchar(' ');
+		if (input.position >= 0x1_0000_0000_0000) putchar(' ');
+		if (input.position >= 0x1000_0000_0000) putchar(' ');
+		if (input.position >= 0x100_0000_0000) putchar(' ');
+		if (input.position >= 0x10_0000_0000) putchar(' ');
+		if (input.position >= 0x1_0000_0000) putchar(' ');
+		break;
+	case decimal:
 	
-	for (ushort i; i < globals.rowWidth; ++i) {
-		line[lineindex] = ' ';
-	}*/
+		break;
+	case octal:
 	
-	__gshared char[8] fmt = " %2x";
-	int type = globals.offsetType;
-	fmt[3] = formatTable[type];
-	printf("Offset %c ", offsetTable[type]);
-	if (input.position > 0xffff_ffff) putchar(' ');
-	if (input.position > 0xffff_ffff_f) putchar(' ');
+		break;
+	}
 	for (ushort i; i < globals.rowWidth; ++i)
 		printf(cast(char*)fmt, i);
 	putchar('\n');
@@ -402,19 +455,20 @@ uint displayRenderMainRaw() {
 	size_t        bpos;	// data buffer position index
 	
 	// line buffer
-	size_t     lpos = void;	/// line buffer index position
-	char[2048] lbuf   = void;	/// line buffer
-	char      *lptr      = lbuf.ptr;
-	uint       ls;	/// lines printed
+	size_t          lpos = void;	/// line buffer index position
+	char[LBUF_SIZE] lbuf   = void;	/// line buffer
+	char           *lptr      = lbuf.ptr;
+	uint            ls;	/// lines printed
 	
 	// setup
 	const int rowMax = globals.rowWidth;
 	const char defaultChar = globals.defaultChar;
 	const int offsetType = globals.offsetType;
-//	const int dataType = globals.dataType;
+	const int dataType = globals.dataType;
 	const int charset = globals.charType;
 	size_t function(char*, long) formatOffset = offsetFuncs[offsetType];
-//	size_t function(char*, ubyte) formatData = dataFuncs[globals.dataMode];
+	size_t function(char*, ubyte) formatData = dataFuncs[dataType];
+	const size_t dataSize = dataSizes[dataType];
 	char[] function(ubyte) transcodeChar = transFuncs[charset];
 	
 	// print lines in bulk
@@ -429,14 +483,12 @@ uint displayRenderMainRaw() {
 		int bytesLeft = leftOvers ? left : rowMax;
 		
 		// Insert DATA and CHAR
-		size_t cpos = (lpos + (rowMax * 3)) + 2;
+		size_t cpos = (lpos + (rowMax * (dataSize + 1))) + 2;
 		for (ushort r; r < bytesLeft; ++r, ++bpos) {
 			const ubyte byteData = b[bpos];
 			// Data translation
 			lbuf[lpos] = ' ';
-			lbuf[lpos+1] = hexMap[byteData >> 4];
-			lbuf[lpos+2] = hexMap[byteData & 15];
-			lpos += 3;
+			lpos += formatData(lptr + lpos + 1, byteData) + 1;
 			// Character translation
 			char[] units = transcodeChar(byteData);
 			if (units.length)
@@ -447,19 +499,20 @@ uint displayRenderMainRaw() {
 		}
 		
 		// Spacer between DATA and CHAR panels
-		lbuf[lpos] = ' ';
-		lbuf[lpos+1] = ' ';
+		*(cast(ushort*)(lptr + lpos)) = 0x2020;
 		lpos += 2;
 		
 		// Line DATA leftovers
 		if (leftOvers) {
+			import core.stdc.string : memset;
 			bytesLeft = rowMax - left;
-			do {
+			memset(lptr + lpos, ' ', bytesLeft);
+			/*do {
 				lbuf[lpos]   = ' ';
 				lbuf[lpos+1] = ' ';
 				lbuf[lpos+2] = ' ';
 				lpos += 3;
-			} while (--bytesLeft > 0);
+			} while (--bytesLeft > 0);*/
 			left = 0;
 		}
 		

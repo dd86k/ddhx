@@ -10,6 +10,8 @@ import std.file : getSize;
 import std.path : baseName;
 import ddhx;
 
+//TODO: If File.size() still causes issue in DMCRT, redo File
+
 /// Copyright string
 enum COPYRIGHT = "Copyright (c) 2017-2021 dd86k <dd@dax.moe>";
 
@@ -48,7 +50,7 @@ struct Input {
 		ubyte[] result;
 	}
 	ulong size;	/// file size
-	long position;	/// file/buffer position
+	long position;	/// Absolute position in file/mmfile/buffer
 	uint bufferSize;	/// buffer size
 	string fileName;	/// File basename
 	const(char)[] sizeString;	/// Binary file size as string
@@ -127,6 +129,7 @@ struct Input {
 		return (result = file.rawRead(fBuffer));
 	}
 	private ubyte[] readMmfile() {
+		//TODO: Be smart: Check for overflows
 		return (result = cast(ubyte[])mmfile[position..position+bufferSize]);
 	}
 	private ubyte[] readStdin() {

@@ -10,6 +10,12 @@ import std.string : split;
 import core.stdc.string : memset;
 import ddhx;
 
+//TODO: Redo inputs relative to view, not absolute
+//      Should fix bugs in 32-bit builds
+//      In part:
+//      - Check read result length to allow overflow past the view 
+//      - Make seek safer in general instead of specific function
+
 //
 // User settings
 //
@@ -331,10 +337,20 @@ void menuEnter(string prepend = null) {
 		break;
 	case "o", "offset":
 		if (argc <= 1) {
-			msgBottom("Missing argument (offset)");
+			msgBottom("Missing argument (number type)");
 			break;
 		}
 		if ((error = settingOffset(argv[1])) != 0)
+			break;
+		displayRenderTop();
+		displayRenderMainRaw();
+		break;
+	case "d", "data":
+		if (argc <= 1) {
+			msgBottom("Missing argument (number type)");
+			break;
+		}
+		if ((error = settingData(argv[1])) != 0)
 			break;
 		displayRenderTop();
 		displayRenderMainRaw();
