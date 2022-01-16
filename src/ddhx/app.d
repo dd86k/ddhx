@@ -239,19 +239,20 @@ int enterDump(long skip, long length) {
 /// int enterDiff(string path1, string path2)
 
 
-//TODO: Dedicated command interpreter to use for dedicated files
-void menuEnter(string prepend = null) {
+//TODO: Dedicated command interpreter to use for dedicated files (settings)
+private
+void menuEnter(string cmdPrepend = null) {
 	// clear bar and command prepend
 	terminalPos(0, 0);
 	printf("%*s", terminalSize.width - 1, cast(char*)" ");
 	terminalPos(0, 0);
 	write(":");
-	if (prepend) write(prepend);
+	if (cmdPrepend) write(cmdPrepend);
 	
 	//TODO: GC-free merge prepend and readln(buf), then split
 	//TODO: Smarter argv handling with single and double quotes
 	//TODO: Consider std.getopt
-	string[] argv = cast(string[])(prepend ~ readln[0..$-1]).split; // split ' ', no empty entries
+	string[] argv = cast(string[])(cmdPrepend ~ readln[0..$-1]).split; // split ' ', no empty entries
 	
 	displayRenderTop;
 	
@@ -332,7 +333,6 @@ void menuEnter(string prepend = null) {
 			msgBottom(errorMsg);
 			break;
 		}
-		resizeBuffer;
 		refresh;
 		break;
 	case "o", "offset":
@@ -342,8 +342,7 @@ void menuEnter(string prepend = null) {
 		}
 		if ((error = settingOffset(argv[1])) != 0)
 			break;
-		displayRenderTop();
-		displayRenderMainRaw();
+		render;
 		break;
 	case "d", "data":
 		if (argc <= 1) {
@@ -352,8 +351,7 @@ void menuEnter(string prepend = null) {
 		}
 		if ((error = settingData(argv[1])) != 0)
 			break;
-		displayRenderTop();
-		displayRenderMainRaw();
+		render;
 		break;
 	case "C", "defaultchar":
 		if (settingDefaultChar(argv[1])) {
@@ -384,6 +382,7 @@ void menuEnter(string prepend = null) {
 /// console/terminal window size.
 /// Params: skipTerm = Skip terminal size detection and use stored value.
 void resizeBuffer(bool skipTerm = false) {
+	//TODO: Avoid crash when on end of file + resize goes further than file
 	version (Trace) trace("skip=%s", skipTerm);
 	
 	// Effective height
@@ -395,7 +394,12 @@ void resizeBuffer(bool skipTerm = false) {
 	displayResizeBuffer(newSize);
 }
 
-/// Refresh the entire screen
+/// Refresh the entire screen by:
+/// 1. automatically resizing the view buffer
+/// 2. Re-seeking to the current position (failsafe)
+/// 3. Read buffer
+/// 4. Clear the terminal
+/// 5. Render
 void refresh() {
 	resizeBuffer();
 	input.seek(input.position);

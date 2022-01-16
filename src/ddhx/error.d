@@ -30,6 +30,7 @@ private __gshared string lastFile;
 private __gshared int lastLine;
 
 int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
+	version (Trace) trace("%s", code);
 	lastFile = file;
 	lastLine = line;
 	return (lastCode = code);
@@ -54,7 +55,7 @@ int errorSet(Exception ex) {
 
 string errorMsg() {
 	switch (lastCode) with (ErrorCode) {
-	case exception: return errorMsg;
+	case exception: return lastMsg;
 	case fileEmpty: return "File is empty.";
 	case inputEmpty: return "Input is empty.";
 	case invalidCommand: return "Command not found.";

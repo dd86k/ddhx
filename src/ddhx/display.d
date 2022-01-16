@@ -13,15 +13,12 @@ import std.encoding : codeUnits, CodeUnits;
 import core.stdc.stdio : printf, puts;
 import ddhx;
 
-//TODO: Engine struct settings
-//      Pre-assign formatting functions when changing options
-//      Maybe have setXXX functions?
-//TODO: Groups
+//TODO: Data grouping
 //      e.g., cd ab -> abcd
 //TODO: Group endianness
-//TODO: View display mode (hex+ascii, hex, ascii)
-//TODO: Data display mode (hex, octal, dec)
+//TODO: View display mode (data+text, data, text)
 //TODO: Consider hiding cursor when drawing
+//      + save/restore position
 //      terminalHideCursor()
 //        windows: SetConsoleCursorInfo
 //                 https://docs.microsoft.com/en-us/windows/console/setconsolecursorinfo
@@ -29,18 +26,23 @@ import ddhx;
 //      terminalShowCursor()
 //        windows: SetConsoleCursorInfo
 //        posix: \033[?25h
+//TODO: Redo offset formatting functions
+//      e.g. size_t formatOctal(char* buffer, long v, ubyte pad)
+//      Why?
 
 private enum LBUF_SIZE = 2048;
 
 private extern (C) int putchar(int);
 
-/// Character table for header row
-private immutable char[3] offsetTable = [ 'h', 'd', 'o' ];
-/// Character table for the main panel for printf
+/// Data modes for upper row (display purposes)
+private static immutable(char)[][3] offsetNames = [ "Hex", "Dec", "Oct" ];
+/// Character table for header row (display purposes)
+private deprecated immutable char[3] offsetTable = [ 'h', 'd', 'o' ];
+/// Character table for the main panel for printf (formatting purposes)
 private immutable char[3] formatTable = [ 'x', 'u', 'o' ];
 /// Offset format functions
 private immutable size_t function(char*,long)[3] offsetFuncs = [
-	&format8lux, &format8lud, &format8luo
+	&format11x, &format11d, &format11o
 ];
 /// Data format functions
 private immutable size_t function(char*,ubyte)[3] dataFuncs = [
@@ -78,13 +80,13 @@ size_t format02x(char *buffer, ubyte v) {
 	assert(c[] == "ff", c);
 }
 private
-size_t format8lux(char *buffer, long v) {
+size_t format11x(char *buffer, long v) {
 	size_t pos;
 	bool pad = true;
 	for (int shift = 60; shift >= 0; shift -= 4) {
 		const ubyte b = (v >> shift) & 15;
 		if (b == 0) {
-			if (pad && shift >= 32) {
+			if (pad && shift >= 44) {
 				continue; // cut
 			} else if (pad && shift >= 4) {
 				buffer[pos++] = pad ? ' ' : '0';
@@ -99,27 +101,27 @@ size_t format8lux(char *buffer, long v) {
 @system unittest {
 	char[32] b = void;
 	char *p = b.ptr;
-	assert(b[0..format8lux(p, 0)]                  ==         "       0");
-	assert(b[0..format8lux(p, 1)]                  ==         "       1");
-	assert(b[0..format8lux(p, 0x10)]               ==         "      10");
-	assert(b[0..format8lux(p, 0x100)]              ==         "     100");
-	assert(b[0..format8lux(p, 0x1000)]             ==         "    1000");
-	assert(b[0..format8lux(p, 0x10000)]            ==         "   10000");
-	assert(b[0..format8lux(p, 0x100000)]           ==         "  100000");
-	assert(b[0..format8lux(p, 0x1000000)]          ==         " 1000000");
-	assert(b[0..format8lux(p, 0x10000000)]         ==         "10000000");
-	assert(b[0..format8lux(p, 0x100000000)]        ==        "100000000");
-	assert(b[0..format8lux(p, 0x1000000000)]       ==       "1000000000");
-	assert(b[0..format8lux(p, 0x10000000000)]      ==      "10000000000");
-	assert(b[0..format8lux(p, 0x100000000000)]     ==     "100000000000");
-	assert(b[0..format8lux(p, 0x1000000000000)]    ==    "1000000000000");
-	assert(b[0..format8lux(p, ubyte.max)]          ==         "      ff");
-	assert(b[0..format8lux(p, ushort.max)]         ==         "    ffff");
-	assert(b[0..format8lux(p, uint.max)]           ==         "ffffffff");
-	assert(b[0..format8lux(p, ulong.max)]          == "ffffffffffffffff");
-	assert(b[0..format8lux(p, 0x1010)]             ==         "    1010");
-	assert(b[0..format8lux(p, 0x10101010)]         ==         "10101010");
-	assert(b[0..format8lux(p, 0x1010101010101010)] == "1010101010101010");
+	assert(b[0..format11x(p, 0)]                  ==      "          0");
+	assert(b[0..format11x(p, 1)]                  ==      "          1");
+	assert(b[0..format11x(p, 0x10)]               ==      "         10");
+	assert(b[0..format11x(p, 0x100)]              ==      "        100");
+	assert(b[0..format11x(p, 0x1000)]             ==      "       1000");
+	assert(b[0..format11x(p, 0x10000)]            ==      "      10000");
+	assert(b[0..format11x(p, 0x100000)]           ==      "     100000");
+	assert(b[0..format11x(p, 0x1000000)]          ==      "    1000000");
+	assert(b[0..format11x(p, 0x10000000)]         ==      "   10000000");
+	assert(b[0..format11x(p, 0x100000000)]        ==      "  100000000");
+	assert(b[0..format11x(p, 0x1000000000)]       ==      " 1000000000");
+	assert(b[0..format11x(p, 0x10000000000)]      ==      "10000000000");
+	assert(b[0..format11x(p, 0x100000000000)]     ==     "100000000000");
+	assert(b[0..format11x(p, 0x1000000000000)]    ==    "1000000000000");
+	assert(b[0..format11x(p, ubyte.max)]          ==       "        ff");
+	assert(b[0..format11x(p, ushort.max)]         ==       "      ffff");
+	assert(b[0..format11x(p, uint.max)]           ==       "  ffffffff");
+	assert(b[0..format11x(p, ulong.max)]          == "ffffffffffffffff");
+	assert(b[0..format11x(p, 0x1010)]             ==       "      1010");
+	assert(b[0..format11x(p, 0x10101010)]         ==       "  10101010");
+	assert(b[0..format11x(p, 0x1010101010101010)] == "1010101010101010");
 }
 
 private immutable static string decMap = "0123456789";
@@ -140,7 +142,7 @@ size_t format03d(char *buffer, ubyte v) {
 	assert(c[] == "111", c);
 }
 private
-size_t format8lud(char *buffer, long v) {
+size_t format11d(char *buffer, long v) {
 	debug import std.conv : text;
 	enum ulong I64MAX = 10_000_000_000_000_000_000UL;
 	size_t pos;
@@ -148,7 +150,7 @@ size_t format8lud(char *buffer, long v) {
 	for (ulong d = I64MAX; d > 0; d /= 10) {
 		const long r = (v / d) % 10;
 		if (r == 0) {
-			if (pad && d >= 100_000_000) {
+			if (pad && d >= 100_000_000_000) {
 				continue; // cut
 			} else if (pad && d >= 10) {
 				buffer[pos++] = pad ? ' ' : '0';
@@ -164,25 +166,25 @@ size_t format8lud(char *buffer, long v) {
 @system unittest {
 	char[32] b = void;
 	char *p = b.ptr;
-	assert(b[0..format8lud(p, 0)]                 ==      "       0");
-	assert(b[0..format8lud(p, 1)]                 ==      "       1");
-	assert(b[0..format8lud(p, 10)]                ==      "      10");
-	assert(b[0..format8lud(p, 100)]               ==      "     100");
-	assert(b[0..format8lud(p, 1000)]              ==      "    1000");
-	assert(b[0..format8lud(p, 10_000)]            ==      "   10000");
-	assert(b[0..format8lud(p, 100_000)]           ==      "  100000");
-	assert(b[0..format8lud(p, 1000_000)]          ==      " 1000000");
-	assert(b[0..format8lud(p, 10_000_000)]        ==      "10000000");
-	assert(b[0..format8lud(p, 100_000_000)]       ==     "100000000");
-	assert(b[0..format8lud(p, 1000_000_000)]      ==    "1000000000");
-	assert(b[0..format8lud(p, 10_000_000_000)]    ==   "10000000000");
-	assert(b[0..format8lud(p, 100_000_000_000)]   ==  "100000000000");
-	assert(b[0..format8lud(p, 1000_000_000_000)]  == "1000000000000");
-	assert(b[0..format8lud(p, ubyte.max)]  ==             "     255");
-	assert(b[0..format8lud(p, ushort.max)] ==             "   65535");
-	assert(b[0..format8lud(p, uint.max)]   ==           "4294967295");
-	assert(b[0..format8lud(p, ulong.max)]  == "18446744073709551615");
-	assert(b[0..format8lud(p, 1010)]       ==             "    1010");
+	assert(b[0..format11d(p, 0)]                 ==   "          0");
+	assert(b[0..format11d(p, 1)]                 ==   "          1");
+	assert(b[0..format11d(p, 10)]                ==   "         10");
+	assert(b[0..format11d(p, 100)]               ==   "        100");
+	assert(b[0..format11d(p, 1000)]              ==   "       1000");
+	assert(b[0..format11d(p, 10_000)]            ==   "      10000");
+	assert(b[0..format11d(p, 100_000)]           ==   "     100000");
+	assert(b[0..format11d(p, 1000_000)]          ==   "    1000000");
+	assert(b[0..format11d(p, 10_000_000)]        ==   "   10000000");
+	assert(b[0..format11d(p, 100_000_000)]       ==   "  100000000");
+	assert(b[0..format11d(p, 1000_000_000)]      ==   " 1000000000");
+	assert(b[0..format11d(p, 10_000_000_000)]    ==   "10000000000");
+	assert(b[0..format11d(p, 100_000_000_000)]   ==  "100000000000");
+	assert(b[0..format11d(p, 1000_000_000_000)]  == "1000000000000");
+	assert(b[0..format11d(p, ubyte.max)]  ==           "       255");
+	assert(b[0..format11d(p, ushort.max)] ==           "     65535");
+	assert(b[0..format11d(p, uint.max)]   ==           "4294967295");
+	assert(b[0..format11d(p, ulong.max)]  == "18446744073709551615");
+	assert(b[0..format11d(p, 1010)]       ==           "      1010");
 }
 
 private
@@ -203,14 +205,14 @@ size_t format03o(char *buffer, ubyte v) {
 	assert(c[] == "133", c);
 }
 private
-size_t format8luo(char *buffer, long v) {
+size_t format11o(char *buffer, long v) {
 	size_t pos;
 	if (v >> 63) buffer[pos++] = '1'; // ulong.max coverage
 	bool pad = true;
 	for (int shift = 60; shift >= 0; shift -= 3) {
 		const ubyte b = (v >> shift) & 7;
 		if (b == 0) {
-			if (pad && shift >= 24) {
+			if (pad && shift >= 33) {
 				continue; // cut
 			} else if (pad && shift >= 3) {
 				buffer[pos++] = pad ? ' ' : '0';
@@ -226,25 +228,25 @@ size_t format8luo(char *buffer, long v) {
 	import std.conv : octal;
 	char[32] b = void;
 	char *p = b.ptr;
-	assert(b[0..format8luo(p, 0)]                     ==     "       0");
-	assert(b[0..format8luo(p, 1)]                     ==     "       1");
-	assert(b[0..format8luo(p, octal!10)]              ==     "      10");
-	assert(b[0..format8luo(p, octal!20)]              ==     "      20");
-	assert(b[0..format8luo(p, octal!100)]             ==     "     100");
-	assert(b[0..format8luo(p, octal!1000)]            ==     "    1000");
-	assert(b[0..format8luo(p, octal!10_000)]          ==     "   10000");
-	assert(b[0..format8luo(p, octal!100_000)]         ==     "  100000");
-	assert(b[0..format8luo(p, octal!1000_000)]        ==     " 1000000");
-	assert(b[0..format8luo(p, octal!10_000_000)]      ==     "10000000");
-	assert(b[0..format8luo(p, octal!100_000_000)]     ==    "100000000");
-	assert(b[0..format8luo(p, octal!1000_000_000)]    ==   "1000000000");
-	assert(b[0..format8luo(p, octal!10_000_000_000)]  ==  "10000000000");
-	assert(b[0..format8luo(p, octal!100_000_000_000)] == "100000000000");
-	assert(b[0..format8luo(p, ubyte.max)]   ==               "     377");
-	assert(b[0..format8luo(p, ushort.max)]  ==               "  177777");
-	assert(b[0..format8luo(p, uint.max)]    ==            "37777777777");
-	assert(b[0..format8luo(p, ulong.max)]   == "1777777777777777777777");
-	assert(b[0..format8luo(p, octal!101_010)]             == "  101010");
+	assert(b[0..format11o(p, 0)]                     ==  "          0");
+	assert(b[0..format11o(p, 1)]                     ==  "          1");
+	assert(b[0..format11o(p, octal!10)]              ==  "         10");
+	assert(b[0..format11o(p, octal!20)]              ==  "         20");
+	assert(b[0..format11o(p, octal!100)]             ==  "        100");
+	assert(b[0..format11o(p, octal!1000)]            ==  "       1000");
+	assert(b[0..format11o(p, octal!10_000)]          ==  "      10000");
+	assert(b[0..format11o(p, octal!100_000)]         ==  "     100000");
+	assert(b[0..format11o(p, octal!1000_000)]        ==  "    1000000");
+	assert(b[0..format11o(p, octal!10_000_000)]      ==  "   10000000");
+	assert(b[0..format11o(p, octal!100_000_000)]     ==  "  100000000");
+	assert(b[0..format11o(p, octal!1000_000_000)]    ==  " 1000000000");
+	assert(b[0..format11o(p, octal!10_000_000_000)]  ==  "10000000000");
+	assert(b[0..format11o(p, octal!100_000_000_000)] == "100000000000");
+	assert(b[0..format11o(p, ubyte.max)]   ==             "       377");
+	assert(b[0..format11o(p, ushort.max)]  ==             "    177777");
+	assert(b[0..format11o(p, uint.max)]    ==            "37777777777");
+	assert(b[0..format11o(p, ulong.max)]   == "1777777777777777777777");
+	assert(b[0..format11o(p, octal!101_010)] ==           "    101010");
 }
 
 // !SECTION
@@ -253,8 +255,9 @@ size_t format8luo(char *buffer, long v) {
 // SECTION Character translation
 //
 
-//TODO: size_t insertCP437(char *data, size_t left);
-//TODO: Other translations
+//TODO: Possibly redo character transcoding functions
+//      e.g. size_t insertCP437(char *data, size_t left);
+//TODO: Other character sets
 //      - Mac OS Roman (Windows-10000) "mac"
 //        https://en.wikipedia.org/wiki/Mac_OS_Roman
 //      - Windows-1251 "win1251"
@@ -369,6 +372,13 @@ void displayResizeBuffer(uint size) {
 	input.adjust(size);
 }
 
+/// Returns the number of characters that gets past the 8-character limit
+/// for the current offset + buffer size.
+/// Returns: Number of spaces for column alignment.
+int getOverfill() {
+	return 0;
+}
+
 /// Update the upper offset bar.
 void displayRenderTop() {
 	terminalPos(0, 0);
@@ -377,34 +387,43 @@ void displayRenderTop() {
 
 /// 
 void displayRenderTopRaw() {
-	//TODO: Redo ddhxUpdateOffsetbarRaw + last formatted size
+	import std.outbuffer : OutBuffer;
+	import std.typecons : scoped;
+	import std.conv : octal;
 	
-	__gshared char[8] fmt = "%2x";
+	enum ubyte ZERO = 0;
+	enum char SPACE = ' ';
+	__gshared size_t last;
+	
 	const int offsetType = globals.offsetType;
-	fmt[1] = cast(char)(dataSizes[globals.dataType] + 1 + '0');
-	fmt[2] = formatTable[offsetType];
-	printf("Offset %c ", offsetTable[offsetType]);
-	final switch (offsetType) with (NumberType) {
-	case hexadecimal:
-		if (input.position >= 0x1000_0000_0000_0000) putchar(' ');
-		if (input.position >= 0x100_0000_0000_0000) putchar(' ');
-		if (input.position >= 0x10_0000_0000_0000) putchar(' ');
-		if (input.position >= 0x1_0000_0000_0000) putchar(' ');
-		if (input.position >= 0x1000_0000_0000) putchar(' ');
-		if (input.position >= 0x100_0000_0000) putchar(' ');
-		if (input.position >= 0x10_0000_0000) putchar(' ');
-		if (input.position >= 0x1_0000_0000) putchar(' ');
-		break;
-	case decimal:
+	const int dataType = globals.dataType;
+	const ushort rowWidth = globals.rowWidth;
 	
-		break;
-	case octal:
+	// Setup index formatting
+	__gshared char[4] offsetFmt = " %__";
+	offsetFmt[2] = cast(char)(dataSizes[dataType] + '0');
+	offsetFmt[3]  = formatTable[offsetType];
 	
-		break;
+	auto outbuf = scoped!OutBuffer(); // Recommended to use 'auto' due to struct Scoped
+	outbuf.reserve(256); // e.g. 8 + 2 + (16 * 3) + 2 + 8 = 68
+	outbuf.write("Offset(");
+	outbuf.write(offsetNames[offsetType]);
+	outbuf.write(") ");
+	
+	// Print column values
+	for (ushort i; i < rowWidth; ++i)
+		outbuf.writef(offsetFmt, i);
+	
+	// Fill out remains since this is damage-based
+	if (last > outbuf.offset) {
+		const size_t c = cast(size_t)(outbuf.offset - last);
+		for (size_t i; i < c; ++i)
+			outbuf.put(SPACE);
 	}
-	for (ushort i; i < globals.rowWidth; ++i)
-		printf(cast(char*)fmt, i);
-	putchar('\n');
+	
+	// Zero-terminate and print
+	outbuf.put(ZERO);
+	last = puts(cast(char*)outbuf.data.ptr);
 }
 
 /// Update the bottom current information bar.
@@ -417,10 +436,12 @@ void displayRenderBottom() {
 void displayRenderBottomRaw() {
 	import std.format : sformat;
 	import std.stdio : writef, write;
+	//TODO: [0.5] Include editing mode (insert/overwrite)
 	__gshared size_t last;
 	char[32] c1 = void, c2 = void, c3 = void;
 	char[128] buf = void;
-	char[] f = sformat!" %s | %s - %s | %g%% - %g%%"(buf,
+	char[] f = sformat!" %s | %s | %s - %s | %f%% - %f%%"(buf,
+		offsetNames[globals.dataType],
 		formatSize(c1, input.bufferSize), // Buffer size
 		formatSize(c2, input.position), // Formatted position
 		formatSize(c3, input.position + input.bufferSize), // Formatted position
@@ -444,11 +465,14 @@ uint displayRenderMain() {
 	return displayRenderMainRaw;
 }
 
-//TODO: Possibility to only redraw a specific line.
-//      Or just bottom or top.
 /// Update display from buffer.
 /// Returns: Numbers of row written.
 uint displayRenderMainRaw() {
+	//TODO: Consider redoing buffer management with an OutBuffer.
+	//      Or std.array.appender + std.format.spec.SingleSpec
+	//TODO: Remember length of last printed line for damaged-based display
+	//TODO: [0.5] Possibility to only redraw a specific line.
+	
 	// data
 	const(ubyte) *b    = input.result.ptr;	/// data buffer pointer
 	int           bsz  = cast(int)input.result.length;	/// data buffer size
@@ -456,8 +480,8 @@ uint displayRenderMainRaw() {
 	
 	// line buffer
 	size_t          lpos = void;	/// line buffer index position
-	char[LBUF_SIZE] lbuf   = void;	/// line buffer
-	char           *lptr      = lbuf.ptr;
+	char[LBUF_SIZE] lbuf = void;	/// line buffer
+	char           *lptr = lbuf.ptr;
 	uint            ls;	/// lines printed
 	
 	// setup

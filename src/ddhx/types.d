@@ -122,20 +122,20 @@ int convert(ref void *data, ref size_t len, string val, string type) {
 /// 	val = 
 /// Returns: Error code.
 int convert(T)(ref T v, string val) {
+	import std.conv : ConvException;
 	try {
-		//TODO: ubyte[]
+			//TODO: ubyte[]
 		static if (is(T == wstring) || is(T == dstring)) {
 			transcode(val, v);
 		} else { // Integral
-//			return sscanf(e.toStringz, "%lli", &l) == 1;
-			const(size_t) vallen = val.length;
-			FormatSpec!char fmt;
-			if (vallen >= 3 && val[0..2] == "0x")
+			const size_t len = val.length;
+			FormatSpec!char fmt = void;
+			if (len >= 3 && val[0..2] == "0x")
 			{
 				fmt = singleSpec("%x");
 				val = val[2..$];
 			}
-			else if (vallen >= 2 && val[0] == '0')
+			else if (len >= 2 && val[0] == '0')
 			{
 				fmt = singleSpec("%o");
 				val = val[1..$];
@@ -146,11 +146,11 @@ int convert(T)(ref T v, string val) {
 			}
 			v = unformatValue!T(val, fmt);
 		}
-		
-		return ErrorCode.success;
 	} catch (Exception ex) {
 		return errorSet(ex);
 	}
+	
+	return ErrorCode.success;
 }
 
 //TODO: toRaw template
