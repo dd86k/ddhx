@@ -304,15 +304,17 @@ void menuEnter(string cmdPrepend = null) {
 		break; // "search"
 	//case "backskip":
 	case "skip":
-		if (argc <= 1) {
-			msgBottom("Missing argument (byte)");
-			return;
-		}
 		ubyte byte_ = void;
-		if (argv[1] == "zero")
-			byte_ = 0;
-		else if ((error = convert(byte_, argv[1])) != 0)
-			break;
+		if (argc <= 1) {
+			byte_ = input.result[0];
+			//msgBottom("Missing argument (byte)");
+			//return;
+		} else {
+			if (argv[1] == "zero")
+				byte_ = 0;
+			else if ((error = convert(byte_, argv[1])) != 0)
+				break;
+		}
 		error = skipByte(byte_);
 		break;
 	case "i", "info": msgFileInfo; break;

@@ -19,7 +19,7 @@ int settingWidth(string val) {
 		// This should get the number of data entries per row optimal
 		// given terminal width
 		int w = terminalSize.width;
-		rowWidth = cast(ushort)((w - 12) / (dataSize));
+		rowWidth = cast(ushort)((w - 16) / (dataSize));
 		//TODO: +groups
 		//rowWidth = cast(ushort)((w - 12) / 4);
 		break;
