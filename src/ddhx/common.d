@@ -58,10 +58,12 @@ struct Input {
 	
 	int openFile(string path) {
 		try {
-			file.open(path);
-			size = file.size();
+			// NOTE: File.size() has overflow issues in 32-bit builds
+			//       in the DigitalMars C runtime
+			size = getSize(path);
 			if (size == 0)
 				return errorSet(ErrorCode.fileEmpty);
+			file.open(path);
 			fileName = baseName(path);
 			sizeString = binarySize();
 			mode = InputMode.file;

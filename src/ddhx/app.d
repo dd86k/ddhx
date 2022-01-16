@@ -372,6 +372,13 @@ void menuEnter(string cmdPrepend = null) {
 			break;
 		displayRenderMain;
 		break;
+	case "reset":
+		settingCharset("ascii");
+		settingOffset("h");
+		settingData("x");
+		settingDefaultChar(".");
+		settingWidth("16");
+		break;
 	default:
 		error = errorSet(ErrorCode.invalidCommand);
 	}
@@ -520,6 +527,7 @@ void msgFileInfo() {
 /// Params: code = Exit code.
 void exit(int code = 0) {
 	import core.stdc.stdlib : exit;
+	terminalPauseInput;
 	terminalClear;
 	exit(code);
 }
