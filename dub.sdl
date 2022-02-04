@@ -12,3 +12,9 @@ buildType "trace" {
 	versions "Trace"
 	buildOptions "debugMode" "debugInfo"
 }
+
+buildType "input" {
+	versions "TestInput"
+	buildOptions "unittests"
+	sourceFiles "tests/input.d"
+}

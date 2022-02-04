@@ -40,7 +40,7 @@ int openStdin() {
 }
 
 /// Main app entry point
-int enterInteractive(long skip = 0) {
+int appInteractive(long skip = 0) {
 	//TODO: Consider changing the buffering strategy
 	//      e.g., flush+setvbuf/puts+flush
 	
@@ -67,94 +67,69 @@ int enterInteractive(long skip = 0) {
 	
 	TerminalInput event;
 	version (Trace) trace("loop");
-L_KEY:
+
+L_INPUT:
 	terminalInput(event);
-	version (Trace) trace("key=%d", event.value);
+	version (Trace) trace("type=%d", event.type);
 	
-	with (globals) switch (event.value) {
+	final switch (event.type) with (InputType) {
+	case keyDown: goto L_KEYDOWN;
+	}
+
+L_KEYDOWN:
+	version (Trace) trace("key=%d", event.key);
+	
+	switch (event.key) with (Key) {
 	
 	//
 	// Navigation
 	//
 	
-	case Key.UpArrow, Key.K:
-		if (input.position - rowWidth >= 0)
-			seek(input.position - rowWidth);
-		else
-			seek(0);
-		break;
-	case Key.DownArrow, Key.J:
-		if (input.position + input.bufferSize + rowWidth <= input.size)
-			seek(input.position + rowWidth);
-		else
-			seek(input.size - input.bufferSize);
-		break;
-	case Key.LeftArrow, Key.H:
-		if (input.position - 1 >= 0) // Else already at 0
-			seek(input.position - 1);
-		break;
-	case Key.RightArrow, Key.L:
-		if (input.position + input.bufferSize + 1 <= input.size)
-			seek(input.position + 1);
-		else
-			seek(input.size - input.bufferSize);
-		break;
-	case Key.PageUp, Mouse.ScrollUp:
-		if (input.position - cast(long)input.bufferSize >= 0)
-			seek(input.position - input.bufferSize);
-		else
-			seek(0);
-		break;
-	case Key.PageDown, Mouse.ScrollDown:
-		if (input.position + input.bufferSize + input.bufferSize <= input.size)
-			seek(input.position + input.bufferSize);
-		else
-			seek(input.size - input.bufferSize);
-		break;
-	case Key.Home:
-		seek(event.ctrl ?
-			0 : input.position - (input.position % rowWidth));
-		break;
-	case Key.End:
-		if (event.ctrl) {
-			seek(input.size - input.bufferSize);
-		} else {
-			const long np = input.position + (rowWidth - input.position % rowWidth);
-			seek(np + input.bufferSize <= input.size ? np : input.size - input.bufferSize);
-		}
-		break;
-
+	case UpArrow, K:    moveRowUp; break;
+	case DownArrow, J:  moveRowDown; break;
+	case LeftArrow, H:  moveLeft; break;
+	case RightArrow, L: moveRight; break;
+	case PageUp:            movePageUp; break;
+	case PageDown:          movePageDown; break;
+	case Home:              moveAlignStart; break;
+	case Home | Mod.ctrl:   moveStart; break;
+	case End:               moveAlignEnd; break;
+	case End | Mod.ctrl:    moveEnd; break;
+	
 	//
 	// Actions/Shortcuts
 	//
-
-	case Key.N:
+	
+	case '/':
+		msgBottom("slash!");
+		break;
+	case N:
 		if (searchLast())
 			msgBottom(errorMsg);
 		break;
-	case Key.Escape, Key.Enter, Key.Colon:
+	case Escape, Enter, Colon:
 		terminalPauseInput;
-		menuEnter;
+		menu;
 		terminalResumeInput;
 		break;
-	case Key.G:
-		menuEnter("g ");
+	case G:
+		menu("g ");
 		displayRenderTop();
 		break;
-	case Key.I:
+	case I:
 		msgFileInfo;
 		break;
-	case Key.R, Key.F5:
+	case R, F5:
 		refresh;
 		break;
-	case Key.A:
+	case A:
 		settingWidth("a");
 		refresh;
 		break;
-	case Key.Q: exit; break;
-	default: version (Trace) trace("unknown key=%u", event.value);
+	case Q: exit; break;
+	default:
 	}
-	goto L_KEY;
+	goto L_INPUT;
 }
 
 /// Dump application.
@@ -162,7 +137,7 @@ L_KEY:
 /// 	skip = If set, number of bytes to skip.
 /// 	length = If set, maximum length to read.
 /// Returns: Error code.
-int enterDump(long skip, long length) {
+int appDump(long skip, long length) {
 	if (length < 0)
 		return printError(2, "length negative");
 	
@@ -236,12 +211,12 @@ int enterDump(long skip, long length) {
 	return 0;
 }
 
-/// int enterDiff(string path1, string path2)
+/// int appDiff(string path1, string path2)
 
 
 //TODO: Dedicated command interpreter to use for dedicated files (settings)
 private
-void menuEnter(string cmdPrepend = null) {
+void menu(string cmdPrepend = null) {
 	// clear bar and command prepend
 	terminalPos(0, 0);
 	printf("%*s", terminalSize.width - 1, cast(char*)" ");
@@ -424,12 +399,70 @@ void render() {
 	displayRenderBottomRaw;
 }
 
-/**
- * Goes to the specified position in the file.
- * Ignores bounds checking for performance reasons.
- * Sets CurrentPosition.
- * Params: pos = New position
- */
+/// Move the view to the start of the data
+private void moveStart() {
+	seek(0);
+}
+/// Move the view to the end of the data
+private void moveEnd() {
+	seek(input.size - input.bufferSize);
+}
+/// Align view to start of row
+private void moveAlignStart() {
+	seek(input.position - (input.position % globals.rowWidth));
+}
+/// Align view to end of row (start of row + row size)
+private void moveAlignEnd() {
+	const long n = input.position +
+		(globals.rowWidth - input.position % globals.rowWidth);
+	seek(n + input.bufferSize <= input.size ? n : input.size - input.bufferSize);
+}
+/// Move view to one data group to the left (backwards)
+private void moveLeft() {
+	if (input.position - 1 >= 0) // Else already at 0
+		seek(input.position - 1);
+}
+/// Move view to one data group to the right (forwards)
+private void moveRight() {
+	if (input.position + input.bufferSize + 1 <= input.size)
+		seek(input.position + 1);
+	else
+		seek(input.size - input.bufferSize);
+}
+/// Move view to one row size up (backwards)
+private void moveRowUp() {
+	if (input.position - globals.rowWidth >= 0)
+		seek(input.position - globals.rowWidth);
+	else
+		seek(0);
+}
+/// Move view to one row size down (forwards)
+private void moveRowDown() {
+	if (input.position + input.bufferSize + globals.rowWidth <= input.size)
+		seek(input.position + globals.rowWidth);
+	else
+		seek(input.size - input.bufferSize);
+}
+/// Move view to one page size up (backwards)
+private void movePageUp() {
+	if (input.position - cast(long)input.bufferSize >= 0)
+		seek(input.position - input.bufferSize);
+	else
+		seek(0);
+}
+/// Move view to one page size down (forwards)
+private void movePageDown() {
+	if (input.position + input.bufferSize + input.bufferSize <= input.size)
+		seek(input.position + input.bufferSize);
+	else
+		seek(input.size - input.bufferSize);
+}
+
+
+/// Seek to position in data, reads view's worth, and display that.
+/// Ignores bounds checking for performance reasons.
+/// Sets CurrentPosition.
+/// Params: pos = New position
 void seek(long pos) {
 	version (Trace) trace("pos=%d", pos);
 	
@@ -441,11 +474,9 @@ void seek(long pos) {
 		msgBottom("Navigation disabled, buffer too small");
 }
 
-/**
- * Parses the string as a long and navigates to the file location.
- * Includes offset checking (+/- notation).
- * Params: str = String as a number
- */
+/// Parses the string as a long and navigates to the file location.
+/// Includes offset checking (+/- notation).
+/// Params: str = String as a number
 void seek(string str) {
 	version (Trace) trace("str=%s", str);
 	
@@ -480,11 +511,9 @@ void seek(string str) {
 	}
 }
 
-/**
- * Goes to the specified position in the file.
- * Checks bounds and calls Goto.
- * Params: pos = New position
- */
+/// Goes to the specified position in the file.
+/// Checks bounds and calls Goto.
+/// Params: pos = New position
 void safeSeek(long pos) {
 	version (Trace) trace("pos=%s", pos);
 	

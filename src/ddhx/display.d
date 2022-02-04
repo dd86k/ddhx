@@ -115,12 +115,12 @@ size_t format11x(char *buffer, long v) {
 	assert(b[0..format11x(p, 0x10000000000)]      ==      "10000000000");
 	assert(b[0..format11x(p, 0x100000000000)]     ==     "100000000000");
 	assert(b[0..format11x(p, 0x1000000000000)]    ==    "1000000000000");
-	assert(b[0..format11x(p, ubyte.max)]          ==       "        ff");
-	assert(b[0..format11x(p, ushort.max)]         ==       "      ffff");
-	assert(b[0..format11x(p, uint.max)]           ==       "  ffffffff");
+	assert(b[0..format11x(p, ubyte.max)]          ==      "         ff");
+	assert(b[0..format11x(p, ushort.max)]         ==      "       ffff");
+	assert(b[0..format11x(p, uint.max)]           ==      "   ffffffff");
 	assert(b[0..format11x(p, ulong.max)]          == "ffffffffffffffff");
-	assert(b[0..format11x(p, 0x1010)]             ==       "      1010");
-	assert(b[0..format11x(p, 0x10101010)]         ==       "  10101010");
+	assert(b[0..format11x(p, 0x1010)]             ==      "       1010");
+	assert(b[0..format11x(p, 0x10101010)]         ==      "   10101010");
 	assert(b[0..format11x(p, 0x1010101010101010)] == "1010101010101010");
 }
 
@@ -180,11 +180,11 @@ size_t format11d(char *buffer, long v) {
 	assert(b[0..format11d(p, 10_000_000_000)]    ==   "10000000000");
 	assert(b[0..format11d(p, 100_000_000_000)]   ==  "100000000000");
 	assert(b[0..format11d(p, 1000_000_000_000)]  == "1000000000000");
-	assert(b[0..format11d(p, ubyte.max)]  ==           "       255");
-	assert(b[0..format11d(p, ushort.max)] ==           "     65535");
-	assert(b[0..format11d(p, uint.max)]   ==           "4294967295");
+	assert(b[0..format11d(p, ubyte.max)]  ==          "        255");
+	assert(b[0..format11d(p, ushort.max)] ==          "      65535");
+	assert(b[0..format11d(p, uint.max)]   ==          " 4294967295");
 	assert(b[0..format11d(p, ulong.max)]  == "18446744073709551615");
-	assert(b[0..format11d(p, 1010)]       ==           "      1010");
+	assert(b[0..format11d(p, 1010)]       ==          "       1010");
 }
 
 private
@@ -242,11 +242,11 @@ size_t format11o(char *buffer, long v) {
 	assert(b[0..format11o(p, octal!1000_000_000)]    ==  " 1000000000");
 	assert(b[0..format11o(p, octal!10_000_000_000)]  ==  "10000000000");
 	assert(b[0..format11o(p, octal!100_000_000_000)] == "100000000000");
-	assert(b[0..format11o(p, ubyte.max)]   ==             "       377");
-	assert(b[0..format11o(p, ushort.max)]  ==             "    177777");
+	assert(b[0..format11o(p, ubyte.max)]   ==            "        377");
+	assert(b[0..format11o(p, ushort.max)]  ==            "     177777");
 	assert(b[0..format11o(p, uint.max)]    ==            "37777777777");
 	assert(b[0..format11o(p, ulong.max)]   == "1777777777777777777777");
-	assert(b[0..format11o(p, octal!101_010)] ==           "    101010");
+	assert(b[0..format11o(p, octal!101_010)] ==          "     101010");
 }
 
 // !SECTION
@@ -400,6 +400,7 @@ void displayRenderTopRaw() {
 	const ushort rowWidth = globals.rowWidth;
 	
 	// Setup index formatting
+	//TODO: Consider SingleSpec
 	__gshared char[4] offsetFmt = " %__";
 	offsetFmt[2] = cast(char)(dataSizes[dataType] + '0');
 	offsetFmt[3]  = formatTable[offsetType];
@@ -411,12 +412,13 @@ void displayRenderTopRaw() {
 	outbuf.write(") ");
 	
 	// Print column values
+	//TODO: Consider %(%) syntax
 	for (ushort i; i < rowWidth; ++i)
 		outbuf.writef(offsetFmt, i);
 	
 	// Fill out remains since this is damage-based
-	if (last > outbuf.offset) {
-		const size_t c = cast(size_t)(outbuf.offset - last);
+	if (last > outbuf.offset + 1) { // +null
+		const size_t c = cast(size_t)(last - outbuf.offset);
 		for (size_t i; i < c; ++i)
 			outbuf.put(SPACE);
 	}

@@ -4,17 +4,18 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.terminal;
 
+//TODO: Consider an event input filter mask function
+
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
 //       https://man7.org/linux/man-pages/man3/tcsetattr.3.html
 //       https://man7.org/linux/man-pages/man4/console_codes.4.html
 
 ///
-private extern (C) int getchar();
+private extern (C) int putchar(int);
 
-private import std.stdio;
+private import std.stdio : printf, stdin, stdout;
 private import core.stdc.stdlib : system, atexit;
-import ddhx;
 
 version (Windows) {
 	private import core.sys.windows.windows;
@@ -23,10 +24,7 @@ version (Windows) {
 	private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
 	private enum DEFAULT_COLOR =
 		FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
-	private enum CP_UTF16LE = 1200;
-	private enum CP_UTF16BE = 1201;
-	private enum CP_UTF7 = 65000;
-	private enum CP_UTF8 = 65001;
+	private enum CP_UTF8 = 65_001;
 	private __gshared HANDLE hIn, hOut;
 	private __gshared USHORT defaultColor = DEFAULT_COLOR;
 	private __gshared DWORD oldCP;
@@ -37,9 +35,9 @@ version (Posix) {
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
 	version (CRuntime_Musl) {
-		alias uint tcflag_t;
-		alias uint speed_t;
-		alias char cc_t;
+		private alias uint tcflag_t;
+		private alias uint speed_t;
+		private alias char cc_t;
 		private enum TCSANOW	= 0;
 		private enum NCCS	= 32;
 		private enum ICANON	= 2;
@@ -65,7 +63,7 @@ version (Posix) {
 		private extern (C) int tcsetattr(int fd, int a, termios *termios_p);
 		private extern (C) int ioctl(int fd, ulong request, ...);
 	}
-	private __gshared termios old_tio, new_tio;
+	private __gshared termios old_ios, new_ios;
 }
 
 /// Initiate ddcon
@@ -94,34 +92,34 @@ void terminalInit() {
 		fstat(STDIN_FILENO, &s);
 		if (S_ISFIFO(s.st_mode))
 			stdin.reopen("/dev/tty", "r");
-		tcgetattr(STDIN_FILENO, &old_tio);
-		new_tio = old_tio;
+		tcgetattr(STDIN_FILENO, &old_ios);
+		new_ios = old_ios;
 		// NOTE: input modes
 		// - IXON enables ^S and ^Q
 		// - ICRNL enables ^M
 		// - BRKINT causes SIGINT (^C) on break conditions
 		// - INPCK enables parity checking
 		// - ISTRIP strips the 8th bit
-		new_tio.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
+		new_ios.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
 		// NOTE: output modes
 		// - OPOST turns on output post-processing
-		//new_tio.c_oflag &= ~(OPOST);
+		//new_ios.c_oflag &= ~(OPOST);
 		// NOTE: local modes
 		// - ICANON turns on canonical mode (per-line instead of per-byte)
 		// - ECHO turns on character echo
 		// - ISIG enables ^C and ^Z signals
 		// - IEXTEN enables ^V
-		new_tio.c_lflag &= ~(ICANON | ECHO | IEXTEN);
+		new_ios.c_lflag &= ~(ICANON | ECHO | IEXTEN);
 		// NOTE: control modes
 		// - CS8 sets Character Size to 8-bit
-		new_tio.c_cflag |= CS8;
+		new_ios.c_cflag |= CS8;
 		// minimum amount of bytes to read,
 		// 0 being return as soon as there is data
-		//new_tio.c_cc[VMIN] = 0;
+		//new_ios.c_cc[VMIN] = 0;
 		// maximum amount of time to wait for input,
 		// 1 being 1/10 of a second (100 milliseconds)
-		//new_tio.c_cc[VTIME] = 0;
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_tio);
+		//new_ios.c_cc[VTIME] = 0;
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
 	}
 	
 	atexit(&terminalRestore);
@@ -133,19 +131,19 @@ void terminalRestore() {
 	version (Windows) {
 		SetConsoleOutputCP(oldCP);
 	} else version (Posix) {
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_tio);
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 	}
 }
 
 void terminalPauseInput() {
 	version (Posix) {
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_tio);
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 	}
 }
 
 void terminalResumeInput() {
 	version (Posix) {
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_tio);
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
 	}
 }
 
@@ -166,7 +164,8 @@ void terminalClear() {
 	} else version (Posix) {
 		// \033c is a Reset
 		// \033[2J is "Erase whole display"
-		printf("\033c");
+		printf("\033[2J");
+		stdout.flush;
 	}
 	else static assert(0, "Clear: Not implemented");
 }
@@ -218,36 +217,56 @@ void terminalInput(ref TerminalInput event) {
 	version (Windows) {
 		INPUT_RECORD ir = void;
 		DWORD num = void;
-		char i = void;
 L_READ:
 		if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
 			throw new WindowsException(GetLastError);
+		
 		if (num == 0)
 			goto L_READ;
+		
 		switch (ir.EventType) {
 		case KEY_EVENT:
 			if (ir.KeyEvent.bKeyDown == FALSE)
 				goto L_READ;
-			const DWORD state = ir.KeyEvent.dwControlKeyState;
-			event.alt   = (state & ALT_PRESSED)   != 0;
-			event.ctrl  = (state & CTRL_PRESSED)  != 0;
-			event.shift = (state & SHIFT_PRESSED) != 0;
-			event.value = ir.KeyEvent.wVirtualKeyCode;
-			return;
-		case MOUSE_EVENT:
-			switch (ir.MouseEvent.dwEventFlags) {
-			case MOUSE_WHEELED:
-				// Up=0x00780000 Down=0xFF880000
-				event.value = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
-					Mouse.ScrollDown : Mouse.ScrollUp;
-				return;
-			default: goto L_READ;
+			
+			version (TestInput) {
+				printf(
+				"KeyEvent: AsciiChar=%d wVirtualKeyCode=%d dwControlKeyState=%x\n",
+				ir.KeyEvent.AsciiChar,
+				ir.KeyEvent.wVirtualKeyCode,
+				ir.KeyEvent.dwControlKeyState,
+				);
 			}
+			
+			event.type = InputType.keyDown;
+			
+			const DWORD state = ir.KeyEvent.dwControlKeyState;
+			if (state & ALT_PRESSED) event.key |= Mod.alt;
+			if (state & CTRL_PRESSED) event.key |= Mod.ctrl;
+			if (state & SHIFT_PRESSED) event.key |= Mod.shift;
+			
+			const char c = ir.KeyEvent.AsciiChar;
+			
+			if (c >= 'a' && c <= 'z') {
+				event.key = c - 32;
+			} else if (c) {
+				event.key = c;
+			} else {
+				event.key = ir.KeyEvent.wVirtualKeyCode;
+			}
+			return;
+		/*case MOUSE_EVENT:
+			if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED) {
+				// Up=0x00780000 Down=0xFF880000
+				event.type = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
+					Mouse.ScrollDown : Mouse.ScrollUp;
+			}
+			*/
 		default: goto L_READ;
 		}
 	} else version (Posix) {
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_tio);
-		scope (exit) tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_tio);
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
+		scope (exit) tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 		
 		//TODO: Mouse reporting in Posix terminals
 		//      * X10 compatbility mode (mouse-down only)
@@ -272,136 +291,134 @@ L_READ:
 		//      So we have a few choices:
 		//      - string table (current, works alright)
 		//      - string[string]
+		//        - needs active init though
 		//      - string decoding
 		//        [ -> escape
 		//        1;2 -> shift (optional)
 		//        B -> right arrow
+		//      - long+template+0-init
+		//        - cursed but if they don't never go above 8 bytes,
+		//          worth it?
 		
 		struct KeyInfo {
 			string text;
-			ushort value;
-			bool ctrl, alt, shift;
+			int value;
 		}
 		static immutable KeyInfo[] keyInputs = [
-			// text		Key value	ctrl	alt	shift
-			{ "\033[A",	Key.UpArrow,	false,	false,	false },
-			{ "\033[1;2A",	Key.UpArrow,	false,	false,	true },
-			{ "\033[1;3A",	Key.UpArrow,	false,	true,	false },
-			{ "\033[1;5A",	Key.UpArrow,	true,	false,	false },
-			{ "\033[B",	Key.DownArrow,	false,	false,	false },
-			{ "\033[1;2B",	Key.DownArrow,	false,	false,	true },
-			{ "\033[1;3B",	Key.DownArrow,	false,	true,	false },
-			{ "\033[1;5B",	Key.DownArrow,	true,	false,	false },
-			{ "\033[C",	Key.RightArrow,	false,	false,	false },
-			{ "\033[1;2C",	Key.RightArrow,	false,	false,	true },
-			{ "\033[1;3C",	Key.RightArrow,	false,	true,	false },
-			{ "\033[1;5C",	Key.RightArrow,	true,	false,	false },
-			{ "\033[D",	Key.LeftArrow,	false,	false,	false },
-			{ "\033[1;2D",	Key.LeftArrow,	false,	false,	true },
-			{ "\033[1;3D",	Key.LeftArrow,	false,	true,	false },
-			{ "\033[1;5D",	Key.LeftArrow,	true,	false,	false },
-			{ "\033[2~",	Key.Insert,	false,	false,	false },
-			{ "\033[3~",	Key.Delete,	false,	false,	false },
-			{ "\033[3;5~",	Key.Delete,	true,	false,	false },
-			{ "\033[H",	Key.Home,	false,	false,	false },
-			{ "\033[1;5H",	Key.Home,	true,	false,	false },
-			{ "\033[F",	Key.End,	false,	false,	false },
-			{ "\033[1;5F",	Key.End,	true,	false,	false },
-			{ "\033[5~",	Key.PageUp,	false,	false,	false },
-			{ "\033[5;5~",	Key.PageUp,	true,	false,	false },
-			{ "\033[6~",	Key.PageDown,	false,	false,	false },
-			{ "\033[6;5~",	Key.PageDown,	true,	false,	false },
-			{ "\033OP",	Key.F1,	false,	false,	false },
-			{ "\033[1;2P",	Key.F1,	false,	false,	true },
-			{ "\033[1;3R",	Key.F1,	false,	true,	false },
-			{ "\033[1;5P",	Key.F1,	true,	false,	false },
-			{ "\033OQ",	Key.F2,	false,	false,	false },
-			{ "\033[1;2Q",	Key.F2,	false,	false,	true },
-			{ "\033OR",	Key.F3,	false,	false,	false },
-			{ "\033[1;2R",	Key.F3,	false,	false,	true },
-			{ "\033OS",	Key.F4,	false,	false,	false },
-			{ "\033[1;2S",	Key.F4,	false,	false,	true },
-			{ "\033[15~",	Key.F5,	false,	false,	false },
-			{ "\033[15;2~",	Key.F5,	false,	false,	true },
-			{ "\033[17~",	Key.F6,	false,	false,	false },
-			{ "\033[17;2~",	Key.F6,	false,	false,	true },
-			{ "\033[18~",	Key.F7,	false,	false,	false },
-			{ "\033[18;2~",	Key.F7,	false,	false,	true },
-			{ "\033[19~",	Key.F8,	false,	false,	false },
-			{ "\033[19;2~",	Key.F8,	false,	false,	true },
-			{ "\033[20~",	Key.F9,	false,	false,	false },
-			{ "\033[20;2~",	Key.F9,	false,	false,	true },
-			{ "\033[21~",	Key.F10,	false,	false,	false },
-			{ "\033[21;2~",	Key.F10,	false,	false,	true },
-			{ "\033[23~",	Key.F11,	false,	false,	false },
-			{ "\033[23;2~",	Key.F11,	false,	false,	true },
-			{ "\033[24~",	Key.F12,	false,	false,	false },
-			{ "\033[24;2~",	Key.F12,	false,	false,	true },
-			
+			// text		Key value
+			{ "\033[A",	Key.UpArrow },
+			{ "\033[1;2A",	Key.UpArrow | Mod.shift },
+			{ "\033[1;3A",	Key.UpArrow | Mod.alt },
+			{ "\033[1;5A",	Key.UpArrow | Mod.ctrl },
+			{ "\033[B",	Key.DownArrow },
+			{ "\033[1;2B",	Key.DownArrow | Mod.shift },
+			{ "\033[1;3B",	Key.DownArrow | Mod.alt },
+			{ "\033[1;5B",	Key.DownArrow | Mod.ctrl },
+			{ "\033[C",	Key.RightArrow },
+			{ "\033[1;2C",	Key.RightArrow | Mod.shift },
+			{ "\033[1;3C",	Key.RightArrow | Mod.alt },
+			{ "\033[1;5C",	Key.RightArrow | Mod.ctrl },
+			{ "\033[D",	Key.LeftArrow },
+			{ "\033[1;2D",	Key.LeftArrow | Mod.shift },
+			{ "\033[1;3D",	Key.LeftArrow | Mod.alt },
+			{ "\033[1;5D",	Key.LeftArrow | Mod.ctrl },
+			{ "\033[2~",	Key.Insert },
+			{ "\033[3~",	Key.Delete },
+			{ "\033[3;5~",	Key.Delete | Mod.ctrl },
+			{ "\033[H",	Key.Home },
+			{ "\033[1;5H",	Key.Home | Mod.ctrl },
+			{ "\033[F",	Key.End },
+			{ "\033[1;5F",	Key.End | Mod.ctrl },
+			{ "\033[5~",	Key.PageUp },
+			{ "\033[5;5~",	Key.PageUp | Mod.ctrl },
+			{ "\033[6~",	Key.PageDown },
+			{ "\033[6;5~",	Key.PageDown | Mod.ctrl },
+			{ "\033OP",	Key.F1 },
+			{ "\033[1;2P",	Key.F1 | Mod.shift, },
+			{ "\033[1;3R",	Key.F1 | Mod.alt, },
+			{ "\033[1;5P",	Key.F1 | Mod.ctrl, },
+			{ "\033OQ",	Key.F2 },
+			{ "\033[1;2Q",	Key.F2 | Mod.shift },
+			{ "\033OR",	Key.F3 },
+			{ "\033[1;2R",	Key.F3 | Mod.shift },
+			{ "\033OS",	Key.F4 },
+			{ "\033[1;2S",	Key.F4 | Mod.shift },
+			{ "\033[15~",	Key.F5 },
+			{ "\033[15;2~",	Key.F5 | Mod.shift },
+			{ "\033[17~",	Key.F6 },
+			{ "\033[17;2~",	Key.F6 | Mod.shift },
+			{ "\033[18~",	Key.F7 },
+			{ "\033[18;2~",	Key.F7 | Mod.shift },
+			{ "\033[19~",	Key.F8 },
+			{ "\033[19;2~",	Key.F8 | Mod.shift },
+			{ "\033[20~",	Key.F9 },
+			{ "\033[20;2~",	Key.F9 | Mod.shift },
+			{ "\033[21~",	Key.F10 },
+			{ "\033[21;2~",	Key.F10 | Mod.shift },
+			{ "\033[23~",	Key.F11 },
+			{ "\033[23;2~",	Key.F11 | Mod.shift},
+			{ "\033[24~",	Key.F12 },
+			{ "\033[24;2~",	Key.F12 | Mod.shift },
 		];
-		
-		event.ctrl = event.alt = event.shift = false;
 		
 		enum BLEN = 8;
 		char[BLEN] b = void;
 	L_READ:
 		ssize_t r = read(STDIN_FILENO, &b, BLEN);
 		
+		event.type = InputType.keyDown; // Assuming for now
+		
 		switch (r) {
-		case -1: assert(0, "read failed");
-		case 0:  goto L_READ; // HOW
+		case -1: assert(0, "read(2) failed");
+		case 0:  goto L_READ; // HOW EVEN
 		case 1:
-			char c = b[0];
-			if (c < 32) { // Control character
-				switch (c) {
-				case 0: goto L_READ; // Invalid
-				case 8: // ^H
-					event.value = Key.Backspace;
-					event.ctrl = true;
-					return;
-				case 9: // \t
-					event.value = Key.Tab;
-					return;
-				case 13: // '\r'
-					event.value = Key.Enter;
-					return;
-				case 20: // ' '
-					event.value = Key.Enter;
-					return;
-				case 27: // \033
-					event.value = Key.Escape;
-					return;
-				default:
-				}
-				event.value = cast(ushort)(c + 64);
-				event.ctrl = true;
-			} else if (c == 127) {
-				event.value = Key.Backspace;
-			} else if (c >= 'a' && c <= 'z') {
-				event.value = cast(ushort)(c - 32);
-			} else if (c >= 'A' && c <= 'Z') {
-				event.value = c;
-				event.shift = true;
-			} else if (c >= '0' && c <= '9') {
-				event.value = c; // D0-D9
+			version (TestInput) printf("stdin: \\0%o\n", b[0]);
+			event.key = b[0];
+			// Filtering here adjusts the value only if necessary.
+			switch (event.key) {
+			case 0: goto L_READ; // Invalid
+			case 8: // ^H
+				event.key |= Mod.ctrl;
+				return;
+			case 127:
+				event.key = Key.Backspace;
+				return;
+			default:
+			}
+			if (event.key >= 'a' && event.key <= 'z') {
+				event.key = cast(ushort)(event.key - 32);
+			} else if (event.key >= 'A' && event.key <= 'Z') {
+				event.key |= Mod.shift;
 			}
 			return;
 		default:
 		}
 		
+		version (TestInput) {
+			printf("stdin:");
+			for (size_t i; i < r; ++i) {
+				char c = b[i];
+				if (c < 32 || c > 126)
+					printf(" \\0%o", c);
+				else
+					putchar(b[i]);
+			}
+			putchar('\n');
+			stdout.flush();
+		}
+		
+		// Make a slice of misc. input.
+		const(char)[] inputString = b[0..r];
+		
 		//TODO: Checking for mouse inputs
 		//      Starts with \033[M
 		
 		// Checking for key inputs
-		const(char)[] text = b[0..r];
 		for (size_t i; i < keyInputs.length; ++i) {
 			immutable(KeyInfo) *ki = &keyInputs[i];
 			if (r != ki.text.length) continue;
-			if (text != ki.text) continue;
-			event.value = ki.value;
-			event.ctrl  = ki.ctrl;
-			event.alt   = ki.alt;
-			event.shift = ki.shift;
+			if (inputString != ki.text) continue;
+			event.key  = ki.value;
 			return;
 		}
 		
@@ -410,8 +427,22 @@ L_READ:
 	} // version posix
 }
 
+/// Terminal input type.
+enum InputType {
+	keyDown,
+	keyUp,
+	mouseDown,
+	mouseUp,
+}
+
+/// Key modifier
+enum Mod {
+	ctrl  = 1 << 16,
+	shift = 1 << 17,
+	alt   = 1 << 18,
+}
 /// Key codes mapping.
-enum Key : ushort {
+enum Key {
 	Undefined = 0,
 	Backspace = 8,
 	Tab = 9,
@@ -446,6 +477,7 @@ enum Key : ushort {
 	D8 = 56,
 	D9 = 57,
 	Colon = 58,
+	SemiColon = 59,
 	A = 65,
 	B = 66,
 	C = 67,
@@ -559,31 +591,23 @@ enum Key : ushort {
 	Pa1 = 253,
 	OemClear = 254
 }
-enum Mouse : ushort {
-	Click	= 0x1000,
-	ScrollUp	= 0x2000,
-	ScrollDown	= 0x3000,
-}
 
-/*******************************************************************
- * Structs
- *******************************************************************/
-
-/// Key information structure
+/// Terminal input structure
 struct TerminalInput {
-	ushort value;
 	union {
+		int key; /// Keyboard input with possible Mod flags.
 		struct {
-			bool ctrl, alt, shift;
-		}
-		struct {
-			ushort mouseX, mouseY;
+			ushort mouseX; /// Mouse column coord
+			ushort mouseY; /// Mouse row coord
 		}
 	}
+	int type; /// Terminal input event type
 }
 
-/// 
+/// Terminal size structure
 struct TerminalSize {
-	/// 
-	int width, height;
+	/// Terminal width in character columns
+	int width;
+	/// Terminal height in character rows
+	int height;
 }
