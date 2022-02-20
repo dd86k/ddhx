@@ -24,7 +24,7 @@ Offset h   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
      130  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
      140  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
      150  00 00 00 00 00 00 00 00 00 20 00 00 08 00 00 00  ......... ......
- 448 B | 0 B - 448 B | 0% - 0.0211302%
+ Hex | 448 B | 0 B - 448 B | 0% - 0.0211302%
 ```
 
 ddhx is a quick and dirty TUI hexadecimal viewer meant to replace my
@@ -43,12 +43,13 @@ Modes supported:
 /      \  /                                             \  /              \
 Offset h   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
      150  00 00 00 00 00 00 00 00 00 20 00 00 08 00 00 00  ......... ......
- 400 B | 400 B - 800 B | 36.9004% - 73.8007%
-   ^     \_____ _____/   \________ ________/
-   |           v                  v
-   |           |                  +- Start-end view position in pourcentage
-   |           +- Start-end view buffer position
-   +- View buffer size
+ Hex | 400 B | 400 B - 800 B | 36.9004% - 73.8007%
+  ^     ^     \_____ _____/   \________ ________/
+  |     |           v                  v
+  |     |           |                  +- Start-end view position in pourcentage
+  |     |           +- Start-end view buffer position
+  |     +- View buffer size
+  +- Current data mode
 ```
 
 ## Supported Platforms
