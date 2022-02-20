@@ -2,8 +2,8 @@
 ///
 /// This exists because 32-bit runtimes suffer from the 32-bit file size limit.
 /// Despite the MS C runtime having _open and _fseeki64, the DM C runtime does
-/// not have these functions. With the OS functions in place, Windows XP is the
-/// minimum version.
+/// not have these functions.
+/// 
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
