@@ -44,6 +44,24 @@ int openStdin() {
 
 /// Main app entry point
 int appInteractive(long skip = 0) {
+	version (Trace) trace("terminalInit");
+	terminalInit;
+	
+	version (Trace) trace("terminalSize");
+	globals.termSize = terminalSize;
+	if (globals.termSize.height < 3) {
+		stderr.writeln("error: Need at least 3 lines to display properly");
+		return 1;
+	}
+	if (globals.termSize.width < 20) {
+		stderr.writeln("error: Need at least 20 columns to display properly");
+		return 1;
+	}
+	
+	//TODO: New stdout display, don't touch current display buffer
+	version (Trace) trace("terminalClear");
+	terminalClear;
+	
 	//TODO: negative should be starting from end of file (if not stdin)
 	if (skip < 0)
 		skip = +skip;
@@ -53,14 +71,9 @@ int appInteractive(long skip = 0) {
 		input.slurpStdin(skip);
 	}
 	
+	//TODO: seek + refresh instead of manual startup
 	input.position = skip;
 	
-	version (Trace) trace("coninit");
-	terminalInit;
-	version (Trace) trace("conclear");
-	terminalClear;
-	version (Trace) trace("conheight");
-	globals.termHeight = terminalSize.height;
 	resizeDisplayBuffer(true);
 	input.read();
 	render();
@@ -370,7 +383,7 @@ void resizeDisplayBuffer(bool skipTerm = false) {
 	version (Trace) trace("skip=%s", skipTerm);
 	
 	// Effective height
-	const int h = (skipTerm ? globals.termHeight : terminalSize.height) - 2;
+	const int h = (skipTerm ? globals.termSize.height : terminalSize.height) - 2;
 	
 	int newSize = h * globals.rowWidth; // Proposed buffer size
 	if (newSize >= input.size)

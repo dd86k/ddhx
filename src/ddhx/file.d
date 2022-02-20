@@ -11,7 +11,7 @@ module ddhx.file;
 
 version (Windows) {
 	import core.sys.windows.winnt :
-		DWORD, HANDLE, LARGE_INTEGER,
+		DWORD, HANDLE, LARGE_INTEGER, FALSE, TRUE,
 		GENERIC_ALL, GENERIC_READ, GENERIC_WRITE;
 	import core.sys.windows.winbase :
 		CreateFileA, CreateFileW, SetFilePointerEx, ReadFile, ReadFileEx, GetFileSizeEx,
@@ -104,9 +104,12 @@ struct OSFile {
 	
 	int openFile(string path/*, bool create*/) {
 		version (Windows) {
+			// NOTE: toUTF16z/tempCStringW
+			//       Phobos internally uses tempCStringW from std.internal
+			//       but I doubt it's meant for us to use so...
+			///      Legacy baggage?
 			fileHandle = CreateFileW(
-				//path.toUTF16z,	// lpFileName
-				path.tempCStringW,	// lpFileName
+				path.toUTF16z,	// lpFileName
 				GENERIC_READ/* | GENERIC_WRITE*/,	// dwDesiredAccess
 				0,	// dwShareMode
 				null,	// lpSecurityAttributes
@@ -192,7 +195,7 @@ struct OSFile {
 	private int readFile() {
 		version (Windows) {
 			DWORD r = void;
-			if (ReadFile(fileHandle, readBuffer.ptr, readBuffer.length, &r, null) == FALSE)
+			if (ReadFile(fileHandle, readBuffer.ptr, readSize, &r, null) == FALSE)
 				return errorSet(ErrorCode.os);
 			buffer = readBuffer[0..r];
 		} else version (Posix) {

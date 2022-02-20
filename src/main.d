@@ -147,9 +147,9 @@ int main(string[] args) {
 			if (convert(length, cliLength))
 				goto L_ERROR;
 		}
-		appDump(seek, length);
-	} else appInteractive(seek);
-	return 0;
+		return appDump(seek, length);
+	} else
+		return appInteractive(seek);
 
 L_ERROR:
 	return printError(1, errorMsg);

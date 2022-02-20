@@ -238,8 +238,7 @@ struct Globals {
 	char defaultChar = '.';	/// Default character to use for non-ascii characters
 //	int include;	/// Include what panels
 	// Internals
-	int termHeight;	/// Last known terminal height
-	int termWidth;	/// Last known terminal width
+	TerminalSize termSize;	/// Last known terminal size
 }
 
 __gshared Globals globals; /// Single-instance of globals.
