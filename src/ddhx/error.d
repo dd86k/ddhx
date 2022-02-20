@@ -8,7 +8,6 @@ enum ErrorCode {
 	success,
 	unknown,
 	negativeValue,
-	exception,
 	fileEmpty,
 	inputEmpty,
 	invalidCommand,
@@ -22,9 +21,12 @@ enum ErrorCode {
 	noLastItem,
 	eof,
 	unimplemented,
+	
+	exception,
+	os,
 }
 
-private __gshared ErrorCode lastCode;
+__gshared ErrorCode lastError; /// Last error code.
 private __gshared string lastMsg;
 private __gshared string lastFile;
 private __gshared int lastLine;
@@ -33,7 +35,7 @@ int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
 	version (Trace) trace("%s", code);
 	lastFile = file;
 	lastLine = line;
-	return (lastCode = code);
+	return (lastError = code);
 }
 
 int errorSet(Exception ex) {
@@ -50,12 +52,17 @@ int errorSet(Exception ex) {
 	lastFile = ex.file;
 	lastLine = cast(int)ex.line;
 	lastMsg  = ex.msg;
-	return (lastCode = ErrorCode.exception);
+	return (lastError = ErrorCode.exception);
 }
 
-string errorMsg() {
-	switch (lastCode) with (ErrorCode) {
+const(char)[] errorMsg() {
+	__gshared char[1024] errMsg;
+	
+	switch (lastError) with (ErrorCode) {
 	case exception: return lastMsg;
+	case os:
+		
+		return "os";
 	case fileEmpty: return "File is empty.";
 	case inputEmpty: return "Input is empty.";
 	case invalidCommand: return "Command not found.";

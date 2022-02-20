@@ -20,20 +20,23 @@ import ddhx;
 // User settings
 //
 
-int printError(A...)(int code, string fmt, A args) {
+int printError(A...)(int code, const(char)[] fmt, A args) {
 	stderr.write("error: ");
 	stderr.writefln(fmt, args);
 	return code;
 }
 
+//TODO: deprecate
 int openFile(string path) {
 	version (Trace) trace("path=%s", path);
 	return input.openFile(path);
 }
+//TODO: deprecate
 int openMmfile(string path) {
 	version (Trace) trace("path=%s", path);
 	return input.openMmfile(path);
 }
+//TODO: deprecate
 int openStdin() {
 	version (Trace) trace("-");
 	return input.openStdin();
@@ -41,9 +44,6 @@ int openStdin() {
 
 /// Main app entry point
 int appInteractive(long skip = 0) {
-	//TODO: Consider changing the buffering strategy
-	//      e.g., flush+setvbuf/puts+flush
-	
 	//TODO: negative should be starting from end of file (if not stdin)
 	if (skip < 0)
 		skip = +skip;
@@ -61,7 +61,7 @@ int appInteractive(long skip = 0) {
 	terminalClear;
 	version (Trace) trace("conheight");
 	globals.termHeight = terminalSize.height;
-	resizeBuffer(true);
+	resizeDisplayBuffer(true);
 	input.read();
 	render();
 	
@@ -79,7 +79,7 @@ L_INPUT:
 L_KEYDOWN:
 	version (Trace) trace("key=%d", event.key);
 	
-	switch (event.key) with (Key) {
+	switch (event.key) with (Key) with (Mod) {
 	
 	//
 	// Navigation
@@ -89,12 +89,12 @@ L_KEYDOWN:
 	case DownArrow, J:  moveRowDown; break;
 	case LeftArrow, H:  moveLeft; break;
 	case RightArrow, L: moveRight; break;
-	case PageUp:            movePageUp; break;
-	case PageDown:          movePageDown; break;
-	case Home:              moveAlignStart; break;
-	case Home | Mod.ctrl:   moveStart; break;
-	case End:               moveAlignEnd; break;
-	case End | Mod.ctrl:    moveEnd; break;
+	case PageUp:        movePageUp; break;
+	case PageDown:      movePageDown; break;
+	case Home:          moveAlignStart; break;
+	case Home | ctrl:   moveStart; break;
+	case End:           moveAlignEnd; break;
+	case End | ctrl:    moveEnd; break;
 	
 	//
 	// Actions/Shortcuts
@@ -114,7 +114,7 @@ L_KEYDOWN:
 		break;
 	case G:
 		menu("g ");
-		displayRenderTop();
+		displayRenderTop;
 		break;
 	case I:
 		msgFileInfo;
@@ -365,7 +365,7 @@ void menu(string cmdPrepend = null) {
 /// Automatically determine new buffer size for display engine from
 /// console/terminal window size.
 /// Params: skipTerm = Skip terminal size detection and use stored value.
-void resizeBuffer(bool skipTerm = false) {
+void resizeDisplayBuffer(bool skipTerm = false) {
 	//TODO: Avoid crash when on end of file + resize goes further than file
 	version (Trace) trace("skip=%s", skipTerm);
 	
@@ -385,7 +385,7 @@ void resizeBuffer(bool skipTerm = false) {
 /// 4. Clear the terminal
 /// 5. Render
 void refresh() {
-	resizeBuffer();
+	resizeDisplayBuffer();
 	input.seek(input.position);
 	input.read();
 	terminalClear();
@@ -525,7 +525,7 @@ void safeSeek(long pos) {
 /// Params:
 /// 	fmt = Format.
 /// 	args = Arguments.
-void msgTop(A...)(string fmt, A args) {
+void msgTop(A...)(const(char)[] fmt, A args) {
 	terminalPos(0, 0);
 	msg(fmt, args);
 }
@@ -534,12 +534,12 @@ void msgTop(A...)(string fmt, A args) {
 /// Params:
 /// 	fmt = Format.
 /// 	args = Arguments.
-void msgBottom(A...)(string fmt, A args) {
+void msgBottom(A...)(const(char)[] fmt, A args) {
 	terminalPos(0, terminalSize.height - 1);
 	msg(fmt, args);
 }
 
-private void msg(A...)(string fmt, A args) {
+private void msg(A...)(const(char)[] fmt, A args) {
 	import std.format : sformat;
 	char[256] outbuf = void;
 	char[] outs = outbuf[].sformat(fmt, args);

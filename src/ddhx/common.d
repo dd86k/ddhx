@@ -4,7 +4,8 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.common;
 
-import std.stdio : File, stdin, FILE;
+//TODO: Remove imports
+import std.stdio : File, stdin, FILE, fgetpos, fsetpos, fpos_t;
 import std.mmfile;
 import std.file : getSize;
 import std.path : baseName;
@@ -36,6 +37,7 @@ enum InputMode {
 }
 
 /// 
+//TODO: Deprecate
 struct Input {
 	private union { // Input internals or buffer
 		File file;	/// File input
@@ -51,6 +53,7 @@ struct Input {
 	}
 	ulong size;	/// file size
 	long position;	/// Absolute position in file/mmfile/buffer
+	private long position2;
 	uint bufferSize;	/// buffer size
 	string fileName;	/// File basename
 	const(char)[] sizeString;	/// Binary file size as string
