@@ -4,7 +4,9 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.terminal;
 
-//TODO: Consider an event input filter mask function
+//TODO: Register function for terminal size change
+//      Under Windows, that's under a regular input event
+//      Under Linux, that's under a signal (and function pointer)
 
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
@@ -66,7 +68,7 @@ version (Posix) {
 	private __gshared termios old_ios, new_ios;
 }
 
-/// Initiate ddcon
+/// Initiate terminal.
 void terminalInit() {
 	import std.format : format;
 	version (Windows) {

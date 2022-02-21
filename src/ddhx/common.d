@@ -27,9 +27,11 @@ enum VERSION_LINE = "ddhx " ~ VERSION ~ " (built: " ~ __TIMESTAMP__~")";
 //
 
 /// Dump default size
+deprecated
 enum DEFAULT_BUFFER_SIZE = 4 * 1024;
 
 /// 
+deprecated
 enum InputMode {
 	file,
 	mmfile,
@@ -38,6 +40,7 @@ enum InputMode {
 
 /// 
 //TODO: Deprecate
+deprecated
 struct Input {
 	private union { // Input internals or buffer
 		File file;	/// File input
@@ -242,4 +245,5 @@ struct Globals {
 }
 
 __gshared Globals globals; /// Single-instance of globals.
-__gshared Input   input;   /// Input file/stream
+deprecated __gshared Input   input;   /// Input file/stream
+__gshared OSFile io;	/// File/stream I/O instance.

@@ -15,78 +15,68 @@ import ddhx;
 //      In part:
 //      - Check read result length to allow overflow past the view 
 //      - Make seek safer in general instead of specific function
+//TODO: Rename all functions with app
+//      appSeek, appPageDown, etc.
 
-//
-// User settings
-//
-
+int printError() {
+	stderr.write("error: ");
+	stderr.writeln(errorMsg);
+	return lastError;
+}
 int printError(A...)(int code, const(char)[] fmt, A args) {
 	stderr.write("error: ");
 	stderr.writefln(fmt, args);
 	return code;
 }
 
-//TODO: deprecate
-int openFile(string path) {
-	version (Trace) trace("path=%s", path);
-	return input.openFile(path);
-}
-//TODO: deprecate
-int openMmfile(string path) {
-	version (Trace) trace("path=%s", path);
-	return input.openMmfile(path);
-}
-//TODO: deprecate
-int openStdin() {
-	version (Trace) trace("-");
-	return input.openStdin();
-}
-
-/// Main app entry point
+/// Interactive application.
+/// Params: skip = Seek to file/data position.
+/// Returns: Error code.
 int appInteractive(long skip = 0) {
+	// NOTE: File I/O handled before due to stdin
+	//TODO: negative should be starting from end of file (if not stdin)
+	//      stdin: use seek
+	if (skip < 0)
+		// skip = +skip;
+		return printError(1, "Skip value must be positive");
+	
+	if (io.mode == FileMode.stream) {
+		version (Trace) trace("slurp skip=%u", skip);
+		if (io.toMemory(skip, 0))
+			return printError;
+	} else {
+		if (io.seek(Seek.start, skip))
+			return printError;
+	}
+	
+	// Terminal setup (resets stdin if PIPE/FIFO is detected)
 	version (Trace) trace("terminalInit");
 	terminalInit;
-	
 	version (Trace) trace("terminalSize");
 	globals.termSize = terminalSize;
-	if (globals.termSize.height < 3) {
-		stderr.writeln("error: Need at least 3 lines to display properly");
-		return 1;
-	}
-	if (globals.termSize.width < 20) {
-		stderr.writeln("error: Need at least 20 columns to display properly");
-		return 1;
-	}
-	
+	if (globals.termSize.height < 3)
+		return printError(1, "Need at least 3 lines to display properly");
+	if (globals.termSize.width < 20)
+		return printError(1, "Need at least 20 columns to display properly");
 	//TODO: New stdout display, don't touch current display buffer
 	version (Trace) trace("terminalClear");
 	terminalClear;
 	
-	//TODO: negative should be starting from end of file (if not stdin)
-	if (skip < 0)
-		skip = +skip;
-	
-	if (input.mode == InputMode.stdin) {
-		version (Trace) trace("slurp skip=%u", skip);
-		input.slurpStdin(skip);
-	}
-	
-	//TODO: seek + refresh instead of manual startup
-	input.position = skip;
-	
+	// Setup
 	resizeDisplayBuffer(true);
-	input.read();
+	if (io.read())
+		return printError;
 	render();
 	
-	TerminalInput event;
 	version (Trace) trace("loop");
-
+	TerminalInput event;
 L_INPUT:
 	terminalInput(event);
 	version (Trace) trace("type=%d", event.type);
 	
-	final switch (event.type) with (InputType) {
+	switch (event.type) with (InputType) {
 	case keyDown: goto L_KEYDOWN;
+	default: goto L_INPUT;
 	}
 
 L_KEYDOWN:
@@ -145,87 +135,66 @@ L_KEYDOWN:
 	goto L_INPUT;
 }
 
-/// Dump application.
+/// Dump to stdout, akin to xxd(1).
 /// Params:
 /// 	skip = If set, number of bytes to skip.
 /// 	length = If set, maximum length to read.
 /// Returns: Error code.
 int appDump(long skip, long length) {
 	if (length < 0)
-		return printError(2, "length negative");
+		return printError(1, "Length must be a positive value");
 	
 	version (Trace) trace("skip=%d length=%d", skip, length);
 	
-	final switch (input.mode) {
-	case InputMode.file, InputMode.mmfile:
+	switch (io.mode) with (FileMode) {
+	case file, mmfile: // Has size
 		// negative skip value: from end of file
 		if (skip < 0)
-			skip = input.size + skip;
+			skip = io.size + skip;
 		
 		// adjust length if unset
 		if (length == 0)
-			length = input.size - skip;
+			length = io.size - skip;
+		else if (length < 0)
+			return printError(1, "Length value must be positive");
 		
 		// overflow check
-		if (skip + length > input.size)
-			return printError(3, "specified length is overflow file size");
-		
-		// start skipping
-		if (skip)
-			input.seek(skip);
-		
-		// top bar to stdout
-		displayRenderTopRaw();
-		
-		// read for length by chunk
-		if (length >= DEFAULT_BUFFER_SIZE) {
-			input.adjust(DEFAULT_BUFFER_SIZE);
-			do {
-				input.read();
-				displayRenderMainRaw();
-				input.position += DEFAULT_BUFFER_SIZE;
-			} while (length -= DEFAULT_BUFFER_SIZE > 0);
-		}
-		
-		// read remaining length
-		if (length > 0) {
-			input.adjust(cast(uint)length);
-			input.read();
-			displayRenderMainRaw();
-		}
+		//TODO: This shouldn't error and should take the size we get from file.
+		if (skip + length > io.size)
+			return printError(1, "Specified length overflows file size");
 		
 		break;
-	case InputMode.stdin:
+	case stream: // Has no size
 		if (skip < 0)
-			return printError(4, "skip value cannot be negative");
-		
-		size_t len = void;
-		if (skip) {
-			if (skip > DEFAULT_BUFFER_SIZE) {
-				input.adjust(DEFAULT_BUFFER_SIZE);
-			} else {
-				input.adjust(cast(uint)(skip));
-			}
-			do {
-				len = input.read().length;
-			} while (len == DEFAULT_BUFFER_SIZE);
-		}
-		
-		input.adjust(DEFAULT_BUFFER_SIZE);
-		displayRenderTopRaw();
-		
-		do {
-			len = input.read().length;
-			displayRenderMainRaw();
-			input.position += DEFAULT_BUFFER_SIZE;
-		} while (len == DEFAULT_BUFFER_SIZE);
+			return printError(1, "Skip value must be positive with stream");
+		if (length == 0)
+			length = long.max;
 		break;
+	default: // Memory mode is never initiated by CLI
 	}
+	
+	// start skipping
+	if (skip)
+		io.seek(Seek.start, skip);
+	
+	// top bar to stdout
+	displayRenderTopRaw();
+	
+	// Mitigates unaligned reads/renders
+	io.resizeBuffer(globals.rowWidth * 16);
+	
+	// read until EOF or length spec
+	long r;
+	do {
+		io.read();
+		displayRenderMainRaw();
+		r += io.buffer.length;
+	} while (io.eof == false && r < length);
+	
 	return 0;
 }
 
 /// int appDiff(string path1, string path2)
-
 
 //TODO: Dedicated command interpreter to use for dedicated files (settings)
 private
@@ -233,20 +202,24 @@ void menu(string cmdPrepend = null) {
 	// clear bar and command prepend
 	terminalPos(0, 0);
 	printf("%*s", terminalSize.width - 1, cast(char*)" ");
+	// write prompt
 	terminalPos(0, 0);
 	write(":");
 	if (cmdPrepend) write(cmdPrepend);
 	
+	// read input split arguments by space, no empty entries
 	//TODO: GC-free merge prepend and readln(buf), then split
 	//TODO: Smarter argv handling with single and double quotes
 	//TODO: Consider std.getopt
-	string[] argv = cast(string[])(cmdPrepend ~ readln[0..$-1]).split; // split ' ', no empty entries
+	string[] argv = cast(string[])(cmdPrepend ~ readln[0..$-1]).split;
 	
+	// draw upper bar, clearing input
 	displayRenderTop;
 	
 	const size_t argc = argv.length;
 	if (argc == 0) return;
 	
+	//TODO: replace error var usage with lastError
 	int error;
 	switch (argv[0]) {
 	case "g", "goto":
@@ -256,20 +229,23 @@ void menu(string cmdPrepend = null) {
 		}
 		switch (argv[1]) {
 		case "e", "end":
-			with (globals) seek(input.size - input.bufferSize);
+			moveEnd;
 			break;
 		case "h", "home":
-			seek(0);
+			moveStart;
 			break;
 		default:
-			seek(argv[1]);
+			appSeek(argv[1]);
 		}
 		break;
-	//TODO: Consider compacting keywords
-	//      like "search "u8"" may confuse the module
-	//      searchu8 seems a little appropriate
 	case "s", "search": // Search
 		if (argc <= 1) {
+			//TODO: Missing type (just one argument) -> Auto guess
+			//      Auto-guess type (integer/"string"/byte array/etc.)
+			//      -2 -> byte
+			//      0xffff -> ushort
+			//      "test"w -> wchar
+			//      etc.
 			msgBottom("Missing argument (type)");
 			break;
 		}
@@ -278,8 +254,6 @@ void menu(string cmdPrepend = null) {
 			break;
 		}
 		
-		//TODO: search auto ...
-		//      Auto-guess type (integer/"string"/byte array/etc.)
 		void *p = void;
 		size_t plen = void;
 		string type = argv[1];
@@ -290,13 +264,10 @@ void menu(string cmdPrepend = null) {
 		
 		search(p, plen, type);
 		break; // "search"
-	//case "backskip":
 	case "skip":
 		ubyte byte_ = void;
 		if (argc <= 1) {
-			byte_ = input.result[0];
-			//msgBottom("Missing argument (byte)");
-			//return;
+			byte_ = io.buffer[0];
 		} else {
 			if (argv[1] == "zero")
 				byte_ = 0;
@@ -361,6 +332,7 @@ void menu(string cmdPrepend = null) {
 		displayRenderMain;
 		break;
 	case "reset":
+		//TODO: resetAllSettings
 		settingCharset("ascii");
 		settingOffset("h");
 		settingData("x");
@@ -386,9 +358,9 @@ void resizeDisplayBuffer(bool skipTerm = false) {
 	const int h = (skipTerm ? globals.termSize.height : terminalSize.height) - 2;
 	
 	int newSize = h * globals.rowWidth; // Proposed buffer size
-	if (newSize >= input.size)
-		newSize = cast(uint)(input.size - input.position);
-	displayResizeBuffer(newSize);
+	if (newSize >= io.size)
+		newSize = cast(uint)(io.size - io.position);
+	io.resizeBuffer(newSize);
 }
 
 /// Refresh the entire screen by:
@@ -399,8 +371,8 @@ void resizeDisplayBuffer(bool skipTerm = false) {
 /// 5. Render
 void refresh() {
 	resizeDisplayBuffer();
-	input.seek(input.position);
-	input.read();
+	io.seek(Seek.start, io.position);
+	io.read();
 	terminalClear();
 	render();
 }
@@ -414,83 +386,84 @@ void render() {
 
 /// Move the view to the start of the data
 private void moveStart() {
-	seek(0);
+	appSeek(0);
 }
 /// Move the view to the end of the data
 private void moveEnd() {
-	seek(input.size - input.bufferSize);
+	appSeek(io.size - io.readSize);
 }
 /// Align view to start of row
 private void moveAlignStart() {
-	seek(input.position - (input.position % globals.rowWidth));
+	appSeek(io.position - (io.position % globals.rowWidth));
 }
 /// Align view to end of row (start of row + row size)
 private void moveAlignEnd() {
-	const long n = input.position +
-		(globals.rowWidth - input.position % globals.rowWidth);
-	seek(n + input.bufferSize <= input.size ? n : input.size - input.bufferSize);
+	const long n = io.position +
+		(globals.rowWidth - io.position % globals.rowWidth);
+	appSeek(n + io.readSize <= io.size ? n : io.size - io.readSize);
 }
 /// Move view to one data group to the left (backwards)
 private void moveLeft() {
-	if (input.position - 1 >= 0) // Else already at 0
-		seek(input.position - 1);
+	if (io.position - 1 >= 0) // Else already at 0
+		appSeek(io.position - 1);
 }
 /// Move view to one data group to the right (forwards)
 private void moveRight() {
-	if (input.position + input.bufferSize + 1 <= input.size)
-		seek(input.position + 1);
+	if (io.position + io.readSize + 1 <= io.size)
+		appSeek(io.position + 1);
 	else
-		seek(input.size - input.bufferSize);
+		appSeek(io.size - io.readSize);
 }
 /// Move view to one row size up (backwards)
 private void moveRowUp() {
-	if (input.position - globals.rowWidth >= 0)
-		seek(input.position - globals.rowWidth);
+	if (io.position - globals.rowWidth >= 0)
+		appSeek(io.position - globals.rowWidth);
 	else
-		seek(0);
+		appSeek(0);
 }
 /// Move view to one row size down (forwards)
 private void moveRowDown() {
-	if (input.position + input.bufferSize + globals.rowWidth <= input.size)
-		seek(input.position + globals.rowWidth);
+	if (io.position + io.readSize + globals.rowWidth <= io.size)
+		appSeek(io.position + globals.rowWidth);
 	else
-		seek(input.size - input.bufferSize);
+		appSeek(io.size - io.readSize);
 }
 /// Move view to one page size up (backwards)
 private void movePageUp() {
-	if (input.position - cast(long)input.bufferSize >= 0)
-		seek(input.position - input.bufferSize);
+	if (io.position - cast(long)io.readSize >= 0)
+		appSeek(io.position - io.readSize);
 	else
-		seek(0);
+		appSeek(0);
 }
 /// Move view to one page size down (forwards)
 private void movePageDown() {
-	if (input.position + input.bufferSize + input.bufferSize <= input.size)
-		seek(input.position + input.bufferSize);
+	if (io.position + (io.readSize << 1) <= io.size)
+		appSeek(io.position + io.readSize);
 	else
-		seek(input.size - input.bufferSize);
+		appSeek(io.size - io.readSize);
 }
-
 
 /// Seek to position in data, reads view's worth, and display that.
 /// Ignores bounds checking for performance reasons.
 /// Sets CurrentPosition.
 /// Params: pos = New position
-void seek(long pos) {
+void appSeek(long pos) {
 	version (Trace) trace("pos=%d", pos);
 	
-	if (input.bufferSize < input.size) {
-		input.seek(pos);
-		input.read();
-		render();
-	} else
+	if (io.readSize >= io.size) {
 		msgBottom("Navigation disabled, buffer too small");
+		return;
+	}
+
+	io.seek(Seek.start, pos);
+	io.read();
+	render();
 }
 
 /// Parses the string as a long and navigates to the file location.
 /// Includes offset checking (+/- notation).
 /// Params: str = String as a number
-void seek(string str) {
+void appSeek(string str) {
 	version (Trace) trace("str=%s", str);
 	
 	const char seekmode = str[0];
@@ -504,22 +477,24 @@ void seek(string str) {
 	}
 	with (globals) switch (seekmode) {
 	case '+':
-		newPos = input.position + newPos;
-		if (newPos - input.bufferSize < input.size)
-			seek(newPos);
+		//TODO: else what?
+		newPos = io.position + newPos;
+		if (newPos - io.readSize < io.size)
+			appSeek(newPos);
 		break;
 	case '-':
-		newPos = input.position - newPos;
+		//TODO: else what?
+		newPos = io.position - newPos;
 		if (newPos >= 0)
-			seek(newPos);
+			appSeek(newPos);
 		break;
 	default:
 		if (newPos < 0) {
 			msgBottom("Range underflow: %d (0x%x)", newPos, newPos);
-		} else if (newPos >= input.size - input.bufferSize) {
+		} else if (newPos >= io.size - io.readSize) {
 			msgBottom("Range overflow: %d (0x%x)", newPos, newPos);
 		} else {
-			seek(newPos);
+			appSeek(newPos);
 		}
 	}
 }
@@ -527,11 +502,10 @@ void seek(string str) {
 /// Goes to the specified position in the file.
 /// Checks bounds and calls Goto.
 /// Params: pos = New position
-void safeSeek(long pos) {
+void appSafeSeek(long pos) {
 	version (Trace) trace("pos=%s", pos);
 	
-	seek(pos + input.bufferSize > input.size ?
-		input.size - input.bufferSize : pos);
+	appSeek(pos + io.readSize > io.size ? io.size - io.readSize : pos);
 }
 
 /// Display a message on the top row.
@@ -562,7 +536,7 @@ private void msg(A...)(const(char)[] fmt, A args) {
 
 /// Print some file information at the bottom bar
 void msgFileInfo() {
-	msgBottom("%8s  %s", input.sizeString, input.fileName);
+	msgBottom("%8s  %s", io.sizeString, io.name);
 }
 
 /// Exit ddhx.

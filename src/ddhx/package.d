@@ -13,4 +13,5 @@ public import
 	ddhx.settings,
 	ddhx.terminal,
 	ddhx.types,
-	ddhx.utils;
+	ddhx.utils,
+	ddhx.file;

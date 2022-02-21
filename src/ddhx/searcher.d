@@ -66,10 +66,10 @@ private int search2(const(void) *data, size_t len, string type) {
 	if (e) {
 		msgBottom(" Type %s not found", type);
 	} else {
-		if (pos + input.bufferSize > input.size)
-			pos = input.size - input.bufferSize;
-		input.seek(pos);
-		input.read();
+		if (pos + io.readSize > io.size)
+			pos = io.size - io.readSize;
+		io.seek(Seek.start, pos);
+		io.read();
 		displayRenderTop();
 		displayRenderMainRaw();
 		//TODO: Format depending on current offset format
@@ -104,15 +104,20 @@ int searchInternal(const(void) *data, size_t len, out long newPos) {
 	if (firstByteOnly == false)
 		needleBuffer = uninitializedArray!(ubyte[])(len);
 	
-	/// Current search position
-	const long oldPos = input.position;
-	long pos = input.position + 1;
-	input.seek(pos);
+	// Setup
+	OSFileState state = void;
+	io.save(state);
+	long pos = io.position + 1; /// Current search position
+	io.seek(Seek.start, pos);
+	io.resizeBuffer(BUFFER_SIZE);
 	
 	size_t haystackIndex = void;
+	ubyte[] haystack = void;
 	
 L_CONTINUE:
-	ubyte[] haystack = input.readBuffer(fileBuffer);
+	//ubyte[] haystack = input.readBuffer(fileBuffer);
+	io.read2(fileBuffer);
+	haystack = io.buffer;
 	const size_t haystackLen = haystack.length;
 	
 	// For every byte
@@ -135,12 +140,12 @@ L_CONTINUE:
 		else // needle spans across haystacks
 		{
 			const long t = pos + haystackIndex; // temporary seek
-			input.seek(t); // Go at chunk index
+			io.seek(Seek.start, t); // Go at chunk index
 			//TODO: Check length in case of EOF
-			input.readBuffer(needleBuffer); // Read needle length
+			io.read2(needleBuffer); // Read needle length
 			if (compare(needleBuffer.ptr, needle, len) == 0)
 				goto L_FOUND;
-			input.seek(pos); // Go back where we read
+			io.seek(Seek.start, pos); // Go back where we read
 		}
 	}
 	
@@ -154,7 +159,7 @@ L_CONTINUE:
 	if (haystackLen == BUFFER_SIZE) goto L_CONTINUE;
 	
 	// Not found
-	input.seek(oldPos); // Revert to old position before search
+	io.restore(state); // Revert to old position
 	return errorSet(ErrorCode.notFound);
 L_FOUND: // Found
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position
@@ -172,10 +177,10 @@ int skipByte(ubyte data) {
 	if (e) {
 		msgBottom(" Couldn't skip byte 0x%x", data);
 	} else {
-		if (pos + input.bufferSize > input.size)
-			pos = input.size - input.bufferSize;
-		input.seek(pos);
-		input.read();
+		if (pos + io.readSize > io.size)
+			pos = io.size - io.readSize;
+		io.seek(Seek.start, pos);
+		io.read();
 		displayRenderTop();
 		displayRenderMainRaw();
 		//TODO: Format depending on current offset format
@@ -188,17 +193,18 @@ private
 int skipByte(ubyte data, out long newPos) {
 	import std.array : uninitializedArray;
 	
-	/// Current search position
-	const long oldPos = input.position;
-	long pos = input.position + 1;
-	
 	/// File buffer.
 	ubyte[] fileBuffer = uninitializedArray!(ubyte[])(BUFFER_SIZE);
 	size_t haystackIndex = void;
 	
+	OSFileState state = void;
+	io.save(state);
+	long pos = io.position + 1;
+	
 L_CONTINUE:
-	input.seek(pos); // Fix for mmfile
-	ubyte[] haystack = input.readBuffer(fileBuffer);
+	io.seek(Seek.start, pos); // Fix for mmfile
+	io.read2(fileBuffer);
+	ubyte[] haystack = io.buffer;
 	const size_t haystackLen = haystack.length;
 	
 	// For every byte
@@ -217,7 +223,7 @@ L_CONTINUE:
 	if (haystackLen == BUFFER_SIZE) goto L_CONTINUE;
 	
 	// Not found
-	input.seek(oldPos); // Revert to old position before search
+	io.restore(state); // Revert to old position before search
 	return errorSet(ErrorCode.notFound);
 L_FOUND: // Found
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position

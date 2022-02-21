@@ -16,20 +16,27 @@ import ddhx;
 //TODO: Data grouping
 //      e.g., cd ab -> abcd
 //TODO: Group endianness
+//      native, little, big
 //TODO: View display mode (data+text, data, text)
+//      Currently very low priority
 //TODO: Consider hiding cursor when drawing
 //      + save/restore position
-//      terminalHideCursor()
+//      terminalCursorHide()
 //        windows: SetConsoleCursorInfo
 //                 https://docs.microsoft.com/en-us/windows/console/setconsolecursorinfo
 //        posix: \033[?25l
-//      terminalShowCursor()
+//      terminalCursorShow()
 //        windows: SetConsoleCursorInfo
 //        posix: \033[?25h
 //TODO: Redo offset formatting functions
 //      e.g. size_t formatOctal(char* buffer, long v, ubyte pad)
-//      Why?
+//      Why should I do that again?
+//TODO: Unaligned rendering.
+//      Rendering engine should be capable to take off whereever it stopped
+//      or be able to specify/toggle seperate regardless of column length.
+//      Used for dump app.
 
+/// Line size buffer for printing in main panel.
 private enum LBUF_SIZE = 2048;
 
 private extern (C) int putchar(int);
@@ -367,17 +374,9 @@ char[] transcodeEBCDIC(ubyte data) {
 
 // !SECTION
 
-void displayResizeBuffer(uint size) {
-	version (Trace) trace("size=%u", size);
-	input.adjust(size);
-}
-
-/// Returns the number of characters that gets past the 8-character limit
-/// for the current offset + buffer size.
-/// Returns: Number of spaces for column alignment.
-int getOverfill() {
-	return 0;
-}
+//
+// SECTION Rendering
+//
 
 /// Update the upper offset bar.
 void displayRenderTop() {
@@ -405,7 +404,8 @@ void displayRenderTopRaw() {
 	offsetFmt[2] = cast(char)(dataSizes[dataType] + '0');
 	offsetFmt[3]  = formatTable[offsetType];
 	
-	auto outbuf = scoped!OutBuffer(); // Recommended to use 'auto' due to struct Scoped
+	// Recommended to use 'auto' due to struct Scoped
+	auto outbuf = scoped!OutBuffer();
 	outbuf.reserve(256); // e.g. 8 + 2 + (16 * 3) + 2 + 8 = 68
 	outbuf.write("Offset(");
 	outbuf.write(offsetNames[offsetType]);
@@ -444,11 +444,11 @@ void displayRenderBottomRaw() {
 	char[128] buf = void;
 	char[] f = sformat!" %s | %s | %s - %s | %f%% - %f%%"(buf,
 		offsetNames[globals.dataType],
-		formatSize(c1, input.bufferSize), // Buffer size
-		formatSize(c2, input.position), // Formatted position
-		formatSize(c3, input.position + input.bufferSize), // Formatted position
-		((cast(float)input.position) / input.size) * 100, // Pos/input.size%
-		((cast(float)input.position + input.bufferSize) / input.size) * 100, // Pos/input.size%
+		formatSize(c1, io.readSize), // Buffer size
+		formatSize(c2, io.position), // Formatted position
+		formatSize(c3, io.position + io.readSize), // Formatted position
+		((cast(float)io.position) / io.size) * 100, // Pos/input.size%
+		((cast(float)io.position + io.readSize) / io.size) * 100, // Pos/input.size%
 	);
 	if (last > f.length) { // Fill by blanks
 		int p = cast(int)(f.length + (last - f.length));
@@ -467,8 +467,58 @@ uint displayRenderMain() {
 	return displayRenderMainRaw;
 }
 
+private struct Formatters {
+	size_t function(char*, long) offset;
+	size_t function(char*, ubyte) data;
+	uint dataSize;
+	char[] function(ubyte) character;
+	uint rowSize;
+	char defaultChar;
+}
+
+private void makeRow(char *line, ref Formatters format,
+	long pos, const(ubyte) *data, size_t len) {
+	import core.stdc.string : memset;
+	
+	version (Trace) trace("pos=%s len=%s", pos, len);
+	
+	// Insert OFFSET
+	size_t index = format.offset(line, pos);
+	line[index++] = ' '; // index: OFFSET + space
+	
+	uint dataLen = (format.rowSize * (format.dataSize + 1)); /// data row character count
+	size_t posChar = index + dataLen; // CHAR start
+	*(cast(ushort*)(line + posChar)) = 0x2020; // DATA-CHAR spacer
+	posChar += 2; // posChar: index + dataLen + spacer
+	
+	// Insert DATA and CHAR
+	for (size_t i; i < len; ++i) {
+		const ubyte byte_ = data[i];
+		// Data translation
+		line[index++] = ' ';
+		index += format.data(line + index, byte_);
+		// Character translation
+		char[] units = format.character(byte_);
+		if (units.length) {
+			for (size_t ci; ci < units.length; ++ci, ++posChar)
+				line[posChar] = units[ci];
+		} else
+			line[posChar++] = format.defaultChar;
+	}
+	// data length < minimum row requirement
+	if (len < format.rowSize) {
+		uint left = format.rowSize - cast(uint)len; // Bytes left
+		left *= (format.dataSize + 1); // space + 1x data size
+		memset(line + index, ' ', left);
+	}
+	
+	// Terminate line and send
+	line[posChar] = 0;
+}
+
 /// Update display from buffer.
 /// Returns: Numbers of row written.
+//TODO: Maybe pass ubyte[]?
 uint displayRenderMainRaw() {
 	//TODO: Consider redoing buffer management with an OutBuffer.
 	//      Or std.array.appender + std.format.spec.SingleSpec
@@ -476,76 +526,38 @@ uint displayRenderMainRaw() {
 	//TODO: [0.5] Possibility to only redraw a specific line.
 	
 	// data
-	const(ubyte) *b    = input.result.ptr;	/// data buffer pointer
-	int           bsz  = cast(int)input.result.length;	/// data buffer size
-	size_t        bpos;	// data buffer position index
+	const(ubyte) *bufp = io.buffer.ptr;	/// data buffer pointer
+	uint          blen = cast(uint)io.buffer.length;	/// data buffer size
 	
 	// line buffer
-	size_t          lpos = void;	/// line buffer index position
 	char[LBUF_SIZE] lbuf = void;	/// line buffer
 	char           *lptr = lbuf.ptr;
-	uint            ls;	/// lines printed
 	
 	// setup
-	const int rowMax = globals.rowWidth;
-	const char defaultChar = globals.defaultChar;
-	const int offsetType = globals.offsetType;
-	const int dataType = globals.dataType;
-	const int charset = globals.charType;
-	size_t function(char*, long) formatOffset = offsetFuncs[offsetType];
-	size_t function(char*, ubyte) formatData = dataFuncs[dataType];
-	const size_t dataSize = dataSizes[dataType];
-	char[] function(ubyte) transcodeChar = transFuncs[charset];
+	Formatters formatters = void;
+	formatters.offset = offsetFuncs[globals.offsetType];
+	formatters.data = dataFuncs[globals.dataType];
+	formatters.dataSize = cast(uint)dataSizes[globals.dataType];
+	formatters.character = transFuncs[globals.charType];
+	formatters.rowSize = globals.rowWidth;
+	formatters.defaultChar = globals.defaultChar;
+	long pos = io.position;
 	
-	// print lines in bulk
-	long pos = input.position;
-	for (int left = bsz; left > 0; left -= rowMax, pos += rowMax, ++ls) {
-		// Insert OFFSET
-		lpos = formatOffset(lptr, pos);
-		lbuf[lpos++] = ' '; //lptr
-		
-		// Line setup
-		const bool leftOvers = left < rowMax;
-		int bytesLeft = leftOvers ? left : rowMax;
-		
-		// Insert DATA and CHAR
-		size_t cpos = (lpos + (rowMax * (dataSize + 1))) + 2;
-		for (ushort r; r < bytesLeft; ++r, ++bpos) {
-			const ubyte byteData = b[bpos];
-			// Data translation
-			lbuf[lpos] = ' ';
-			lpos += formatData(lptr + lpos + 1, byteData) + 1;
-			// Character translation
-			char[] units = transcodeChar(byteData);
-			if (units.length)
-				for (size_t i; i < units.length; ++i, ++cpos)
-					lbuf[cpos] = units[i];
-			else
-				lbuf[cpos++] = defaultChar;
-		}
-		
-		// Spacer between DATA and CHAR panels
-		*(cast(ushort*)(lptr + lpos)) = 0x2020;
-		lpos += 2;
-		
-		// Line DATA leftovers
-		if (leftOvers) {
-			import core.stdc.string : memset;
-			bytesLeft = rowMax - left;
-			memset(lptr + lpos, ' ', bytesLeft);
-			/*do {
-				lbuf[lpos]   = ' ';
-				lbuf[lpos+1] = ' ';
-				lbuf[lpos+2] = ' ';
-				lpos += 3;
-			} while (--bytesLeft > 0);*/
-			left = 0;
-		}
-		
-		// Terminate line and send
-		lbuf[cpos] = 0;
+	uint lines = blen / formatters.rowSize;	/// lines to print
+	uint remaining = blen % formatters.rowSize;
+	
+	// print lines in bulk (for entirety of view buffer)
+	for (uint l; l < lines; ++l, pos += formatters.rowSize, bufp += formatters.rowSize) {
+		makeRow(lptr, formatters, pos, bufp, formatters.rowSize);
 		puts(lptr);	// print line result + newline
 	}
+	if (remaining) {
+		makeRow(lptr, formatters, pos, bufp, remaining);
+		puts(lptr);	// print line result + newline
+		++lines;
+	}
 	
-	return ls;
+	return lines;
 }
+
+// !SECTION

@@ -118,39 +118,38 @@ int main(string[] args) {
 	}
 	
 	if (cliStdin == false) cliStdin = args.length <= 1;
-	string cliInput = cliStdin ? "-" : args[1];
+	string cliPath = cliStdin ? "-" : args[1];
 	
 	version (Trace) traceInit;
 	
 	// Open file
-	long seek, length;
+	long skip, length;
 	if (cliStdin) {
-		if (openStdin())
-			goto L_ERROR;
+		if (io.openStream(stdin))
+			return printError;
 	} else if (cliFile ? false : cliMmfile) {
-		if (openMmfile(cliInput))
-			goto L_ERROR;
+		if (io.openMmfile(cliPath))
+			return printError;
 	} else {
-		if (openFile(cliInput))
-			goto L_ERROR;
+		if (io.openFile(cliPath))
+			return printError;
 	}
 	
-	// Manage seek
+	// Convert skip value
 	if (cliSeek) {
-		if (convert(seek, cliSeek))
-			goto L_ERROR;
+		if (convert(skip, cliSeek))
+			return printError;
 	}
 	
-	// Open app
+	// App: dump
 	if (cliDump) {
 		if (cliLength) {
 			if (convert(length, cliLength))
-				goto L_ERROR;
+				return printError;
 		}
-		return appDump(seek, length);
-	} else
-		return appInteractive(seek);
-
-L_ERROR:
-	return printError(1, errorMsg);
+		return appDump(skip, length);
+	}
+	
+	// App: interactive
+	return appInteractive(skip);
 }

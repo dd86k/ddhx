@@ -69,6 +69,12 @@ enum Seek {
 	end	= SEEK_END	/// Seek since end of file.
 }
 
+/// Used in saving and restoring the OSFile state (position and read buffer).
+struct OSFileState {
+	long position;	/// Position.
+	uint readSize;	/// Read size.
+}
+
 /// Improved file I/O.
 //TODO: Share file.
 //      By default file isn't shared (at least on Windows) which would allow
@@ -88,7 +94,6 @@ struct OSFile {
 	}
 	
 	long position;	/// Current file position.
-	private long position2;	/// Saved file position.
 	
 	long size;	/// Last reported file size.
 	const(char)[] sizeString;	/// Binary file size as string
@@ -99,15 +104,20 @@ struct OSFile {
 	ubyte[] buffer;	/// Resulting buffer or slice.
 	uint readSize;	/// Desired buffer size.
 	
+	bool eof;	/// End of file marker.
+	bool error;	/// Error indicator.
+	bool[2] reserved;
+	
 	int delegate(Seek, long) seek;
 	int delegate() read;
+	int delegate(ubyte[]) read2;
 	
 	int openFile(string path/*, bool create*/) {
 		version (Windows) {
 			// NOTE: toUTF16z/tempCStringW
 			//       Phobos internally uses tempCStringW from std.internal
 			//       but I doubt it's meant for us to use so...
-			///      Legacy baggage?
+			//       Legacy baggage?
 			fileHandle = CreateFileW(
 				path.toUTF16z,	// lpFileName
 				GENERIC_READ/* | GENERIC_WRITE*/,	// dwDesiredAccess
@@ -156,6 +166,7 @@ struct OSFile {
 	}
 	
 	int openStream(File file) {
+		stream = file;
 		setProperties(FileMode.stream, null, "-");
 		return 0;
 	}
@@ -174,50 +185,26 @@ struct OSFile {
 		name = baseName;
 		final switch (newMode) with (FileMode) {
 		case file:
-			read = &readFile;
 			seek = &seekFile;
+			read = &readFile;
+			read2 = &readFile2;
 			break;
 		case mmfile:
-			read = &readMmfile;
 			seek = &seekMmfile;
+			read = &readMmfile;
+			read2 = &readMmfile2;
 			break;
 		case stream:
-			read = &readStream;
 			seek = &seekStream;
+			read = &readStream;
+			read2 = &readStream2;
 			break;
 		case memory:
-			read = &readMemory;
 			seek = &seekMemory;
+			read = &readMemory;
+			read2 = &readMemory2;
 			break;
 		}
-	}
-	
-	private int readFile() {
-		version (Windows) {
-			DWORD r = void;
-			if (ReadFile(fileHandle, readBuffer.ptr, readSize, &r, null) == FALSE)
-				return errorSet(ErrorCode.os);
-			buffer = readBuffer[0..r];
-		} else version (Posix) {
-			alias mygod = core.sys.posix.unistd.read;
-			ssize_t r = void;
-			if ((r = mygod(fileHandle, readBuffer.ptr, readBuffer.length)) < 0)
-				return errorSet(ErrorCode.os);
-			buffer = readBuffer[0..r];
-		}
-		return 0;
-	}
-	private int readMmfile() {
-		buffer = cast(ubyte[])mmHandle[position..position + readSize];
-		return 0;
-	}
-	private int readStream() {
-		buffer = stream.rawRead(readBuffer);
-		return 0;
-	}
-	private int readMemory() {
-		buffer = readBuffer[position..position + readSize];
-		return 0;
 	}
 	
 	private int seekFile(Seek origin, long pos) {
@@ -230,7 +217,7 @@ struct OSFile {
 			if (lseek64(fileHandle, pos, origin) == -1)
 				return errorSet(ErrorCode.os);
 		}
-		return 0;
+		return seekMmfile(origin, pos);
 	}
 	private int seekMmfile(Seek origin, long pos) {
 		final switch (origin) with (Seek) {
@@ -246,14 +233,107 @@ struct OSFile {
 		}
 	}
 	// Acts as a skip regardless of origin (Seek.current)
+	// Read into void
 	private int seekStream(Seek origin, long pos) {
+		
+		//TODO: seekStream
+		
 		return 0;
 	}
+	// Same operation
 	private alias seekMemory = seekMmfile;
 	
-	void saveState() {
+	private int readFile() {
+		version (Windows) {
+			DWORD r = void;
+			if (ReadFile(fileHandle, readBuffer.ptr, readSize, &r, null) == FALSE)
+				return errorSet(ErrorCode.os);
+			buffer = readBuffer[0..r];
+			eof = r < readSize;
+		} else version (Posix) {
+			alias mygod = core.sys.posix.unistd.read;
+			ssize_t r = mygod(fileHandle, readBuffer.ptr, readSize);
+			if (r < 0)
+				return errorSet(ErrorCode.os);
+			buffer = readBuffer[0..r];
+			eof = r < readSize;
+		}
+		return 0;
 	}
-	void restoreState() {
+	private int readMmfile() {
+		long endpos = position + readSize; /// Proposed end marker
+		eof = endpos > size; // If end marker overflows
+		if (eof)
+			endpos = size;
+		buffer = cast(ubyte[])mmHandle[position..endpos];
+		return 0;
+	}
+	private int readStream() {
+		buffer = stream.rawRead(readBuffer);
+		eof = stream.eof;
+		return 0;
+	}
+	private int readMemory() {
+		long endpos = position + readSize; /// Proposed end marker
+		eof = endpos > size; // If end marker overflows
+		if (eof)
+			endpos = size;
+		buffer = readBuffer[cast(size_t)position..cast(size_t)endpos];
+		return 0;
+	}
+	
+	private int readFile2(ubyte[] _buffer) {
+		version (Windows) {
+			const uint _bs = cast(uint)_buffer.length;
+			DWORD r = void;
+			if (ReadFile(fileHandle, _buffer.ptr, _bs, &r, null) == FALSE)
+				return errorSet(ErrorCode.os);
+			eof = r < _bs;
+			if (eof)
+				buffer.length = r;
+		} else version (Posix) {
+			alias mygod = core.sys.posix.unistd.read;
+			ssize_t r = mygod(fileHandle, _buffer.ptr, _buffer.length);
+			if (r < 0)
+				return errorSet(ErrorCode.os);
+			eof = r < readSize;
+			if (eof)
+				buffer.length = r;
+		}
+		return 0;
+	}
+	private int readMmfile2(ubyte[] _buffer) {
+		long endpos = position + readSize; /// Proposed end marker
+		eof = endpos > size; // If end marker overflows
+		if (eof)
+			endpos = size;
+		buffer = cast(ubyte[])mmHandle[position..endpos];
+		return 0;
+	}
+	private int readStream2(ubyte[] _buffer) {
+		buffer = stream.rawRead(_buffer);
+		eof = stream.eof;
+		return 0;
+	}
+	private int readMemory2(ubyte[] _buffer) {
+		long endpos = position + _buffer.length; /// Proposed end marker
+		eof = endpos > size; // If end marker overflows
+		if (eof)
+			endpos = size;
+		buffer = readBuffer[cast(size_t)position..cast(size_t)endpos];
+		return 0;
+	}
+	
+	void save(ref OSFileState state) {
+		state.position = position;
+		state.readSize = readSize;
+	}
+	void restore(ref OSFileState state) {
+		position = state.position;
+		readSize = state.readSize;
+		
+		seek(Seek.start, state.position);
+		resizeBuffer(readSize);
 	}
 	
 	int refreshSize() {
@@ -297,7 +377,7 @@ struct OSFile {
 		return formatSize(b, size);
 	}
 	
-	void resizeBuffer(uint newSize) {
+	void resizeBuffer(uint newSize = DEFAULT_BUFFER_SIZE) {
 		readSize = newSize;
 		
 		switch (mode) with (FileMode) {
@@ -308,21 +388,20 @@ struct OSFile {
 		}
 	}
 	
-	//TODO: other types
-	int toMemory(uint skip, long length) {
+	//TODO: from other types
+	int toMemory(long skip = 0, long length = 0) {
 		import core.stdc.stdio : fread;
 		import core.stdc.stdlib : malloc, free;
+		import std.algorithm.comparison : min;
 		
 		ubyte[DEFAULT_BUFFER_SIZE] defbuf = void;
-		
 		FILE *f = stream.getFP;
+		size_t len = void;
+		size_t bufSize = void;
 		
-		size_t l = void;
 		if (skip) {
-			import std.algorithm.comparison : min;
-		
 		L_PRESKIP:
-			int bufSize = min(DEFAULT_BUFFER_SIZE, skip);
+			bufSize = cast(size_t)min(DEFAULT_BUFFER_SIZE, skip);
 			void *buf = malloc(bufSize);
 			if (buf == null) throw new Error("Out of memory");
 			
@@ -333,24 +412,29 @@ struct OSFile {
 				goto L_READ;
 			}
 			if (skip < bufSize) {
-				bufSize = skip;
+				bufSize = cast(size_t)skip;
 				free(buf);
 				goto L_PRESKIP;
 			}
 			goto L_SKIP;
 		}
 		
+		// If no length to read is set, just read as much as possible.
+		if (length == 0) length = long.max;
+		
+		// Loop ends when len (read length) is under the buffer's length
+		// or requested length.
+		readBuffer.length = 0;
 	L_READ:
 		do {
-			l = fread(defbuf.ptr, 1, DEFAULT_BUFFER_SIZE, f);
-			buffer ~= defbuf[0..l];
-			if (length) {
-				length -= l;
-				if (length < 0) break;
-			}
-		} while (l >= DEFAULT_BUFFER_SIZE);
+			bufSize = cast(size_t)min(DEFAULT_BUFFER_SIZE, length);
+			len = fread(defbuf.ptr, 1, bufSize, f);
+			// ok to append without init because we got a global instance
+			readBuffer ~= defbuf[0..len];
+			length -= len;
+		} while (len >= DEFAULT_BUFFER_SIZE && length > 0);
 		
-		size = buffer.length;
+		size = readBuffer.length;
 		
 		setProperties(FileMode.memory, null, "-");
 		return 0;
