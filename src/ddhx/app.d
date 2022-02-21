@@ -332,12 +332,7 @@ void menu(string cmdPrepend = null) {
 		displayRenderMain;
 		break;
 	case "reset":
-		//TODO: resetAllSettings
-		settingCharset("ascii");
-		settingOffset("h");
-		settingData("x");
-		settingDefaultChar(".");
-		settingWidth("16");
+		settingResetAll();
 		break;
 	default:
 		error = errorSet(ErrorCode.invalidCommand);

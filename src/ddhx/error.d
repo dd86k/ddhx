@@ -61,6 +61,7 @@ const(char)[] errorMsg() {
 	switch (lastError) with (ErrorCode) {
 	case exception: return lastMsg;
 	case os:
+		//TODO: OS message
 		
 		return "os";
 	case fileEmpty: return "File is empty.";
@@ -69,7 +70,7 @@ const(char)[] errorMsg() {
 	case invalidParameter: return "Parameter is invalid.";
 	case invalidType: return "Invalid type.";
 	case eof: return "Unexpected end of file (EOF).";
-	case notFound: return "Needle not found.";
+	case notFound: return "Data not found.";
 	case overflow: return "Integer overflow.";
 	case unparsable: return "Integer could not be parsed.";
 	case noLastItem: return "No previous search items saved.";

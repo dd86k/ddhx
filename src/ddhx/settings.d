@@ -6,6 +6,13 @@ module ddhx.settings;
 
 import ddhx;
 
+void settingResetAll() {
+	globals.rowWidth = 16;
+	globals.defaultChar = '.';
+	globals.charType = CharType.ascii;
+	globals.offsetType = globals.dataType = NumberType.hexadecimal;
+}
+
 int settingWidth(string val) {
 	with (globals)
 	switch (val[0]) {
