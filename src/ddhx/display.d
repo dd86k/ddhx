@@ -43,8 +43,6 @@ private extern (C) int putchar(int);
 
 /// Data modes for upper row (display purposes)
 private static immutable(char)[][3] offsetNames = [ "Hex", "Dec", "Oct" ];
-/// Character table for header row (display purposes)
-private deprecated immutable char[3] offsetTable = [ 'h', 'd', 'o' ];
 /// Character table for the main panel for printf (formatting purposes)
 private immutable char[3] formatTable = [ 'x', 'u', 'o' ];
 /// Offset format functions

@@ -105,8 +105,7 @@ struct OSFile {
 	uint readSize;	/// Desired buffer size.
 	
 	bool eof;	/// End of file marker.
-	bool error;	/// Error indicator.
-	bool[2] reserved;
+	private bool[3] reserved;
 	
 	int delegate(Seek, long) seek;
 	int delegate() read;

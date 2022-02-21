@@ -69,7 +69,7 @@ const(char)[] errorMsg() {
 	case invalidParameter: return "Parameter is invalid.";
 	case invalidType: return "Invalid type.";
 	case eof: return "Unexpected end of file (EOF).";
-	case notFound: return "Input not found.";
+	case notFound: return "Needle not found.";
 	case overflow: return "Integer overflow.";
 	case unparsable: return "Integer could not be parsed.";
 	case noLastItem: return "No previous search items saved.";

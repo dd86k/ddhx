@@ -63,10 +63,10 @@ int appInteractive(long skip = 0) {
 	terminalClear;
 	
 	// Setup
-	resizeDisplayBuffer(true);
+	appAdjustBuffer(true);
 	if (io.read())
 		return printError;
-	render();
+	appRender();
 	
 	version (Trace) trace("loop");
 	TerminalInput event;
@@ -123,11 +123,11 @@ L_KEYDOWN:
 		msgFileInfo;
 		break;
 	case R, F5:
-		refresh;
+		appRefresh;
 		break;
 	case A:
 		settingWidth("a");
-		refresh;
+		appRefresh;
 		break;
 	case Q: exit; break;
 	default:
@@ -277,7 +277,7 @@ void menu(string cmdPrepend = null) {
 		error = skipByte(byte_);
 		break;
 	case "i", "info": msgFileInfo; break;
-	case "refresh": refresh; break;
+	case "refresh": appRefresh; break;
 	case "quit": exit; break;
 	case "about":
 		enum C = "Written by dd86k. " ~ COPYRIGHT;
@@ -294,7 +294,7 @@ void menu(string cmdPrepend = null) {
 			msgBottom(errorMsg);
 			break;
 		}
-		refresh;
+		appRefresh;
 		break;
 	case "o", "offset":
 		if (argc <= 1) {
@@ -303,7 +303,7 @@ void menu(string cmdPrepend = null) {
 		}
 		if ((error = settingOffset(argv[1])) != 0)
 			break;
-		render;
+		appRender;
 		break;
 	case "d", "data":
 		if (argc <= 1) {
@@ -312,14 +312,14 @@ void menu(string cmdPrepend = null) {
 		}
 		if ((error = settingData(argv[1])) != 0)
 			break;
-		render;
+		appRender;
 		break;
 	case "C", "defaultchar":
 		if (settingDefaultChar(argv[1])) {
 			msgBottom(errorMsg);
 			break;
 		}
-		refresh;
+		appRefresh;
 		break;
 	case "cp", "charset":
 		if (argc <= 1) {
@@ -345,43 +345,6 @@ void menu(string cmdPrepend = null) {
 	
 	if (error)
 		msgBottom(errorMsg);
-}
-
-/// Automatically determine new buffer size for display engine from
-/// console/terminal window size.
-/// Params: skipTerm = Skip terminal size detection and use stored value.
-void resizeDisplayBuffer(bool skipTerm = false) {
-	//TODO: Avoid crash when on end of file + resize goes further than file
-	version (Trace) trace("skip=%s", skipTerm);
-	
-	// Effective height
-	const int h = (skipTerm ? globals.termSize.height : terminalSize.height) - 2;
-	
-	int newSize = h * globals.rowWidth; // Proposed buffer size
-	if (newSize >= io.size)
-		newSize = cast(uint)(io.size - io.position);
-	io.resizeBuffer(newSize);
-}
-
-/// Refresh the entire screen by:
-/// 1. automatically resizing the view buffer
-/// 2. Re-seeking to the current position (failsafe)
-/// 3. Read buffer
-/// 4. Clear the terminal
-/// 5. Render
-void refresh() {
-	resizeDisplayBuffer();
-	io.seek(Seek.start, io.position);
-	io.read();
-	terminalClear();
-	render();
-}
-
-/// Render screen (all elements)
-void render() {
-	displayRenderTop;
-	displayRenderMainRaw;
-	displayRenderBottomRaw;
 }
 
 /// Move the view to the start of the data
@@ -443,6 +406,47 @@ private void movePageDown() {
 		appSeek(io.size - io.readSize);
 }
 
+/// Automatically determine new buffer size for display engine from
+/// console/terminal window size.
+/// Params: skipTerm = Skip terminal size detection and use stored value.
+void appAdjustBuffer(bool skipTerm = false) {
+	//TODO: Avoid crash when on end of file + resize goes further than file
+	version (Trace) trace("skip=%s", skipTerm);
+	
+	// Effective height
+	const int h = (skipTerm ? globals.termSize.height : terminalSize.height) - 2;
+	
+	int newSize = h * globals.rowWidth; // Proposed buffer size
+	if (newSize >= io.size)
+		newSize = cast(uint)(io.size - io.position);
+	io.resizeBuffer(newSize);
+}
+
+/// Refresh the entire screen by:
+/// 1. automatically resizing the view buffer
+/// 2. Re-seeking to the current position (failsafe)
+/// 3. Read buffer
+/// 4. Clear the terminal
+/// 5. Render
+void appRefresh() {
+	appAdjustBuffer();
+	io.seek(Seek.start, io.position);
+	io.read();
+	terminalClear();
+	appRender();
+}
+
+/// Render screen (all elements)
+void appRender() {
+	displayRenderTop;
+	uint lines  = displayRenderMainRaw;
+	uint height = terminalSize.height - 2;
+	if (lines < height) //TODO: should do EOF but buffer strat isn't fixed
+		displayRenderBottom;
+	else
+		displayRenderBottomRaw;
+}
+
 /// Seek to position in data, reads view's worth, and display that.
 /// Ignores bounds checking for performance reasons.
 /// Sets CurrentPosition.
@@ -457,7 +461,7 @@ void appSeek(long pos) {
 
 	io.seek(Seek.start, pos);
 	io.read();
-	render();
+	appRender();
 }
 
 /// Parses the string as a long and navigates to the file location.
