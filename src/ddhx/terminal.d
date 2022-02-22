@@ -72,22 +72,36 @@ version (Posix) {
 void terminalInit() {
 	import std.format : format;
 	version (Windows) {
-		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-		hIn  = GetStdHandle(STD_INPUT_HANDLE);
-		if (GetFileType(hIn) == FILE_TYPE_PIPE) {
-			version (Trace) trace("stdin is pipe");
-			hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
-			if (hIn == INVALID_HANDLE_VALUE)
-				throw new WindowsException(GetLastError);
-			stdin.windowsHandleOpen(hIn, "r");
-		}
+		//NOTE: Forcing to re-open stdin fixes quite a few things
+		//      - usage with CreateConsoleScreenBuffer
+		//      - readln (for menu)
+		hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+		if (hIn == INVALID_HANDLE_VALUE)
+			throw new WindowsException(GetLastError);
 		SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
-		oldCP = GetConsoleOutputCP();
+		stdin.windowsHandleOpen(hIn, "r");
+		
+		hOut = CreateConsoleScreenBuffer(
+			GENERIC_READ | GENERIC_WRITE,	// dwDesiredAccess
+			FILE_SHARE_READ | FILE_SHARE_WRITE,	// dwShareMode
+			null,	// lpSecurityAttributes
+			CONSOLE_TEXTMODE_BUFFER,	// dwFlags
+			null,	// lpScreenBufferData
+		);
+		if (hOut == INVALID_HANDLE_VALUE)
+			throw new WindowsException(GetLastError);
+		if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
+			throw new WindowsException(GetLastError);
+		
 		// NOTE: While Windows supports UTF-16LE (1200) and UTF-32LE,
 		//       it's only for "managed applications" (.NET).
 		// LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
-		BOOL cpr = SetConsoleOutputCP(CP_UTF8);
-		version (Trace) trace("SetConsoleOutputCP=%d", cpr);
+		oldCP = GetConsoleOutputCP();
+		if (SetConsoleOutputCP(CP_UTF8) == FALSE)
+			throw new WindowsException(GetLastError);
+		
+		stdout.windowsHandleOpen(hOut, "wb");
+		
 		//TODO: Get active (or default) colors
 	} else version (Posix) {
 		stat_t s = void;
@@ -122,6 +136,9 @@ void terminalInit() {
 		// 1 being 1/10 of a second (100 milliseconds)
 		//new_ios.c_cc[VTIME] = 0;
 		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
+		// change to alternative screen buffer
+		stdout.write("\033[?1049h");
+		stdout.flush;
 	}
 	
 	atexit(&terminalRestore);
@@ -133,10 +150,14 @@ void terminalRestore() {
 	version (Windows) {
 		SetConsoleOutputCP(oldCP);
 	} else version (Posix) {
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
+		// restore main screen buffer
+		stdout.write("\033[?1049l");
+		stdout.flush;
 	}
+	terminalPauseInput;
 }
 
+//TODO: rename to terminalRestoreInput to avoid confusion
 void terminalPauseInput() {
 	version (Posix) {
 		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);

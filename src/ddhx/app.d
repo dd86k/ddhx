@@ -58,9 +58,6 @@ int appInteractive(long skip = 0) {
 		return printError(1, "Need at least 3 lines to display properly");
 	if (globals.termSize.width < 20)
 		return printError(1, "Need at least 20 columns to display properly");
-	//TODO: New stdout display, don't touch current display buffer
-	version (Trace) trace("terminalClear");
-	terminalClear;
 	
 	// Setup
 	appAdjustBuffer(true);
@@ -129,7 +126,7 @@ L_KEYDOWN:
 		settingWidth("a");
 		appRefresh;
 		break;
-	case Q: exit; break;
+	case Q: appExit; break;
 	default:
 	}
 	goto L_INPUT;
@@ -201,11 +198,14 @@ private
 void menu(string cmdPrepend = null) {
 	// clear bar and command prepend
 	terminalPos(0, 0);
-	printf("%*s", terminalSize.width - 1, cast(char*)" ");
+	writef("%*s", terminalSize.width - 1, " ");
+	stdout.flush;
+	
 	// write prompt
 	terminalPos(0, 0);
 	write(":");
 	if (cmdPrepend) write(cmdPrepend);
+	stdout.flush;
 	
 	// read input split arguments by space, no empty entries
 	//TODO: GC-free merge prepend and readln(buf), then split
@@ -278,7 +278,7 @@ void menu(string cmdPrepend = null) {
 		break;
 	case "i", "info": msgFileInfo; break;
 	case "refresh": appRefresh; break;
-	case "quit": exit; break;
+	case "quit": appExit; break;
 	case "about":
 		enum C = "Written by dd86k. " ~ COPYRIGHT;
 		msgBottom(C);
@@ -434,9 +434,11 @@ void appRefresh() {
 /// Render screen (all elements)
 void appRender() {
 	displayRenderTop;
-	uint lines  = displayRenderMainRaw;
-	uint height = terminalSize.height - 2;
-	if (lines < height) //TODO: should do EOF but buffer strat isn't fixed
+	//TODO: should do EOF instead
+	//      waiting on relative reads, maybe?
+	const uint lines  = displayRenderMainRaw;
+	const uint height = terminalSize.height - 2;
+	if (lines < height)
 		displayRenderBottom;
 	else
 		displayRenderBottomRaw;
@@ -540,9 +542,7 @@ void msgFileInfo() {
 
 /// Exit ddhx.
 /// Params: code = Exit code.
-void exit(int code = 0) {
+void appExit(int code = 0) {
 	import core.stdc.stdlib : exit;
-	terminalPauseInput;
-	terminalClear;
 	exit(code);
 }

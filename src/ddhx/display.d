@@ -8,9 +8,8 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.display;
 
-import std.stdio : stdout;
+import std.stdio : stdout, writeln;
 import std.encoding : codeUnits, CodeUnits;
-import core.stdc.stdio : printf, puts;
 import ddhx;
 
 //TODO: Data grouping
@@ -421,9 +420,10 @@ void displayRenderTopRaw() {
 			outbuf.put(SPACE);
 	}
 	
-	// Zero-terminate and print
-	outbuf.put(ZERO);
-	last = puts(cast(char*)outbuf.data.ptr);
+	last = outbuf.offset;
+	// OutBuffer.toString duplicates it, what a waste!
+	writeln(cast(const(char)[])outbuf.toBytes);
+	stdout.flush;
 }
 
 /// Update the bottom current information bar.
@@ -474,7 +474,7 @@ private struct Formatters {
 	char defaultChar;
 }
 
-private void makeRow(char *line, ref Formatters format,
+private size_t makeRow(char *line, ref Formatters format,
 	long pos, const(ubyte) *data, size_t len) {
 	import core.stdc.string : memset;
 	
@@ -511,7 +511,9 @@ private void makeRow(char *line, ref Formatters format,
 	}
 	
 	// Terminate line and send
-	line[posChar] = 0;
+	//line[posChar] = 0;
+	
+	return posChar;
 }
 
 /// Update display from buffer.
@@ -544,14 +546,16 @@ uint displayRenderMainRaw() {
 	uint lines = blen / formatters.rowSize;	/// lines to print
 	uint remaining = blen % formatters.rowSize;
 	
+	size_t ll = void;
+	
 	// print lines in bulk (for entirety of view buffer)
 	for (uint l; l < lines; ++l, pos += formatters.rowSize, bufp += formatters.rowSize) {
-		makeRow(lptr, formatters, pos, bufp, formatters.rowSize);
-		puts(lptr);	// print line result + newline
+		ll = makeRow(lptr, formatters, pos, bufp, formatters.rowSize);
+		writeln(lbuf[0..ll]);
 	}
 	if (remaining) {
-		makeRow(lptr, formatters, pos, bufp, remaining);
-		puts(lptr);	// print line result + newline
+		ll = makeRow(lptr, formatters, pos, bufp, remaining);
+		writeln(lbuf[0..ll]);
 		++lines;
 	}
 	
