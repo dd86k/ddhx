@@ -16,7 +16,7 @@ module ddhx.terminal;
 ///
 private extern (C) int putchar(int);
 
-private import std.stdio : printf, stdin, stdout;
+private import std.stdio : printf, stdin, stdout, _IONBF;
 private import core.stdc.stdlib : system, atexit;
 
 version (Windows) {
@@ -69,17 +69,40 @@ version (Posix) {
 }
 
 /// Initiate terminal.
+/// Throws: WindowsException
+//TODO: bool useAltScreen
 void terminalInit() {
-	import std.format : format;
 	version (Windows) {
-		//NOTE: Forcing to re-open stdin fixes quite a few things
+		//
+		// Setting up stdin
+		//
+		
+		//NOTE: Re-opening stdin before new screen fixes quite a few things
 		//      - usage with CreateConsoleScreenBuffer
 		//      - readln (for menu)
-		hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+		//      - receiving key input when stdin was used for reading a buffer
+		hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, 0, null);
 		if (hIn == INVALID_HANDLE_VALUE)
 			throw new WindowsException(GetLastError);
 		SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
 		stdin.windowsHandleOpen(hIn, "r");
+		SetStdHandle(STD_INPUT_HANDLE, hIn);
+		
+		//
+		// Setting up stdout
+		//
+		
+		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (hIn == INVALID_HANDLE_VALUE)
+			throw new WindowsException(GetLastError);
+		
+		CONSOLE_SCREEN_BUFFER_INFO csbi = void;
+		if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
+			throw new WindowsException(GetLastError);
+		
+		DWORD attr = void;
+		if (GetConsoleMode(hOut, &attr) == FALSE)
+			throw new WindowsException(GetLastError);
 		
 		hOut = CreateConsoleScreenBuffer(
 			GENERIC_READ | GENERIC_WRITE,	// dwDesiredAccess
@@ -90,6 +113,14 @@ void terminalInit() {
 		);
 		if (hOut == INVALID_HANDLE_VALUE)
 			throw new WindowsException(GetLastError);
+		
+		stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
+		stdout.setvbuf(1024, _IONBF); // fixes weird cursor posisitons
+		
+		SetStdHandle(STD_OUTPUT_HANDLE, hOut);
+		SetConsoleScreenBufferSize(hOut, csbi.dwSize);
+		SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT);
+		
 		if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
 			throw new WindowsException(GetLastError);
 		
@@ -99,8 +130,6 @@ void terminalInit() {
 		oldCP = GetConsoleOutputCP();
 		if (SetConsoleOutputCP(CP_UTF8) == FALSE)
 			throw new WindowsException(GetLastError);
-		
-		stdout.windowsHandleOpen(hOut, "wb");
 		
 		//TODO: Get active (or default) colors
 	} else version (Posix) {

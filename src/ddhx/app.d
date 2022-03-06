@@ -433,15 +433,10 @@ void appRefresh() {
 
 /// Render screen (all elements)
 void appRender() {
+	// Meh, screw it
 	displayRenderTop;
-	//TODO: should do EOF instead
-	//      waiting on relative reads, maybe?
-	const uint lines  = displayRenderMainRaw;
-	const uint height = terminalSize.height - 2;
-	if (lines < height)
-		displayRenderBottom;
-	else
-		displayRenderBottomRaw;
+	displayRenderMain;
+	displayRenderBottom;
 }
 
 /// Seek to position in data, reads view's worth, and display that.

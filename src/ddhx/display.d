@@ -387,8 +387,6 @@ void displayRenderTopRaw() {
 	import std.typecons : scoped;
 	import std.conv : octal;
 	
-	enum ubyte ZERO = 0;
-	enum char SPACE = ' ';
 	__gshared size_t last;
 	
 	const int offsetType = globals.offsetType;
@@ -417,13 +415,12 @@ void displayRenderTopRaw() {
 	if (last > outbuf.offset + 1) { // +null
 		const size_t c = cast(size_t)(last - outbuf.offset);
 		for (size_t i; i < c; ++i)
-			outbuf.put(SPACE);
+			outbuf.put(' ');
 	}
 	
 	last = outbuf.offset;
 	// OutBuffer.toString duplicates it, what a waste!
 	writeln(cast(const(char)[])outbuf.toBytes);
-	stdout.flush;
 }
 
 /// Update the bottom current information bar.
@@ -437,16 +434,18 @@ void displayRenderBottomRaw() {
 	import std.format : sformat;
 	import std.stdio : writef, write;
 	//TODO: [0.5] Include editing mode (insert/overwrite)
+	//            INS/OVR
 	__gshared size_t last;
 	char[32] c1 = void, c2 = void, c3 = void;
 	char[128] buf = void;
+	const double fpos = io.position;
 	char[] f = sformat!" %s | %s | %s - %s | %f%% - %f%%"(buf,
 		offsetNames[globals.dataType],
 		formatSize(c1, io.readSize), // Buffer size
 		formatSize(c2, io.position), // Formatted position
 		formatSize(c3, io.position + io.readSize), // Formatted position
-		((cast(float)io.position) / io.size) * 100, // Pos/input.size%
-		((cast(float)io.position + io.readSize) / io.size) * 100, // Pos/input.size%
+		(fpos / io.size) * 100, // Pos/input.size%
+		((fpos + io.readSize) / io.size) * 100, // Pos/input.size%
 	);
 	if (last > f.length) { // Fill by blanks
 		int p = cast(int)(f.length + (last - f.length));
