@@ -11,8 +11,6 @@ import std.file : getSize;
 import std.path : baseName;
 import ddhx;
 
-//TODO: If File.size() still causes issue in DMCRT, redo File
-
 /// Copyright string
 enum COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
 

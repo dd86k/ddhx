@@ -83,19 +83,19 @@ int main(string[] args) {
 	GetoptResult res = void;
 	try {
 		res = args.getopt(config.caseSensitive,
-		OPT_WIDTH, "Set column width in bytes ('a'=automatic,default=16)", &cliOption,
-		OPT_OFFSET, "Set offset mode (decimal, hex, or octal)", &cliOption,
+		OPT_WIDTH,       "Set column width in bytes ('a'=automatic,default=16)", &cliOption,
+		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
 		OPT_DEFAULTCHAR, "Set default character for non-printable characters (default=.)", &cliOption,
-		OPT_CHARSET, "Set character translation (default=ascii)", &cliOption,
-		"m|mmfile", "Open file as mmfile (memory-mapped)", &cliMmfile,
-		"f|file", "Force opening file as regular", &cliFile,
-		"stdin", "Open stdin instead of file, the '-' switch also works", &cliStdin,
-		"s|seek", "Seek at position", &cliSeek,
-		"D|dump", "Non-interactive dump", &cliDump,
-		"l|length", "Dump: Length of data to read", &cliLength,
-		"version", "Print the version screen and exit", &cliVersion,
-		"ver", "Print only the version and exit", &cliVer,
-		"assistant", "", &cliSecret
+		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
+		"m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
+		"f|file",        "Force opening file as regular", &cliFile,
+		"stdin",         "Open stdin instead of file, the '-' switch also works", &cliStdin,
+		"s|seek",        "Seek at position", &cliSeek,
+		"D|dump",        "Non-interactive dump", &cliDump,
+		"l|length",      "Dump: Length of data to read", &cliLength,
+		"version",       "Print the version screen and exit", &cliVersion,
+		"ver",           "Print only the version and exit", &cliVer,
+		"assistant",     "", &cliSecret
 		);
 	} catch (Exception ex) {
 		return printError(1, ex.msg);
@@ -118,7 +118,8 @@ int main(string[] args) {
 	}
 	
 	if (cliStdin == false) cliStdin = args.length <= 1;
-	string cliPath = cliStdin ? "-" : args[1];
+	
+	string cliPath = args[1];
 	
 	version (Trace) traceInit;
 	

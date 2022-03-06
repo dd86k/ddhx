@@ -9,6 +9,8 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.file;
 
+//TODO: If File.size() still causes issue in DMCRT, redo File
+
 version (Windows) {
 	import core.sys.windows.winnt :
 		DWORD, HANDLE, LARGE_INTEGER, FALSE, TRUE,
@@ -70,6 +72,7 @@ enum Seek {
 }
 
 /// Used in saving and restoring the OSFile state (position and read buffer).
+//TODO: Re-use in OSFile?
 struct OSFileState {
 	long position;	/// Position.
 	uint readSize;	/// Read size.
@@ -112,6 +115,10 @@ struct OSFile {
 	int delegate(ubyte[]) read2;
 	
 	int openFile(string path/*, bool create*/) {
+		version (Trace) trace("path='%s'", path);
+		
+		mode = FileMode.file;
+		
 		version (Windows) {
 			// NOTE: toUTF16z/tempCStringW
 			//       Phobos internally uses tempCStringW from std.internal
@@ -140,11 +147,15 @@ struct OSFile {
 			return errorSet(ErrorCode.fileEmpty);
 		
 		sizeString = getSizeString;
-		setProperties(FileMode.file, path, baseName(path));
+		setProperties(path, baseName(path));
 		return 0;
 	}
 	
 	int openMmfile(string path/*, bool create*/) {
+		version (Trace) trace("path='%s'", path);
+		
+		mode = FileMode.mmfile;
+		
 		try {
 			/*file.size = getSize(path);
 			if (file.size == 0)
@@ -160,29 +171,30 @@ struct OSFile {
 			return errorSet(ErrorCode.fileEmpty);
 		
 		sizeString = getSizeString;
-		setProperties(FileMode.mmfile, path, baseName(path));
+		setProperties(path, baseName(path));
 		return 0; 
 	}
 	
 	int openStream(File file) {
+		mode = FileMode.stream;
 		stream = file;
-		setProperties(FileMode.stream, null, "-");
+		setProperties(null, "-");
 		return 0;
 	}
 	
 	int openMemory(ubyte[] data) {
+		mode = FileMode.memory;
 		buffer = data;
-		setProperties(FileMode.memory, null, "-");
+		setProperties(null, "-");
 		return 0;
 	}
 	
 	// Avoids errors where I forget to set basic property members.
-	private void setProperties(FileMode newMode, string path, string baseName) {
+	private void setProperties(string path, string baseName) {
 		readSize = DEFAULT_BUFFER_SIZE;
-		mode = newMode;
 		fullPath = path;
 		name = baseName;
-		final switch (newMode) with (FileMode) {
+		final switch (mode) with (FileMode) {
 		case file:
 			seek = &seekFile;
 			read = &readFile;
@@ -207,6 +219,8 @@ struct OSFile {
 	}
 	
 	private int seekFile(Seek origin, long pos) {
+		version (Trace) trace("seek=%s pos=%u", origin, position);
+		
 		version (Windows) {
 			LARGE_INTEGER p = void;
 			p.QuadPart = pos;
@@ -219,6 +233,8 @@ struct OSFile {
 		return seekMmfile(origin, pos);
 	}
 	private int seekMmfile(Seek origin, long pos) {
+		version (Trace) trace("seek=%s pos=%u", origin, position);
+		
 		final switch (origin) with (Seek) {
 		case start:
 			position = pos;
@@ -234,6 +250,7 @@ struct OSFile {
 	// Acts as a skip regardless of origin (Seek.current)
 	// Read into void
 	private int seekStream(Seek origin, long pos) {
+		version (Trace) trace("seek=%s pos=%u", origin, position);
 		
 		//TODO: seekStream
 		
@@ -243,6 +260,8 @@ struct OSFile {
 	private alias seekMemory = seekMmfile;
 	
 	private int readFile() {
+		version (Trace) trace("pos=%u", position);
+		
 		version (Windows) {
 			DWORD r = void;
 			if (ReadFile(fileHandle, readBuffer.ptr, readSize, &r, null) == FALSE)
@@ -260,6 +279,8 @@ struct OSFile {
 		return 0;
 	}
 	private int readMmfile() {
+		version (Trace) trace("pos=%u", position);
+		
 		long endpos = position + readSize; /// Proposed end marker
 		eof = endpos > size; // If end marker overflows
 		if (eof)
@@ -268,11 +289,15 @@ struct OSFile {
 		return 0;
 	}
 	private int readStream() {
+		version (Trace) trace("pos=%u", position);
+		
 		buffer = stream.rawRead(readBuffer);
 		eof = stream.eof;
 		return 0;
 	}
 	private int readMemory() {
+		version (Trace) trace("pos=%u", position);
+		
 		long endpos = position + readSize; /// Proposed end marker
 		eof = endpos > size; // If end marker overflows
 		if (eof)
@@ -282,6 +307,8 @@ struct OSFile {
 	}
 	
 	private int readFile2(ubyte[] _buffer) {
+		version (Trace) trace("buflen=%u", _buffer.length);
+		
 		version (Windows) {
 			const uint _bs = cast(uint)_buffer.length;
 			DWORD r = void;
@@ -302,6 +329,8 @@ struct OSFile {
 		return 0;
 	}
 	private int readMmfile2(ubyte[] _buffer) {
+		version (Trace) trace("buflen=%u", _buffer.length);
+		
 		long endpos = position + readSize; /// Proposed end marker
 		eof = endpos > size; // If end marker overflows
 		if (eof)
@@ -310,11 +339,15 @@ struct OSFile {
 		return 0;
 	}
 	private int readStream2(ubyte[] _buffer) {
+		version (Trace) trace("buflen=%u", _buffer.length);
+		
 		buffer = stream.rawRead(_buffer);
 		eof = stream.eof;
 		return 0;
 	}
 	private int readMemory2(ubyte[] _buffer) {
+		version (Trace) trace("buflen=%u", _buffer.length);
+		
 		long endpos = position + _buffer.length; /// Proposed end marker
 		eof = endpos > size; // If end marker overflows
 		if (eof)
@@ -336,6 +369,8 @@ struct OSFile {
 	}
 	
 	int refreshSize() {
+		version (Trace) trace("mode=%s", mode);
+		
 		final switch (mode) with (FileMode) {
 		case file:
 			version (Windows) {
@@ -435,7 +470,8 @@ struct OSFile {
 		
 		size = readBuffer.length;
 		
-		setProperties(FileMode.memory, null, "-");
+		mode = FileMode.memory;
+		setProperties(null, "-");
 		return 0;
 	}
 }

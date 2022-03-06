@@ -45,6 +45,7 @@ int appInteractive(long skip = 0) {
 		if (io.toMemory(skip, 0))
 			return printError;
 	} else {
+		version (Trace) trace("seek skip=%u", skip);
 		if (io.seek(Seek.start, skip))
 			return printError;
 	}

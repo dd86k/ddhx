@@ -7,7 +7,10 @@ module ddhx.error;
 enum ErrorCode {
 	success,
 	unknown,
-	negativeValue,
+	exception,
+	os,
+	
+	negativeValue = 5,
 	fileEmpty,
 	inputEmpty,
 	invalidCommand,
@@ -22,8 +25,6 @@ enum ErrorCode {
 	eof,
 	unimplemented,
 	
-	exception,
-	os,
 }
 
 __gshared ErrorCode lastError; /// Last error code.
@@ -62,8 +63,15 @@ const(char)[] errorMsg() {
 	case exception: return lastMsg;
 	case os:
 		//TODO: OS message
-		
-		return "os";
+		version (Windows) {
+			
+		} else {
+			import core.stdc.errno : errno;
+			import core.stdc.string : strerror;
+			import std.string : fromStringz;
+			
+			return strerror(errno).fromStringz;
+		}
 	case fileEmpty: return "File is empty.";
 	case inputEmpty: return "Input is empty.";
 	case invalidCommand: return "Command not found.";
