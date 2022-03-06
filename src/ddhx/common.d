@@ -18,7 +18,7 @@ enum COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
 enum VERSION = "0.4.0";
 
 /// Version line
-enum VERSION_LINE = "ddhx " ~ VERSION ~ " (built: " ~ __TIMESTAMP__~")";
+enum ABOUT = "ddhx " ~ VERSION ~ " (built: " ~ __TIMESTAMP__~")";
 
 //
 // SECTION Input structure

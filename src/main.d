@@ -58,7 +58,7 @@ void cliOption(string opt, string val) {
 void cliVersion() {
 	import std.compiler : version_major, version_minor;
 	enum VERSTR = 
-		VERSION_LINE~"\n"~
+		ABOUT~"\n"~
 		COPYRIGHT~"\n"~
 		"License: MIT <https://mit-license.org/>\n"~
 		"Homepage: <https://git.dd86k.space/dd86k/ddhx>\n"~

@@ -57,20 +57,59 @@ int errorSet(Exception ex) {
 }
 
 const(char)[] errorMsg() {
-	__gshared char[1024] errMsg;
-	
 	switch (lastError) with (ErrorCode) {
 	case exception: return lastMsg;
 	case os:
+		import std.string : fromStringz;
+		
 		//TODO: OS message
 		version (Windows) {
+			import core.sys.windows.winbase : GetLastError, LocalFree,
+				FormatMessageA,
+				FORMAT_MESSAGE_ALLOCATE_BUFFER, FORMAT_MESSAGE_FROM_SYSTEM,
+				FORMAT_MESSAGE_IGNORE_INSERTS;
+			import core.sys.windows.winnt :
+				MAKELANGID, LANG_NEUTRAL, SUBLANG_DEFAULT;
 			
+			enum LANG = MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT);
+			
+			uint errcode = GetLastError();
+			char *strerror;
+			
+			version (Trace) trace("code=%x", errcode);
+			
+			uint r = FormatMessageA(
+				FORMAT_MESSAGE_ALLOCATE_BUFFER |
+				FORMAT_MESSAGE_FROM_SYSTEM |
+				FORMAT_MESSAGE_IGNORE_INSERTS,
+				null,
+				errcode,
+				LANG,
+				cast(char*)&strerror,
+				0,
+				null);
+			
+			version (Trace) trace("r=%u err=%x", r, GetLastError());
+			
+			if (strerror)
+			{
+				if (strerror[r - 1] == '\n') --r;
+				if (strerror[r - 1] == '\r') --r;
+				string errMsg = strerror[0..r].idup;
+				LocalFree(strerror);
+				return errMsg;
+			}
+			
+			goto default;
 		} else {
 			import core.stdc.errno : errno;
 			import core.stdc.string : strerror;
-			import std.string : fromStringz;
 			
-			return strerror(errno).fromStringz;
+			int errcode = errno;
+			
+			version (Trace) trace("code=%d", errcode);
+			
+			return strerror(errcode).fromStringz;
 		}
 	case fileEmpty: return "File is empty.";
 	case inputEmpty: return "Input is empty.";

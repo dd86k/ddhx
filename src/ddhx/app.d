@@ -68,6 +68,7 @@ int appInteractive(long skip = 0) {
 	
 	version (Trace) trace("loop");
 	TerminalInput event;
+
 L_INPUT:
 	terminalInput(event);
 	version (Trace) trace("type=%d", event.type);
@@ -285,7 +286,7 @@ void menu(string cmdPrepend = null) {
 		msgBottom(C);
 		break;
 	case "version":
-		msgBottom(VERSION_LINE);
+		msgBottom(ABOUT);
 		break;
 	//
 	// Settings
