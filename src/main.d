@@ -117,9 +117,9 @@ int main(string[] args) {
 		return 0;
 	}
 	
-	if (cliStdin == false) cliStdin = args.length <= 1;
+	string cliPath = args.length > 1 ? args[1] : "-";
 	
-	string cliPath = args[1];
+	if (cliStdin == false) cliStdin = args.length <= 1;
 	
 	version (Trace) traceInit;
 	

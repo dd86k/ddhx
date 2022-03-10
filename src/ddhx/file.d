@@ -112,7 +112,7 @@ struct OSFile {
 	
 	int delegate(Seek, long) seek;
 	int delegate() read;
-	int delegate(ubyte[]) read2;
+	int delegate(ubyte[], ref ubyte[]) read2;
 	
 	int openFile(string path/*, bool create*/) {
 		version (Trace) trace("path='%s'", path);
@@ -219,18 +219,22 @@ struct OSFile {
 	}
 	
 	private int seekFile(Seek origin, long pos) {
-		version (Trace) trace("seek=%s pos=%u", origin, position);
+		version (Trace) trace("seek=%s pos=%u", origin, pos);
 		
 		version (Windows) {
-			LARGE_INTEGER p = void;
-			p.QuadPart = pos;
-			if (SetFilePointerEx(fileHandle, p, null, 0) == FALSE)
+			LARGE_INTEGER liIn = void, liOut = void;
+			liIn.QuadPart = pos;
+			if (SetFilePointerEx(fileHandle, liIn, &liOut, origin) == FALSE)
 				return errorSet(ErrorCode.os);
+			position = liOut.QuadPart;
 		} else version (Posix) {
-			if (lseek64(fileHandle, pos, origin) == -1)
+			const long r = lseek64(fileHandle, pos, origin);
+			if (r == -1)
 				return errorSet(ErrorCode.os);
+			position = r;
 		}
-		return seekMmfile(origin, pos);
+		
+		return 0;
 	}
 	private int seekMmfile(Seek origin, long pos) {
 		version (Trace) trace("seek=%s pos=%u", origin, position);
@@ -306,61 +310,67 @@ struct OSFile {
 		return 0;
 	}
 	
-	private int readFile2(ubyte[] _buffer) {
+	private int readFile2(ubyte[] _buffer, ref ubyte[] _result) {
 		version (Trace) trace("buflen=%u", _buffer.length);
 		
 		version (Windows) {
 			const uint _bs = cast(uint)_buffer.length;
-			DWORD r = void;
-			if (ReadFile(fileHandle, _buffer.ptr, _bs, &r, null) == FALSE)
+			uint _read = void;
+			if (ReadFile(fileHandle, _buffer.ptr, _bs, &_read, null) == FALSE)
 				return errorSet(ErrorCode.os);
-			eof = r < _bs;
-			if (eof)
-				buffer.length = r;
+			eof = _read < _bs;
+			_result = _buffer[0.._read];
 		} else version (Posix) {
 			alias mygod = core.sys.posix.unistd.read;
-			ssize_t r = mygod(fileHandle, _buffer.ptr, _buffer.length);
-			if (r < 0)
+			ssize_t _read = mygod(fileHandle, _buffer.ptr, _buffer.length);
+			if (_read < 0)
 				return errorSet(ErrorCode.os);
-			eof = r < readSize;
-			if (eof)
-				buffer.length = r;
+			eof = _read < _buffer.length;
+			_result = _buffer[0.._read];
 		}
+		
+		version (Trace) trace("eof=%s read=%u", eof, r);
+		
 		return 0;
 	}
-	private int readMmfile2(ubyte[] _buffer) {
+	private int readMmfile2(ubyte[] _buffer, ref ubyte[] _result) {
 		version (Trace) trace("buflen=%u", _buffer.length);
 		
 		long endpos = position + readSize; /// Proposed end marker
 		eof = endpos > size; // If end marker overflows
 		if (eof)
 			endpos = size;
-		buffer = cast(ubyte[])mmHandle[position..endpos];
+		_result = cast(ubyte[])mmHandle[position..endpos];
 		return 0;
 	}
-	private int readStream2(ubyte[] _buffer) {
+	private int readStream2(ubyte[] _buffer, ref ubyte[] _result) {
 		version (Trace) trace("buflen=%u", _buffer.length);
 		
-		buffer = stream.rawRead(_buffer);
+		_result = stream.rawRead(_buffer);
 		eof = stream.eof;
 		return 0;
 	}
-	private int readMemory2(ubyte[] _buffer) {
+	private int readMemory2(ubyte[] _buffer, ref ubyte[] _result) {
 		version (Trace) trace("buflen=%u", _buffer.length);
 		
 		long endpos = position + _buffer.length; /// Proposed end marker
 		eof = endpos > size; // If end marker overflows
 		if (eof)
 			endpos = size;
-		buffer = readBuffer[cast(size_t)position..cast(size_t)endpos];
+		_result = readBuffer[cast(size_t)position..cast(size_t)endpos];
 		return 0;
 	}
 	
 	void save(ref OSFileState state) {
+		version (Trace) trace("pos=%u read=%u", position, readSize);
+		
 		state.position = position;
 		state.readSize = readSize;
 	}
 	void restore(ref OSFileState state) {
+		version (Trace) trace("pos=%u->%u read=%u->%u",
+			position, state.position, readSize, state.readSize);
+		
 		position = state.position;
 		readSize = state.readSize;
 		

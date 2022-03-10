@@ -73,7 +73,8 @@ L_INPUT:
 	terminalInput(event);
 	version (Trace) trace("type=%d", event.type);
 	
-	switch (event.type) with (InputType) {
+	switch (event.type) with (InputType)
+	{
 	case keyDown: goto L_KEYDOWN;
 	default: goto L_INPUT;
 	}
@@ -81,7 +82,8 @@ L_INPUT:
 L_KEYDOWN:
 	version (Trace) trace("key=%d", event.key);
 	
-	switch (event.key) with (Key) with (Mod) {
+	switch (event.key) with (Key) with (Mod)
+	{
 	
 	//
 	// Navigation
@@ -103,7 +105,7 @@ L_KEYDOWN:
 	//
 	
 	case '/':
-		msgBottom("slash!");
+		menu(null, "/");
 		break;
 	case N:
 		if (searchLast())
@@ -116,7 +118,6 @@ L_KEYDOWN:
 		break;
 	case G:
 		menu("g ");
-		displayRenderTop;
 		break;
 	case I:
 		msgFileInfo;
@@ -197,7 +198,7 @@ int appDump(long skip, long length) {
 
 //TODO: Dedicated command interpreter to use for dedicated files (settings)
 private
-void menu(string cmdPrepend = null) {
+void menu(string cmdPrepend = null, string cmdAlias = null) {
 	// clear bar and command prepend
 	terminalPos(0, 0);
 	writef("%*s", terminalSize.width - 1, " ");
@@ -205,198 +206,74 @@ void menu(string cmdPrepend = null) {
 	
 	// write prompt
 	terminalPos(0, 0);
-	write(":");
+	if (cmdAlias == null) write(":");
+	if (cmdAlias) write(cmdAlias);
 	if (cmdPrepend) write(cmdPrepend);
 	stdout.flush;
 	
-	// read input split arguments by space, no empty entries
-	//TODO: GC-free merge prepend and readln(buf), then split
-	//TODO: Smarter argv handling with single and double quotes
-	//TODO: Consider std.getopt
-	string[] argv = cast(string[])(cmdPrepend ~ readln[0..$-1]).split;
+	// read command
+	string line = cmdPrepend ~ cmdAlias ~ readln();
 	
 	// draw upper bar, clearing input
 	displayRenderTop;
 	
-	const size_t argc = argv.length;
-	if (argc == 0) return;
-	
-	//TODO: replace error var usage with lastError
-	int error;
-	switch (argv[0]) {
-	case "g", "goto":
-		if (argc <= 1) {
-			msgBottom("Missing argument (position)");
-			break;
-		}
-		switch (argv[1]) {
-		case "e", "end":
-			moveEnd;
-			break;
-		case "h", "home":
-			moveStart;
-			break;
-		default:
-			appSeek(argv[1]);
-		}
-		break;
-	case "s", "search": // Search
-		if (argc <= 1) {
-			//TODO: Missing type (just one argument) -> Auto guess
-			//      Auto-guess type (integer/"string"/byte array/etc.)
-			//      -2 -> byte
-			//      0xffff -> ushort
-			//      "test"w -> wchar
-			//      etc.
-			msgBottom("Missing argument (type)");
-			break;
-		}
-		if (argc <= 2) {
-			msgBottom("Missing argument (needle)");
-			break;
-		}
-		
-		void *p = void;
-		size_t plen = void;
-		string type = argv[1];
-		string data = argv[2];
-		
-		error = convert(p, plen, data, type);
-		if (error) break;
-		
-		search(p, plen, type);
-		break; // "search"
-	case "skip":
-		ubyte byte_ = void;
-		if (argc <= 1) {
-			byte_ = io.buffer[0];
-		} else {
-			if (argv[1] == "zero")
-				byte_ = 0;
-			else if ((error = convert(byte_, argv[1])) != 0)
-				break;
-		}
-		error = skipByte(byte_);
-		break;
-	case "i", "info": msgFileInfo; break;
-	case "refresh": appRefresh; break;
-	case "quit": appExit; break;
-	case "about":
-		enum C = "Written by dd86k. " ~ COPYRIGHT;
-		msgBottom(C);
-		break;
-	case "version":
-		msgBottom(ABOUT);
-		break;
-	//
-	// Settings
-	//
-	case "w", "width":
-		if (settingWidth(argv[1])) {
-			msgBottom(errorMsg);
-			break;
-		}
-		appRefresh;
-		break;
-	case "o", "offset":
-		if (argc <= 1) {
-			msgBottom("Missing argument (number type)");
-			break;
-		}
-		if ((error = settingOffset(argv[1])) != 0)
-			break;
-		appRender;
-		break;
-	case "d", "data":
-		if (argc <= 1) {
-			msgBottom("Missing argument (number type)");
-			break;
-		}
-		if ((error = settingData(argv[1])) != 0)
-			break;
-		appRender;
-		break;
-	case "C", "defaultchar":
-		if (settingDefaultChar(argv[1])) {
-			msgBottom(errorMsg);
-			break;
-		}
-		appRefresh;
-		break;
-	case "cp", "charset":
-		if (argc <= 1) {
-			msgBottom("Missing argument (charset)");
-			break;
-		}
-		
-		if ((error = settingCharset(argv[1])) != 0)
-			break;
-		displayRenderMain;
-		break;
-	case "reset":
-		settingResetAll();
-		break;
-	default:
-		error = errorSet(ErrorCode.invalidCommand);
-	}
-	
-	if (error)
-		msgBottom(errorMsg);
+	if (command(line))
+		msgBottom(errorMsg());
 }
 
 /// Move the view to the start of the data
-private void moveStart() {
+void moveStart() {
 	appSeek(0);
 }
 /// Move the view to the end of the data
-private void moveEnd() {
+void moveEnd() {
 	appSeek(io.size - io.readSize);
 }
 /// Align view to start of row
-private void moveAlignStart() {
+void moveAlignStart() {
 	appSeek(io.position - (io.position % globals.rowWidth));
 }
 /// Align view to end of row (start of row + row size)
-private void moveAlignEnd() {
+void moveAlignEnd() {
 	const long n = io.position +
 		(globals.rowWidth - io.position % globals.rowWidth);
 	appSeek(n + io.readSize <= io.size ? n : io.size - io.readSize);
 }
 /// Move view to one data group to the left (backwards)
-private void moveLeft() {
+void moveLeft() {
 	if (io.position - 1 >= 0) // Else already at 0
 		appSeek(io.position - 1);
 }
 /// Move view to one data group to the right (forwards)
-private void moveRight() {
+void moveRight() {
 	if (io.position + io.readSize + 1 <= io.size)
 		appSeek(io.position + 1);
 	else
 		appSeek(io.size - io.readSize);
 }
 /// Move view to one row size up (backwards)
-private void moveRowUp() {
+void moveRowUp() {
 	if (io.position - globals.rowWidth >= 0)
 		appSeek(io.position - globals.rowWidth);
 	else
 		appSeek(0);
 }
 /// Move view to one row size down (forwards)
-private void moveRowDown() {
+void moveRowDown() {
 	if (io.position + io.readSize + globals.rowWidth <= io.size)
 		appSeek(io.position + globals.rowWidth);
 	else
 		appSeek(io.size - io.readSize);
 }
 /// Move view to one page size up (backwards)
-private void movePageUp() {
+void movePageUp() {
 	if (io.position - cast(long)io.readSize >= 0)
 		appSeek(io.position - io.readSize);
 	else
 		appSeek(0);
 }
 /// Move view to one page size down (forwards)
-private void movePageDown() {
+void movePageDown() {
 	if (io.position + (io.readSize << 1) <= io.size)
 		appSeek(io.position + io.readSize);
 	else
@@ -475,16 +352,16 @@ void appSeek(string str) {
 	}
 	with (globals) switch (seekmode) {
 	case '+':
-		//TODO: else what?
 		newPos = io.position + newPos;
 		if (newPos - io.readSize < io.size)
 			appSeek(newPos);
+		//TODO: else what?
 		break;
 	case '-':
-		//TODO: else what?
 		newPos = io.position - newPos;
 		if (newPos >= 0)
 			appSeek(newPos);
+		//TODO: else what?
 		break;
 	default:
 		if (newPos < 0) {

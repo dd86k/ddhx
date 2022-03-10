@@ -477,7 +477,7 @@ private size_t makeRow(char *line, ref Formatters format,
 	long pos, const(ubyte) *data, size_t len) {
 	import core.stdc.string : memset;
 	
-	version (Trace) trace("pos=%s len=%s", pos, len);
+//	version (Trace) trace("pos=%s len=%s", pos, len);
 	
 	// Insert OFFSET
 	size_t index = format.offset(line, pos);

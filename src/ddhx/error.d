@@ -25,6 +25,12 @@ enum ErrorCode {
 	eof,
 	unimplemented,
 	
+	missingArgumentPosition,
+	missingArgumentType,
+	missingArgumentNeedle,
+	missingArgumentWidth,
+	missingArgumentCharacter,
+	missingArgumentCharset,
 }
 
 __gshared ErrorCode lastError; /// Last error code.
@@ -33,7 +39,15 @@ private __gshared string lastFile;
 private __gshared int lastLine;
 
 int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
-	version (Trace) trace("%s", code);
+	version (Trace)
+	{
+		trace("code=%s line=%s:%u", code, file, line);
+		if (code == ErrorCode.os)
+		{
+			lastError = code;
+			trace("oserror=%s", errorMsg);
+		}
+	}
 	lastFile = file;
 	lastLine = line;
 	return (lastError = code);
@@ -62,7 +76,6 @@ const(char)[] errorMsg() {
 	case os:
 		import std.string : fromStringz;
 		
-		//TODO: OS message
 		version (Windows) {
 			import core.sys.windows.winbase : GetLastError, LocalFree,
 				FormatMessageA,
@@ -89,7 +102,7 @@ const(char)[] errorMsg() {
 				0,
 				null);
 			
-			version (Trace) trace("r=%u err=%x", r, GetLastError());
+			version (Trace) trace("FormatMessageA=%u errcode=%x", r, GetLastError());
 			
 			if (strerror)
 			{
@@ -121,6 +134,14 @@ const(char)[] errorMsg() {
 	case overflow: return "Integer overflow.";
 	case unparsable: return "Integer could not be parsed.";
 	case noLastItem: return "No previous search items saved.";
+	
+	case missingArgumentPosition: return "Missing argument (position).";
+	case missingArgumentType: return "Missing argument (type).";
+	case missingArgumentNeedle: return "Missing argument (needle).";
+	case missingArgumentWidth: return "Missing argument (width).";
+	case missingArgumentCharacter: return "Missing argument (character).";
+	case missingArgumentCharset: return "Missing argument (charset).";
+	
 	case success: return "No errors occured.";
 	default: return "Internal error occured.";
 	}

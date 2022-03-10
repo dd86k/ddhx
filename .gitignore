@@ -14,7 +14,9 @@ ddhx.log
 *.gz
 *.xz
 *.bzip2
-./ddhx-test-library
+ddhx-test-library
+
+.fuse_*
 
 # Personal
 NOTES

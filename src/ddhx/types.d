@@ -39,6 +39,8 @@ int convert(ref void *data, ref size_t len, string val, string type) {
 	}
 	__gshared TypeData types;
 	
+	version (Trace) trace("data=%s val=%s type=%s", data, val, type);
+	
 	//TODO: utf16le and all.
 	//      bswap all wchars?
 	
@@ -118,16 +120,21 @@ int convert(ref void *data, ref size_t len, string val, string type) {
 
 /// Convert data depending on the type supplied at compile-time.
 /// Params:
-/// 	v = 
-/// 	val = 
+/// 	v = Data reference.
+/// 	val = String value.
 /// Returns: Error code.
-int convert(T)(ref T v, string val) {
+int convert(T)(ref T v, string val)
+{
 	import std.conv : ConvException;
-	try {
-			//TODO: ubyte[]
-		static if (is(T == wstring) || is(T == dstring)) {
+	try
+	{
+		//TODO: ubyte[] input
+		static if (is(T == wstring) || is(T == dstring))
+		{
 			transcode(val, v);
-		} else { // Integral
+		}
+		else // Scalar
+		{
 			const size_t len = val.length;
 			FormatSpec!char fmt = void;
 			if (len >= 3 && val[0..2] == "0x")
@@ -146,7 +153,9 @@ int convert(T)(ref T v, string val) {
 			}
 			v = unformatValue!T(val, fmt);
 		}
-	} catch (Exception ex) {
+	}
+	catch (Exception ex)
+	{
 		return errorSet(ex);
 	}
 	
@@ -159,7 +168,8 @@ int convert(T)(ref T v, string val) {
 //      int fromRaw(T)(ref T ptr, void *ptr, size_t left)
 
 /// 
-@system unittest {
+@system unittest
+{
 	int i;
 	assert(convert(i, "256") == ErrorCode.success);
 	assert(i == 256);

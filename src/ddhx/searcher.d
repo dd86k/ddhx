@@ -48,6 +48,8 @@ int searchLast() {
 int search(const(void) *data, size_t len, string type) {
 	import core.stdc.string : memcpy;
 	
+	version (Trace) trace("data=%s len=%u type=%s", data, len, type);
+	
 	debug assert(len, "len="~len.stringof);
 	
 	lastType = type;
@@ -63,16 +65,13 @@ private int search2(const(void) *data, size_t len, string type) {
 	msgBottom(" Searching %s...", type);
 	long pos = void;
 	const int e = searchInternal(data, len, pos);
-	if (e) {
-		msgBottom(" Type %s not found", type);
-	} else {
-		if (pos + io.readSize > io.size)
-			pos = io.size - io.readSize;
-		io.seek(Seek.start, pos);
-		io.read();
-		displayRenderTop();
-		displayRenderMainRaw();
-		//TODO: Format depending on current offset format
+	if (e == 0)
+	{
+		// NOTE: Why was this here?
+		/*if (pos + io.readSize > io.size)
+			pos = io.size - io.readSize;*/
+		appSeek(pos);
+		//TODO: Format position depending on current offset format
 		msgBottom(" Found at 0x%x", pos);
 	}
 	return e;
@@ -89,6 +88,8 @@ int searchInternal(const(void) *data, size_t len, out long newPos) {
 	import std.array : uninitializedArray;
 	import core.stdc.string : memcmp;
 	alias compare = memcmp; // avoids confusion with memcpy/memcmp
+	
+	version (Trace) trace("data=%s len=%u", data, len);
 	
 	ubyte *needle = cast(ubyte*)data;
 	/// First byte for data to compare with haystack.
@@ -109,15 +110,15 @@ int searchInternal(const(void) *data, size_t len, out long newPos) {
 	io.save(state);
 	long pos = io.position + 1; /// Current search position
 	io.seek(Seek.start, pos);
-	io.resizeBuffer(BUFFER_SIZE);
+//	io.resizeBuffer(BUFFER_SIZE);
+	
+	version (Trace) trace("start=%u", pos);
 	
 	size_t haystackIndex = void;
 	ubyte[] haystack = void;
 	
 L_CONTINUE:
-	//ubyte[] haystack = input.readBuffer(fileBuffer);
-	io.read2(fileBuffer);
-	haystack = io.buffer;
+	io.read2(fileBuffer, haystack);
 	const size_t haystackLen = haystack.length;
 	
 	// For every byte
@@ -131,7 +132,7 @@ L_CONTINUE:
 			goto L_FOUND;
 		
 		// In-haystack or out-haystack check
-		// Determined if needle fits within haystack
+		// Determined if needle fits within haystack (chunk)
 		if (haystackIndex + len < haystackLen) // fits inside haystack
 		{
 			if (compare(haystack.ptr + haystackIndex, needle, len) == 0)
@@ -142,7 +143,7 @@ L_CONTINUE:
 			const long t = pos + haystackIndex; // temporary seek
 			io.seek(Seek.start, t); // Go at chunk index
 			//TODO: Check length in case of EOF
-			io.read2(needleBuffer); // Read needle length
+			io.read2(needleBuffer, needleBuffer); // Read needle length
 			if (compare(needleBuffer.ptr, needle, len) == 0)
 				goto L_FOUND;
 			io.seek(Seek.start, pos); // Go back where we read
@@ -153,15 +154,15 @@ L_CONTINUE:
 	pos += haystackLen;
 	
 	// Check if last haystack.
-	// If haystack length is lower than the default size,
-	// this simply means it's the last haystack since it reached
-	// OEF (by having read less data).
-	if (haystackLen == BUFFER_SIZE) goto L_CONTINUE;
+	if (io.eof == false) goto L_CONTINUE;
 	
 	// Not found
-	io.restore(state); // Revert to old position
+//	io.restore(state); // Revert to old position + read size
+	io.seek(Seek.start, state.position);
 	return errorSet(ErrorCode.notFound);
+
 L_FOUND: // Found
+//	io.resizeBuffer(state.readSize); // Revert read size only
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position
 	return 0;
 }
@@ -200,11 +201,11 @@ int skipByte(ubyte data, out long newPos) {
 	OSFileState state = void;
 	io.save(state);
 	long pos = io.position + 1;
+	ubyte[] haystack = void;
 	
 L_CONTINUE:
 	io.seek(Seek.start, pos); // Fix for mmfile
-	io.read2(fileBuffer);
-	ubyte[] haystack = io.buffer;
+	io.read2(fileBuffer, haystack);
 	const size_t haystackLen = haystack.length;
 	
 	// For every byte
@@ -223,7 +224,8 @@ L_CONTINUE:
 	if (haystackLen == BUFFER_SIZE) goto L_CONTINUE;
 	
 	// Not found
-	io.restore(state); // Revert to old position before search
+//	io.restore(state); // Revert to old position before search
+	io.seek(Seek.start, state.position);
 	return errorSet(ErrorCode.notFound);
 L_FOUND: // Found
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position
