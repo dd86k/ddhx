@@ -36,6 +36,7 @@ version (Posix) {
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
+	
 	version (CRuntime_Musl) {
 		private alias uint tcflag_t;
 		private alias uint speed_t;
@@ -45,6 +46,14 @@ version (Posix) {
 		private enum ICANON	= 2;
 		private enum ECHO	= 10;
 		private enum TIOCGWINSZ	= 0x5413;
+		private enum BRKINT	= 2;
+		private enum INPCK	= 20;
+		private enum ISTRIP	= 40;
+		private enum ICRNL	= 400;
+		private enum IXON	= 2000;
+		private enum IEXTEN	= 100000;
+		private enum CS8	= 60;
+		private enum TCSAFLUSH	= 2;
 		private struct termios {
 			tcflag_t c_iflag;
 			tcflag_t c_oflag;
@@ -65,6 +74,7 @@ version (Posix) {
 		private extern (C) int tcsetattr(int fd, int a, termios *termios_p);
 		private extern (C) int ioctl(int fd, ulong request, ...);
 	}
+	
 	private __gshared termios old_ios, new_ios;
 }
 

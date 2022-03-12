@@ -31,7 +31,29 @@ version (Windows) {
 	import core.stdc.errno;
 	import core.stdc.stdio : SEEK_SET, SEEK_CUR, SEEK_END;
 	
-	version (linux) {
+	version (CRuntime_Musl) { // BLKGETSIZE64 missing, source musl 1.2.0
+		private enum _IOC_NRBITS = 8;
+		private enum _IOC_TYPEBITS = 8;
+		private enum _IOC_SIZEBITS = 14;
+		private enum _IOC_NRSHIFT = 0;
+		private enum _IOC_TYPESHIFT = _IOC_NRSHIFT+_IOC_NRBITS;
+		private enum _IOC_SIZESHIFT = _IOC_TYPESHIFT+_IOC_TYPEBITS;
+		private enum _IOC_DIRSHIFT = _IOC_SIZESHIFT+_IOC_SIZEBITS;
+		private enum _IOC_READ = 2;
+		private enum _IOC(int dir,int type,int nr,size_t size) =
+			(dir  << _IOC_DIRSHIFT) |
+			(type << _IOC_TYPESHIFT) |
+			(nr   << _IOC_NRSHIFT) |
+			(size << _IOC_SIZESHIFT);
+		//TODO: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
+		//      I don't know why, so I'm casting it to int to let it compile.
+		private enum _IOR(int type,int nr,size_t size) =
+			cast(int)_IOC!(_IOC_READ,type,nr,size);
+		private enum BLKGETSIZE64 = _IOR!(0x12,114,size_t.sizeof);
+		private alias BLOCKSIZE = BLKGETSIZE64;
+		
+		private extern (C) int ioctl(int,int,...);
+	} else version (linux) {
 		import core.sys.linux.fs : BLKGETSIZE64;
 		private alias BLOCKSIZE = BLKGETSIZE64;
 	}
