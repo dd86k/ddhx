@@ -74,7 +74,7 @@ int search2(const(void) *data, size_t len, string type, bool backward) {
 		//       appSeek is supposed to check for bounds anyway.
 		/*if (pos + io.readSize > io.size)
 			pos = io.size - io.readSize;*/
-		appSeek(pos);
+		appSafeSeek(pos);
 		//TODO: Format position depending on current offset format
 		msgBottom(" Found at 0x%x", pos);
 	}

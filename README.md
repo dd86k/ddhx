@@ -24,7 +24,7 @@ Offset(Hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
         130  06 00 00 00 00 00 00 00 06 00 00 00 00 00 00 00  ................
         140  00 c0 2f 00 00 04 00 00 00 00 00 00 03 00 60 81  ../...........`.
         150  00 00 10 00 00 00 00 00 00 10 00 00 00 00 00 00  ................
- Hex | 352 B | 0 B - 352 B | 0.000000% - 0.011337%
+ Hex | ascii | 352 B | 0 B - 352 B | 0.000000% - 0.011337%
 ```
 
 ddhx is a quick and dirty TUI hexadecimal viewer meant to replace my
@@ -43,12 +43,13 @@ Modes supported:
 /         \  /                                             \  /              \
 Offset(Hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
          70  6d 6f 64 65 2e 0d 0d 0a 24 00 00 00 00 00 00 00  mode....$.......
- Hex | 352 B | 0 B - 352 B | 0.000000% - 0.011337%
-  ^     ^      \____ ____/   \_________ _________/
-  |     |           v                  v
-  |     |           |                  +- Start-end view position in pourcentage
-  |     |           +- Start-end view buffer position
-  |     +- View buffer size
+ Hex | ascii | 352 B | 0 B - 352 B | 0.000000% - 0.011337%
+  ^     ^       ^      \____ ____/   \_________ _________/
+  |     |       |           v                  v
+  |     |       |           |                  +- Start and end of view position in percentage
+  |     |       |           +- Start and end of view buffer position
+  |     |       +- View buffer size
+  |     +- Character translation mode
   +- Current data mode
 ```
 

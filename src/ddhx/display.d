@@ -61,6 +61,13 @@ private immutable char[] function(ubyte)[4] transFuncs = [
 	&transcodeEBCDIC,
 //	&transcodeGSM
 ];
+/// 
+private immutable string[4] transNames = [
+	"ascii",
+	"cp437",
+	"ebcdic",
+//	"gsm",
+];
 
 //
 // SECTION Formatting
@@ -439,8 +446,9 @@ void displayRenderBottomRaw() {
 	char[32] c1 = void, c2 = void, c3 = void;
 	char[128] buf = void;
 	const double fpos = io.position;
-	char[] f = sformat!" %s | %s | %s - %s | %f%% - %f%%"(buf,
+	char[] f = sformat!" %s | %s | %s | %s - %s | %f%% - %f%%"(buf,
 		offsetNames[globals.dataType],
+		transNames[globals.charType],
 		formatSize(c1, io.readSize), // Buffer size
 		formatSize(c2, io.position), // Formatted position
 		formatSize(c3, io.position + io.readSize), // Formatted position

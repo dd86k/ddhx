@@ -14,6 +14,8 @@ import ddhx;
 string[] arguments(string buffer) {
 	// NOTE: Using split/splitter would destroy quoted arguments
 	
+	//TODO: Escape characters (with '\\')
+	
 	buffer = strip(buffer);
 	
 	if (buffer.length == 0) return [];
@@ -218,7 +220,7 @@ int command(string[] argv) {
 			error = settingDefaultChar(argv[1]);
 			if (error) return error;
 			
-			appRefresh;
+			appRender;
 			break;
 		case "cp", "charset":
 			if (argc <= 1)
@@ -227,11 +229,11 @@ int command(string[] argv) {
 			error = settingCharset(argv[1]);
 			if (error) return error;
 			
-			displayRenderMain;
+			appRender;
 			break;
 		case "reset":
 			settingResetAll();
-			appRefresh;
+			appRender;
 			break;
 		default: return errorSet(ErrorCode.invalidCommand);
 		}
