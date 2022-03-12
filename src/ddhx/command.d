@@ -91,21 +91,37 @@ int command(string[] argv) {
 	version (Trace) trace("%(%s %)", argv);
 	
 	string command = argv[0];
+	//TODO: Check length of command string?
 	
 	int error = void;
 	
-	switch (command[0])
-	{
+	switch (command[0]) {
 	case '/': // Search
+		if (command.length <= 1)
+			return errorSet(ErrorCode.missingArgumentType);
 		if (argc <= 1)
 			return errorSet(ErrorCode.missingArgumentNeedle);
 		
 		argv ~= argv[1].idup;
 		argv[1] = command[1..$];
 		goto L_SEARCH;
+	case '?': // Search backwards
+		if (command.length <= 1)
+			return errorSet(ErrorCode.missingArgumentType);
+		if (argc <= 1)
+			return errorSet(ErrorCode.missingArgumentNeedle);
+		
+		void *p = void;
+		size_t len = void;
+		string type = command[1..$];
+		string data = argv[1];
+		
+		error = convert(p, len, data, type);
+		if (error) return error;
+		
+		return search(p, len, type, true);
 	default: // Regular
-		switch (argv[0])
-		{
+		switch (argv[0]) {
 		case "g", "goto":
 			if (argc <= 1)
 				return errorSet(ErrorCode.missingArgumentPosition);
@@ -136,14 +152,14 @@ int command(string[] argv) {
 			
 		L_SEARCH:
 			void *p = void;
-			size_t plen = void;
+			size_t len = void;
 			string type = argv[1];
 			string data = argv[2];
 			
-			error = convert(p, plen, data, type);
+			error = convert(p, len, data, type);
 			if (error) return error;
 			
-			return search(p, plen, type);
+			return search(p, len, type, false);
 		case "skip":
 			ubyte byte_ = void;
 			if (argc <= 1) {

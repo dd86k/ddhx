@@ -329,7 +329,7 @@ struct OSFile {
 			_result = _buffer[0.._read];
 		}
 		
-		version (Trace) trace("eof=%s read=%u", eof, r);
+		version (Trace) trace("eof=%s read=%u", eof, _read);
 		
 		return 0;
 	}

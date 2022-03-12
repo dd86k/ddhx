@@ -107,6 +107,9 @@ L_KEYDOWN:
 	case '/':
 		menu(null, "/");
 		break;
+	case '?':
+		menu(null, "?");
+		break;
 	case N:
 		if (searchLast())
 			msgBottom(errorMsg);
@@ -418,5 +421,6 @@ void msgFileInfo() {
 /// Params: code = Exit code.
 void appExit(int code = 0) {
 	import core.stdc.stdlib : exit;
+	version (Trace) trace("code=%u", code);
 	exit(code);
 }
