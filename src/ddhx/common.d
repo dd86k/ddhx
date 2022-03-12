@@ -4,11 +4,6 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.common;
 
-//TODO: Remove imports
-import std.stdio : File, stdin, FILE, fgetpos, fsetpos, fpos_t;
-import std.mmfile;
-import std.file : getSize;
-import std.path : baseName;
 import ddhx;
 
 /// Copyright string

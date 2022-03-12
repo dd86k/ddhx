@@ -186,7 +186,6 @@ void terminalRestore() {
 	terminalPauseInput;
 }
 
-//TODO: rename to terminalRestoreInput to avoid confusion
 void terminalPauseInput() {
 	version (Posix) {
 		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);

@@ -10,14 +10,6 @@ import std.string : split;
 import core.stdc.string : memset;
 import ddhx;
 
-//TODO: Redo inputs relative to view, not absolute
-//      Should fix bugs in 32-bit builds
-//      In part:
-//      - Check read result length to allow overflow past the view 
-//      - Make seek safer in general instead of specific function
-//TODO: Rename all functions with app
-//      appSeek, appPageDown, etc.
-
 int printError() {
 	stderr.write("error: ");
 	stderr.writeln(errorMsg);
@@ -199,7 +191,6 @@ int appDump(long skip, long length) {
 
 /// int appDiff(string path1, string path2)
 
-//TODO: Dedicated command interpreter to use for dedicated files (settings)
 private
 void menu(string cmdPrepend = null, string cmdAlias = null) {
 	// clear bar and command prepend
@@ -355,16 +346,10 @@ void appSeek(string str) {
 	}
 	with (globals) switch (seekmode) {
 	case '+':
-		newPos = io.position + newPos;
-		if (newPos - io.readSize < io.size)
-			appSeek(newPos);
-		//TODO: else what?
+		appSafeSeek(io.position + newPos);
 		break;
 	case '-':
-		newPos = io.position - newPos;
-		if (newPos >= 0)
-			appSeek(newPos);
-		//TODO: else what?
+		appSafeSeek(io.position - newPos);
 		break;
 	default:
 		if (newPos < 0) {
@@ -383,7 +368,12 @@ void appSeek(string str) {
 void appSafeSeek(long pos) {
 	version (Trace) trace("pos=%s", pos);
 	
-	appSeek(pos + io.readSize > io.size ? io.size - io.readSize : pos);
+	if (pos + io.readSize >= io.size)
+		pos = io.size - io.readSize;
+	else if (pos < 0)
+		pos = 0;
+	
+	appSeek(pos);
 }
 
 /// Display a message on the top row.

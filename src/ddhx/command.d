@@ -141,12 +141,6 @@ int command(string[] argv) {
 			}
 			break;
 		case "s", "search": // Search
-			//TODO: Missing type (just one argument) -> Auto guess
-			//      Auto-guess type (integer/"string"/byte array/etc.)
-			//      -2 -> byte
-			//      0xffff -> ushort
-			//      "test"w -> wchar
-			//      etc.
 			if (argc <= 1)
 				return errorSet(ErrorCode.missingArgumentType);
 			if (argc <= 2)

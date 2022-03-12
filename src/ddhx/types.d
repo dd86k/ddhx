@@ -10,7 +10,7 @@ import ddhx.error;
 
 // NOTE: template to(T) can turn string values into anything.
 
-//TODO: More types ()
+//TODO: More types
 //      - FILETIME
 //      - GUID (little-endian)/UUID (big-endian)
 

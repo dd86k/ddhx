@@ -9,8 +9,6 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.file;
 
-//TODO: If File.size() still causes issue in DMCRT, redo File
-
 version (Windows) {
 	import core.sys.windows.winnt :
 		DWORD, HANDLE, LARGE_INTEGER, FALSE, TRUE,
@@ -72,7 +70,8 @@ enum Seek {
 }
 
 /// Used in saving and restoring the OSFile state (position and read buffer).
-//TODO: Re-use in OSFile?
+//TODO: Re-use in OSFile as-is?
+// NOTE: Used in searcher but not really useful...
 struct OSFileState {
 	long position;	/// Position.
 	uint readSize;	/// Read size.
@@ -82,9 +81,10 @@ struct OSFileState {
 //TODO: Share file.
 //      By default file isn't shared (at least on Windows) which would allow
 //      refreshing view (manually) when a program writes to file.
-//TODO: Virtual change system.
+//TODO: [0.5] Virtual change system.
 //      For editing/rendering/saving.
 //      Array!(Edit) or sorted dictionary?
+//      Obviously CTRL+Z for undo, CTRL+Y for redo.
 struct OSFile {
 	private union {
 		OSHANDLE fileHandle;
@@ -254,9 +254,34 @@ struct OSFile {
 	// Acts as a skip regardless of origin (Seek.current)
 	// Read into void
 	private int seekStream(Seek origin, long pos) {
+		import core.stdc.stdio : fread;
+		import core.stdc.stdlib : malloc, free;
+		import std.algorithm.comparison : min;
+		
 		version (Trace) trace("seek=%s pos=%u", origin, position);
 		
-		//TODO: seekStream
+		FILE *f = stream.getFP;
+		size_t bufSize = void;
+		
+		if (pos) {
+		L_PRESKIP:
+			bufSize = cast(size_t)min(DEFAULT_BUFFER_SIZE, pos);
+			void *buf = malloc(bufSize);
+			if (buf == null) throw new Error("Out of memory");
+			
+		L_SKIP:
+			pos -= fread(buf, 1, bufSize, f);
+			if (pos <= 0) {
+				free(buf);
+				return 0;
+			}
+			if (pos < bufSize) {
+				bufSize = cast(size_t)pos;
+				free(buf);
+				goto L_PRESKIP;
+			}
+			goto L_SKIP;
+		}
 		
 		return 0;
 	}

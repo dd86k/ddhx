@@ -70,10 +70,6 @@ int search2(const(void) *data, size_t len, string type, bool backward) {
 		searchBackward(pos, data, len) :
 		searchForward(pos, data, len);
 	if (e == 0) {
-		// NOTE: Why was this here again?
-		//       appSeek is supposed to check for bounds anyway.
-		/*if (pos + io.readSize > io.size)
-			pos = io.size - io.readSize;*/
 		appSafeSeek(pos);
 		//TODO: Format position depending on current offset format
 		msgBottom(" Found at 0x%x", pos);
@@ -238,7 +234,6 @@ L_CONTINUE:
 				goto L_FOUND;
 		} else { // needle spans across haystacks
 			io.seek(Seek.start, pos + diff); // temporary seek
-			//TODO: Check length in case of EOF
 			io.read2(needleBuffer, needleBuffer); // Read needle length
 			if (compare(needleBuffer.ptr, needle, len) == 0)
 				goto L_FOUND;

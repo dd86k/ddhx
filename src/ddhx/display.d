@@ -27,9 +27,6 @@ import ddhx;
 //      terminalCursorShow()
 //        windows: SetConsoleCursorInfo
 //        posix: \033[?25h
-//TODO: Redo offset formatting functions
-//      e.g. size_t formatOctal(char* buffer, long v, ubyte pad)
-//      Why should I do that again?
 //TODO: Unaligned rendering.
 //      Rendering engine should be capable to take off whereever it stopped
 //      or be able to specify/toggle seperate regardless of column length.
@@ -266,8 +263,6 @@ size_t format11o(char *buffer, long v) {
 // SECTION Character translation
 //
 
-//TODO: Possibly redo character transcoding functions
-//      e.g. size_t insertCP437(char *data, size_t left);
 //TODO: Other character sets
 //      - Mac OS Roman (Windows-10000) "mac"
 //        https://en.wikipedia.org/wiki/Mac_OS_Roman
@@ -525,11 +520,12 @@ private size_t makeRow(char *line, ref Formatters format,
 
 /// Update display from buffer.
 /// Returns: Numbers of row written.
-//TODO: Maybe pass ubyte[]?
+//TODO: Maybe make ubyte[] parameter?
 uint displayRenderMainRaw() {
 	//TODO: Consider redoing buffer management with an OutBuffer.
 	//      Or std.array.appender + std.format.spec.SingleSpec
 	//TODO: Remember length of last printed line for damaged-based display
+	//      Why, again?
 	//TODO: [0.5] Possibility to only redraw a specific line.
 	
 	// data
