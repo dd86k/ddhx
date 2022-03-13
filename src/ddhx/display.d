@@ -35,8 +35,6 @@ import ddhx;
 /// Line size buffer for printing in main panel.
 private enum LBUF_SIZE = 2048;
 
-private extern (C) int putchar(int);
-
 /// Data modes for upper row (display purposes)
 private static immutable(char)[][3] offsetNames = [ "Hex", "Dec", "Oct" ];
 /// Character table for the main panel for printf (formatting purposes)
@@ -422,7 +420,7 @@ void displayRenderTopRaw() {
 	
 	last = outbuf.offset;
 	// OutBuffer.toString duplicates it, what a waste!
-	writeln(cast(const(char)[])outbuf.toBytes);
+	cwriteln(cast(const(char)[])outbuf.toBytes);
 }
 
 /// Update the bottom current information bar.
@@ -434,30 +432,33 @@ void displayRenderBottom() {
 /// Updates information bar without cursor position call.
 void displayRenderBottomRaw() {
 	import std.format : sformat;
-	import std.stdio : writef, write;
+	
 	//TODO: [0.5] Include editing mode (insert/overwrite)
 	//            INS/OVR
 	__gshared size_t last;
-	char[32] c1 = void, c2 = void, c3 = void;
+	char[32] c1 = void, c3 = void;
 	char[128] buf = void;
+	
 	const double fpos = io.position;
-	char[] f = sformat!" %s | %s | %s | %s - %s | %f%% - %f%%"(buf,
+	char[] f = sformat!" %s | %s | %s | %s | %f%%"(buf,
 		offsetNames[globals.dataType],
 		transNames[globals.charType],
 		formatSize(c1, io.readSize), // Buffer size
-		formatSize(c2, io.position), // Formatted position
 		formatSize(c3, io.position + io.readSize), // Formatted position
-		(fpos / io.size) * 100, // Pos/input.size%
 		((fpos + io.readSize) / io.size) * 100, // Pos/input.size%
 	);
-	if (last > f.length) { // Fill by blanks
-		int p = cast(int)(f.length + (last - f.length));
-		writef("%*s", -p, f);
+	
+//	FILE *_stdout = stdout.getFP;
+	const size_t flen = f.length;
+	
+	if (last > flen) { // Fill by blanks
+		int p = cast(int)(flen + (last - flen));
+		cwritef("%*s", -p, f);
 	} else { // Overwrites by default
-		write(f);
+		cwrite(f);
 	}
-	last = f.length;
-	stdout.flush();
+	
+	last = flen;
 }
 
 /// Update display from buffer.
@@ -554,15 +555,43 @@ uint displayRenderMainRaw() {
 	// print lines in bulk (for entirety of view buffer)
 	for (uint l; l < lines; ++l, pos += formatters.rowSize, bufp += formatters.rowSize) {
 		ll = makeRow(lptr, formatters, pos, bufp, formatters.rowSize);
-		writeln(lbuf[0..ll]);
+		cwriteln(lbuf[0..ll]);
 	}
 	if (remaining) {
 		ll = makeRow(lptr, formatters, pos, bufp, remaining);
-		writeln(lbuf[0..ll]);
+		cwriteln(lbuf[0..ll]);
 		++lines;
 	}
 	
 	return lines;
+}
+
+// !SECTION
+
+// SECTION Console Write functions
+
+size_t cwrite(const(char)[] _str) {
+	import std.stdio : stdout;
+	import core.stdc.stdio : fwrite, fflush, FILE;
+	
+	FILE *_stdout = stdout.getFP;
+	
+	return fwrite(_str.ptr, 1, _str.length, _stdout);
+}
+size_t cwriteln(const(char)[] _str) {
+	size_t c = cwrite(_str);
+	cwrite("\n");
+	return c;
+}
+size_t cwritef(A...)(const(char)[] fmt, A args) {
+	import std.format : sformat;
+	char[128] buf = void;
+	return cwrite(sformat(buf, fmt, args));
+}
+size_t cwritefln(A...)(const(char)[] fmt, A args) {
+	size_t c = cwritef(fmt, args);
+	cwrite("\n");
+	return c;
 }
 
 // !SECTION

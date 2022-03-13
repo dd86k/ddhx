@@ -5,7 +5,7 @@ import ddhx.terminal;
 
 @system unittest {
 	enum MODS = Mod.ctrl | Mod.alt | Mod.shift;
-	terminalInit;
+	terminalInit(false);
 	
 	TerminalInput input = void;
 L_READ:

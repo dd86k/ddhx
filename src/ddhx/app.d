@@ -44,7 +44,7 @@ int appInteractive(long skip = 0) {
 	
 	// Terminal setup (resets stdin if PIPE/FIFO is detected)
 	version (Trace) trace("terminalInit");
-	terminalInit;
+	terminalInit(true);
 	version (Trace) trace("terminalSize");
 	globals.termSize = terminalSize;
 	if (globals.termSize.height < 3)
@@ -195,15 +195,13 @@ private
 void menu(string cmdPrepend = null, string cmdAlias = null) {
 	// clear bar and command prepend
 	terminalPos(0, 0);
-	writef("%*s", terminalSize.width - 1, " ");
-	stdout.flush;
+	cwritef("%*s", terminalSize.width - 1, " ");
 	
 	// write prompt
 	terminalPos(0, 0);
-	if (cmdAlias == null) write(":");
-	if (cmdAlias) write(cmdAlias);
-	if (cmdPrepend) write(cmdPrepend);
-	stdout.flush;
+	if (cmdAlias == null) cwrite(":");
+	if (cmdAlias) cwrite(cmdAlias);
+	if (cmdPrepend) cwrite(cmdPrepend);
 	
 	// read command
 	string line = cmdPrepend ~ cmdAlias ~ readln();
@@ -398,8 +396,7 @@ private void msg(A...)(const(char)[] fmt, A args) {
 	import std.format : sformat;
 	char[256] outbuf = void;
 	char[] outs = outbuf[].sformat(fmt, args);
-	writef("%s%*s", outs, (terminalSize.width - 1) - outs.length, " ");
-	stdout.flush();
+	cwritef("%s%*s", outs, (terminalSize.width - 1) - outs.length, " ");
 }
 
 /// Print some file information at the bottom bar

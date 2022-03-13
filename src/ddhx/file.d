@@ -91,6 +91,13 @@ enum Seek {
 	end	= SEEK_END	/// Seek since end of file.
 }
 
+/// Current write mode.
+enum WriteMode {
+	readOnly,	/// 
+	insert,	/// 
+	overwrite,	/// 
+}
+
 /// Used in saving and restoring the OSFile state (position and read buffer).
 //TODO: Re-use in OSFile as-is?
 // NOTE: Used in searcher but not really useful...

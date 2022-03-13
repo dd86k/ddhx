@@ -81,58 +81,64 @@ version (Posix) {
 /// Initiate terminal.
 /// Throws: WindowsException
 //TODO: bool useAltScreen
-void terminalInit() {
+void terminalInit(bool newbuffer) {
 	version (Windows) {
-		//
-		// Setting up stdin
-		//
+		if (newbuffer) {
+			//
+			// Setting up stdin
+			//
+			
+			//NOTE: Re-opening stdin before new screen fixes quite a few things
+			//      - usage with CreateConsoleScreenBuffer
+			//      - readln (for menu)
+			//      - receiving key input when stdin was used for reading a buffer
+			hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, 0, null);
+			if (hIn == INVALID_HANDLE_VALUE)
+				throw new WindowsException(GetLastError);
+			SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
+			stdin.windowsHandleOpen(hIn, "r");
+			SetStdHandle(STD_INPUT_HANDLE, hIn);
+			
+			//
+			// Setting up stdout
+			//
+			
+			hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+			if (hIn == INVALID_HANDLE_VALUE)
+				throw new WindowsException(GetLastError);
+			
+			CONSOLE_SCREEN_BUFFER_INFO csbi = void;
+			if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
+				throw new WindowsException(GetLastError);
+			
+			DWORD attr = void;
+			if (GetConsoleMode(hOut, &attr) == FALSE)
+				throw new WindowsException(GetLastError);
+			
+			hOut = CreateConsoleScreenBuffer(
+				GENERIC_READ | GENERIC_WRITE,	// dwDesiredAccess
+				FILE_SHARE_READ | FILE_SHARE_WRITE,	// dwShareMode
+				null,	// lpSecurityAttributes
+				CONSOLE_TEXTMODE_BUFFER,	// dwFlags
+				null,	// lpScreenBufferData
+			);
+			if (hOut == INVALID_HANDLE_VALUE)
+				throw new WindowsException(GetLastError);
+			
+			stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
+			
+			SetStdHandle(STD_OUTPUT_HANDLE, hOut);
+			SetConsoleScreenBufferSize(hOut, csbi.dwSize);
+			SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT);
+			
+			if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
+				throw new WindowsException(GetLastError);
+		} else {
+			hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+			hIn = GetStdHandle(STD_INPUT_HANDLE);
+		}
 		
-		//NOTE: Re-opening stdin before new screen fixes quite a few things
-		//      - usage with CreateConsoleScreenBuffer
-		//      - readln (for menu)
-		//      - receiving key input when stdin was used for reading a buffer
-		hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, 0, null);
-		if (hIn == INVALID_HANDLE_VALUE)
-			throw new WindowsException(GetLastError);
-		SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
-		stdin.windowsHandleOpen(hIn, "r");
-		SetStdHandle(STD_INPUT_HANDLE, hIn);
-		
-		//
-		// Setting up stdout
-		//
-		
-		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-		if (hIn == INVALID_HANDLE_VALUE)
-			throw new WindowsException(GetLastError);
-		
-		CONSOLE_SCREEN_BUFFER_INFO csbi = void;
-		if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
-			throw new WindowsException(GetLastError);
-		
-		DWORD attr = void;
-		if (GetConsoleMode(hOut, &attr) == FALSE)
-			throw new WindowsException(GetLastError);
-		
-		hOut = CreateConsoleScreenBuffer(
-			GENERIC_READ | GENERIC_WRITE,	// dwDesiredAccess
-			FILE_SHARE_READ | FILE_SHARE_WRITE,	// dwShareMode
-			null,	// lpSecurityAttributes
-			CONSOLE_TEXTMODE_BUFFER,	// dwFlags
-			null,	// lpScreenBufferData
-		);
-		if (hOut == INVALID_HANDLE_VALUE)
-			throw new WindowsException(GetLastError);
-		
-		stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
-		stdout.setvbuf(1024, _IONBF); // fixes weird cursor posisitons
-		
-		SetStdHandle(STD_OUTPUT_HANDLE, hOut);
-		SetConsoleScreenBufferSize(hOut, csbi.dwSize);
-		SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT);
-		
-		if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
-			throw new WindowsException(GetLastError);
+		stdout.setvbuf(0, _IONBF); // fixes weird cursor positions with alt buffer
 		
 		// NOTE: While Windows supports UTF-16LE (1200) and UTF-32LE,
 		//       it's only for "managed applications" (.NET).
@@ -143,10 +149,7 @@ void terminalInit() {
 		
 		//TODO: Get active (or default) colors
 	} else version (Posix) {
-		stat_t s = void;
-		fstat(STDIN_FILENO, &s);
-		if (S_ISFIFO(s.st_mode))
-			stdin.reopen("/dev/tty", "r");
+		stdout.setvbuf(0, _IONBF);
 		tcgetattr(STDIN_FILENO, &old_ios);
 		new_ios = old_ios;
 		// NOTE: input modes
@@ -175,9 +178,15 @@ void terminalInit() {
 		// 1 being 1/10 of a second (100 milliseconds)
 		//new_ios.c_cc[VTIME] = 0;
 		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
-		// change to alternative screen buffer
-		stdout.write("\033[?1049h");
-		stdout.flush;
+		if (newbuffer) {
+			stat_t s = void;
+			fstat(STDIN_FILENO, &s);
+			if (S_ISFIFO(s.st_mode))
+				stdin.reopen("/dev/tty", "r");
+			// change to alternative screen buffer
+			stdout.write("\033[?1049h");
+			stdout.flush;
+		}
 	}
 	
 	atexit(&terminalRestore);
@@ -299,12 +308,15 @@ L_READ:
 				);
 			}
 			
-			event.type = InputType.keyDown;
+			const ushort keycode = ir.KeyEvent.wVirtualKeyCode;
 			
-			const DWORD state = ir.KeyEvent.dwControlKeyState;
-			if (state & ALT_PRESSED) event.key |= Mod.alt;
-			if (state & CTRL_PRESSED) event.key |= Mod.ctrl;
-			if (state & SHIFT_PRESSED) event.key |= Mod.shift;
+			switch (keycode) { // Filter out modifier key events
+			case 16, 17, 18: // shift,ctrl,alt
+				goto L_READ;
+			default:
+			}
+			
+			event.type = InputType.keyDown;
 			
 			const char c = ir.KeyEvent.AsciiChar;
 			
@@ -313,8 +325,13 @@ L_READ:
 			} else if (c) {
 				event.key = c;
 			} else {
-				event.key = ir.KeyEvent.wVirtualKeyCode;
+				event.key = keycode;
 			}
+			
+			const DWORD state = ir.KeyEvent.dwControlKeyState;
+			if (state & ALT_PRESSED) event.key |= Mod.alt;
+			if (state & CTRL_PRESSED) event.key |= Mod.ctrl;
+			if (state & SHIFT_PRESSED) event.key |= Mod.shift;
 			return;
 		/*case MOUSE_EVENT:
 			if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED) {
@@ -502,7 +519,7 @@ enum Mod {
 	shift = 1 << 17,
 	alt   = 1 << 18,
 }
-/// Key codes mapping.
+/// Key codes map.
 enum Key {
 	Undefined = 0,
 	Backspace = 8,
