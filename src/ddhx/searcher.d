@@ -108,9 +108,8 @@ int searchForward(out long newPos, const(void) *data, size_t len) {
 	// Setup
 	OSFileState state = void;
 	io.save(state);
-	long pos = io.position + 1; /// Current search position
+	long pos = io.position + 1; /// New haystack position
 	io.seek(Seek.start, pos);
-//	io.resizeBuffer(BUFFER_SIZE);
 	
 	version (Trace) trace("start=%u", pos);
 	
@@ -139,10 +138,11 @@ L_CONTINUE:
 			const long t = pos + haystackIndex; // temporary seek
 			io.seek(Seek.start, t); // Go at chunk index
 			//TODO: Check length in case of EOF
-			io.read2(needleBuffer, needleBuffer); // Read needle length
-			if (compare(needleBuffer.ptr, needle, len) == 0)
+			ubyte[] n = void;
+			io.read2(needleBuffer, n); // Read needle length
+			if (compare(n.ptr, needle, len) == 0)
 				goto L_FOUND;
-			io.seek(Seek.start, pos); // Go back where we read
+			io.seek(Seek.start, pos); // Not found, go back where we last read
 		}
 	}
 	
@@ -153,12 +153,10 @@ L_CONTINUE:
 	if (io.eof == false) goto L_CONTINUE;
 	
 	// Not found
-//	io.restore(state); // Revert to old position + read size
 	io.seek(Seek.start, state.position);
 	return errorSet(ErrorCode.notFound);
 
 L_FOUND: // Found
-//	io.resizeBuffer(state.readSize); // Revert read size only
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position
 	return 0;
 }
@@ -204,6 +202,7 @@ int searchBackward(out long newPos, const(void) *data, size_t len) {
 	size_t haystackIndex = void;
 	ubyte[] haystack = void;
 	size_t haystackLen = BUFFER_SIZE;
+	ptrdiff_t diff = void;
 	
 L_CONTINUE:
 	pos -= haystackLen;
@@ -227,7 +226,7 @@ L_CONTINUE:
 		// we're done.
 		if (lastByteOnly) goto L_FOUND;
 		
-		ptrdiff_t diff = haystackIndex - len; // Go at needle[0]
+		diff = haystackIndex - len + 1; // Go at needle[0]
 		
 		// In-haystack or out-haystack check
 		// Determined if needle fits within haystack (chunk)
@@ -236,8 +235,9 @@ L_CONTINUE:
 				goto L_FOUND;
 		} else { // needle spans across haystacks
 			io.seek(Seek.start, pos + diff); // temporary seek
-			io.read2(needleBuffer, needleBuffer); // Read needle length
-			if (compare(needleBuffer.ptr, needle, len) == 0)
+			ubyte[] n = void;
+			io.read2(needleBuffer, n); // Read needle length
+			if (compare(n.ptr, needle, len) == 0)
 				goto L_FOUND;
 			io.seek(Seek.start, pos); // Go back we where last
 		}
@@ -247,13 +247,11 @@ L_CONTINUE:
 	if (pos > 0) goto L_CONTINUE;
 	
 	// Not found
-//	io.restore(state); // Revert to old position + read size
 	io.seek(Seek.start, state.position);
 	return errorSet(ErrorCode.notFound);
 
 L_FOUND: // Found
-//	io.resizeBuffer(state.readSize); // Revert read size only
-	newPos = pos + haystackIndex; // Position + Chunk index = Found position
+	newPos = pos + diff; // Position + Chunk index = Found position
 	return 0;
 }
 

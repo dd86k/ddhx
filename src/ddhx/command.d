@@ -97,6 +97,11 @@ int command(string[] argv) {
 	
 	int error = void;
 	
+	void *p = void;
+	size_t len = void;
+	string data = void;
+	string type = void;
+	
 	switch (command[0]) {
 	case '/': // Search
 		if (command.length <= 1)
@@ -113,10 +118,8 @@ int command(string[] argv) {
 		if (argc <= 1)
 			return errorSet(ErrorCode.missingArgumentNeedle);
 		
-		void *p = void;
-		size_t len = void;
-		string type = command[1..$];
-		string data = argv[1];
+		type = command[1..$];
+		data = argv[1];
 		
 		error = convert(p, len, data, type);
 		if (error) return error;
@@ -147,10 +150,8 @@ int command(string[] argv) {
 				return errorSet(ErrorCode.missingArgumentNeedle);
 			
 		L_SEARCH:
-			void *p = void;
-			size_t len = void;
-			string type = argv[1];
-			string data = argv[2];
+			type = argv[1];
+			data = argv[2];
 			
 			error = convert(p, len, data, type);
 			if (error) return error;

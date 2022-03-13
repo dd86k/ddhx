@@ -21,7 +21,7 @@ import ddhx.error;
 /// 	data = Data pointer receiver.
 /// 	len = Data length receiver.
 /// 	val = Value to parse.
-/// 	type = Type name.
+/// 	type = Name of expected type.
 /// Returns: Error code.
 int convert(ref void *data, ref size_t len, string val, string type) {
 	union TypeData {
