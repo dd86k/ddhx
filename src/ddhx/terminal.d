@@ -324,6 +324,11 @@ L_READ:
 				event.key = c - 32;
 			} else if (c) {
 				event.key = c;
+				
+				// '?' on a fr-ca kb is technically shift+6,
+				// breaking app input since expecting no modifiers
+				if (c < 'A' || c > 'Z')
+					return;
 			} else {
 				event.key = keycode;
 			}

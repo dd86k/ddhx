@@ -24,8 +24,9 @@ enum ErrorCode {
 	noLastItem,
 	eof,
 	unimplemented,
+	insufficientSpace,
 	
-	missingArgumentPosition,
+	missingArgumentPosition = 40,
 	missingArgumentType,
 	missingArgumentNeedle,
 	missingArgumentWidth,
@@ -134,6 +135,7 @@ const(char)[] errorMsg() {
 	case overflow: return "Integer overflow.";
 	case unparsable: return "Integer could not be parsed.";
 	case noLastItem: return "No previous search items saved.";
+	case insufficientSpace: return "Too little space left to search.";
 	
 	case missingArgumentPosition: return "Missing argument (position).";
 	case missingArgumentType: return "Missing argument (type).";

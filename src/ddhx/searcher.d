@@ -177,6 +177,9 @@ int searchBackward(out long newPos, const(void) *data, size_t len) {
 	
 	version (Trace) trace("data=%s len=%u", data, len);
 	
+	if (io.position < 2)
+		return errorSet(ErrorCode.insufficientSpace);
+	
 	ubyte *needle = cast(ubyte*)data;
 	/// First byte for data to compare with haystack.
 	const ubyte lastByte = needle[len - 1];
@@ -195,7 +198,6 @@ int searchBackward(out long newPos, const(void) *data, size_t len) {
 	OSFileState state = void;
 	io.save(state);
 	long pos = io.position - 1; /// Chunk position
-//	io.resizeBuffer(BUFFER_SIZE);
 	
 	version (Trace) trace("start=%u", pos);
 	
