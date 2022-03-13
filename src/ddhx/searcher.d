@@ -222,6 +222,8 @@ L_CONTINUE:
 		// Check last byte
 		if (haystack[haystackIndex] != lastByte) continue;
 		
+		diff = 0; // fix for only byte
+		
 		// If first byte is indifferent and length is of 1, then
 		// we're done.
 		if (lastByteOnly) goto L_FOUND;
