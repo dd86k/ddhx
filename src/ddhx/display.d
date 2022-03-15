@@ -36,7 +36,7 @@ import ddhx;
 private enum LBUF_SIZE = 2048;
 
 /// Data modes for upper row (display purposes)
-private static immutable(char)[][3] offsetNames = [ "Hex", "Dec", "Oct" ];
+private static immutable(char)[][3] offsetNames = [ "hex", "dec", "oct" ];
 /// Character table for the main panel for printf (formatting purposes)
 private immutable char[3] formatTable = [ 'x', 'u', 'o' ];
 /// Offset format functions
