@@ -80,14 +80,12 @@ version (Posix) {
 
 /// Initiate terminal.
 /// Throws: WindowsException
-//TODO: bool useAltScreen
-void terminalInit(bool newbuffer) {
+/// Params:
+/// 	initinput = Initiate input mechanism
+/// 	initbuffer = Use alternative console screen buffer
+void terminalInit(bool initinput, bool initbuffer) {
 	version (Windows) {
-		if (newbuffer) {
-			//
-			// Setting up stdin
-			//
-			
+		if (initinput) {
 			//NOTE: Re-opening stdin before new screen fixes quite a few things
 			//      - usage with CreateConsoleScreenBuffer
 			//      - readln (for menu)
@@ -98,7 +96,10 @@ void terminalInit(bool newbuffer) {
 			SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
 			stdin.windowsHandleOpen(hIn, "r");
 			SetStdHandle(STD_INPUT_HANDLE, hIn);
-			
+		} else {
+			hIn = GetStdHandle(STD_INPUT_HANDLE);
+		}
+		if (initbuffer) {
 			//
 			// Setting up stdout
 			//
@@ -135,7 +136,6 @@ void terminalInit(bool newbuffer) {
 				throw new WindowsException(GetLastError);
 		} else {
 			hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-			hIn = GetStdHandle(STD_INPUT_HANDLE);
 		}
 		
 		stdout.setvbuf(0, _IONBF); // fixes weird cursor positions with alt buffer
@@ -149,44 +149,46 @@ void terminalInit(bool newbuffer) {
 		
 		//TODO: Get active (or default) colors
 	} else version (Posix) {
-		stdout.setvbuf(0, _IONBF);
-		tcgetattr(STDIN_FILENO, &old_ios);
-		new_ios = old_ios;
-		// NOTE: input modes
-		// - IXON enables ^S and ^Q
-		// - ICRNL enables ^M
-		// - BRKINT causes SIGINT (^C) on break conditions
-		// - INPCK enables parity checking
-		// - ISTRIP strips the 8th bit
-		new_ios.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
-		// NOTE: output modes
-		// - OPOST turns on output post-processing
-		//new_ios.c_oflag &= ~(OPOST);
-		// NOTE: local modes
-		// - ICANON turns on canonical mode (per-line instead of per-byte)
-		// - ECHO turns on character echo
-		// - ISIG enables ^C and ^Z signals
-		// - IEXTEN enables ^V
-		new_ios.c_lflag &= ~(ICANON | ECHO | IEXTEN);
-		// NOTE: control modes
-		// - CS8 sets Character Size to 8-bit
-		new_ios.c_cflag |= CS8;
-		// minimum amount of bytes to read,
-		// 0 being return as soon as there is data
-		//new_ios.c_cc[VMIN] = 0;
-		// maximum amount of time to wait for input,
-		// 1 being 1/10 of a second (100 milliseconds)
-		//new_ios.c_cc[VTIME] = 0;
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
-		if (newbuffer) {
+		if (initinput) {
+			tcgetattr(STDIN_FILENO, &old_ios);
+			new_ios = old_ios;
+			// NOTE: input modes
+			// - IXON enables ^S and ^Q
+			// - ICRNL enables ^M
+			// - BRKINT causes SIGINT (^C) on break conditions
+			// - INPCK enables parity checking
+			// - ISTRIP strips the 8th bit
+			new_ios.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
+			// NOTE: output modes
+			// - OPOST turns on output post-processing
+			//new_ios.c_oflag &= ~(OPOST);
+			// NOTE: local modes
+			// - ICANON turns on canonical mode (per-line instead of per-byte)
+			// - ECHO turns on character echo
+			// - ISIG enables ^C and ^Z signals
+			// - IEXTEN enables ^V
+			new_ios.c_lflag &= ~(ICANON | ECHO | IEXTEN);
+			// NOTE: control modes
+			// - CS8 sets Character Size to 8-bit
+			new_ios.c_cflag |= CS8;
+			// minimum amount of bytes to read,
+			// 0 being return as soon as there is data
+			//new_ios.c_cc[VMIN] = 0;
+			// maximum amount of time to wait for input,
+			// 1 being 1/10 of a second (100 milliseconds)
+			//new_ios.c_cc[VTIME] = 0;
+			tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
 			stat_t s = void;
 			fstat(STDIN_FILENO, &s);
 			if (S_ISFIFO(s.st_mode))
 				stdin.reopen("/dev/tty", "r");
+		}
+		if (initbuffer) {
 			// change to alternative screen buffer
 			stdout.write("\033[?1049h");
 			stdout.flush;
 		}
+		stdout.setvbuf(0, _IONBF);
 	}
 	
 	atexit(&terminalRestore);

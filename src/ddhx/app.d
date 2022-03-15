@@ -44,7 +44,7 @@ int appInteractive(long skip = 0) {
 	
 	// Terminal setup (resets stdin if PIPE/FIFO is detected)
 	version (Trace) trace("terminalInit");
-	terminalInit(true);
+	terminalInit(true, true);
 	version (Trace) trace("terminalSize");
 	globals.termSize = terminalSize;
 	if (globals.termSize.height < 3)
@@ -138,6 +138,8 @@ L_KEYDOWN:
 int appDump(long skip, long length) {
 	if (length < 0)
 		return printError(1, "Length must be a positive value");
+	
+	terminalInit(false, false);
 	
 	version (Trace) trace("skip=%d length=%d", skip, length);
 	
