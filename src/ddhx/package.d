@@ -5,7 +5,7 @@
 module ddhx;
 
 public import
-	ddhx.app,
+	ddhx.ddhx,
 	ddhx.common,
 	ddhx.command,
 	ddhx.display,

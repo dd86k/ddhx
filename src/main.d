@@ -148,9 +148,9 @@ int main(string[] args) {
 			if (convert(length, cliLength))
 				return printError;
 		}
-		return appDump(skip, length);
+		return ddhxDump(skip, length);
 	}
 	
 	// App: interactive
-	return appInteractive(skip);
+	return ddhxInteractive(skip);
 }

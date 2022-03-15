@@ -2,7 +2,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module ddhx.app;
+module ddhx.ddhx;
 
 import std.stdio;
 import std.file : getSize;
@@ -24,7 +24,7 @@ int printError(A...)(int code, const(char)[] fmt, A args) {
 /// Interactive application.
 /// Params: skip = Seek to file/data position.
 /// Returns: Error code.
-int appInteractive(long skip = 0) {
+int ddhxInteractive(long skip = 0) {
 	// NOTE: File I/O handled before due to stdin
 	//TODO: negative should be starting from end of file (if not stdin)
 	//      stdin: use seek
@@ -135,7 +135,7 @@ L_KEYDOWN:
 /// 	skip = If set, number of bytes to skip.
 /// 	length = If set, maximum length to read.
 /// Returns: Error code.
-int appDump(long skip, long length) {
+int ddhxDump(long skip, long length) {
 	if (length < 0)
 		return printError(1, "Length must be a positive value");
 	
