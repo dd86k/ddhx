@@ -51,7 +51,7 @@ private immutable NumberFormatter[3] numbers = [
 
 private struct Transcoder {
 	string name;
-	char[] function(ubyte) func;
+	immutable(char)[] function(ubyte) func;
 }
 
 private immutable Transcoder[3] transcoders = [
@@ -280,12 +280,12 @@ size_t format11o(char *buffer, long v) {
 private alias U  = char[];
 private alias CU = CodeUnits!char;
 private template C(dchar c) {
-	enum C = codeUnits!char(c).s;
+	enum C = cast(immutable)codeUnits!char(c).s;
 }
 
 private
-char[] transcodeASCII(ubyte data) {
-	__gshared char[]  empty;
+immutable(char)[] transcodeASCII(ubyte data) {
+	__gshared immutable(char)[]  empty;
 	__gshared char[1] c;
 	if (data > 0x7E || data < 0x20)
 		return empty;
@@ -293,7 +293,7 @@ char[] transcodeASCII(ubyte data) {
 	c[0] = data;
 	return c;
 }
-private U[256] mapCP437 = [
+private immutable U[256] mapCP437 = [
 //          0      1      2      3      4      5      6      7
 /*00*/	   [], C!'☺', C!'☻', C!'♥', C!'♦', C!'♣', C!'♠', C!'•',
 /*08*/	C!'◘', C!'○', C!'◙', C!'♂', C!'♀', C!'♪', C!'♫', C!'☼',
@@ -329,20 +329,12 @@ private U[256] mapCP437 = [
 /*f8*/	C!'°', C!'∙', C!'·', C!'√', C!'ⁿ', C!'²', C!'■', C!' '
 ];
 private
-char[] transcodeCP437(ubyte data) {
+immutable(char)[] transcodeCP437(ubyte data) {
 	return mapCP437[data];
 }
 
-private U[256] mapEBCDIC = [
+private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40)
 //          0      1      2      3      4      5      6      7 
-/*00*/	   [],    [],    [],    [],    [],    [],    [],    [],
-/*08*/	   [],    [],    [],    [],    [],    [],    [],    [],
-/*10*/	   [],    [],    [],    [],    [],    [],    [],    [],
-/*18*/	   [],    [],    [],    [],    [],    [],    [],    [],
-/*20*/	   [],    [],    [],    [],    [],    [],    [],    [],
-/*28*/	   [],    [],    [],    [],    [],    [],    [],    [],
-/*30*/	   [],    [],    [],    [],    [],    [],    [],    [],
-/*38*/	   [],    [],    [],    [],    [],    [],    [],    [],
 /*40*/	C!' ', C!' ', C!'â', C!'ä', C!'à', C!'á', C!'ã', C!'å',
 /*48*/	C!'ç', C!'ñ', C!'¢', C!'.', C!'<', C!'(', C!'+', C!'|',
 /*50*/	C!'&', C!'é', C!'ê', C!'ë', C!'è', C!'í', C!'î', C!'ï',
@@ -369,8 +361,9 @@ private U[256] mapEBCDIC = [
 /*f8*/	C!'8', C!'9', C!'³', C!'Û', C!'Ü', C!'Ù', C!'Ú',    []
 ];
 private
-char[] transcodeEBCDIC(ubyte data) {
-	return mapEBCDIC[data];
+immutable(char)[] transcodeEBCDIC(ubyte data) {
+	__gshared immutable(char)[] empty = [];
+	return data >= 0x40 ? mapEBCDIC[data-0x40] : empty;
 }
 
 // !SECTION
@@ -452,12 +445,11 @@ void displayRenderBottomRaw() {
 		((fpos + io.readSize) / io.size) * 100, // Pos/input.size%
 	);
 	
-//	FILE *_stdout = stdout.getFP;
 	const size_t flen = f.length;
 	
 	if (last > flen) { // Fill by blanks
-		int p = cast(int)(flen + (last - flen));
-		cwritef("%*s", -p, f);
+		int p = -cast(int)(flen + (last - flen));
+		cwritef("%*s", p, f);
 	} else { // Overwrites by default
 		cwrite(f);
 	}
@@ -476,14 +468,12 @@ private size_t makeRow(char *line, ref Formatters format,
 	long pos, const(ubyte) *data, size_t len) {
 	import core.stdc.string : memset;
 	
-//	version (Trace) trace("pos=%s len=%s", pos, len);
-	
 	// Insert OFFSET
 	size_t index = format.offset.funcOffset(line, pos);
 	line[index++] = ' '; // index: OFFSET + space
 	
-	uint byteLen = cast(uint)format.data.size;
-	uint dataLen = (format.rowSize * (byteLen + 1)); /// data row character count
+	const uint byteLen = cast(uint)format.data.size;
+	const uint dataLen = (format.rowSize * (byteLen + 1)); /// data row character count
 	size_t posChar = index + dataLen; // CHAR start
 	*(cast(ushort*)(line + posChar)) = 0x2020; // DATA-CHAR spacer
 	posChar += 2; // posChar: index + dataLen + spacer
@@ -495,7 +485,7 @@ private size_t makeRow(char *line, ref Formatters format,
 		line[index++] = ' ';
 		index += format.data.funcData(line + index, byte_);
 		// Character translation
-		char[] units = format.transcoder.func(byte_);
+		immutable(char)[] units = format.transcoder.func(byte_);
 		if (units.length) {
 			for (size_t ci; ci < units.length; ++ci, ++posChar)
 				line[posChar] = units[ci];
@@ -508,9 +498,6 @@ private size_t makeRow(char *line, ref Formatters format,
 		left *= (byteLen + 1); // space + 1x data size
 		memset(line + index, ' ', left);
 	}
-	
-	// Terminate line and send
-	//line[posChar] = 0;
 	
 	return posChar;
 }
@@ -540,8 +527,8 @@ uint displayRenderMainRaw() {
 	formatters.data = &numbers[globals.dataType];
 	formatters.rowSize = globals.rowWidth;
 	formatters.defaultChar = globals.defaultChar;
-	long pos = io.position;
 	
+	long pos = io.position;
 	uint lines = blen / formatters.rowSize;	/// lines to print
 	uint remaining = blen % formatters.rowSize;
 	
@@ -567,11 +554,9 @@ uint displayRenderMainRaw() {
 
 size_t cwrite(const(char)[] _str) {
 	import std.stdio : stdout;
-	import core.stdc.stdio : fwrite, fflush, FILE;
+	import core.stdc.stdio : fwrite, FILE;
 	
-	FILE *_stdout = stdout.getFP;
-	
-	return fwrite(_str.ptr, 1, _str.length, _stdout);
+	return fwrite(_str.ptr, 1, _str.length, stdout.getFP);
 }
 size_t cwriteln(const(char)[] _str) {
 	size_t c = cwrite(_str);
