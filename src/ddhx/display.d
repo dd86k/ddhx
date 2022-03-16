@@ -35,34 +35,38 @@ import ddhx;
 /// Line size buffer for printing in main panel.
 private enum LBUF_SIZE = 2048;
 
-/// Data modes for upper row (display purposes)
-private static immutable(char)[][3] offsetNames = [ "hex", "dec", "oct" ];
-/// Character table for the main panel for printf (formatting purposes)
-private immutable char[3] formatTable = [ 'x', 'u', 'o' ];
-/// Offset format functions
-private immutable size_t function(char*,long)[3] offsetFuncs = [
-	&format11x, &format11d, &format11o
+private struct NumberFormatter {
+	immutable(char)[] name;	/// Short offset name
+	align(2) char fmtchar;	/// Format character for printf-like functions
+	size_t size;	/// Size for formatted byte
+	size_t function(char*,long) funcOffset;	/// Function to format offset
+	size_t function(char*,ubyte) funcData;	/// Function to format data
+}
+
+private immutable NumberFormatter[3] numbers = [
+	{ "hex", 'x', 2, &format11x, &format02x },
+	{ "dec", 'u', 3, &format11d, &format03d },
+	{ "oct", 'o', 3, &format11o, &format03o },
 ];
-/// Data format functions
-private immutable size_t function(char*,ubyte)[3] dataFuncs = [
-	&format02x, &format03d, &format03o
+
+private struct Transcoder {
+	string name;
+	char[] function(ubyte) func;
+}
+
+private immutable Transcoder[3] transcoders = [
+	{ "ascii",	&transcodeASCII },
+	{ "cp437",	&transcodeCP437 },
+	{ "ebcdic",	&transcodeEBCDIC },
 ];
-/// Data formatted size
-private immutable size_t[3] dataSizes = [ 2, 3, 3 ];
-/// Character transcoding functions
-private immutable char[] function(ubyte)[4] transFuncs = [
-	&transcodeASCII,
-	&transcodeCP437,
-	&transcodeEBCDIC,
-//	&transcodeGSM
-];
-/// 
-private immutable string[4] transNames = [
-	"ascii",
-	"cp437",
-	"ebcdic",
-//	"gsm",
-];
+
+private struct Formatters {
+	immutable(Transcoder) *transcoder;
+	immutable(NumberFormatter) *offset;
+	immutable(NumberFormatter) *data;
+	uint rowSize;
+	char defaultChar;
+}
 
 //
 // SECTION Formatting
@@ -396,14 +400,14 @@ void displayRenderTopRaw() {
 	// Setup index formatting
 	//TODO: Consider SingleSpec
 	__gshared char[4] offsetFmt = " %__";
-	offsetFmt[2] = cast(char)(dataSizes[dataType] + '0');
-	offsetFmt[3]  = formatTable[offsetType];
+	offsetFmt[2] = cast(char)(numbers[dataType].size + '0');
+	offsetFmt[3] = numbers[offsetType].fmtchar;
 	
 	// Recommended to use 'auto' due to struct Scoped
 	auto outbuf = scoped!OutBuffer();
 	outbuf.reserve(256); // e.g. 8 + 2 + (16 * 3) + 2 + 8 = 68
 	outbuf.write("Offset(");
-	outbuf.write(offsetNames[offsetType]);
+	outbuf.write(numbers[offsetType].name);
 	outbuf.write(") ");
 	
 	// Print column values
@@ -441,8 +445,8 @@ void displayRenderBottomRaw() {
 	
 	const double fpos = io.position;
 	char[] f = sformat!" %s | %s | %s | %s | %f%%"(buf,
-		offsetNames[globals.dataType],
-		transNames[globals.charType],
+		numbers[globals.dataType].name,
+		transcoders[globals.charType].name,
 		formatSize(c1, io.readSize), // Buffer size
 		formatSize(c3, io.position + io.readSize), // Formatted position
 		((fpos + io.readSize) / io.size) * 100, // Pos/input.size%
@@ -468,15 +472,6 @@ uint displayRenderMain() {
 	return displayRenderMainRaw;
 }
 
-private struct Formatters {
-	size_t function(char*, long) offset;
-	size_t function(char*, ubyte) data;
-	uint dataSize;
-	char[] function(ubyte) character;
-	uint rowSize;
-	char defaultChar;
-}
-
 private size_t makeRow(char *line, ref Formatters format,
 	long pos, const(ubyte) *data, size_t len) {
 	import core.stdc.string : memset;
@@ -484,10 +479,11 @@ private size_t makeRow(char *line, ref Formatters format,
 //	version (Trace) trace("pos=%s len=%s", pos, len);
 	
 	// Insert OFFSET
-	size_t index = format.offset(line, pos);
+	size_t index = format.offset.funcOffset(line, pos);
 	line[index++] = ' '; // index: OFFSET + space
 	
-	uint dataLen = (format.rowSize * (format.dataSize + 1)); /// data row character count
+	uint byteLen = cast(uint)format.data.size;
+	uint dataLen = (format.rowSize * (byteLen + 1)); /// data row character count
 	size_t posChar = index + dataLen; // CHAR start
 	*(cast(ushort*)(line + posChar)) = 0x2020; // DATA-CHAR spacer
 	posChar += 2; // posChar: index + dataLen + spacer
@@ -497,9 +493,9 @@ private size_t makeRow(char *line, ref Formatters format,
 		const ubyte byte_ = data[i];
 		// Data translation
 		line[index++] = ' ';
-		index += format.data(line + index, byte_);
+		index += format.data.funcData(line + index, byte_);
 		// Character translation
-		char[] units = format.character(byte_);
+		char[] units = format.transcoder.func(byte_);
 		if (units.length) {
 			for (size_t ci; ci < units.length; ++ci, ++posChar)
 				line[posChar] = units[ci];
@@ -509,7 +505,7 @@ private size_t makeRow(char *line, ref Formatters format,
 	// data length < minimum row requirement
 	if (len < format.rowSize) {
 		uint left = format.rowSize - cast(uint)len; // Bytes left
-		left *= (format.dataSize + 1); // space + 1x data size
+		left *= (byteLen + 1); // space + 1x data size
 		memset(line + index, ' ', left);
 	}
 	
@@ -539,10 +535,9 @@ uint displayRenderMainRaw() {
 	
 	// setup
 	Formatters formatters = void;
-	formatters.offset = offsetFuncs[globals.offsetType];
-	formatters.data = dataFuncs[globals.dataType];
-	formatters.dataSize = cast(uint)dataSizes[globals.dataType];
-	formatters.character = transFuncs[globals.charType];
+	formatters.transcoder = &transcoders[globals.charType];
+	formatters.offset = &numbers[globals.offsetType];
+	formatters.data = &numbers[globals.dataType];
 	formatters.rowSize = globals.rowWidth;
 	formatters.defaultChar = globals.defaultChar;
 	long pos = io.position;
