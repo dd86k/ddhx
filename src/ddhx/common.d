@@ -54,4 +54,4 @@ struct Globals {
 }
 
 __gshared Globals globals; /// Single-instance of globals.
-__gshared OSFile io;	/// File/stream I/O instance.
+__gshared Io io;	/// File/stream I/O instance.

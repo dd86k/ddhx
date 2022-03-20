@@ -76,7 +76,7 @@ import ddhx;
 /// Default buffer size.
 private enum DEFAULT_BUFFER_SIZE = 4 * 1024;
 
-/// FileMode for OSFile.
+/// FileMode for Io.
 enum FileMode {
 	file,	/// Normal file.
 	mmfile,	/// Memory-mapped file.
@@ -98,25 +98,121 @@ enum WriteMode {
 	overwrite,	/// 
 }
 
-/// Used in saving and restoring the OSFile state (position and read buffer).
-//TODO: Re-use in OSFile as-is?
-// NOTE: Used in searcher but not really useful...
-struct OSFileState {
+/// Used in saving and restoring the Io state (position and read buffer).
+//TODO: Re-use in Io as-is?
+// NOTE: Used in searcher but not being really useful...
+struct IoState {
 	long position;	/// Position.
 	uint readSize;	/// Read size.
 }
 
+// Mostly-stateless, lazy implementation of a FILE using direct OS
+// functions, since File under x86-omf builds seem iffy, broken
+// (especially when attempting to get the size of a large file).
+private struct OSFile {
+	private OSHANDLE handle;
+	private bool eof;
+	
+	//TODO: Share file.
+	//      By default, at least on Windows, files aren't shared. Enabling
+	//      sharing would allow refreshing view (manually) when a program
+	//      writes to file.
+	int open(string path) {
+		version (Windows) {
+			// NOTE: toUTF16z/tempCStringW
+			//       Phobos internally uses tempCStringW from std.internal
+			//       but I doubt it's meant for us to use so...
+			//       Legacy baggage?
+			handle = CreateFileW(
+				path.toUTF16z,	// lpFileName
+				GENERIC_READ/* | GENERIC_WRITE*/,	// dwDesiredAccess
+				0,	// dwShareMode
+				null,	// lpSecurityAttributes
+				OPEN_EXISTING,	// dwCreationDisposition
+				0,	// dwFlagsAndAttributes
+				null,	// hTemplateFile
+			);
+			if (handle == INVALID_HANDLE_VALUE)
+				return errorSet(ErrorCode.os);
+		} else version (Posix) {
+			alias osopen = core.sys.posix.fcntl.open;
+			handle = osopen(path.toStringz, O_RDWR);
+			if (handle == -1)
+				return errorSet(ErrorCode.os);
+		}
+		return 0;
+	}
+	
+	int seek(ref long npos, Seek origin, long pos) {
+		version (Windows) {
+			LARGE_INTEGER liIn = void, liOut = void;
+			liIn.QuadPart = pos;
+			if (SetFilePointerEx(handle, liIn, &liOut, origin) == FALSE)
+				return errorSet(ErrorCode.os);
+			npos = liOut.QuadPart;
+		} else version (Posix) {
+			const long r = lseek64(handle, pos, origin);
+			if (r == -1)
+				return errorSet(ErrorCode.os);
+			npos = r;
+		}
+		return 0;
+	}
+	
+	int read(ref ubyte[] result, ubyte[] buffer) {
+		version (Windows) {
+			const uint len = cast(uint)buffer.length;
+			uint r = void; /// size read
+			if (ReadFile(handle, buffer.ptr, len, &r, null) == FALSE)
+				return errorSet(ErrorCode.os);
+			eof = r < len;
+			result = buffer[0..r];
+		} else version (Posix) {
+			alias osread = core.sys.posix.unistd.read;
+			ssize_t r = osread(handle, buffer.ptr, buffer.length);
+			if (r < 0)
+				return errorSet(ErrorCode.os);
+			eof = r < buffer.length;
+			result = buffer[0..r];
+		}
+		return 0;
+	}
+	
+	int size(ref long nsize) {
+		version (Windows) {
+			LARGE_INTEGER li = void;
+			if (GetFileSizeEx(handle, &li) == 0)
+				return errorSet(ErrorCode.os);
+			nsize = li.QuadPart;
+			return 0;
+		} else version (Posix) {
+			stat_t stats = void;
+			if (fstat(handle, &stats) == -1)
+				return errorSet(ErrorCode.os);
+			// NOTE: fstat(2) sets st_size to 0 on block devices
+			switch (stats.st_mode & S_IFMT) {
+			case S_IFREG: // File
+			case S_IFLNK: // Link
+				nsize = stats.st_size;
+				return 0;
+			case S_IFBLK: // Block device (like a disk)
+				//TODO: BSD variants
+				return ioctl(handle, BLOCKSIZE, &nsize) == -1 ?
+					errorSet(ErrorCode.os) : 0;
+			default: return errorSet(ErrorCode.invalidType);
+			}
+		}
+	}
+}
+
 /// Improved file I/O.
-//TODO: Share file.
-//      By default file isn't shared (at least on Windows) which would allow
-//      refreshing view (manually) when a program writes to file.
 //TODO: [0.5] Virtual change system.
 //      For editing/rendering/saving.
 //      Array!(Edit) or sorted dictionary?
 //      Obviously CTRL+Z for undo, CTRL+Y for redo.
-struct OSFile {
+struct Io {
 	private union {
-		OSHANDLE fileHandle;
+		OSFile osfile;
 		MmFile mmHandle;
 		File stream;
 	}
@@ -132,7 +228,7 @@ struct OSFile {
 	string fullPath;	/// Original file path.
 	string name;	/// Current file name.
 	FileMode mode;	/// Current file mode.
-	
+	//TODO: Rename to result?
 	ubyte[] buffer;	/// Resulting buffer or slice.
 	uint readSize;	/// Desired buffer size.
 	
@@ -143,33 +239,13 @@ struct OSFile {
 	int delegate() read;
 	int delegate(ubyte[], ref ubyte[]) read2;
 	
-	int openFile(string path/*, bool create*/) {
+	int openFile(string path) {
 		version (Trace) trace("path='%s'", path);
 		
 		mode = FileMode.file;
 		
-		version (Windows) {
-			// NOTE: toUTF16z/tempCStringW
-			//       Phobos internally uses tempCStringW from std.internal
-			//       but I doubt it's meant for us to use so...
-			//       Legacy baggage?
-			fileHandle = CreateFileW(
-				path.toUTF16z,	// lpFileName
-				GENERIC_READ/* | GENERIC_WRITE*/,	// dwDesiredAccess
-				0,	// dwShareMode
-				null,	// lpSecurityAttributes
-				OPEN_EXISTING,	// dwCreationDisposition
-				0,	// dwFlagsAndAttributes
-				null,	// hTemplateFile
-			);
-			if (fileHandle == INVALID_HANDLE_VALUE)
-				return errorSet(ErrorCode.os);
-		} else version (Posix) {
-			fileHandle = open(path.toStringz, O_RDWR);
-			if (fileHandle == -1)
-				return errorSet(ErrorCode.os);
-		}
-		
+		if (osfile.open(path))
+			return lastError;
 		if (refreshSize())
 			return lastError;
 		if (size == 0)
@@ -186,9 +262,6 @@ struct OSFile {
 		mode = FileMode.mmfile;
 		
 		try {
-			/*file.size = getSize(path);
-			if (file.size == 0)
-				return errorSet(ErrorCode.fileEmpty);*/
 			mmHandle = new MmFile(path, MmFile.Mode.read, 0, mmAddress);
 		} catch (Exception ex) {
 			return errorSet(ex);
@@ -250,20 +323,7 @@ struct OSFile {
 	private int seekFile(Seek origin, long pos) {
 		version (Trace) trace("seek=%s pos=%u", origin, pos);
 		
-		version (Windows) {
-			LARGE_INTEGER liIn = void, liOut = void;
-			liIn.QuadPart = pos;
-			if (SetFilePointerEx(fileHandle, liIn, &liOut, origin) == FALSE)
-				return errorSet(ErrorCode.os);
-			position = liOut.QuadPart;
-		} else version (Posix) {
-			const long r = lseek64(fileHandle, pos, origin);
-			if (r == -1)
-				return errorSet(ErrorCode.os);
-			position = r;
-		}
-		
-		return 0;
+		return osfile.seek(position, origin, pos);
 	}
 	private int seekMmfile(Seek origin, long pos) {
 		version (Trace) trace("seek=%s pos=%u", origin, position);
@@ -320,21 +380,7 @@ struct OSFile {
 	private int readFile() {
 		version (Trace) trace("pos=%u", position);
 		
-		version (Windows) {
-			DWORD r = void;
-			if (ReadFile(fileHandle, readBuffer.ptr, readSize, &r, null) == FALSE)
-				return errorSet(ErrorCode.os);
-			buffer = readBuffer[0..r];
-			eof = r < readSize;
-		} else version (Posix) {
-			alias mygod = core.sys.posix.unistd.read;
-			ssize_t r = mygod(fileHandle, readBuffer.ptr, readSize);
-			if (r < 0)
-				return errorSet(ErrorCode.os);
-			buffer = readBuffer[0..r];
-			eof = r < readSize;
-		}
-		return 0;
+		return osfile.read(buffer, readBuffer);
 	}
 	private int readMmfile() {
 		version (Trace) trace("pos=%u", position);
@@ -367,25 +413,11 @@ struct OSFile {
 	private int readFile2(ubyte[] _buffer, ref ubyte[] _result) {
 		version (Trace) trace("buflen=%u", _buffer.length);
 		
-		version (Windows) {
-			const uint _bs = cast(uint)_buffer.length;
-			uint _read = void;
-			if (ReadFile(fileHandle, _buffer.ptr, _bs, &_read, null) == FALSE)
-				return errorSet(ErrorCode.os);
-			eof = _read < _bs;
-			_result = _buffer[0.._read];
-		} else version (Posix) {
-			alias mygod = core.sys.posix.unistd.read;
-			ssize_t _read = mygod(fileHandle, _buffer.ptr, _buffer.length);
-			if (_read < 0)
-				return errorSet(ErrorCode.os);
-			eof = _read < _buffer.length;
-			_result = _buffer[0.._read];
-		}
+		int e = osfile.read(_result, _buffer);
 		
-		version (Trace) trace("eof=%s read=%u", eof, _read);
+		eof = osfile.eof;
 		
-		return 0;
+		return e;
 	}
 	private int readMmfile2(ubyte[] _buffer, ref ubyte[] _result) {
 		version (Trace) trace("buflen=%u", _buffer.length);
@@ -415,13 +447,13 @@ struct OSFile {
 		return 0;
 	}
 	
-	void save(ref OSFileState state) {
+	void save(ref IoState state) {
 		version (Trace) trace("pos=%u read=%u", position, readSize);
 		
 		state.position = position;
 		state.readSize = readSize;
 	}
-	void restore(ref OSFileState state) {
+	void restore(ref IoState state) {
 		version (Trace) trace("pos=%u->%u read=%u->%u",
 			position, state.position, readSize, state.readSize);
 		
@@ -437,29 +469,7 @@ struct OSFile {
 		
 		final switch (mode) with (FileMode) {
 		case file:
-			version (Windows) {
-				LARGE_INTEGER li = void;
-				if (GetFileSizeEx(fileHandle, &li) == 0)
-					return errorSet(ErrorCode.os);
-				size = li.QuadPart;
-				return 0;
-			} else version (Posix) {
-				stat_t stats = void;
-				if (fstat(fileHandle, &stats) == -1)
-					return errorSet(ErrorCode.os);
-				// NOTE: fstat(2) sets st_size to 0 on block devices
-				switch (stats.st_mode & S_IFMT) {
-				case S_IFREG: // File
-				case S_IFLNK: // Link
-					size = stats.st_size;
-					return 0;
-				case S_IFBLK: // Block device (like a disk)
-					//TODO: BSD variants
-					return ioctl(fileHandle, BLOCKSIZE, &size) == -1 ?
-						errorSet(ErrorCode.os) : 0;
-				default: return errorSet(ErrorCode.invalidType);
-				}
-			}
+			return osfile.size(size);
 		case mmfile:
 			size = mmHandle.length;
 			return 0;
@@ -488,49 +498,37 @@ struct OSFile {
 	
 	//TODO: from other types
 	int toMemory(long skip = 0, long length = 0) {
+		import std.array : uninitializedArray;
 		import core.stdc.stdio : fread;
 		import core.stdc.stdlib : malloc, free;
 		import std.algorithm.comparison : min;
 		
-		ubyte[DEFAULT_BUFFER_SIZE] defbuf = void;
-		FILE *f = stream.getFP;
-		size_t len = void;
-		size_t bufSize = void;
+		ubyte *defbuf = cast(ubyte*)malloc(DEFAULT_BUFFER_SIZE);
+		if (defbuf == null)
+			return errorSet(ErrorCode.os);
 		
-		if (skip) {
-		L_PRESKIP:
-			bufSize = cast(size_t)min(DEFAULT_BUFFER_SIZE, skip);
-			void *buf = malloc(bufSize);
-			if (buf == null) throw new Error("Out of memory");
-			
-		L_SKIP:
-			skip -= fread(buf, 1, bufSize, f);
-			if (skip <= 0) {
-				free(buf);
-				goto L_READ;
-			}
-			if (skip < bufSize) {
-				bufSize = cast(size_t)skip;
-				free(buf);
-				goto L_PRESKIP;
-			}
-			goto L_SKIP;
-		}
+		if (skip)
+			seek(Seek.start, skip);
 		
 		// If no length to read is set, just read as much as possible.
 		if (length == 0) length = long.max;
 		
+		FILE *_file = stream.getFP;
+		size_t len = void;
+		size_t bufSize = void;
+		
 		// Loop ends when len (read length) is under the buffer's length
 		// or requested length.
 		readBuffer.length = 0;
-	L_READ:
 		do {
 			bufSize = cast(size_t)min(DEFAULT_BUFFER_SIZE, length);
-			len = fread(defbuf.ptr, 1, bufSize, f);
+			len = fread(defbuf/*.ptr*/, 1, bufSize, _file);
 			// ok to append without init because we got a global instance
 			readBuffer ~= defbuf[0..len];
 			length -= len;
 		} while (len >= DEFAULT_BUFFER_SIZE && length > 0);
+		
+		free(defbuf);
 		
 		size = readBuffer.length;
 		

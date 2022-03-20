@@ -106,7 +106,7 @@ int searchForward(out long newPos, const(void) *data, size_t len) {
 		needleBuffer = uninitializedArray!(ubyte[])(len);
 	
 	// Setup
-	OSFileState state = void;
+	IoState state = void;
 	io.save(state);
 	long pos = io.position + 1; /// New haystack position
 	io.seek(Seek.start, pos);
@@ -193,7 +193,7 @@ int searchBackward(out long newPos, const(void) *data, size_t len) {
 		needleBuffer = uninitializedArray!(ubyte[])(len);
 	
 	// Setup
-	OSFileState state = void;
+	IoState state = void;
 	io.save(state);
 	long pos = io.position - 1; /// Chunk position
 	
@@ -288,7 +288,7 @@ int skipByte(ubyte data, out long newPos) {
 	ubyte[] fileBuffer = uninitializedArray!(ubyte[])(BUFFER_SIZE);
 	size_t haystackIndex = void;
 	
-	OSFileState state = void;
+	IoState state = void;
 	io.save(state);
 	long pos = io.position + 1;
 	ubyte[] haystack = void;
