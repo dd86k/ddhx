@@ -6,7 +6,6 @@ module ddhx;
 
 public import
 	ddhx.ddhx,
-	ddhx.common,
 	ddhx.command,
 	ddhx.display,
 	ddhx.error,
