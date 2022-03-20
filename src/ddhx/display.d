@@ -8,14 +8,16 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.display;
 
+import std.range : chunks;
 import std.stdio : stdout, writeln;
 import std.encoding : codeUnits, CodeUnits;
 import ddhx;
 
-//TODO: Data grouping
+//TODO: Data grouping (1, 2, 4, 8, 16)
 //      e.g., cd ab -> abcd
-//TODO: Group endianness
-//      native, little, big
+//      cast(uint[]) is probably possible on a ubyte[] range
+//TODO: Group endianness (when >1)
+//      native (default), little, big
 //TODO: View display mode (data+text, data, text)
 //      Currently very low priority
 //TODO: Consider hiding cursor when drawing
@@ -404,7 +406,7 @@ void displayRenderTopRaw() {
 	outbuf.write(") ");
 	
 	// Print column values
-	//TODO: Consider %(%) syntax
+	//TODO: Consider %( %x%) syntax
 	for (ushort i; i < rowWidth; ++i)
 		outbuf.writef(offsetFmt, i);
 	
@@ -464,84 +466,72 @@ uint displayRenderMain() {
 	return displayRenderMainRaw;
 }
 
-private size_t makeRow(char *line, ref Formatters format,
-	long pos, const(ubyte) *data, size_t len) {
+private char[] renderRow(ubyte[] chunk, long pos, ref Formatters format) {
 	import core.stdc.string : memset;
 	
+	enum BUFFER_SIZE = 2048;
+	__gshared char[BUFFER_SIZE] buffer;
+	__gshared char* bufferptr = buffer.ptr;
+	
+	const size_t len = chunk.length;
+	
 	// Insert OFFSET
-	size_t index = format.offset.funcOffset(line, pos);
-	line[index++] = ' '; // index: OFFSET + space
+	size_t indexData = format.offset.funcOffset(bufferptr, pos);
+	bufferptr[indexData++] = ' '; // index: OFFSET + space
 	
 	const uint byteLen = cast(uint)format.data.size;
 	const uint dataLen = (format.rowSize * (byteLen + 1)); /// data row character count
-	size_t posChar = index + dataLen; // CHAR start
-	*(cast(ushort*)(line + posChar)) = 0x2020; // DATA-CHAR spacer
-	posChar += 2; // posChar: index + dataLen + spacer
+	size_t indexChar = indexData + dataLen; // Position for character column
+	*(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
+	indexChar += 2; // indexChar: indexData + dataLen + spacer
 	
-	// Insert DATA and CHAR
+	// Format DATA and CHAR
 	for (size_t i; i < len; ++i) {
-		const ubyte byte_ = data[i];
+		const ubyte data = chunk[i]; /// byte data
 		// Data translation
-		line[index++] = ' ';
-		index += format.data.funcData(line + index, byte_);
+		bufferptr[indexData++] = ' ';
+		indexData += format.data.funcData(bufferptr + indexData, data);
 		// Character translation
-		immutable(char)[] units = format.transcoder.func(byte_);
-		if (units.length) {
-			for (size_t ci; ci < units.length; ++ci, ++posChar)
-				line[posChar] = units[ci];
-		} else
-			line[posChar++] = format.defaultChar;
+		immutable(char)[] units = format.transcoder.func(data);
+		if (units.length) { // Has utf-8 codepoints
+			foreach (codeunit; units)
+				bufferptr[indexChar++] = codeunit;
+		} else // Invalid character, insert default character
+			bufferptr[indexChar++] = format.defaultChar;
 	}
-	// data length < minimum row requirement
+	// data length < minimum row requirement = pad DATA
 	if (len < format.rowSize) {
 		uint left = format.rowSize - cast(uint)len; // Bytes left
 		left *= (byteLen + 1); // space + 1x data size
-		memset(line + index, ' ', left);
+		memset(bufferptr + indexData, ' ', left);
 	}
 	
-	return posChar;
+	return buffer[0..indexChar];
 }
 
 /// Update display from buffer.
 /// Returns: Numbers of row written.
 //TODO: Maybe make ubyte[] parameter?
 uint displayRenderMainRaw() {
-	//TODO: Consider redoing buffer management with an OutBuffer.
-	//      Or std.array.appender + std.format.spec.SingleSpec
-	//TODO: Remember length of last printed line for damaged-based display
-	//      Why, again?
+	//TODO: Render blank lines when going beyond data.
 	//TODO: [0.5] Possibility to only redraw a specific line.
 	
-	// data
-	const(ubyte) *bufp = io.buffer.ptr;	/// data buffer pointer
-	uint          blen = cast(uint)io.buffer.length;	/// data buffer size
-	
-	// line buffer
-	char[LBUF_SIZE] lbuf = void;	/// line buffer
-	char           *lptr = lbuf.ptr;
-	
 	// setup
+	const ushort rowCount = globals.rowWidth;
+	long pos = io.position;
+	uint lines;
+	
 	Formatters formatters = void;
 	formatters.transcoder = &transcoders[globals.charType];
 	formatters.offset = &numbers[globals.offsetType];
 	formatters.data = &numbers[globals.dataType];
-	formatters.rowSize = globals.rowWidth;
+	formatters.rowSize = rowCount;
 	formatters.defaultChar = globals.defaultChar;
 	
-	long pos = io.position;
-	uint lines = blen / formatters.rowSize;	/// lines to print
-	uint remaining = blen % formatters.rowSize;
-	
-	size_t ll = void;
-	
 	// print lines in bulk (for entirety of view buffer)
-	for (uint l; l < lines; ++l, pos += formatters.rowSize, bufp += formatters.rowSize) {
-		ll = makeRow(lptr, formatters, pos, bufp, formatters.rowSize);
-		cwriteln(lbuf[0..ll]);
-	}
-	if (remaining) {
-		ll = makeRow(lptr, formatters, pos, bufp, remaining);
-		cwriteln(lbuf[0..ll]);
+	foreach (chunk; chunks(io.buffer, rowCount)) {
+		cwriteln(renderRow(chunk, pos, formatters));
+		pos += rowCount;
 		++lines;
 	}
 	
