@@ -33,6 +33,7 @@ enum CharType {
 	ascii,	/// 7-bit US-ASCII
 	cp437,	/// IBM PC CP-437
 	ebcdic,	/// IBM EBCDIC Code Page 37
+	mac,	/// Mac OS Roman
 //	gsm,	/// GSM 03.38
 }
 

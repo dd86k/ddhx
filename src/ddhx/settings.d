@@ -81,9 +81,10 @@ int settingCharset(string val) {
 	if (val == null || val.length == 0)
 		return errorSet(ErrorCode.invalidParameter);
 	switch (val) {
-	case "ascii":  globals.charType = CharType.ascii; break;
-	case "cp437":  globals.charType = CharType.cp437; break;
-	case "ebcdic": globals.charType = CharType.ebcdic; break;
+	case "ascii":	globals.charType = CharType.ascii; break;
+	case "cp437":	globals.charType = CharType.cp437; break;
+	case "ebcdic":	globals.charType = CharType.ebcdic; break;
+	case "mac":	globals.charType = CharType.mac; break;
 	default:       return errorSet(ErrorCode.invalidCharset);
 	}
 	return 0;

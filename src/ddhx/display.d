@@ -56,10 +56,11 @@ private struct Transcoder {
 	immutable(char)[] function(ubyte) func;
 }
 
-private immutable Transcoder[3] transcoders = [
+private immutable Transcoder[CharType.max+1] transcoders = [
 	{ "ascii",	&transcodeASCII },
 	{ "cp437",	&transcodeCP437 },
 	{ "ebcdic",	&transcodeEBCDIC },
+	{ "mac",	&transcodeMac },
 ];
 
 private struct Formatters {
@@ -270,14 +271,19 @@ size_t format11o(char *buffer, long v) {
 //TODO: Other character sets
 //      - Mac OS Roman (Windows-10000) "mac"
 //        https://en.wikipedia.org/wiki/Mac_OS_Roman
+//      - ISO/IEC 8859-1
+//        https://en.wikipedia.org/wiki/ISO/IEC_8859-1
 //      - Windows-1251 "win1251"
 //        https://en.wikipedia.org/wiki/Windows-1251
+//      - Windows-1252 "win1252"
+//        https://en.wikipedia.org/wiki/Windows-1252
 //      - Windows-932 "win932"
 //        https://en.wikipedia.org/wiki/Code_page_932_(Microsoft_Windows)
 //      - ITU T.61 "t61"
 //        https://en.wikipedia.org/wiki/ITU_T.61
 //      - GSM 03.38 "gsm"
 //        https://www.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT
+//TODO: Move all the character translation stuff into its own module
 
 private alias U  = char[];
 private alias CU = CodeUnits!char;
@@ -296,7 +302,7 @@ immutable(char)[] transcodeASCII(ubyte data) {
 	return c;
 }
 private immutable U[256] mapCP437 = [
-//          0      1      2      3      4      5      6      7
+//         0      1      2      3      4      5      6      7
 /*00*/	   [], C!'☺', C!'☻', C!'♥', C!'♦', C!'♣', C!'♠', C!'•',
 /*08*/	C!'◘', C!'○', C!'◙', C!'♂', C!'♀', C!'♪', C!'♫', C!'☼',
 /*10*/	C!'►', C!'◄', C!'↕', C!'‼', C!'¶', C!'§', C!'▬', C!'↨',
@@ -336,7 +342,7 @@ immutable(char)[] transcodeCP437(ubyte data) {
 }
 
 private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40)
-//          0      1      2      3      4      5      6      7 
+//         0      1      2      3      4      5      6      7 
 /*40*/	C!' ', C!' ', C!'â', C!'ä', C!'à', C!'á', C!'ã', C!'å',
 /*48*/	C!'ç', C!'ñ', C!'¢', C!'.', C!'<', C!'(', C!'+', C!'|',
 /*50*/	C!'&', C!'é', C!'ê', C!'ë', C!'è', C!'í', C!'î', C!'ï',
@@ -366,6 +372,45 @@ private
 immutable(char)[] transcodeEBCDIC(ubyte data) {
 	__gshared immutable(char)[] empty = [];
 	return data >= 0x40 ? mapEBCDIC[data-0x40] : empty;
+}
+
+// Mac OS Roman (Windows-10000) "mac"
+// https://en.wikipedia.org/wiki/Mac_OS_Roman
+private immutable U[224] mapMac = [ // 256 - 32 (0x20)
+//         0      1      2      3      4      5      6      7 
+/*20*/	C!' ', C!'!', C!'"', C!'#', C!'$', C!'%', C!'&',C!'\'',
+/*28*/	C!'(', C!')', C!'*', C!'+', C!',', C!'-', C!'.', C!'/',
+/*30*/	C!'0', C!'1', C!'2', C!'3', C!'4', C!'5', C!'6', C!'7',
+/*38*/	C!'8', C!'9', C!':', C!';', C!'<', C!'=', C!'>', C!'?',
+/*40*/	C!'@', C!'A', C!'B', C!'C', C!'D', C!'E', C!'F', C!'G',
+/*48*/	C!'H', C!'I', C!'J', C!'K', C!'L', C!'M', C!'N', C!'O',
+/*50*/	C!'P', C!'Q', C!'R', C!'S', C!'T', C!'U', C!'V', C!'W',
+/*58*/	C!'X', C!'Y', C!'Z', C!'[',C!'\\', C!']', C!'^', C!'_',
+/*60*/	C!'`', C!'a', C!'b', C!'c', C!'d', C!'e', C!'f', C!'g',
+/*68*/	C!'h', C!'i', C!'j', C!'k', C!'l', C!'m', C!'n', C!'o',
+/*70*/	C!'p', C!'q', C!'r', C!'s', C!'t', C!'u', C!'v', C!'w',
+/*78*/	C!'x', C!'y', C!'z', C!'{', C!'|', C!'}', C!'~',    [],
+/*80*/	C!'Ä', C!'Å', C!'Ç', C!'É', C!'Ñ', C!'Ö', C!'Ü', C!'á',
+/*88*/	C!'à', C!'â', C!'ä', C!'ã', C!'å', C!'ç', C!'é', C!'è',
+/*90*/	C!'ê', C!'ë', C!'í', C!'ì', C!'î', C!'ï', C!'ñ', C!'ó',
+/*98*/	C!'ò', C!'ô', C!'ö', C!'õ', C!'ú', C!'ù', C!'û', C!'ü',
+/*a0*/	C!'†', C!'°', C!'¢', C!'£', C!'§', C!'•', C!'¶', C!'ß',
+/*a8*/	C!'®', C!'©', C!'™', C!'´', C!'¨', C!'≠', C!'Æ', C!'Ø',
+/*b0*/	C!'∞', C!'±', C!'≤', C!'≥', C!'¥', C!'µ', C!'∂', C!'∑',
+/*b8*/	C!'∏', C!'π', C!'∫', C!'ª', C!'º', C!'Ω', C!'æ', C!'ø',
+/*c0*/	C!'¿', C!'¡', C!'¬', C!'√', C!'ƒ', C!'≈', C!'∆', C!'«',
+/*c8*/	C!'»', C!'…', C!' ', C!'À', C!'Ã', C!'Õ', C!'Œ', C!'œ',
+/*d0*/	C!'–', C!'—', C!'“', C!'”', C!'‘', C!'’', C!'÷', C!'◊',
+/*d8*/	C!'ÿ', C!'Ÿ', C!'⁄', C!'€', C!'‹', C!'›', C!'ﬁ', C!'ﬂ',
+/*e0*/	C!'‡', C!'·', C!'‚', C!'„', C!'‰', C!'Â', C!'Ê', C!'Á',
+/*e8*/	C!'Ë', C!'È', C!'Í', C!'Î', C!'Ï', C!'Ì', C!'Ó', C!'Ô',
+/*f0*/	   [], C!'Ò', C!'Ú', C!'Û', C!'Ù', C!'ı', C!'ˆ', C!'˜',
+/*f8*/	C!'¯', C!'˘', C!'˙', C!'˚', C!'¸', C!'˝', C!'˛', C!'ˇ',
+]; // NOTE: 0xF0 is the apple logo, but that's obviously not in Unicode
+private
+immutable(char)[] transcodeMac(ubyte data) {
+	__gshared immutable(char)[] empty = [];
+	return data >= 0x20 ? mapMac[data-0x20] : empty;
 }
 
 // !SECTION
