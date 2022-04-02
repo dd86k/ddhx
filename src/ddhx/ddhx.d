@@ -43,6 +43,7 @@ struct Globals {
 	NumberType offsetType;	/// Current offset view type
 	NumberType dataType;	/// Current data view type
 	char defaultChar = '.';	/// Default character to use for non-ascii characters
+	bool si;	/// Use SI prefixes over IEC
 //	int include;	/// Include what panels
 	// Internals
 	TerminalSize termSize;	/// Last known terminal size
@@ -446,7 +447,7 @@ private void msg(A...)(const(char)[] fmt, A args) {
 
 /// Print some file information at the bottom bar
 void msgFileInfo() {
-	msgBottom("%8s  %s", io.sizeString, io.name);
+	msgBottom("%11s  %s", io.sizeString, io.name);
 }
 
 /// Exit ddhx.

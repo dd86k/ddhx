@@ -23,6 +23,7 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
+immutable string OPT_SI	= "si";
 immutable string OPT_WIDTH       = "w|width";
 immutable string OPT_OFFSET      = "o|offset";
 immutable string OPT_DEFAULTCHAR = "C|char";
@@ -51,7 +52,7 @@ void cliOption(string opt, string val) {
 		opt = "character set";
 		break;
 	}
-	printError(1, "invalid value for %s: %s", opt, val);
+	printError(1, "Invalid value for %s: %s", opt, val);
 	exit(1);
 }
 
@@ -81,15 +82,17 @@ int main(string[] args) {
 	bool cliMmfile, cliFile, cliDump, cliStdin;
 	string cliSeek, cliLength;
 	GetoptResult res = void;
+	//TODO: --si for base10 sizes
 	try {
 		res = args.getopt(config.caseSensitive,
 		OPT_WIDTH,       "Set column width in bytes ('a'=automatic,default=16)", &cliOption,
 		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
 		OPT_DEFAULTCHAR, "Set default character for non-printable characters (default=.)", &cliOption,
 		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
+		OPT_SI,          "Use SI prefixes instead of IEC", &globals.si,
 		"m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
 		"f|file",        "Force opening file as regular", &cliFile,
-		"stdin",         "Open stdin instead of file, the '-' switch also works", &cliStdin,
+		"stdin",         "Open stdin instead of file ('-' also works)", &cliStdin,
 		"s|seek",        "Seek at position", &cliSeek,
 		"D|dump",        "Non-interactive dump", &cliDump,
 		"l|length",      "Dump: Length of data to read", &cliLength,

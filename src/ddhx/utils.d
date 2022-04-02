@@ -4,47 +4,51 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.utils;
 
-/**
- * Format byte size.
- * Params:
- *   buf = character buffer
- *   size = Long number
- *   b10  = Use base-1000 instead of base-1024
- * Returns: Character slice using sformat
- */
+/// Format byte size.
+/// Params:
+///   buf = Character buffer.
+///   size = Binary number.
+///   b10  = Use SI suffixes instead of IEC suffixes.
+/// Returns: Character slice using sformat
 char[] formatSize(ref char[32] buf, long size, bool b10 = false) {
 	import std.format : sformat;
 	
 	enum : float {
-		KB  = 1024,	/// Represents one KiloByte
-		MB  = KB * 1024,	/// Represents one MegaByte
-		GB  = MB * 1024,	/// Represents one GigaByte
-		TB  = GB * 1024,	/// Represents one TeraByte
-		KiB = 1000,	/// Represents one KibiByte
-		MiB = KiB * 1000,	/// Represents one MebiByte
-		GiB = MiB * 1000,	/// Represents one GibiByte
-		TiB = GiB * 1000	/// Represents one TebiByte
+		// SI (base10)
+		SI = 1000,
+		kB = SI,	/// Represents one KiloByte
+		MB = kB * SI,	/// Represents one MegaByte
+		GB = MB * SI,	/// Represents one GigaByte
+		TB = GB * SI,	/// Represents one TeraByte
+		// IEC (base2)
+		IEC = 1024,
+		KiB = IEC,	/// Represents one KibiByte
+		MiB = KiB * IEC,	/// Represents one MebiByte
+		GiB = MiB * IEC,	/// Represents one GibiByte
+		TiB = GiB * IEC	/// Represents one TebiByte
 	}
 	
-	if (size > TB)
-		return b10 ?
-			buf.sformat!"%0.2f TiB"(size / TiB) :
-			buf.sformat!"%0.2f TB"(size / TB);
+	//TODO: table of strings with loop-based solution?
 	
-	if (size > GB)
-		return b10 ?
-			buf.sformat!"%0.2f GiB"(size / GiB) :
-			buf.sformat!"%0.2f GB"(size / GB);
-	
-	if (size > MB)
-		return b10 ?
-			buf.sformat!"%0.1f MiB"(size / MiB) :
-			buf.sformat!"%0.1f MB"(size / MB);
-	
-	if (size > KB)
-		return b10 ?
-			buf.sformat!"%0.1f KiB"(size / KiB) :
-			buf.sformat!"%0.1f KB"(size / KB);
+	if (b10) {
+		if (size > TB)
+			return buf.sformat!"%0.2f TB"(size / TB);
+		if (size > GB)
+			return buf.sformat!"%0.2f GB"(size / GB);
+		if (size > MB)
+			return buf.sformat!"%0.1f MB"(size / MB);
+		if (size > kB)
+			return buf.sformat!"%0.1f kB"(size / kB);
+	} else {
+		if (size > TiB)
+			return buf.sformat!"%0.2f TiB"(size / TiB);
+		if (size > GiB)
+			return buf.sformat!"%0.2f GiB"(size / GiB);
+		if (size > MiB)
+			return buf.sformat!"%0.1f MiB"(size / MiB);
+		if (size > KiB)
+			return buf.sformat!"%0.1f KiB"(size / KiB);
+	}
 	
 	return buf.sformat!"%u B"(size);
 }

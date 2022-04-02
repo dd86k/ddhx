@@ -319,19 +319,18 @@ void displayRenderBottomRaw() {
 	char[128] buf = void;
 	
 	const double fpos = io.position;
-	char[] f = sformat!" %s | %s | %s | %s | %f%%"(buf,
+	char[] f = sformat!" %s | %s | %s | %s (%f%%)"(buf,
 		numbers[globals.dataType].name,
 		transcoder.name,
-		formatSize(c1, io.readSize), // Buffer size
-		formatSize(c3, io.position + io.readSize), // Formatted position
+		formatSize(c1, io.readSize, globals.si), // Buffer size
+		formatSize(c3, io.position + io.readSize, globals.si), // Formatted position
 		((fpos + io.readSize) / io.size) * 100, // Pos/input.size%
 	);
 	
 	const size_t flen = f.length;
 	
 	if (last > flen) { // Fill by blanks
-		int p = -cast(int)(flen + (last - flen));
-		cwritef("%*s", p, f);
+		cwritef("%*s", -cast(int)(flen + (last - flen)), f);
 	} else { // Overwrites by default
 		cwrite(f);
 	}

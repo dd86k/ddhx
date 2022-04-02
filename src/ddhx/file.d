@@ -224,6 +224,7 @@ struct Io {
 	long position;	/// Current file position.
 	
 	long size;	/// Last reported file size.
+	//TODO: This shouldn't be here
 	const(char)[] sizeString;	/// Binary file size as string
 	string fullPath;	/// Original file path.
 	string name;	/// Current file name.
@@ -480,9 +481,10 @@ struct Io {
 		}
 	}
 	
+	//TODO: This really shouldn't be here
 	const(char)[] getSizeString() {
 		__gshared char[32] b = void;
-		return formatSize(b, size);
+		return formatSize(b, size, globals.si);
 	}
 	
 	void resizeBuffer(uint newSize = DEFAULT_BUFFER_SIZE) {
