@@ -9,14 +9,16 @@ import ddhx;
 void settingResetAll() {
 	globals.rowWidth = 16;
 	globals.defaultChar = '.';
-	globals.charType = CharType.ascii;
 	globals.offsetType = globals.dataType = NumberType.hexadecimal;
+	selectTranscoder(CharacterSet.ascii);
 }
 
 int settingWidth(string val) {
 	with (globals)
 	switch (val[0]) {
-	case 'a': // Automatic
+	case 'a': // Automatic (fit terminal width)
+		int termWidth = terminalSize.width;
+		//TODO: Module should return this
 		int dataSize = void;
 		final switch (dataType) with (NumberType) {
 		case hexadecimal: dataSize = 2; break;
@@ -25,8 +27,7 @@ int settingWidth(string val) {
 		dataSize += 2; // Account for space
 		// This should get the number of data entries per row optimal
 		// given terminal width
-		int w = terminalSize.width;
-		rowWidth = cast(ushort)((w - 16) / (dataSize));
+		rowWidth = cast(ushort)((termWidth - 16) / (dataSize));
 		//TODO: +groups
 		//rowWidth = cast(ushort)((w - 12) / 4);
 		break;
@@ -70,9 +71,9 @@ int settingDefaultChar(string val) {
 	if (val == null || val.length == 0)
 		return errorSet(ErrorCode.invalidParameter);
 	switch (val) { // aliases
-	case "space": globals.defaultChar = ' '; break;
-	case "dot":   globals.defaultChar = '.'; break;
-	default:      globals.defaultChar = val[0];
+	case "space":	globals.defaultChar = ' '; break;
+	case "dot":	globals.defaultChar = '.'; break;
+	default:	globals.defaultChar = val[0];
 	}
 	return 0;
 }
@@ -81,11 +82,11 @@ int settingCharset(string val) {
 	if (val == null || val.length == 0)
 		return errorSet(ErrorCode.invalidParameter);
 	switch (val) {
-	case "ascii":	globals.charType = CharType.ascii; break;
-	case "cp437":	globals.charType = CharType.cp437; break;
-	case "ebcdic":	globals.charType = CharType.ebcdic; break;
-	case "mac":	globals.charType = CharType.mac; break;
-	default:       return errorSet(ErrorCode.invalidCharset);
+	case "ascii":	selectTranscoder(CharacterSet.ascii); break;
+	case "cp437":	selectTranscoder(CharacterSet.cp437); break;
+	case "ebcdic":	selectTranscoder(CharacterSet.ebcdic); break;
+	case "mac":	selectTranscoder(CharacterSet.mac); break;
+	default:	return errorSet(ErrorCode.invalidCharset);
 	}
 	return 0;
 }

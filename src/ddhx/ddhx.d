@@ -1,4 +1,4 @@
-/// Main application behavior.
+/// Main application.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
@@ -32,15 +32,6 @@ enum NumberType {
 	octal
 }
 
-/// Character translation
-enum CharType {
-	ascii,	/// 7-bit US-ASCII
-	cp437,	/// IBM PC CP-437
-	ebcdic,	/// IBM EBCDIC Code Page 37
-	mac,	/// Mac OS Roman
-//	gsm,	/// GSM 03.38
-}
-
 //TODO: --no-header: bool
 //TODO: --no-offset: bool
 //TODO: --no-status: bool
@@ -51,7 +42,6 @@ struct Globals {
 	ushort rowWidth = 16;	/// How many bytes are shown per row
 	NumberType offsetType;	/// Current offset view type
 	NumberType dataType;	/// Current data view type
-	CharType charType;	/// Current charset
 	char defaultChar = '.';	/// Default character to use for non-ascii characters
 //	int include;	/// Include what panels
 	// Internals
@@ -60,6 +50,8 @@ struct Globals {
 
 __gshared Globals globals; /// Single-instance of globals.
 __gshared Io io;	/// File/stream I/O instance.
+
+//TODO: ddhxApps could only return error code, let main print out error message
 
 int printError() {
 	stderr.write("error: ");
