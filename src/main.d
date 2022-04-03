@@ -82,14 +82,13 @@ int main(string[] args) {
 	bool cliMmfile, cliFile, cliDump, cliStdin;
 	string cliSeek, cliLength;
 	GetoptResult res = void;
-	//TODO: --si for base10 sizes
 	try {
 		res = args.getopt(config.caseSensitive,
 		OPT_WIDTH,       "Set column width in bytes ('a'=automatic,default=16)", &cliOption,
 		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
-		OPT_DEFAULTCHAR, "Set default character for non-printable characters (default=.)", &cliOption,
+		OPT_DEFAULTCHAR, "Set non-printable replacement character (default=.)", &cliOption,
 		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
-		OPT_SI,          "Use SI prefixes instead of IEC", &globals.si,
+		OPT_SI,          "Use SI suffixes instead of IEC", &globals.si,
 		"m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
 		"f|file",        "Force opening file as regular", &cliFile,
 		"stdin",         "Open stdin instead of file ('-' also works)", &cliStdin,
@@ -105,9 +104,10 @@ int main(string[] args) {
 	}
 	
 	if (res.helpWanted) {
+		// Replace default help line
 		res.options[$-1].help = "Print this help screen and exit";
-		write("ddhx - Interactive hexadecimal file viewer\n"~
-			"  Usage: ddhx [OPTIONS] FILE\n\n");
+		writeln("ddhx - Interactive hexadecimal file viewer\n"~
+			"  Usage: ddhx [OPTIONS] FILE\n\nOPTIONS");
 		foreach (opt; res.options) {
 			with (opt) {
 				if (help == "") continue;
