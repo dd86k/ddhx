@@ -5,9 +5,6 @@
 module ddhx.ddhx;
 
 import std.stdio;
-import std.file : getSize;
-import std.string : split;
-import core.stdc.string : memset;
 import ddhx;
 
 /// Copyright string

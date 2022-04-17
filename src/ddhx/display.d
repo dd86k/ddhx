@@ -9,7 +9,7 @@
 module ddhx.display;
 
 import std.range : chunks;
-import std.stdio : stdout, writeln;
+import std.stdio : stdout; // for cwrite family
 import ddhx;
 
 //TODO: Data grouping (1, 2, 4, 8, 16)

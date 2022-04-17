@@ -4,8 +4,8 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.command;
 
-import std.string;
-import std.ascii;
+import std.string : strip;
+import std.ascii : isControl, isWhite;
 import ddhx;
 
 /// Separate buffer into arguments (akin to argv).
