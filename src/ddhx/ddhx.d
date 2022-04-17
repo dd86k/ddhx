@@ -88,7 +88,7 @@ int ddhxInteractive(long skip = 0) {
 	
 	// Terminal setup (resets stdin if PIPE/FIFO is detected)
 	version (Trace) trace("terminalInit");
-	terminalInit(true, true);
+	terminalInit(TerminalFeature.all);
 	version (Trace) trace("terminalSize");
 	globals.termSize = terminalSize;
 	if (globals.termSize.height < 3)
@@ -183,7 +183,7 @@ int ddhxDump(long skip, long length) {
 	if (length < 0)
 		return printError(1, "Length must be a positive value");
 	
-	terminalInit(false, false);
+	terminalInit(TerminalFeature.none);
 	
 	version (Trace) trace("skip=%d length=%d", skip, length);
 	
@@ -211,7 +211,7 @@ int ddhxDump(long skip, long length) {
 		if (length == 0)
 			length = long.max;
 		break;
-	default: // Memory mode is never initiated by CLI
+	default: // Memory mode is never initiated from CLI
 	}
 	
 	// start skipping
@@ -221,7 +221,7 @@ int ddhxDump(long skip, long length) {
 	// top bar to stdout
 	displayRenderTopRaw();
 	
-	// Mitigates unaligned reads/renders
+	// mitigate unaligned reads/renders
 	io.resizeBuffer(globals.rowWidth * 16);
 	
 	// read until EOF or length spec

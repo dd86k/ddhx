@@ -78,14 +78,26 @@ version (Posix) {
 	private __gshared termios old_ios, new_ios;
 }
 
+/// Flags for terminalInit.
+//TODO: captureResize: Feature capture resizing terminal size
+//TODO: captureCtrlC: Block CTRL+C
+enum TerminalFeature : ushort {
+	/// Initiate only the basic
+	none	= 0,
+	/// Initiate the input system.
+	input	= 1,
+	/// Initiate the alternative screen buffer.
+	screen	= 1 << 1,
+	/// Initiate everything.
+	all	= 0xffff,
+}
+
 /// Initiate terminal.
-/// Throws: WindowsException
-/// Params:
-/// 	initinput = Initiate input mechanism
-/// 	initbuffer = Use alternative console screen buffer
-void terminalInit(bool initinput, bool initbuffer) {
+/// Params: features = Feature bits to initiate.
+/// Throws: (Windows) WindowsException on OS exception
+void terminalInit(TerminalFeature features) {
 	version (Windows) {
-		if (initinput) {
+		if (features & TerminalFeature.input) {
 			//NOTE: Re-opening stdin before new screen fixes quite a few things
 			//      - usage with CreateConsoleScreenBuffer
 			//      - readln (for menu)
@@ -99,7 +111,7 @@ void terminalInit(bool initinput, bool initbuffer) {
 		} else {
 			hIn = GetStdHandle(STD_INPUT_HANDLE);
 		}
-		if (initbuffer) {
+		if (features & TerminalFeature.screen) {
 			//
 			// Setting up stdout
 			//
@@ -149,7 +161,13 @@ void terminalInit(bool initinput, bool initbuffer) {
 		
 		//TODO: Get active (or default) colors
 	} else version (Posix) {
-		if (initinput) {
+		stdout.setvbuf(0, _IONBF);
+		if (features & TerminalFeature.input) {
+			// Should it re-open tty by default?
+			stat_t s = void;
+			fstat(STDIN_FILENO, &s);
+			if (S_ISFIFO(s.st_mode))
+				stdin.reopen("/dev/tty", "r");
 			tcgetattr(STDIN_FILENO, &old_ios);
 			new_ios = old_ios;
 			// NOTE: input modes
@@ -178,31 +196,29 @@ void terminalInit(bool initinput, bool initbuffer) {
 			// 1 being 1/10 of a second (100 milliseconds)
 			//new_ios.c_cc[VTIME] = 0;
 			tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
-			stat_t s = void;
-			fstat(STDIN_FILENO, &s);
-			if (S_ISFIFO(s.st_mode))
-				stdin.reopen("/dev/tty", "r");
 		}
-		if (initbuffer) {
+		if (features & TerminalFeature.screen) {
 			// change to alternative screen buffer
 			stdout.write("\033[?1049h");
-			stdout.flush;
 		}
-		stdout.setvbuf(0, _IONBF);
 	}
 	
-	atexit(&terminalRestore);
+	atexit(&ddhx_terminal_quit);
+}
+
+private
+extern (C)
+void ddhx_terminal_quit() {
+	terminalRestore;
 }
 
 /// Restore CP and other settings
-extern(C)
 void terminalRestore() {
 	version (Windows) {
 		SetConsoleOutputCP(oldCP);
 	} else version (Posix) {
 		// restore main screen buffer
 		stdout.write("\033[?1049l");
-		stdout.flush;
 	}
 	terminalPauseInput;
 }
@@ -228,7 +244,7 @@ void terminalClear() {
 		const int size = csbi.dwSize.X * csbi.dwSize.Y;
 		DWORD num;
 		if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
-			/*|| // .NET uses this but no idea why yet.
+			/*||
 			FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/) {
 			terminalPos(0, 0);
 		} else // If that fails, run cls.
@@ -237,7 +253,6 @@ void terminalClear() {
 		// \033c is a Reset
 		// \033[2J is "Erase whole display"
 		printf("\033[2J");
-		stdout.flush;
 	}
 	else static assert(0, "Clear: Not implemented");
 }
@@ -257,18 +272,16 @@ TerminalSize terminalSize() {
 		size.height = ws.ws_row;
 		size.width  = ws.ws_col;
 	} else {
-		static assert(0, "WindowHeight : Not implemented");
+		static assert(0, "terminalSize: Not implemented");
 	}
 	return size;
 }
 
-/**
- * Set cursor position x and y position respectively from the top left corner,
- * 0-based.
- * Params:
- *   x = X position (horizontal)
- *   y = Y position (vertical)
- */
+/// Set cursor position x and y position respectively from the top left corner,
+/// 0-based.
+/// Params:
+///   x = X position (horizontal)
+///   y = Y position (vertical)
 void terminalPos(int x, int y) {
 	version (Windows) { // 0-based, like us
 		COORD c = void;
@@ -280,11 +293,10 @@ void terminalPos(int x, int y) {
 	}
 }
 
-/**
- * Read an input event. This function is blocking.
- * Params:
- *   k = TerminalInfo struct
- */
+/// Read an input event. This function is blocking.
+/// Params:
+///   event = TerminalInfo struct
+/// Throws: (Windows) WindowsException on OS error
 void terminalInput(ref TerminalInput event) {
 	version (Windows) {
 		INPUT_RECORD ir = void;
@@ -312,7 +324,8 @@ L_READ:
 			
 			const ushort keycode = ir.KeyEvent.wVirtualKeyCode;
 			
-			switch (keycode) { // Filter out modifier key events
+			// Filter out single modifier key events
+			switch (keycode) {
 			case 16, 17, 18: // shift,ctrl,alt
 				goto L_READ;
 			default:
@@ -371,7 +384,7 @@ L_READ:
 		//      Enable: ESC [ ? 1000 h
 		//      Disable: ESC [ ? 1000 l
 		//      b bits[1:0] 0=MB1 pressed, 1=MB2 pressed, 2=MB3 pressed, 3=release
-		//      b bits[7:2] 4=Shift, 8=Meta, 16=Control
+		//      b bits[7:2] 4=Shift (bit 3), 8=Meta (bit 4), 16=Control (bit 5)
 		//TODO: Faster scanning
 		//      So we have a few choices:
 		//      - string table (current, works alright)

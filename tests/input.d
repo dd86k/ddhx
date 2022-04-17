@@ -5,7 +5,10 @@ import ddhx.terminal;
 
 @system unittest {
 	enum MODS = Mod.ctrl | Mod.alt | Mod.shift;
-	terminalInit(false);
+	terminalInit(TerminalFeature.input);
+	
+	// Tests terminalInit if we haven't screwed with stdout
+	writeln("Exit by CTRL+C");
 	
 	TerminalInput input = void;
 L_READ:
