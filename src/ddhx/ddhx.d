@@ -14,7 +14,7 @@ import ddhx;
 enum COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
 
 /// App version
-enum VERSION = "0.4.1";
+enum VERSION = "0.4.2";
 
 /// Version line
 enum ABOUT = "ddhx " ~ VERSION ~ " (built: " ~ __TIMESTAMP__~")";
