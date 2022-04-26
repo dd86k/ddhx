@@ -227,6 +227,7 @@ int ddhxDump(long skip, long length) {
 		io.read();
 		displayRenderMainRaw();
 		r += io.buffer.length;
+		io.position = r;
 	} while (io.eof == false && r < length);
 	
 	return 0;
