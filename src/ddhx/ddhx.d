@@ -85,7 +85,7 @@ int ddhxInteractive(long skip = 0) {
 	
 	// Terminal setup (resets stdin if PIPE/FIFO is detected)
 	version (Trace) trace("terminalInit");
-	terminalInit(TerminalFeature.all);
+	terminalInit(TermFeat.all);
 	version (Trace) trace("terminalSize");
 	globals.termSize = terminalSize;
 	if (globals.termSize.height < 3)
@@ -180,7 +180,7 @@ int ddhxDump(long skip, long length) {
 	if (length < 0)
 		return printError(1, "Length must be a positive value");
 	
-	terminalInit(TerminalFeature.none);
+	terminalInit(TermFeat.minimum);
 	
 	version (Trace) trace("skip=%d length=%d", skip, length);
 	
@@ -234,6 +234,9 @@ int ddhxDump(long skip, long length) {
 
 /// int appDiff(string path1, string path2)
 
+//TODO: revamp menu system
+//      char mode: character mode (':', '/', '?')
+//      string command: command shortcut (e.g., 'g' + ' ' default)
 private
 void menu(string cmdPrepend = null, string cmdAlias = null) {
 	// clear bar and command prepend
@@ -255,6 +258,16 @@ void menu(string cmdPrepend = null, string cmdAlias = null) {
 	if (command(line))
 		msgBottom(errorMsg());
 }
+
+// for more elaborate user inputs (commands invoke this)
+// prompt="save as"
+// "save as: " + user input
+/*private
+string input(string prompt) {
+	terminalPos(0, 0);
+	cwrite(prompt, ": ");
+	return readln;
+}*/
 
 /// Move the view to the start of the data
 void moveStart() {

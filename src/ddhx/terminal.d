@@ -81,23 +81,26 @@ version (Posix) {
 /// Flags for terminalInit.
 //TODO: captureResize: Feature capture resizing terminal size
 //TODO: captureCtrlC: Block CTRL+C
-enum TerminalFeature : ushort {
+enum TermFeat : ushort {
 	/// Initiate only the basic
-	none	= 0,
+	minimum	= 0,
 	/// Initiate the input system.
-	input	= 1,
+	inputSys	= 1,
 	/// Initiate the alternative screen buffer.
-	screen	= 1 << 1,
+	altScreen	= 1 << 1,
 	/// Initiate everything.
 	all	= 0xffff,
 }
 
+private __gshared TermFeat current_features;
+
 /// Initiate terminal.
 /// Params: features = Feature bits to initiate.
 /// Throws: (Windows) WindowsException on OS exception
-void terminalInit(TerminalFeature features) {
+void terminalInit(TermFeat features) {
+	current_features = features;
 	version (Windows) {
-		if (features & TerminalFeature.input) {
+		if (features & TermFeat.inputSys) {
 			//NOTE: Re-opening stdin before new screen fixes quite a few things
 			//      - usage with CreateConsoleScreenBuffer
 			//      - readln (for menu)
@@ -111,7 +114,7 @@ void terminalInit(TerminalFeature features) {
 		} else {
 			hIn = GetStdHandle(STD_INPUT_HANDLE);
 		}
-		if (features & TerminalFeature.screen) {
+		if (features & TermFeat.altScreen) {
 			//
 			// Setting up stdout
 			//
@@ -162,7 +165,7 @@ void terminalInit(TerminalFeature features) {
 		//TODO: Get active (or default) colors
 	} else version (Posix) {
 		stdout.setvbuf(0, _IONBF);
-		if (features & TerminalFeature.input) {
+		if (features & TermFeat.inputSys) {
 			// Should it re-open tty by default?
 			stat_t s = void;
 			fstat(STDIN_FILENO, &s);
@@ -197,7 +200,7 @@ void terminalInit(TerminalFeature features) {
 			//new_ios.c_cc[VTIME] = 0;
 			tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
 		}
-		if (features & TerminalFeature.screen) {
+		if (features & TermFeat.altScreen) {
 			// change to alternative screen buffer
 			stdout.write("\033[?1049h");
 		}
@@ -215,12 +218,14 @@ void ddhx_terminal_quit() {
 /// Restore CP and other settings
 void terminalRestore() {
 	version (Windows) {
-		SetConsoleOutputCP(oldCP);
+		SetConsoleOutputCP(oldCP); // unconditionally
 	} else version (Posix) {
 		// restore main screen buffer
-		stdout.write("\033[?1049l");
+		if (current_features & TermFeat.altScreen)
+			stdout.write("\033[?1049l");
 	}
-	terminalPauseInput;
+	if (current_features & TermFeat.inputSys)
+		terminalPauseInput;
 }
 
 void terminalPauseInput() {
