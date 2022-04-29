@@ -109,6 +109,11 @@ struct IoState {
 // Mostly-stateless, lazy implementation of a FILE using direct OS
 // functions, since File under x86-omf builds seem iffy, broken
 // (especially when attempting to get the size of a large file).
+//TODO: redo read functions with a simpler api
+//      e.g., ubyte[] read(ubyte[] buffer)
+//            on error, sets bool error = true;
+//                      or int error = OS errorcode
+//TODO: Move this to os.file
 private struct OSFile {
 	private OSHANDLE handle;
 	private bool eof;
@@ -144,6 +149,7 @@ private struct OSFile {
 	}
 	
 	int seek(ref long npos, Seek origin, long pos) {
+		version (Trace) trace("origin=%u pos=%u", origin, pos);
 		version (Windows) {
 			LARGE_INTEGER liIn = void, liOut = void;
 			liIn.QuadPart = pos;
@@ -160,6 +166,7 @@ private struct OSFile {
 	}
 	
 	int read(ref ubyte[] result, ubyte[] buffer) {
+		version (Trace) trace("buffer.length=%u", buffer.length);
 		version (Windows) {
 			const uint len = cast(uint)buffer.length;
 			uint r = void; /// size read

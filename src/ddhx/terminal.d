@@ -4,9 +4,12 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx.terminal;
 
+//TODO: Move this to os.terminal
 //TODO: Register function for terminal size change
 //      Under Windows, that's under a regular input event
 //      Under Linux, that's under a signal (and function pointer)
+//TODO: readline
+//      automatically pause input, stdio.readln, resume input
 
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html

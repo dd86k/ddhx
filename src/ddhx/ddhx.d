@@ -219,7 +219,12 @@ int ddhxDump(long skip, long length) {
 	displayRenderTopRaw();
 	
 	// mitigate unaligned reads/renders
-	io.resizeBuffer(globals.rowWidth * 16);
+	uint a = globals.rowWidth * 16; 
+	io.resizeBuffer(a);
+	
+	if (a > length) {
+		io.resizeBuffer(cast(uint)length);
+	}
 	
 	// read until EOF or length spec
 	long r;
