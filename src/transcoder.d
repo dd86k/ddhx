@@ -4,9 +4,10 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module ddhx.transcoder;
+module transcoder;
 
 import std.encoding : codeUnits, CodeUnits;
+import types;
 
 //TODO: Other character sets
 //      - ISO/IEC 8859-1 "iso8859-1"
@@ -25,23 +26,12 @@ import std.encoding : codeUnits, CodeUnits;
 //      - GSM 03.38 "gsm" (technically multibyte)
 //        https://www.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT
 
-/// 
-enum CharacterSet : ubyte {
-	ascii,	/// 7-bit US-ASCII
-	cp437,	/// IBM PC CP-437
-	ebcdic,	/// IBM EBCDIC Code Page 37
-	mac,	/// Mac OS Roman
-//	t61,	/// ITU T.61
-//	gsm,	/// GSM 03.38
-}
-private enum CHARSET_COUNT = CharacterSet.max + 1;
-
 private struct Transcoder {
 	string name = "ascii";
 	immutable(char)[] function(ubyte) transform = &transcodeASCII;
 }
 
-private immutable Transcoder[CHARSET_COUNT] transcoders = [
+private immutable Transcoder[4] transcoders = [
 	{ "ascii",	&transcodeASCII },
 	{ "cp437",	&transcodeCP437 },
 	{ "ebcdic",	&transcodeEBCDIC },
@@ -50,15 +40,21 @@ private immutable Transcoder[CHARSET_COUNT] transcoders = [
 
 /// Select a new transcoder.
 /// Params: charSet = Character set.
-void selectTranscoder(CharacterSet charSet) {
-	transcoder = transcoders[charSet];
+void select(CharacterSet charSet) {
+	if (charSet > CharacterSet.max) {
+		return;
+	}
+	immutable(Transcoder) *t = &transcoders[charSet];
+	name = t.name;
+	transform = t.transform;
 }
 
-/// Current transcoder.
-__gshared Transcoder transcoder;
+/// Current transcoder name
+__gshared string name = "ascii";
+/// Current transcoder transformation function
+__gshared immutable(char)[] function(ubyte) transform = &transcodeASCII;
 
 private alias U  = char[];
-//private alias CU = CodeUnits!char;
 private template C(dchar c) {
 	enum C = cast(immutable)codeUnits!char(c).s;
 }
@@ -72,6 +68,11 @@ immutable(char)[] transcodeASCII(ubyte data) {
 	
 	c[0] = data;
 	return c;
+}
+unittest {
+	assert(transcodeASCII(0) == []);
+	assert(transcodeASCII('a') == [ 'a' ]);
+	assert(transcodeASCII(0x7f) == []);
 }
 
 private immutable U[256] mapCP437 = [
@@ -113,6 +114,11 @@ private
 immutable(char)[] transcodeCP437(ubyte data) {
 	return mapCP437[data];
 }
+unittest {
+	assert(transcodeCP437(0) == []);
+	assert(transcodeCP437('r') == [ 'r' ]);
+	assert(transcodeCP437(1) == [ '\xe2', '\x98', '\xba' ]);
+}
 
 private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40)
 //         0      1      2      3      4      5      6      7 
@@ -146,9 +152,15 @@ immutable(char)[] transcodeEBCDIC(ubyte data) {
 	__gshared immutable(char)[] empty = [];
 	return data >= 0x40 ? mapEBCDIC[data-0x40] : empty;
 }
+unittest {
+	assert(transcodeEBCDIC(0) == [ ]);
+	assert(transcodeEBCDIC(0x42) == [ '\xc3', '\xa2' ]);
+	assert(transcodeEBCDIC(0x7c) == [ '@' ]);
+}
 
 // Mac OS Roman (Windows-10000) "mac"
 // https://en.wikipedia.org/wiki/Mac_OS_Roman
+// NOTE: 0xF0 is the apple logo and that's obviously not in Unicode
 private immutable U[224] mapMac = [ // 256 - 32 (0x20)
 //         0      1      2      3      4      5      6      7 
 /*20*/	C!' ', C!'!', C!'"', C!'#', C!'$', C!'%', C!'&',C!'\'',
@@ -179,9 +191,15 @@ private immutable U[224] mapMac = [ // 256 - 32 (0x20)
 /*e8*/	C!'Ë', C!'È', C!'Í', C!'Î', C!'Ï', C!'Ì', C!'Ó', C!'Ô',
 /*f0*/	   [], C!'Ò', C!'Ú', C!'Û', C!'Ù', C!'ı', C!'ˆ', C!'˜',
 /*f8*/	C!'¯', C!'˘', C!'˙', C!'˚', C!'¸', C!'˝', C!'˛', C!'ˇ',
-]; // NOTE: 0xF0 is the apple logo, but that's obviously not in Unicode
+];
 private
 immutable(char)[] transcodeMac(ubyte data) {
 	__gshared immutable(char)[] empty = [];
 	return data >= 0x20 ? mapMac[data-0x20] : empty;
+}
+unittest {
+	assert(transcodeMac(0) == [ ]);
+	assert(transcodeMac(0x20) == [ ' ' ]);
+	assert(transcodeMac(0x22) == [ '"' ]);
+	assert(transcodeMac(0xaa) == [ '\xe2', '\x84', '\xa2' ]);
 }

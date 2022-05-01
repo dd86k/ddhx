@@ -7,7 +7,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module ddhx.file;
+module os.file;
 
 version (Windows) {
 	import core.sys.windows.winnt :
@@ -71,31 +71,16 @@ import std.path : baseName;
 import std.container.array : Array;
 import std.stdio : File;
 import core.stdc.stdio : FILE;
-import ddhx;
+import all;
 
 /// Default buffer size.
 private enum DEFAULT_BUFFER_SIZE = 4 * 1024;
-
-/// FileMode for Io.
-enum FileMode {
-	file,	/// Normal file.
-	mmfile,	/// Memory-mapped file.
-	stream,	/// Standard streaming I/O.
-	memory,	/// Typically from a stream buffered into memory.
-}
 
 /// File seek origin.
 enum Seek {
 	start	= SEEK_SET,	/// Seek since start of file.
 	current	= SEEK_CUR,	/// Seek since current position in file.
 	end	= SEEK_END	/// Seek since end of file.
-}
-
-/// Current write mode.
-enum WriteMode {
-	readOnly,	/// 
-	insert,	/// 
-	overwrite,	/// 
 }
 
 /// Used in saving and restoring the Io state (position and read buffer).
@@ -138,12 +123,12 @@ private struct OSFile {
 				null,	// hTemplateFile
 			);
 			if (handle == INVALID_HANDLE_VALUE)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 		} else version (Posix) {
 			alias osopen = core.sys.posix.fcntl.open;
 			handle = osopen(path.toStringz, O_RDWR);
 			if (handle == -1)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 		}
 		return 0;
 	}
@@ -154,12 +139,12 @@ private struct OSFile {
 			LARGE_INTEGER liIn = void, liOut = void;
 			liIn.QuadPart = pos;
 			if (SetFilePointerEx(handle, liIn, &liOut, origin) == FALSE)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 			npos = liOut.QuadPart;
 		} else version (Posix) {
 			const long r = lseek64(handle, pos, origin);
 			if (r == -1)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 			npos = r;
 		}
 		return 0;
@@ -171,14 +156,14 @@ private struct OSFile {
 			const uint len = cast(uint)buffer.length;
 			uint r = void; /// size read
 			if (ReadFile(handle, buffer.ptr, len, &r, null) == FALSE)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 			eof = r < len;
 			result = buffer[0..r];
 		} else version (Posix) {
 			alias osread = core.sys.posix.unistd.read;
 			ssize_t r = osread(handle, buffer.ptr, buffer.length);
 			if (r < 0)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 			eof = r < buffer.length;
 			result = buffer[0..r];
 		}
@@ -189,13 +174,13 @@ private struct OSFile {
 		version (Windows) {
 			LARGE_INTEGER li = void;
 			if (GetFileSizeEx(handle, &li) == 0)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 			nsize = li.QuadPart;
 			return 0;
 		} else version (Posix) {
 			stat_t stats = void;
 			if (fstat(handle, &stats) == -1)
-				return errorSet(ErrorCode.os);
+				return error.set(ErrorCode.os);
 			// NOTE: fstat(2) sets st_size to 0 on block devices
 			switch (stats.st_mode & S_IFMT) {
 			case S_IFREG: // File
@@ -205,8 +190,8 @@ private struct OSFile {
 			case S_IFBLK: // Block device (like a disk)
 				//TODO: BSD variants
 				return ioctl(handle, BLOCKSIZE, &nsize) == -1 ?
-					errorSet(ErrorCode.os) : 0;
-			default: return errorSet(ErrorCode.invalidType);
+					error.set(ErrorCode.os) : 0;
+			default: return error.set(ErrorCode.invalidType);
 			}
 		}
 	}
@@ -232,6 +217,7 @@ struct Io {
 	
 	long size;	/// Last reported file size.
 	//TODO: This shouldn't be here
+	//      And should not be a property but a function
 	const(char)[] sizeString;	/// Binary file size as string
 	string fullPath;	/// Original file path.
 	string name;	/// Current file name.
@@ -253,11 +239,11 @@ struct Io {
 		mode = FileMode.file;
 		
 		if (osfile.open(path))
-			return lastError;
+			return error.lastError;
 		if (refreshSize())
-			return lastError;
+			return error.lastError;
 		if (size == 0)
-			return errorSet(ErrorCode.fileEmpty);
+			return error.set(ErrorCode.fileEmpty);
 		
 		sizeString = getSizeString;
 		setProperties(path, baseName(path));
@@ -272,13 +258,13 @@ struct Io {
 		try {
 			mmHandle = new MmFile(path, MmFile.Mode.read, 0, mmAddress);
 		} catch (Exception ex) {
-			return errorSet(ex);
+			return error.set(ex);
 		}
 		
 		if (refreshSize())
-			return lastError;
+			return error.lastError;
 		if (size == 0)
-			return errorSet(ErrorCode.fileEmpty);
+			return error.set(ErrorCode.fileEmpty);
 		
 		sizeString = getSizeString;
 		setProperties(path, baseName(path));
@@ -491,7 +477,7 @@ struct Io {
 	//TODO: This really shouldn't be here
 	const(char)[] getSizeString() {
 		__gshared char[32] b = void;
-		return formatSize(b, size, globals.si);
+		return formatSize(b, size, settings.si);
 	}
 	
 	void resizeBuffer(uint newSize = DEFAULT_BUFFER_SIZE) {
@@ -514,7 +500,7 @@ struct Io {
 		
 		ubyte *defbuf = cast(ubyte*)malloc(DEFAULT_BUFFER_SIZE);
 		if (defbuf == null)
-			return errorSet(ErrorCode.os);
+			return error.set(ErrorCode.os);
 		
 		if (skip)
 			seek(Seek.start, skip);

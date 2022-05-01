@@ -1,16 +1,13 @@
-/// The heart of the machine, the rendering display.
-/// 
-/// This accommodates all functions related to rendering elements on screen,
-/// which includes the upper offset bar, data view (offsets, data, and text),
-/// and bottom message bar.
+/// Module handling screen.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module ddhx.display;
+module screen;
 
 import std.range : chunks;
 import std.stdio : stdout; // for cwrite family
-import ddhx;
+import all;
+import os.terminal, os.file;
 
 //TODO: Data grouping (1, 2, 4, 8, 16)
 //      e.g., cd ab -> abcd
@@ -33,15 +30,28 @@ import ddhx;
 //      or be able to specify/toggle seperate regardless of column length.
 //      Probably useful for dump app.
 
-/// Line size buffer for printing in main panel.
-private enum LBUF_SIZE = 2048;
+void clearOffsetBar() {
+	screen.cwritefAt(0,0,"%*s", terminalSize.width - 1, " ");
+}
+/*void clearStatusBar() {
+	screen.cwritefAt(0,0,"%*s", terminalSize.width - 1, " ");
+}*/
+void message(A...)(const(char)[] fmt, A args) {
+	import std.format : format;
+	message(format(fmt, args));
+}
+void message(const(char)[] str) {
+	TerminalSize termsize = terminalSize;
+	terminalPos(0, termsize.height - 1);
+	cwritef("%-*s", termsize.width - 1, str);
+}
 
 private struct NumberFormatter {
 	immutable(char)[] name;	/// Short offset name
 	align(2) char fmtchar;	/// Format character for printf-like functions
-	size_t size;	/// Size for formatted byte
-	size_t function(char*,long) funcOffset;	/// Function to format offset
-	size_t function(char*,ubyte) funcData;	/// Function to format data
+	uint size;	/// Size for formatted byte
+	size_t function(char*,long) offset;	/// Function to format offset
+	size_t function(char*,ubyte) data;	/// Function to format data
 }
 
 private immutable NumberFormatter[3] numbers = [
@@ -50,18 +60,11 @@ private immutable NumberFormatter[3] numbers = [
 	{ "oct", 'o', 3, &format11o, &format03o },
 ];
 
-private struct Formatters {
-	immutable(NumberFormatter) *offset;
-	immutable(NumberFormatter) *data;
-	uint rowSize;
-	char defaultChar;
-}
-
 //
 // SECTION Formatting
 //
 
-private immutable static string hexMap  = "0123456789abcdef";
+private immutable static string hexMap = "0123456789abcdef";
 
 private
 size_t format02x(char *buffer, ubyte v) {
@@ -250,27 +253,26 @@ size_t format11o(char *buffer, long v) {
 
 // !SECTION
 
+//TODO: Convert all "Raw" functions with just a bool parameter
+
 //
 // SECTION Rendering
 //
 
-/// Update the upper offset bar.
-void displayRenderTop() {
-	terminalPos(0, 0);
-	displayRenderTopRaw();
-}
-
 /// 
-void displayRenderTopRaw() {
+void renderOffsetBar(bool cursor = true) {
 	import std.outbuffer : OutBuffer;
 	import std.typecons : scoped;
 	import std.conv : octal;
 	
 	__gshared size_t last;
 	
-	const int offsetType = globals.offsetType;
-	const int dataType = globals.dataType;
-	const ushort rowWidth = globals.rowWidth;
+	if (cursor)
+		terminalPos(0, 0);
+	
+	const int offsetType = settings.offset;
+	const int dataType = settings.data;
+	const ushort rowWidth = settings.width;
 	
 	// Setup index formatting
 	//TODO: Consider SingleSpec
@@ -302,14 +304,8 @@ void displayRenderTopRaw() {
 	cwriteln(cast(const(char)[])outbuf.toBytes);
 }
 
-/// Update the bottom current information bar.
-void displayRenderBottom() {
-	terminalPos(0, terminalSize.height - 1);
-	displayRenderBottomRaw;
-}
-
-/// Updates information bar without cursor position call.
-void displayRenderBottomRaw() {
+/// 
+void renderStatusBar(bool cursor = true) {
 	import std.format : sformat;
 	
 	//TODO: [0.5] Include editing mode (insert/overwrite)
@@ -318,13 +314,16 @@ void displayRenderBottomRaw() {
 	char[32] c1 = void, c3 = void;
 	char[128] buf = void;
 	
-	const double fpos = io.position;
+	if (cursor)
+		terminalPos(0, terminalSize.height - 1);
+	
+	const double fpos = ddhx.io.position;
 	char[] f = sformat!" %s | %s | %s | %s (%f%%)"(buf,
-		numbers[globals.dataType].name,
+		numbers[settings.data].name,
 		transcoder.name,
-		formatSize(c1, io.readSize, globals.si), // Buffer size
-		formatSize(c3, io.position + io.readSize, globals.si), // Formatted position
-		((fpos + io.readSize) / io.size) * 100, // Pos/input.size%
+		formatSize(c1, ddhx.io.readSize, settings.si), // Buffer size
+		formatSize(c3, ddhx.io.position + ddhx.io.readSize, settings.si), // Formatted position
+		((fpos + ddhx.io.readSize) / ddhx.io.size) * 100, // Pos/input.size%
 	);
 	
 	const size_t flen = f.length;
@@ -338,31 +337,57 @@ void displayRenderBottomRaw() {
 	last = flen;
 }
 
+//TODO: [0.5] Possibility to only redraw a specific byte.
+//      renderContentByte(size_t bufpos, ubyte newData)
+
+uint renderContent(bool cursor = true) {
+	if (cursor)
+		terminalPos(0, 1);
+	
+	return renderContent(ddhx.io.position, ddhx.io.buffer);
+}
+
 /// Update display from buffer.
 /// Returns: Numbers of row written.
-uint displayRenderMain() {
-	terminalPos(0, 1);
-	return displayRenderMainRaw;
+uint renderContent(long position, ubyte[] data) {
+	// Setup formatting related stuff
+	initRow;
+	
+	// print lines in bulk (for entirety of view buffer)
+	uint lines;
+	foreach (chunk; chunks(data, settings.width)) {
+		cwriteln(renderRow(chunk, position));
+		position += settings.width;
+		++lines;
+	}
+	
+	return lines;
 }
+
+private void initRow(NumberType offset = settings.offset,
+	NumberType data = settings.data) {
+	offsetFmt = &numbers[offset];
+	dataFmt = &numbers[data];
+}
+
+private __gshared immutable(NumberFormatter) *offsetFmt;
+private __gshared immutable(NumberFormatter) *dataFmt;
 
 //TODO: insertPosition?
 //TODO: insertData?
 //TODO: insertText?
-private char[] renderRow(ubyte[] chunk, long pos, ref Formatters format) {
+private char[] renderRow(ubyte[] chunk, long pos) {
 	import core.stdc.string : memset;
 	
 	enum BUFFER_SIZE = 2048;
 	__gshared char[BUFFER_SIZE] buffer;
-	__gshared char* bufferptr = buffer.ptr;
-	
-	const size_t len = chunk.length;
+	__gshared char *bufferptr = buffer.ptr;
 	
 	// Insert OFFSET
-	size_t indexData = format.offset.funcOffset(bufferptr, pos);
+	size_t indexData = offsetFmt.offset(bufferptr, pos);
 	bufferptr[indexData++] = ' '; // index: OFFSET + space
 	
-	const uint byteLen = cast(uint)format.data.size;
-	const uint dataLen = (format.rowSize * (byteLen + 1)); /// data row character count
+	const uint dataLen = (settings.width * (dataFmt.size + 1)); /// data row character count
 	size_t indexChar = indexData + dataLen; // Position for character column
 	*(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
 	indexChar += 2; // indexChar: indexData + dataLen + spacer
@@ -370,62 +395,66 @@ private char[] renderRow(ubyte[] chunk, long pos, ref Formatters format) {
 	// Format DATA and CHAR
 	// NOTE: Smaller loops could fit in cache...
 	//       And would separate data/text logic
-	for (size_t i; i < len; ++i) {
-		const ubyte data = chunk[i]; /// byte data
+	foreach (data; chunk) {
+//	for (size_t i; i < chunk.length; ++i) {
+//		const ubyte data = chunk[i]; /// byte data
 		// Data translation
 		bufferptr[indexData++] = ' ';
-		indexData += format.data.funcData(bufferptr + indexData, data);
+		indexData += dataFmt.data(bufferptr + indexData, data);
 		// Character translation
 		immutable(char)[] units = transcoder.transform(data);
 		if (units.length) { // Has utf-8 codepoints
 			foreach (codeunit; units)
 				bufferptr[indexChar++] = codeunit;
 		} else // Invalid character, insert default character
-			bufferptr[indexChar++] = format.defaultChar;
+			bufferptr[indexChar++] = settings.defaultChar;
 	}
 	// data length < minimum row requirement = pad DATA
-	if (len < format.rowSize) {
-		uint left = format.rowSize - cast(uint)len; // Bytes left
-		left *= (byteLen + 1); // space + 1x data size
+	if (chunk.length < settings.width) {
+		size_t left =
+			(settings.width - chunk.length) // Bytes left
+			* (dataFmt.size + 1);  // space + 1x data size
 		memset(bufferptr + indexData, ' ', left);
 	}
 	
 	return buffer[0..indexChar];
 }
 
-/// Update display from buffer.
-/// Returns: Numbers of row written.
-//TODO: Maybe make ubyte[] parameter?
-uint displayRenderMainRaw() {
-	//TODO: Render blank lines when going beyond data.
-	//      Could be a function in ddhx, checks if enough lines printed.
-	//TODO: [0.5] Possibility to only redraw a specific line.
+//TODO: More renderRow unittests
+unittest {
+	// With defaults
+	initRow;
+	//	 Offset(hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+	assert(renderRow([ 0 ], 0) ==
+		"          0  00                                               .");
+	assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0x10) ==
+		"         10  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
 	
-	// setup
-	const ushort rowCount = globals.rowWidth;
-	long pos = io.position;
-	uint lines;
-	
-	Formatters formatters = void;
-	formatters.offset = &numbers[globals.offsetType];
-	formatters.data = &numbers[globals.dataType];
-	formatters.rowSize = rowCount;
-	formatters.defaultChar = globals.defaultChar;
-	
-	// print lines in bulk (for entirety of view buffer)
-	foreach (chunk; chunks(io.buffer, rowCount)) {
-		cwriteln(renderRow(chunk, pos, formatters));
-		pos += rowCount;
-		++lines;
-	}
-	
-	return lines;
 }
 
 // !SECTION
 
 // SECTION Console Write functions
 
+//TODO: putAt(int x, int y, const(char)[] str)
+//TODO: putfAt(A...)(int x, int y, const(char)[] fmt, A args)
+
+size_t cwriteAt(int x, int y, const(char)[] str) {
+	terminalPos(x, y);
+	return cwrite(str);
+}
+size_t cwritelnAt(int x, int y, const(char)[] str) {
+	terminalPos(x, y);
+	return cwriteln(str);
+}
+size_t cwritefAt(A...)(int x, int y, const(char)[] fmt, A args) {
+	terminalPos(x, y);
+	return cwritef(fmt, args);
+}
+size_t cwriteflnAt(A...)(int x, int y, const(char)[] fmt, A args) {
+	terminalPos(x, y);
+	return cwritefln(fmt, args);
+}
 size_t cwrite(const(char)[] _str) {
 	import std.stdio : stdout;
 	import core.stdc.stdio : fwrite, FILE;
@@ -435,7 +464,7 @@ size_t cwrite(const(char)[] _str) {
 size_t cwriteln(const(char)[] _str) {
 	size_t c = cwrite(_str);
 	cwrite("\n");
-	return c;
+	return ++c;
 }
 size_t cwritef(A...)(const(char)[] fmt, A args) {
 	import std.format : sformat;
@@ -445,7 +474,7 @@ size_t cwritef(A...)(const(char)[] fmt, A args) {
 size_t cwritefln(A...)(const(char)[] fmt, A args) {
 	size_t c = cwritef(fmt, args);
 	cwrite("\n");
-	return c;
+	return ++c;
 }
 
 // !SECTION

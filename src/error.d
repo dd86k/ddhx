@@ -2,51 +2,23 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module ddhx.error;
+module error;
 
-enum ErrorCode {
-	success,
-	unknown,
-	exception,
-	os,
-	
-	negativeValue = 5,
-	fileEmpty,
-	inputEmpty,
-	invalidCommand,
-	invalidParameter,
-	invalidNumber,
-	invalidType,
-	invalidCharset,
-	notFound,
-	overflow,
-	unparsable,
-	noLastItem,
-	eof,
-	unimplemented,
-	insufficientSpace,
-	
-	missingArgumentPosition = 40,
-	missingArgumentType,
-	missingArgumentNeedle,
-	missingArgumentWidth,
-	missingArgumentCharacter,
-	missingArgumentCharset,
-}
+import types;
 
 __gshared ErrorCode lastError; /// Last error code.
 private __gshared string lastMsg;
 private __gshared string lastFile;
 private __gshared int lastLine;
 
-int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
+int set(ErrorCode code, string file = __FILE__, int line = __LINE__) {
 	version (Trace)
 	{
 		trace("code=%s line=%s:%u", code, file, line);
 		if (code == ErrorCode.os)
 		{
 			lastError = code;
-			trace("oserror=%s", errorMsg);
+			trace("oserror=%s", error.message);
 		}
 	}
 	lastFile = file;
@@ -54,7 +26,7 @@ int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
 	return (lastError = code);
 }
 
-int errorSet(Exception ex) {
+int set(Exception ex) {
 	version (unittest)
 	{
 		import std.stdio : writeln;
@@ -71,14 +43,14 @@ int errorSet(Exception ex) {
 	return (lastError = ErrorCode.exception);
 }
 
-const(char)[] errorMsg() {
+const(char)[] message() {
 	switch (lastError) with (ErrorCode) {
 	case exception: return lastMsg;
 	case os:
 		import std.string : fromStringz;
 		
 		version (Windows) {
-			import core.sys.windows.winbase : GetLastError, LocalFree,
+			import core.sys.windows.winbase : GetlastError, LocalFree,
 				FormatMessageA,
 				FORMAT_MESSAGE_ALLOCATE_BUFFER, FORMAT_MESSAGE_FROM_SYSTEM,
 				FORMAT_MESSAGE_IGNORE_INSERTS;
@@ -87,7 +59,7 @@ const(char)[] errorMsg() {
 			
 			enum LANG = MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT);
 			
-			uint errcode = GetLastError();
+			uint errcode = GetlastError();
 			char *strerror;
 			
 			version (Trace) trace("code=%x", errcode);
@@ -103,7 +75,7 @@ const(char)[] errorMsg() {
 				0,
 				null);
 			
-			version (Trace) trace("FormatMessageA=%u errcode=%x", r, GetLastError());
+			version (Trace) trace("FormatMessageA=%u errcode=%x", r, GetlastError());
 			
 			if (strerror)
 			{
@@ -147,6 +119,16 @@ const(char)[] errorMsg() {
 	case success: return "No errors occured.";
 	default: return "Internal error occured.";
 	}
+}
+
+int print() {
+	return print(lastError, message);
+}
+int print(A...)(int code, const(char)[] fmt, A args) {
+	import std.stdio : stderr;
+	stderr.write("error: ");
+	stderr.writefln(fmt, args);
+	return code;
 }
 
 version (Trace) {
