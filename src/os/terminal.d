@@ -110,7 +110,7 @@ void terminalInit(TermFeat features) {
 			//      - receiving key input when stdin was used for reading a buffer
 			hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, 0, null);
 			if (hIn == INVALID_HANDLE_VALUE)
-				throw new WindowsException(Geterror.lastError);
+				throw new WindowsException(GetLastError);
 			SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
 			stdin.windowsHandleOpen(hIn, "r");
 			SetStdHandle(STD_INPUT_HANDLE, hIn);
@@ -124,15 +124,15 @@ void terminalInit(TermFeat features) {
 			
 			hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 			if (hIn == INVALID_HANDLE_VALUE)
-				throw new WindowsException(Geterror.lastError);
+				throw new WindowsException(GetLastError);
 			
 			CONSOLE_SCREEN_BUFFER_INFO csbi = void;
 			if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
-				throw new WindowsException(Geterror.lastError);
+				throw new WindowsException(GetLastError);
 			
 			DWORD attr = void;
 			if (GetConsoleMode(hOut, &attr) == FALSE)
-				throw new WindowsException(Geterror.lastError);
+				throw new WindowsException(GetLastError);
 			
 			hOut = CreateConsoleScreenBuffer(
 				GENERIC_READ | GENERIC_WRITE,	// dwDesiredAccess
@@ -142,7 +142,7 @@ void terminalInit(TermFeat features) {
 				null,	// lpScreenBufferData
 			);
 			if (hOut == INVALID_HANDLE_VALUE)
-				throw new WindowsException(Geterror.lastError);
+				throw new WindowsException(GetLastError);
 			
 			stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
 			
@@ -151,7 +151,7 @@ void terminalInit(TermFeat features) {
 			SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT);
 			
 			if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
-				throw new WindowsException(Geterror.lastError);
+				throw new WindowsException(GetLastError);
 		} else {
 			hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 		}
@@ -163,7 +163,7 @@ void terminalInit(TermFeat features) {
 		// LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
 		oldCP = GetConsoleOutputCP();
 		if (SetConsoleOutputCP(CP_UTF8) == FALSE)
-			throw new WindowsException(Geterror.lastError);
+			throw new WindowsException(GetLastError);
 		
 		//TODO: Get active (or default) colors
 	} else version (Posix) {
@@ -311,7 +311,7 @@ void terminalInput(ref TerminalInput event) {
 		DWORD num = void;
 L_READ:
 		if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
-			throw new WindowsException(Geterror.lastError);
+			throw new WindowsException(GetLastError);
 		
 		if (num == 0)
 			goto L_READ;

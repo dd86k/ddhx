@@ -3,6 +3,21 @@
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module utils;
+	
+private enum : float {
+	// SI (base-10)
+	SI = 1000,	/// SI base
+	kB = SI,	/// Represents one KiloByte
+	MB = kB * SI,	/// Represents one MegaByte
+	GB = MB * SI,	/// Represents one GigaByte
+	TB = GB * SI,	/// Represents one TeraByte
+	// IEC (base-2)
+	IEC = 1024,	/// IEC base
+	KiB = IEC,	/// Represents one KibiByte
+	MiB = KiB * IEC,	/// Represents one MebiByte
+	GiB = MiB * IEC,	/// Represents one GibiByte
+	TiB = GiB * IEC,	/// Represents one TebiByte
+}
 
 /// Format byte size.
 /// Params:
@@ -13,47 +28,41 @@ module utils;
 char[] formatSize(ref char[32] buf, long size, bool b10 = false) {
 	import std.format : sformat;
 	
-	enum : float {
-		// SI (base10)
-		SI = 1000,
-		kB = SI,	/// Represents one KiloByte
-		MB = kB * SI,	/// Represents one MegaByte
-		GB = MB * SI,	/// Represents one GigaByte
-		TB = GB * SI,	/// Represents one TeraByte
-		// IEC (base2)
-		IEC = 1024,
-		KiB = IEC,	/// Represents one KibiByte
-		MiB = KiB * IEC,	/// Represents one MebiByte
-		GiB = MiB * IEC,	/// Represents one GibiByte
-		TiB = GiB * IEC,	/// Represents one TebiByte
-	}
-	
 	//TODO: table of strings with loop-based solution?
 	
 	if (b10) {
-		if (size > TB)
+		if (size >= TB)
 			return buf.sformat!"%0.2f TB"(size / TB);
-		if (size > GB)
+		if (size >= GB)
 			return buf.sformat!"%0.2f GB"(size / GB);
-		if (size > MB)
+		if (size >= MB)
 			return buf.sformat!"%0.1f MB"(size / MB);
-		if (size > kB)
+		if (size >= kB)
 			return buf.sformat!"%0.1f kB"(size / kB);
 	} else {
-		if (size > TiB)
+		if (size >= TiB)
 			return buf.sformat!"%0.2f TiB"(size / TiB);
-		if (size > GiB)
+		if (size >= GiB)
 			return buf.sformat!"%0.2f GiB"(size / GiB);
-		if (size > MiB)
+		if (size >= MiB)
 			return buf.sformat!"%0.1f MiB"(size / MiB);
-		if (size > KiB)
+		if (size >= KiB)
 			return buf.sformat!"%0.1f KiB"(size / KiB);
 	}
 	
 	return buf.sformat!"%u B"(size);
 }
 
-//TODO: formatSize unittests
+//TODO: char[] formatSize(long size, bool base10 = false)
+
+unittest {
+	char[32] buf = void;
+	assert(formatSize(buf, 1, false) == "1 B");
+	assert(formatSize(buf, 1023, false) == "1023 B");
+	assert(formatSize(buf, 1024, false) == "1.0 KiB");
+	assert(formatSize(buf, 999,  true) == "999 B");
+	assert(formatSize(buf, 1000, true) == "1.0 kB");
+}
 
 /// Separate buffer into arguments (akin to argv).
 /// Params: buffer = String buffer.

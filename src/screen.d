@@ -253,8 +253,6 @@ size_t format11o(char *buffer, long v) {
 
 // !SECTION
 
-//TODO: Convert all "Raw" functions with just a bool parameter
-
 //
 // SECTION Rendering
 //
@@ -288,7 +286,6 @@ void renderOffsetBar(bool cursor = true) {
 	outbuf.write(") ");
 	
 	// Print column values
-	//TODO: Consider %( %x%) syntax
 	for (ushort i; i < rowWidth; ++i)
 		outbuf.writef(offsetFmt, i);
 	
@@ -435,9 +432,6 @@ unittest {
 // !SECTION
 
 // SECTION Console Write functions
-
-//TODO: putAt(int x, int y, const(char)[] str)
-//TODO: putfAt(A...)(int x, int y, const(char)[] fmt, A args)
 
 size_t cwriteAt(int x, int y, const(char)[] str) {
 	terminalPos(x, y);

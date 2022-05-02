@@ -50,7 +50,7 @@ const(char)[] message() {
 		import std.string : fromStringz;
 		
 		version (Windows) {
-			import core.sys.windows.winbase : GetlastError, LocalFree,
+			import core.sys.windows.winbase : GetLastError, LocalFree,
 				FormatMessageA,
 				FORMAT_MESSAGE_ALLOCATE_BUFFER, FORMAT_MESSAGE_FROM_SYSTEM,
 				FORMAT_MESSAGE_IGNORE_INSERTS;
@@ -59,7 +59,7 @@ const(char)[] message() {
 			
 			enum LANG = MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT);
 			
-			uint errcode = GetlastError();
+			uint errcode = GetLastError();
 			char *strerror;
 			
 			version (Trace) trace("code=%x", errcode);
@@ -75,7 +75,7 @@ const(char)[] message() {
 				0,
 				null);
 			
-			version (Trace) trace("FormatMessageA=%u errcode=%x", r, GetlastError());
+			version (Trace) trace("FormatMessageA=%u errcode=%x", r, errcode);
 			
 			if (strerror)
 			{

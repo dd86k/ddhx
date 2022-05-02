@@ -30,7 +30,7 @@ int setWidth(string val) {
 	switch (val[0]) {
 	case 'a': // Automatic (fit terminal width)
 		TerminalSize termsize = terminalSize;
-		//TODO: Module should return this
+		//TODO: A dedicated module should return data size
 		int dataSize = void;
 		final switch (data) with (NumberType) {
 		case hexadecimal: dataSize = 2; break;
