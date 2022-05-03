@@ -1,7 +1,7 @@
 name "ddhx"
 description "Hexadecimal file viewer"
 authors "dd86k"
-copyright "Copyright © 2017-2019 dd86k"
+copyright "Copyright © 2017-2022 dd86k"
 license "MIT"
 
 preBuildCommands "rdmd setup.d"
