@@ -4,14 +4,14 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx;
 
-import all;
+import all, gitinfo;
 import os.file : Io, Seek;
 import os.terminal;
 
 /// Copyright string
 enum COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
 /// App version
-enum VERSION = "0.4.2";
+enum VERSION = GIT_DESCRIPTION;
 /// Version line
 enum ABOUT = "ddhx " ~ VERSION ~ " (built: " ~ __TIMESTAMP__~")";
 

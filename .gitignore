@@ -15,8 +15,10 @@ ddhx.log
 *.xz
 *.bzip2
 ddhx-test-library
-
 .fuse_*
+
+# Project
+src/gitinfo.d
 
 # Personal
 NOTES

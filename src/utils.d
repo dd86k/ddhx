@@ -53,7 +53,7 @@ char[] formatSize(ref char[32] buf, long size, bool b10 = false) {
 	return buf.sformat!"%u B"(size);
 }
 
-//TODO: char[] formatSize(long size, bool base10 = false)
+//TODO: char[] formatBinary(long size, bool base10 = false)
 
 unittest {
 	char[32] buf = void;

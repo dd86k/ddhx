@@ -4,6 +4,8 @@ authors "dd86k"
 copyright "Copyright © 2017-2019 dd86k"
 license "MIT"
 
+preBuildCommands "rdmd setup.d"
+
 buildType "verbose" {
 	dflags "-vgc" "-vtls"
 }
