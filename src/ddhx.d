@@ -12,8 +12,10 @@ import os.terminal;
 enum COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
 /// App version
 enum VERSION = GIT_DESCRIPTION;
+debug private enum FULL_VERSION = VERSION~"+debug";
+else  private enum FULL_VERSION = VERSION;
 /// Version line
-enum ABOUT = "ddhx " ~ VERSION ~ " (built: " ~ __TIMESTAMP__~")";
+enum ABOUT = "ddhx "~FULL_VERSION~" (built: "~__TIMESTAMP__~")";
 
 //TODO: deprecate this ugly thing
 //      don't have any plans to replace it, though
@@ -530,9 +532,6 @@ void safeSeek(long pos) {
 	
 	seek(pos);
 }
-
-/// Default haystack buffer size.
-private enum BUFFER_SIZE = 16 * 1024;
 
 private enum LAST_BUFFER_SIZE = 128;
 private __gshared ubyte[LAST_BUFFER_SIZE] lastItem;
