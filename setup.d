@@ -15,10 +15,10 @@ int main(string[] args) {
 	
 	string ver = stripRight(describe.output);
 	write(PATH,
-	`// NOTE: This file was automatically generated.
-	module gitinfo;
-	
-	enum GIT_DESCRIPTION = "`~ver~`";`);
+`// NOTE: This file was automatically generated.
+module gitinfo;
+/// Project current version described by git.
+enum GIT_DESCRIPTION = "`~ver~`";`);
 	
 	return 0;
 }

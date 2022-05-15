@@ -464,7 +464,7 @@ void refresh() {
 void render() {
 	screen.renderOffsetBar;
 	screen.renderContent(false);
-	screen.renderStatusBar(false);
+	screen.renderStatusBar;
 }
 
 /// Seek to position in data, reads view's worth, and display that.
