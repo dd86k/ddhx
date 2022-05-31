@@ -141,6 +141,11 @@ private struct OSFile {
 			if (SetFilePointerEx(handle, liIn, &liOut, origin) == FALSE)
 				return error.set(ErrorCode.os);
 			npos = liOut.QuadPart;
+		} else version (OSX) {
+			const long r = lseek(handle, pos, origin);
+			if (r == -1)
+				return error.set(ErrorCode.os);
+			npos = r;
 		} else version (Posix) {
 			const long r = lseek64(handle, pos, origin);
 			if (r == -1)
