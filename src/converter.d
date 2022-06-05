@@ -2,11 +2,11 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module convert;
+module converter;
 
 import std.format : FormatSpec, singleSpec, unformatValue;
 import std.encoding : transcode;
-import all;
+import error;
 
 // NOTE: template to(T) can turn string values into anything.
 
@@ -21,7 +21,7 @@ import all;
 /// 	val = Value to parse.
 /// 	type = Name of expected type.
 /// Returns: Error code.
-int toRaw(ref void *data, ref size_t len, string val, string type) {
+int convertToRaw(ref void *data, ref size_t len, string val, string type) {
 	union TypeData {
 		ulong  u64;
 		long   i64;
@@ -45,13 +45,13 @@ int toRaw(ref void *data, ref size_t len, string val, string type) {
 	int e = void;
 	with (types) switch (type) {
 	case "s32", "dstring":
-		e = convert.toVal(s32, val);
+		e = convertToVal(s32, val);
 		if (e) return e;
 		data = cast(void*)s32.ptr;
 		len  = s32.length * dchar.sizeof;
 		break;
 	case "s16", "wstring":
-		e = convert.toVal(s16, val);
+		e = convertToVal(s16, val);
 		if (e) return e;
 		data = cast(void*)s16.ptr;
 		len  = s16.length * wchar.sizeof;
@@ -61,55 +61,55 @@ int toRaw(ref void *data, ref size_t len, string val, string type) {
 		len  = val.length;
 		break;
 	case "u64", "ulong":
-		e = convert.toVal(u64, val);
+		e = convertToVal(u64, val);
 		if (e) return e;
 		data = &u64;
 		len  = u64.sizeof;
 		break;
 	case "i64", "long":
-		e = convert.toVal(i64, val);
+		e = convertToVal(i64, val);
 		if (e) return e;
 		data = &i64;
 		len  = i64.sizeof;
 		break;
 	case "u32", "uint":
-		e = convert.toVal(u32, val);
+		e = convertToVal(u32, val);
 		if (e) return e;
 		data = &u32;
 		len  = u32.sizeof;
 		break;
 	case "i32", "int":
-		e = convert.toVal(i32, val);
+		e = convertToVal(i32, val);
 		if (e) return e;
 		data = &i32;
 		len  = i32.sizeof;
 		break;
 	case "u16", "ushort":
-		e = convert.toVal(u16, val);
+		e = convertToVal(u16, val);
 		if (e) return e;
 		data = &u16;
 		len  = u16.sizeof;
 		break;
 	case "i16", "short":
-		e = convert.toVal(i16, val);
+		e = convertToVal(i16, val);
 		if (e) return e;
 		data = &i16;
 		len  = i16.sizeof;
 		break;
 	case "u8", "ubyte":
-		e = convert.toVal(u8, val);
+		e = convertToVal(u8, val);
 		if (e) return e;
 		data = &u8;
 		len  = u8.sizeof;
 		break;
 	case "i8", "byte":
-		e = convert.toVal(i8, val);
+		e = convertToVal(i8, val);
 		if (e) return e;
 		data = &i8;
 		len  = i8.sizeof;
 		break;
 	default:
-		return error.set(ErrorCode.invalidType);
+		return errorSet(ErrorCode.invalidType);
 	}
 	
 	return ErrorCode.success;
@@ -120,7 +120,7 @@ int toRaw(ref void *data, ref size_t len, string val, string type) {
 /// 	v = Data reference.
 /// 	val = String value.
 /// Returns: Error code.
-int toVal(T)(ref T v, string val) {
+int convertToVal(T)(ref T v, string val) {
 	import std.conv : ConvException;
 	try {
 		//TODO: ubyte[] input
@@ -141,7 +141,7 @@ int toVal(T)(ref T v, string val) {
 			v = unformatValue!T(val, fmt);
 		}
 	} catch (Exception ex) {
-		return error.set(ex);
+		return errorSet(ex);
 	}
 	
 	return 0;

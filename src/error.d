@@ -3,49 +3,83 @@
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module error;
+ 
+import std.stdio;
+import ddhx;
 
-import types;
-
-__gshared ErrorCode lastError; /// Last error code.
-private __gshared string lastMsg;
-private __gshared string lastFile;
-private __gshared int lastLine;
-
-int set(ErrorCode code, string file = __FILE__, int line = __LINE__) {
-	version (Trace)
-	{
-		trace("code=%s line=%s:%u", code, file, line);
-		if (code == ErrorCode.os)
-		{
-			lastError = code;
-			trace("oserror=%s", error.message);
-		}
-	}
-	lastFile = file;
-	lastLine = line;
-	return (lastError = code);
+/// Error codes
+enum ErrorCode {
+	success,
+	generic,
+	
+	negativeValue = 5,
+	fileEmpty,
+	inputEmpty,
+	invalidCommand,
+	invalidParameter,
+	invalidNumber,
+	invalidType,
+	invalidCharset,
+	notFound,
+	overflow,
+	unparsable,
+	noLastItem,
+	eof,
+	unimplemented,
+	insufficientSpace,
+	
+	missingArgumentPosition = 40,
+	missingArgumentType,
+	missingArgumentNeedle,
+	missingArgumentWidth,
+	missingArgumentCharacter,
+	missingArgumentCharset,
+	
+	unknown,
+	exception,
+	os,
 }
 
-int set(Exception ex) {
-	version (unittest)
-	{
+__gshared ErrorCode ecode; /// Last error code.
+
+private struct last_t {
+	const(char)[] message;
+	const(char)[] file;
+	int line;
+}
+private __gshared last_t last;
+
+int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
+	version (Trace) {
+		trace("code=%s line=%s:%u", code, file, line);
+		if (code == ErrorCode.os) {
+			ecode = code;
+			trace("oserror=%s", errorMessage);
+		}
+	}
+	last.file = file;
+	last.line = line;
+	return (ecode = code);
+}
+
+int errorSet(Exception ex) {
+	version (unittest) {
 		import std.stdio : writeln;
 		writeln(ex);
 	}
-	version (Trace)
-	{
+	version (Trace) {
 		debug trace("%s", ex);
 		else  trace("%s", ex.msg);
 	}
-	lastFile = ex.file;
-	lastLine = cast(int)ex.line;
-	lastMsg  = ex.msg;
-	return (lastError = ErrorCode.exception);
+	last.file = ex.file;
+	last.line = cast(int)ex.line;
+	last.message = ex.msg;
+	return (ecode = ErrorCode.exception);
 }
 
-const(char)[] message() {
-	switch (lastError) with (ErrorCode) {
-	case exception: return lastMsg;
+const(char)[] errorMessage() {
+	switch (ecode) with (ErrorCode) {
+	case exception: return last.message;
 	case os:
 		import std.string : fromStringz;
 		
@@ -81,9 +115,9 @@ const(char)[] message() {
 			{
 				if (strerror[r - 1] == '\n') --r;
 				if (strerror[r - 1] == '\r') --r;
-				string errMsg = strerror[0..r].idup;
+				string msg = strerror[0..r].idup;
 				LocalFree(strerror);
-				return errMsg;
+				return msg;
 			}
 			
 			goto default;
@@ -121,19 +155,16 @@ const(char)[] message() {
 	}
 }
 
-int print() {
-	return print(lastError, message);
+int errorWrite() {
+	return errorWrite(ecode, last.message);
 }
-int print(A...)(int code, const(char)[] fmt, A args) {
-	import std.stdio : stderr;
+int errorWrite(A...)(int code, const(char)[] fmt, A args) {
 	stderr.write("error: ");
 	stderr.writefln(fmt, args);
 	return code;
 }
 
 version (Trace) {
-	import std.stdio;
-	
 	private __gshared File log;
 	
 	void traceInit() {

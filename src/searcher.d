@@ -2,25 +2,27 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module search;
+module searcher;
 
-import all;
+import ddhx;
 import os.file;
 
 /// Search buffer size.
 private enum BUFFER_SIZE = 4 * 1024;
+
+/*int data(ref Editor editor, out long pos, const(void) *data, size_t len, bool dir) {
+}*/
 
 /// Binary search.
 /// Params:
 /// 	pos = Found position.
 /// 	data = Needle pointer.
 /// 	len = Needle length.
-/// 	direction = Search direction. If set, forwards. If unset, backwards.
+/// 	dir = Search direction. If set, forwards. If unset, backwards.
 /// Returns: Error code if set.
-int data(out long pos, const(void) *data, size_t len, bool direction) {
-	int function(out long, const(void)*, size_t)
-		func = direction ? &forward : &backward;
-	return func(pos, data, len);
+int searchData(out long pos, const(void) *data, size_t len, bool dir) {
+	int function(out long, const(void)*, size_t) F = dir ? &forward : &backward;
+	return F(pos, data, len);
 }
 
 /// Search for binary data forward.
@@ -100,7 +102,7 @@ L_CONTINUE:
 	
 	// Not found
 	ddhx.io.seek(Seek.start, state.position);
-	return error.set(ErrorCode.notFound);
+	return errorSet(ErrorCode.notFound);
 
 L_FOUND: // Found
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position
@@ -122,7 +124,7 @@ int backward(out long newPos, const(void) *data, size_t len) {
 	version (Trace) trace("data=%s len=%u", data, len);
 	
 	if (ddhx.io.position < 2)
-		return error.set(ErrorCode.insufficientSpace);
+		return errorSet(ErrorCode.insufficientSpace);
 	
 	ubyte *needle = cast(ubyte*)data;
 	/// First byte for data to compare with haystack.
@@ -196,7 +198,7 @@ L_CONTINUE:
 	
 	// Not found
 	ddhx.io.seek(Seek.start, state.position);
-	return error.set(ErrorCode.notFound);
+	return errorSet(ErrorCode.notFound);
 
 L_FOUND: // Found
 	newPos = pos + diff; // Position + Chunk index = Found position
@@ -206,8 +208,9 @@ L_FOUND: // Found
 /// Finds the next position indifferent to specified byte.
 /// Params:
 /// 	data = Byte.
+/// 	newPos = Found position.
 /// Returns: Error code.
-int skip(ubyte data, out long newPos) {
+int searchSkip(ubyte data, out long newPos) {
 	import std.array : uninitializedArray;
 	
 	/// File buffer.
@@ -242,7 +245,7 @@ L_CONTINUE:
 	// Not found
 //	ddhx.io.restore(state); // Revert to old position before search
 	ddhx.io.seek(Seek.start, state.position);
-	return error.set(ErrorCode.notFound);
+	return errorSet(ErrorCode.notFound);
 L_FOUND: // Found
 	newPos = pos + haystackIndex; // Position + Chunk index = Found position
 	return 0;

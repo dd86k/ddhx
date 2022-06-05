@@ -1,4 +1,4 @@
-/// Module handling screen.
+/// Terminal screen handling.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
@@ -6,7 +6,7 @@ module screen;
 
 import std.range : chunks;
 import std.stdio : stdout; // for cwrite family
-import all;
+import ddhx;
 import os.terminal, os.file;
 
 //TODO: Data grouping (1, 2, 4, 8, 16)
@@ -30,17 +30,24 @@ import os.terminal, os.file;
 //      or be able to specify/toggle seperate regardless of column length.
 //      Probably useful for dump app.
 
-void clearOffsetBar() {
-	screen.cwritefAt(0,0,"%*s", terminalSize.width - 1, " ");
+void screenClear() {
+	terminalClear;
 }
+
 /*void clearStatusBar() {
 	screen.cwritefAt(0,0,"%*s", terminalSize.width - 1, " ");
 }*/
-void message(A...)(const(char)[] fmt, A args) {
+/// Display a formatted message at the bottom of the screen.
+/// Params:
+///   fmt = Formatting message string.
+///   args = Arguments.
+void screenMessage(A...)(const(char)[] fmt, A args) {
 	import std.format : format;
-	message(format(fmt, args));
+	screenMessage(format(fmt, args));
 }
-void message(const(char)[] str) {
+/// Display a message at the bottom of the screen.
+/// Params: str = Message.
+void screenMessage(const(char)[] str) {
 	TerminalSize termsize = terminalSize;
 	terminalPos(0, termsize.height - 1);
 	cwritef("%-*s", termsize.width - 1, str);
@@ -64,7 +71,7 @@ private immutable NumberFormatter[3] numbers = [
 // SECTION Formatting
 //
 
-private immutable static string hexMap = "0123456789abcdef";
+private immutable string hexMap = "0123456789abcdef";
 
 private
 size_t format02x(char *buffer, ubyte v) {
@@ -257,7 +264,11 @@ size_t format11o(char *buffer, long v) {
 // SECTION Rendering
 //
 
+void clearOffsetBar() {
+	screen.cwritefAt(0,0,"%*s", terminalSize.width - 1, " ");
+}
 /// 
+//TODO: Add "edited" or '*' to end if file edited
 void renderOffsetBar(bool cursor = true) {
 	import std.outbuffer : OutBuffer;
 	import std.typecons : scoped;
@@ -268,25 +279,21 @@ void renderOffsetBar(bool cursor = true) {
 	if (cursor)
 		terminalPos(0, 0);
 	
-	const int offsetType = settings.offset;
-	const int dataType = settings.data;
-	const ushort rowWidth = settings.width;
-	
 	// Setup index formatting
 	//TODO: Consider SingleSpec
 	__gshared char[4] offsetFmt = " %__";
-	offsetFmt[2] = cast(char)(numbers[dataType].size + '0');
-	offsetFmt[3] = numbers[offsetType].fmtchar;
+	offsetFmt[2] = cast(char)(numbers[setting.dataType].size + '0');
+	offsetFmt[3] = numbers[setting.offsetType].fmtchar;
 	
 	// Recommended to use 'auto' due to struct Scoped
 	auto outbuf = scoped!OutBuffer();
 	outbuf.reserve(256); // e.g. 8 + 2 + (16 * 3) + 2 + 8 = 68
 	outbuf.write("Offset(");
-	outbuf.write(numbers[offsetType].name);
+	outbuf.write(numbers[setting.offsetType].name);
 	outbuf.write(") ");
 	
 	// Print column values
-	for (ushort i; i < rowWidth; ++i)
+	for (ushort i; i < setting.width; ++i)
 		outbuf.writef(offsetFmt, i);
 	
 	// Fill out remains since this is damage-based
@@ -316,10 +323,10 @@ void renderStatusBar(bool cursor = true) {
 	
 	const double fpos = ddhx.io.position;
 	char[] f = sformat!" %s | %s | %s | %s (%f%%)"(buf,
-		numbers[settings.data].name,
+		numbers[setting.dataType].name,
 		transcoder.name,
-		formatSize(c1, ddhx.io.readSize, settings.si), // Buffer size
-		formatSize(c3, ddhx.io.position + ddhx.io.readSize, settings.si), // Formatted position
+		formatBin(ddhx.io.readSize, setting.si), // Buffer size
+		formatBin(ddhx.io.position + ddhx.io.readSize, setting.si), // Formatted position
 		((fpos + ddhx.io.readSize) / ddhx.io.size) * 100, // Pos/input.size%
 	);
 	
@@ -348,21 +355,21 @@ uint renderContent(bool cursor = true) {
 /// Returns: Numbers of row written.
 uint renderContent(long position, ubyte[] data) {
 	// Setup formatting related stuff
-	initRow;
+	prepareView;
 	
 	// print lines in bulk (for entirety of view buffer)
 	uint lines;
-	foreach (chunk; chunks(data, settings.width)) {
+	foreach (chunk; chunks(data, setting.width)) {
 		cwriteln(renderRow(chunk, position));
-		position += settings.width;
+		position += setting.width;
 		++lines;
 	}
 	
 	return lines;
 }
 
-private void initRow(NumberType offset = settings.offset,
-	NumberType data = settings.data) {
+private void prepareView(NumberType offset = setting.offsetType,
+	NumberType data = setting.dataType) {
 	offsetFmt = &numbers[offset];
 	dataFmt = &numbers[data];
 }
@@ -370,9 +377,9 @@ private void initRow(NumberType offset = settings.offset,
 private __gshared immutable(NumberFormatter) *offsetFmt;
 private __gshared immutable(NumberFormatter) *dataFmt;
 
-//TODO: insertPosition?
-//TODO: insertData?
-//TODO: insertText?
+//TODO: bool insertPosition?
+//TODO: bool insertData?
+//TODO: bool insertText?
 private char[] renderRow(ubyte[] chunk, long pos) {
 	import core.stdc.string : memset;
 	
@@ -384,7 +391,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 	size_t indexData = offsetFmt.offset(bufferptr, pos);
 	bufferptr[indexData++] = ' '; // index: OFFSET + space
 	
-	const uint dataLen = (settings.width * (dataFmt.size + 1)); /// data row character count
+	const uint dataLen = (setting.width * (dataFmt.size + 1)); /// data row character count
 	size_t indexChar = indexData + dataLen; // Position for character column
 	*(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
 	indexChar += 2; // indexChar: indexData + dataLen + spacer
@@ -404,12 +411,12 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 			foreach (codeunit; units)
 				bufferptr[indexChar++] = codeunit;
 		} else // Invalid character, insert default character
-			bufferptr[indexChar++] = settings.defaultChar;
+			bufferptr[indexChar++] = setting.defaultChar;
 	}
 	// data length < minimum row requirement = pad DATA
-	if (chunk.length < settings.width) {
+	if (chunk.length < setting.width) {
 		size_t left =
-			(settings.width - chunk.length) // Bytes left
+			(setting.width - chunk.length) // Bytes left
 			* (dataFmt.size + 1);  // space + 1x data size
 		memset(bufferptr + indexData, ' ', left);
 	}
@@ -420,7 +427,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 //TODO: More renderRow unittests
 unittest {
 	// With defaults
-	initRow;
+	prepareView;
 	//	 Offset(hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
 	assert(renderRow([ 0 ], 0) ==
 		"          0  00                                               .");

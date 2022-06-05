@@ -1,25 +1,43 @@
-// Main application.
+/// Main application.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx;
 
-import all, gitinfo;
-import os.file : Io, Seek;
+import gitinfo;
 import os.terminal;
+public import
+	editor,
+	searcher,
+	transcoder,
+	error,
+	converter,
+	settings,
+	screen,
+	utils.args,
+	utils.format,
+	utils.memory;
 
 /// Copyright string
-enum COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
+enum DDHX_COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
 /// App version
-enum VERSION = GIT_DESCRIPTION;
-debug private enum FULL_VERSION = VERSION~"+debug";
-else  private enum FULL_VERSION = VERSION;
+debug enum DDHX_VERSION = GIT_DESCRIPTION[1..$]~"+debug";
+else  enum DDHX_VERSION = GIT_DESCRIPTION[1..$]; /// Ditto
 /// Version line
-enum ABOUT = "ddhx "~FULL_VERSION~" (built: "~__TIMESTAMP__~")";
+enum DDHX_ABOUT = "ddhx "~DDHX_VERSION~" (built: "~__TIMESTAMP__~")";
 
-//TODO: deprecate this ugly thing
-//      don't have any plans to replace it, though
-__gshared Io io;	/// File/stream I/O instance.
+/// Number type to render either for offset or data
+enum NumberType : ubyte {
+	hexadecimal,
+	decimal,
+	octal
+}
+
+/// Default buffer size if none was given.
+private enum DEFAULT_BUFFER_SIZE = 4096;
+
+import os.file;
+deprecated __gshared Io io;
 
 /// Interactive application.
 /// Params: skip = Seek to file/data position.
@@ -30,16 +48,16 @@ int startInteractive(long skip = 0) {
 	//      stdin: use seek
 	if (skip < 0)
 		// skip = +skip;
-		return error.print(1, "Skip value must be positive");
+		return errorWrite(1, "Skip value must be positive");
 	
 	if (io.mode == FileMode.stream) {
 		version (Trace) trace("slurp skip=%u", skip);
 		if (io.toMemory(skip, 0))
-			return error.print;
+			return errorWrite;
 	} else {
 		version (Trace) trace("seek skip=%u", skip);
 		if (io.seek(Seek.start, skip))
-			return error.print;
+			return errorWrite;
 	}
 	
 	// Terminal setup (resets stdin if PIPE/FIFO is detected)
@@ -50,14 +68,13 @@ int startInteractive(long skip = 0) {
 	TerminalSize termsize = terminalSize;
 	
 	if (termsize.height < 3)
-		return error.print(1, "Need at least 3 lines to display properly");
+		return errorWrite(1, "Need at least 3 lines to display properly");
 	if (termsize.width < 20)
-		return error.print(1, "Need at least 20 columns to display properly");
+		return errorWrite(1, "Need at least 20 columns to display properly");
 	
-	// Setup
-	adjustBuffer(true);
+	adjustViewBuffer();
 	if (io.read())
-		return error.print;
+		return errorWrite;
 	render();
 	
 	version (Trace) trace("loop");
@@ -122,7 +139,7 @@ L_KEYDOWN:
 		refresh;
 		break;
 	case A:
-		settings.setWidth("a");
+		settingsWidth("a");
 		refresh;
 		break;
 	case Q: exit; break;
@@ -138,7 +155,7 @@ L_KEYDOWN:
 /// Returns: Error code.
 int startDump(long skip, long length) {
 	if (length < 0)
-		return error.print(1, "Length must be a positive value");
+		return errorWrite(1, "Length must be a positive value");
 	
 	terminalInit(TermFeat.minimum);
 	
@@ -154,17 +171,17 @@ int startDump(long skip, long length) {
 		if (length == 0)
 			length = io.size - skip;
 		else if (length < 0)
-			return error.print(1, "Length value must be positive");
+			return errorWrite(1, "Length value must be positive");
 		
 		// overflow check
 		//TODO: This shouldn't error and should take the size we get from file.
 		if (skip + length > io.size)
-			return error.print(1, "Specified length overflows file size");
+			return errorWrite(1, "Specified length overflows file size");
 		
 		break;
 	case stream: // Has no size
 		if (skip < 0)
-			return error.print(1, "Skip value must be positive with stream");
+			return errorWrite(1, "Skip value must be positive with stream");
 		if (length == 0)
 			length = long.max;
 		break;
@@ -179,7 +196,7 @@ int startDump(long skip, long length) {
 	screen.renderOffsetBar();
 	
 	// mitigate unaligned reads/renders
-	const uint a = settings.width * 16; 
+	const uint a = setting.width * 16; 
 	io.resizeBuffer(a);
 	
 	if (a > length) {
@@ -223,7 +240,7 @@ void menu(string cmdPrepend = null, string cmdAlias = null) {
 	screen.renderOffsetBar;
 	
 	if (command(line))
-		screen.message(error.message());
+		screenMessage(errorMessage());
 }
 
 private
@@ -244,34 +261,34 @@ int command(string[] argv) {
 	switch (command[0]) {
 	case '/': // Search
 		if (command.length <= 1)
-			return error.set(ErrorCode.missingArgumentType);
+			return errorSet(ErrorCode.missingArgumentType);
 		if (argc <= 1)
-			return error.set(ErrorCode.missingArgumentNeedle);
+			return errorSet(ErrorCode.missingArgumentNeedle);
 		
 		return ddhx.lookup(command[1..$], argv[1], true, true);
 	case '?': // Search backwards
 		if (command.length <= 1)
-			return error.set(ErrorCode.missingArgumentType);
+			return errorSet(ErrorCode.missingArgumentType);
 		if (argc <= 1)
-			return error.set(ErrorCode.missingArgumentNeedle);
+			return errorSet(ErrorCode.missingArgumentNeedle);
 		
 		return ddhx.lookup(command[1..$], argv[1], false, true);
 	default: // Regular
 		switch (argv[0]) {
 		case "g", "goto":
 			if (argc <= 1)
-				return error.set(ErrorCode.missingArgumentPosition);
+				return errorSet(ErrorCode.missingArgumentPosition);
 			
 			switch (argv[1])
 			{
 			case "e", "end":
-				ddhx.moveEnd;
+				moveEnd;
 				break;
 			case "h", "home":
-				ddhx.moveStart;
+				moveStart;
 				break;
 			default:
-				ddhx.seek(argv[1]);
+				seek(argv[1]);
 			}
 			return 0;
 		case "skip":
@@ -281,80 +298,80 @@ int command(string[] argv) {
 			} else {
 				if (argv[1] == "zero")
 					byte_ = 0;
-				else if (convert.toVal(byte_, argv[1]))
-					return error.lastError;
+				else if (convertToVal(byte_, argv[1]))
+					return error.ecode;
 			}
-			return ddhx.skip(byte_);
+			return skip(byte_);
 		case "i", "info":
-			ddhx.printFileInfo;
+			printFileInfo;
 			return 0;
 		case "refresh":
-			ddhx.refresh;
+			refresh;
 			return 0;
 		case "q", "quit":
-			ddhx.exit;
+			exit;
 			return 0;
 		case "about":
-			enum C = "Written by dd86k. " ~ ddhx.COPYRIGHT;
-			ddhx.screen.message(C);
+			enum C = "Written by dd86k. " ~ DDHX_COPYRIGHT;
+			screenMessage(C);
 			return 0;
 		case "version":
-			ddhx.screen.message(ddhx.ABOUT);
+			screenMessage(DDHX_ABOUT);
 			return 0;
 		//
 		// Settings
 		//
 		case "w", "width":
 			if (argc <= 1)
-				return error.set(ErrorCode.missingArgumentWidth);
+				return errorSet(ErrorCode.missingArgumentWidth);
 			
-			if (settings.setWidth(argv[1]))
-				return error.lastError;
+			if (settingsWidth(argv[1]))
+				return error.ecode;
 			
-			ddhx.refresh;
+			refresh;
 			return 0;
 		case "o", "offset":
 			if (argc <= 1)
-				return error.set(ErrorCode.missingArgumentType);
+				return errorSet(ErrorCode.missingArgumentType);
 			
-			if (settings.setOffset(argv[1]))
-				return error.lastError;
+			if (settingsOffset(argv[1]))
+				return error.ecode;
 			
-			ddhx.render;
+			render;
 			return 0;
 		case "d", "data":
 			if (argc <= 1)
-				return error.set(ErrorCode.missingArgumentType);
+				return errorSet(ErrorCode.missingArgumentType);
 			
-			if (settings.setData(argv[1]))
-				return error.lastError;
+			if (settingsData(argv[1]))
+				return error.ecode;
 			
-			ddhx.render;
+			render;
 			return 0;
 		case "C", "defaultchar":
 			if (argc <= 1)
-				return error.set(ErrorCode.missingArgumentCharacter);
+				return errorSet(ErrorCode.missingArgumentCharacter);
 			
-			if (settings.setDefaultChar(argv[1]))
-				return error.lastError;
+			if (settingsDefaultChar(argv[1]))
+				return error.ecode;
 			
-			ddhx.render;
+			render;
 			return 0;
 		case "cp", "charset":
 			if (argc <= 1)
-				return error.set(ErrorCode.missingArgumentCharset);
+				return errorSet(ErrorCode.missingArgumentCharset);
 			
-			if (settings.setCharset(argv[1]))
-				return error.lastError;
+			if (settingsCharset(argv[1]))
+				return error.ecode;
 			
-			ddhx.render;
+			render;
 			return 0;
 		case "reset":
-			settings.reset();
-			ddhx.render;
+			resetSettings();
+			render;
 			return 0;
 		default:
-			return error.set(ErrorCode.invalidCommand);
+			return errorSet(ErrorCode.invalidCommand);
 		}
 	}
 }
@@ -378,13 +395,15 @@ void moveEnd() {
 	seek(io.size - io.readSize);
 }
 /// Align view to start of row
+deprecated
 void moveAlignStart() {
-	seek(io.position - (io.position % settings.width));
+	seek(io.position - (io.position % setting.width));
 }
 /// Align view to end of row (start of row + row size)
+deprecated
 void moveAlignEnd() {
 	const long n = io.position +
-		(settings.width - io.position % settings.width);
+		(setting.width - io.position % setting.width);
 	seek(n + io.readSize <= io.size ? n : io.size - io.readSize);
 }
 /// Move view to one data group to the left (backwards)
@@ -401,15 +420,15 @@ void moveRight() {
 }
 /// Move view to one row size up (backwards)
 void moveRowUp() {
-	if (io.position - settings.width >= 0)
-		seek(io.position - settings.width);
+	if (io.position - setting.width >= 0)
+		seek(io.position - setting.width);
 	else
 		seek(0);
 }
 /// Move view to one row size down (forwards)
 void moveRowDown() {
-	if (io.position + io.readSize + settings.width <= io.size)
-		seek(io.position + settings.width);
+	if (io.position + io.readSize + setting.width <= io.size)
+		seek(io.position + setting.width);
 	else
 		seek(io.size - io.readSize);
 }
@@ -428,24 +447,39 @@ void movePageDown() {
 		seek(io.size - io.readSize);
 }
 
-/// Automatically determine new buffer size for display engine from
-/// console/terminal window size.
-/// Params: skipTerm = Skip terminal size detection and use stored value.
-//TODO: should adjustBuffer be in screen module?
-//      add int termHeight long fileSize parameters
-void adjustBuffer(bool skipTerm = false) {
-	//TODO: Avoid crash when on end of file + resize goes further than file
-	version (Trace) trace("skip=%s", skipTerm);
+void cursorStart() {
 	
-	TerminalSize termsize = terminalSize;
+}
+void cursorEnd() {
 	
-	// Effective height
-	const int h = (skipTerm ? termsize.height : termsize.height) - 2;
+}
+void cursorRowStart() {
 	
-	int newSize = h * settings.width; // Proposed buffer size
-	if (newSize >= io.size)
-		newSize = cast(uint)(io.size - io.position);
-	io.resizeBuffer(newSize);
+}
+void cursorRowEnd() {
+	
+}
+void cursorLeft() {
+	
+}
+void cursorRight() {
+	
+}
+void cursorUp() {
+	
+}
+void cursorDown() {
+	
+}
+
+/// Adjust view read size depending on available screen size for data.
+void adjustViewBuffer(TerminalSize termsize = terminalSize) {
+	long fsize = io.size; /// data size
+	int ssize = (termsize.height - 2) * setting.width; /// screen size
+	
+	version (Trace) trace("fsz=%u ssz=%u", fsize, ssize);
+	
+	io.resizeBuffer(ssize >= fsize ? cast(uint)fsize : ssize);
 }
 
 /// Refresh the entire screen by:
@@ -455,10 +489,10 @@ void adjustBuffer(bool skipTerm = false) {
 /// 4. Clear the terminal
 /// 5. Render
 void refresh() {
-	adjustBuffer();
+	adjustViewBuffer();
 	io.seek(Seek.start, io.position);
 	io.read();
-	terminalClear();
+	screenClear();
 	render();
 }
 
@@ -477,7 +511,7 @@ void seek(long pos) {
 	version (Trace) trace("pos=%d", pos);
 	
 	if (io.readSize >= io.size) {
-		screen.message("Navigation disabled, buffer too small");
+		screenMessage("Navigation disabled, buffer too small");
 		return;
 	}
 
@@ -497,22 +531,22 @@ void seek(string str) {
 		str = str[1..$];
 	}
 	long newPos = void;
-	if (convert.toVal(newPos, str)) {
-		screen.message("Could not parse number");
+	if (convertToVal(newPos, str)) {
+		screenMessage("Could not parse number");
 		return;
 	}
 	switch (seekmode) {
-	case '+':
+	case '+': // Relative, add
 		safeSeek(io.position + newPos);
 		break;
-	case '-':
+	case '-': // Relative, substract
 		safeSeek(io.position - newPos);
 		break;
-	default:
+	default: // Absolute
 		if (newPos < 0) {
-			screen.message("Range underflow: %d (0x%x)", newPos, newPos);
+			screenMessage("Range underflow: %d (0x%x)", newPos, newPos);
 		} else if (newPos >= io.size - io.readSize) {
-			screen.message("Range overflow: %d (0x%x)", newPos, newPos);
+			screenMessage("Range overflow: %d (0x%x)", newPos, newPos);
 		} else {
 			seek(newPos);
 		}
@@ -544,28 +578,29 @@ private __gshared bool lastAvailable;
 /// Returns: Error code if set.
 int next() {
 	if (lastAvailable == false) {
-		return error.set(ErrorCode.noLastItem);
+		return errorSet(ErrorCode.noLastItem);
 	}
 	
 	long pos = void;
-	int e = search.data(pos, lastItem.ptr, lastSize, lastForward);
+	int e = searchData(pos, lastItem.ptr, lastSize, lastForward);
 	
 	if (e) {
-		screen.message("Not found");
+		screenMessage("Not found");
 		return e;
 	}
 	
 	safeSeek(pos);
 	//TODO: Format position found with current offset type
-	screen.message("Found at 0x%x", pos);
+	screenMessage("Found at 0x%x", pos);
 	return 0;
 }
 
+// Search data
 int lookup(string type, string data, bool forward, bool save) {
 	void *p = void;
 	size_t len = void;
-	if (convert.toRaw(p, len, data, type))
-		return error.lastError;
+	if (convertToRaw(p, len, data, type))
+		return error.ecode;
 	
 	if (save) {
 		import core.stdc.string : memcpy;
@@ -577,42 +612,42 @@ int lookup(string type, string data, bool forward, bool save) {
 		lastAvailable = true;
 	}
 	
-	screen.message("Searching for %s...", type);
+	screenMessage("Searching for %s...", type);
 	
 	long pos = void;
-	int e = search.data(pos, p, len, forward);
+	int e = searchData(pos, p, len, forward);
 	
 	if (e) {
-		screen.message("Not found");
+		screenMessage("Not found");
 		return e;
 	}
 	
 	safeSeek(pos);
 	//TODO: Format position found with current offset type
-	screen.message("Found at 0x%x", pos);
+	screenMessage("Found at 0x%x", pos);
 	return 0;
 }
 
 int skip(ubyte data) {
-	screen.message("Skipping all 0x%x...", data);
+	screenMessage("Skipping all 0x%x...", data);
 	
 	long pos = void;
-	const int e = search.skip(data, pos);
+	const int e = searchSkip(data, pos);
 	
 	if (e) {
-		screen.message("End of file reached");
+		screenMessage("End of file reached");
 		return e;
 	}
 	
 	safeSeek(pos);
 	//TODO: Format position found with current offset type
-	screen.message("Found at 0x%x", pos);
+	screenMessage("Found at 0x%x", pos);
 	return 0;
 }
 
 /// Print file information
 void printFileInfo() {
-	screen.message("%11s  %s", io.sizeString, io.name);
+	screenMessage("%11s  %s", io.sizeString, io.name);
 }
 
 /// Exit ddhx.

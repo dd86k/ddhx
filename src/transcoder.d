@@ -7,9 +7,18 @@
 module transcoder;
 
 import std.encoding : codeUnits, CodeUnits;
-import types;
 
-//TODO: Other character sets
+/// Character set.
+enum CharacterSet : ubyte {
+	ascii,	/// 7-bit US-ASCII
+	cp437,	/// IBM PC CP-437
+	ebcdic,	/// IBM EBCDIC Code Page 37
+	mac,	/// Mac OS Roman (Windows 10000)
+//	t61,	/// ITU T.61
+//	gsm,	/// GSM 03.38
+}
+
+//TODO: Other single-byte character sets
 //      - ISO/IEC 8859-1 "iso8859-1"
 //        https://en.wikipedia.org/wiki/ISO/IEC_8859-1
 //      - Windows-1251 "win1251"
@@ -27,6 +36,7 @@ import types;
 //        https://www.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT
 
 private struct Transcoder {
+	alias transform this;
 	string name = "ascii";
 	immutable(char)[] function(ubyte) transform = &transcodeASCII;
 }
@@ -38,21 +48,20 @@ private immutable Transcoder[4] transcoders = [
 	{ "mac",	&transcodeMac },
 ];
 
-/// Select a new transcoder.
-/// Params: charSet = Character set.
-void select(CharacterSet charSet) {
-	if (charSet > CharacterSet.max) {
-		return;
-	}
-	immutable(Transcoder) *t = &transcoders[charSet];
-	name = t.name;
-	transform = t.transform;
-}
+/// 
+public __gshared Transcoder transcode;
 
 /// Current transcoder name
 __gshared string name = "ascii";
 /// Current transcoder transformation function
 __gshared immutable(char)[] function(ubyte) transform = &transcodeASCII;
+
+/// Select a new transcoder.
+/// Params: charSet = Character set.
+void transcoderSelect(CharacterSet charset) {
+	debug assert(charset <= CharacterSet.max);
+	transcode = transcoders[charset];
+}
 
 private alias U  = char[];
 private template C(dchar c) {

@@ -68,10 +68,11 @@ import std.string : toStringz;
 import std.utf : toUTF16z;
 import std.file : getSize;
 import std.path : baseName;
-import std.container.array : Array;
 import std.stdio : File;
 import core.stdc.stdio : FILE;
-import all;
+
+// temp
+import ddhx, editor, error, utils.format, settings;
 
 /// Default buffer size.
 private enum DEFAULT_BUFFER_SIZE = 4 * 1024;
@@ -86,6 +87,7 @@ enum Seek {
 /// Used in saving and restoring the Io state (position and read buffer).
 //TODO: Re-use in Io as-is?
 // NOTE: Used in searcher but not being really useful...
+deprecated
 struct IoState {
 	long position;	/// Position.
 	uint readSize;	/// Read size.
@@ -94,14 +96,10 @@ struct IoState {
 // Mostly-stateless, lazy implementation of a FILE using direct OS
 // functions, since File under x86-omf builds seem iffy, broken
 // (especially when attempting to get the size of a large file).
-//TODO: redo read functions with a simpler api
-//      e.g., ubyte[] read(ubyte[] buffer)
-//            on error, sets bool error = true;
-//                      or int error = OS errorcode
-//TODO: Move this to os.file
-private struct OSFile {
+deprecated
+struct OSFile {
 	private OSHANDLE handle;
-	private bool eof;
+	bool eof;
 	
 	//TODO: Share file.
 	//      By default, at least on Windows, files aren't shared. Enabling
@@ -123,12 +121,12 @@ private struct OSFile {
 				null,	// hTemplateFile
 			);
 			if (handle == INVALID_HANDLE_VALUE)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 		} else version (Posix) {
 			alias osopen = core.sys.posix.fcntl.open;
 			handle = osopen(path.toStringz, O_RDWR);
 			if (handle == -1)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 		}
 		return 0;
 	}
@@ -139,17 +137,17 @@ private struct OSFile {
 			LARGE_INTEGER liIn = void, liOut = void;
 			liIn.QuadPart = pos;
 			if (SetFilePointerEx(handle, liIn, &liOut, origin) == FALSE)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 			npos = liOut.QuadPart;
 		} else version (OSX) {
 			const long r = lseek(handle, pos, origin);
 			if (r == -1)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 			npos = r;
 		} else version (Posix) {
 			const long r = lseek64(handle, pos, origin);
 			if (r == -1)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 			npos = r;
 		}
 		return 0;
@@ -161,14 +159,14 @@ private struct OSFile {
 			const uint len = cast(uint)buffer.length;
 			uint r = void; /// size read
 			if (ReadFile(handle, buffer.ptr, len, &r, null) == FALSE)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 			eof = r < len;
 			result = buffer[0..r];
 		} else version (Posix) {
 			alias osread = core.sys.posix.unistd.read;
 			ssize_t r = osread(handle, buffer.ptr, buffer.length);
 			if (r < 0)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 			eof = r < buffer.length;
 			result = buffer[0..r];
 		}
@@ -179,13 +177,13 @@ private struct OSFile {
 		version (Windows) {
 			LARGE_INTEGER li = void;
 			if (GetFileSizeEx(handle, &li) == 0)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 			nsize = li.QuadPart;
 			return 0;
 		} else version (Posix) {
 			stat_t stats = void;
 			if (fstat(handle, &stats) == -1)
-				return error.set(ErrorCode.os);
+				return errorSet(ErrorCode.os);
 			// NOTE: fstat(2) sets st_size to 0 on block devices
 			switch (stats.st_mode & S_IFMT) {
 			case S_IFREG: // File
@@ -195,18 +193,148 @@ private struct OSFile {
 			case S_IFBLK: // Block device (like a disk)
 				//TODO: BSD variants
 				return ioctl(handle, BLOCKSIZE, &nsize) == -1 ?
-					error.set(ErrorCode.os) : 0;
-			default: return error.set(ErrorCode.invalidType);
+					errorSet(ErrorCode.os) : 0;
+			default:
+				return errorSet(ErrorCode.invalidType);
 			}
 		}
 	}
 }
+//TODO: Set file size (to extend or truncate file, allocate size)
+//	useful when writing all changes to file
+//	Win32: Seek + SetEndOfFile
+//	etc: ftruncate
+struct OSFile2 {
+	private OSHANDLE handle;
+	bool eof, err;
+	
+	void cleareof() {
+		eof = false;
+	}
+	void clearerr() {
+		err = false;
+	}
+	
+	//TODO: Share file.
+	//      By default, at least on Windows, files aren't shared. Enabling
+	//      sharing would allow refreshing view (manually) when a program
+	//      writes to file.
+	bool open(string path) {
+		version (Windows) {
+			// NOTE: toUTF16z/tempCStringW
+			//       Phobos internally uses tempCStringW from std.internal
+			//       but I doubt it's meant for us to use so...
+			//       Legacy baggage?
+			handle = CreateFileW(
+				path.toUTF16z,	// lpFileName
+				GENERIC_READ | GENERIC_WRITE,	// dwDesiredAccess
+				0,	// dwShareMode
+				null,	// lpSecurityAttributes
+				OPEN_EXISTING,	// dwCreationDisposition
+				0,	// dwFlagsAndAttributes
+				null,	// hTemplateFile
+			);
+			return err = handle == INVALID_HANDLE_VALUE;
+		} else version (Posix) {
+			handle = .open(path.toStringz, O_RDWR);
+			return err = handle == -1;
+		}
+	}
+	
+	long seek(Seek origin, long pos) {
+		version (Windows) {
+			LARGE_INTEGER i = void;
+			i.QuadPart = pos;
+			err = SetFilePointerEx(handle, i, &i, origin) == FALSE;
+			return i.QuadPart;
+		} else version (Posix) {
+			pos = lseek64(handle, pos, origin);
+			err = pos == -1;
+			return pos;
+		}
+	}
+	
+	long tell() {
+		version (Windows) {
+			LARGE_INTEGER i; // .init
+			SetFilePointerEx(handle, i, &i, FILE_CURRENT);
+			return i.QuadPart;
+		} else version (Posix) {
+			return lseek64(handle, 0, SEEK_CUR);
+		}
+	}
+	
+	long size() {
+		version (Windows) {
+			LARGE_INTEGER li = void;
+			err = GetFileSizeEx(handle, &li) == 0;
+			return err ? -1 : li.QuadPart;
+		} else version (Posix) {
+			stat_t stats = void;
+			if (fstat(handle, &stats) == -1)
+				return -1;
+			// NOTE: fstat(2) sets st_size to 0 on block devices
+			switch (stats.st_mode & S_IFMT) {
+			case S_IFREG: // File
+			case S_IFLNK: // Link
+				return stats.st_size;
+			case S_IFBLK: // Block devices (like a disk)
+				//TODO: BSD variants
+				long s = void;
+				return ioctl(handle, BLOCKSIZE, &s) == -1 ? -1 : s;
+			default:
+				return -1;
+			}
+		}
+	}
+	
+	ubyte[] read(ubyte[] buffer) {
+		version (Windows) {
+			uint len = cast(uint)buffer.length;
+			err = ReadFile(handle, buffer.ptr, len, &len, null) == FALSE;
+			if (err) return null;
+			eof = len < buffer.length;
+			return buffer[0..len];
+		} else version (Posix) {
+			ssize_t len = .read(handle, buffer.ptr, buffer.length);
+			if ((err = len < 0) == true) return null;
+			eof = len < buffer.length;
+			return buffer[0..len];
+		}
+	}
+	
+	size_t write(ubyte[] data) {
+		version (Windows) {
+			uint len = cast(uint)buffer.length;
+			err = WriteFile(handle, data.ptr, len, &len, null) == FALSE;
+			return len; // 0 on error anyway
+		} else version (Posix) {
+			ssize_t len = .write(handle, data.ptr, data.length);
+			err = len < 0;
+			return err ? 0 : len;
+		}
+	}
+	
+	void flush() {
+		version (Windows) {
+			FlushFileBuffers(handle);
+		} else version (Posix) {
+			.fsync(handle);
+		}
+	}
+	
+	void close() {
+		version (Windows) {
+			CloseHandle(handle);
+		} else version (Posix) {
+			.close(handle);
+		}
+	}
+}
+
 
 /// Improved file I/O.
-//TODO: [0.5] Virtual change system.
-//      For editing/rendering/saving.
-//      Array!(Edit) or sorted dictionary?
-//      Obviously CTRL+Z for undo, CTRL+Y for redo.
+deprecated("Use Editor instead")
 struct Io {
 	private union {
 		OSFile osfile;
@@ -244,11 +372,11 @@ struct Io {
 		mode = FileMode.file;
 		
 		if (osfile.open(path))
-			return error.lastError;
+			return error.ecode;
 		if (refreshSize())
-			return error.lastError;
+			return error.ecode;
 		if (size == 0)
-			return error.set(ErrorCode.fileEmpty);
+			return errorSet(ErrorCode.fileEmpty);
 		
 		sizeString = getSizeString;
 		setProperties(path, baseName(path));
@@ -263,13 +391,13 @@ struct Io {
 		try {
 			mmHandle = new MmFile(path, MmFile.Mode.read, 0, mmAddress);
 		} catch (Exception ex) {
-			return error.set(ex);
+			return errorSet(ex);
 		}
 		
 		if (refreshSize())
-			return error.lastError;
-		if (size == 0)
-			return error.set(ErrorCode.fileEmpty);
+			return error.ecode;
+		if (mmHandle.length == 0)
+			return errorSet(ErrorCode.fileEmpty);
 		
 		sizeString = getSizeString;
 		setProperties(path, baseName(path));
@@ -482,7 +610,7 @@ struct Io {
 	//TODO: This really shouldn't be here
 	const(char)[] getSizeString() {
 		__gshared char[32] b = void;
-		return formatSize(b, size, settings.si);
+		return formatSize(b, size, setting.si);
 	}
 	
 	void resizeBuffer(uint newSize = DEFAULT_BUFFER_SIZE) {
@@ -505,7 +633,7 @@ struct Io {
 		
 		ubyte *defbuf = cast(ubyte*)malloc(DEFAULT_BUFFER_SIZE);
 		if (defbuf == null)
-			return error.set(ErrorCode.os);
+			return errorSet(ErrorCode.os);
 		
 		if (skip)
 			seek(Seek.start, skip);

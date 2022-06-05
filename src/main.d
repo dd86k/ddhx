@@ -8,7 +8,11 @@ module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;
 import core.stdc.stdlib : exit;
-import all;
+import ddhx;
+
+//TODO: --only=n
+//             text: only display translated text
+//             data: only display hex data
 
 private:
 
@@ -16,7 +20,7 @@ immutable string SECRET = q"SECRET
         +---------------------------------+
   __    | Heard you need help editing     |
  /  \   | data, can I help you with that? |
- -  -   |  [ Yes ] [ No ] [ Go away ]     |
+ -  -   |   [ Yes ] [ No ] [ Go away ]    |
  O  O   +-. .-----------------------------+
  || |/    |/
  | V |
@@ -35,27 +39,23 @@ immutable string OPT_SECRET	= "assistant";
 void cliOption(string opt, string val) {
 	final switch (opt) {
 	case OPT_WIDTH:
-		if (settings.setWidth(val) == 0)
+		if (settingsWidth(val) == 0)
 			return;
-		opt = "width";
 		break;
 	case OPT_OFFSET:
-		if (settings.setOffset(val) == 0)
+		if (settingsOffset(val) == 0)
 			return;
-		opt = "offset";
 		break;
 	case OPT_DEFAULTCHAR:
-		if (settings.setDefaultChar(val) == 0)
+		if (settingsDefaultChar(val) == 0)
 			return;
-		opt = "default character";
 		break;
 	case OPT_CHARSET:
-		if (settings.setCharset(val) == 0)
+		if (settingsCharset(val) == 0)
 			return;
-		opt = "character set";
 		break;
 	}
-	error.print(1, "Invalid value for %s: %s", opt, val);
+	errorWrite(1, "Invalid value for %s: %s", opt, val);
 	exit(1);
 }
 
@@ -63,14 +63,14 @@ void page(string opt) {
 	import std.compiler : version_major, version_minor;
 	enum COMPILER_VERSION = format("%d.%03d", version_major, version_minor);
 	enum VERSTR = 
-		ddhx.ABOUT~"\n"~
-		ddhx.COPYRIGHT~"\n"~
+		DDHX_ABOUT~"\n"~
+		DDHX_COPYRIGHT~"\n"~
 		"License: MIT <https://mit-license.org/>\n"~
 		"Homepage: <https://git.dd86k.space/dd86k/ddhx>\n"~
 		"Compiler: "~__VENDOR__~" "~COMPILER_VERSION;
 	final switch (opt) {
 	case OPT_VERSION: opt = VERSTR; break;
-	case OPT_VER: opt = ddhx.VERSION; break;
+	case OPT_VER: opt = DDHX_VERSION; break;
 	case OPT_SECRET: opt = SECRET; break;
 	}
 	writeln(opt);
@@ -87,7 +87,7 @@ int main(string[] args) {
 		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
 		OPT_DEFAULTCHAR, "Set non-printable replacement character (default='.')", &cliOption,
 		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
-		OPT_SI,          "Use SI suffixes instead of IEC", &settings.si,
+		OPT_SI,          "Use SI suffixes instead of IEC", &setting.si,
 		"m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
 		"f|file",        "Force opening file as regular", &cliFile,
 		"stdin",         "Open stdin instead of file", &cliStdin,
@@ -99,7 +99,7 @@ int main(string[] args) {
 		OPT_SECRET,      "", &page
 		);
 	} catch (Exception ex) {
-		return error.print(1, ex.msg);
+		return errorWrite(1, ex.msg);
 	}
 	
 	if (res.helpWanted) {
@@ -129,26 +129,26 @@ int main(string[] args) {
 	long skip, length;
 	if (cliStdin) {
 		if (ddhx.io.openStream(stdin))
-			return error.print;
+			return errorWrite;
 	} else if (cliFile ? false : cliMmfile) {
 		if (ddhx.io.openMmfile(cliPath))
-			return error.print;
+			return errorWrite;
 	} else {
 		if (ddhx.io.openFile(cliPath))
-			return error.print;
+			return errorWrite;
 	}
 	
 	// Convert skip value
 	if (cliSeek) {
-		if (convert.toVal(skip, cliSeek))
-			return error.print;
+		if (convertToVal(skip, cliSeek))
+			return errorWrite;
 	}
 	
 	// App: dump
 	if (cliDump) {
 		if (cliLength) {
-			if (convert.toVal(length, cliLength))
-				return error.print;
+			if (convertToVal(length, cliLength))
+				return errorWrite;
 		}
 		return ddhx.startDump(skip, length);
 	}
