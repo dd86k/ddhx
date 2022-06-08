@@ -14,7 +14,12 @@ version (Windows) {
 		DWORD, HANDLE, LARGE_INTEGER, FALSE, TRUE,
 		GENERIC_ALL, GENERIC_READ, GENERIC_WRITE;
 	import core.sys.windows.winbase :
-		CreateFileA, CreateFileW, SetFilePointerEx, ReadFile, ReadFileEx, GetFileSizeEx,
+		CreateFileA, CreateFileW,
+		SetFilePointerEx, GetFileSizeEx,
+		ReadFile, ReadFileEx,
+		WriteFile,
+		FlushFileBuffers,
+		CloseHandle,
 		OPEN_ALWAYS, OPEN_EXISTING, INVALID_HANDLE_VALUE,
 		FILE_BEGIN, FILE_CURRENT, FILE_END;
 	
@@ -305,7 +310,7 @@ struct OSFile2 {
 	
 	size_t write(ubyte[] data) {
 		version (Windows) {
-			uint len = cast(uint)buffer.length;
+			uint len = cast(uint)data.length;
 			err = WriteFile(handle, data.ptr, len, &len, null) == FALSE;
 			return len; // 0 on error anyway
 		} else version (Posix) {
