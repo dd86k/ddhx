@@ -27,6 +27,7 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
+immutable string OPT_READONLY	= "R|readonly";
 immutable string OPT_SI	= "si";
 immutable string OPT_WIDTH	= "w|width";
 immutable string OPT_OFFSET	= "o|offset";
@@ -38,22 +39,25 @@ immutable string OPT_SECRET	= "assistant";
 
 void cliOption(string opt, string val) {
 	final switch (opt) {
+	case OPT_READONLY:
+		editor.edits.mode = EditMode.readOnly;
+		return;
 	case OPT_WIDTH:
-		if (settingsWidth(val) == 0)
-			return;
-		break;
+		if (settingsWidth(val))
+			break;
+		return;
 	case OPT_OFFSET:
-		if (settingsOffset(val) == 0)
-			return;
-		break;
+		if (settingsOffset(val))
+			break;
+		return;
 	case OPT_DEFAULTCHAR:
-		if (settingsDefaultChar(val) == 0)
-			return;
-		break;
+		if (settingsDefaultChar(val))
+			break;
+		return;
 	case OPT_CHARSET:
-		if (settingsCharset(val) == 0)
-			return;
-		break;
+		if (settingsCharset(val))
+			break;
+		return;
 	}
 	errorWrite(1, "Invalid value for %s: %s", opt, val);
 	exit(1);
@@ -87,6 +91,7 @@ int main(string[] args) {
 		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
 		OPT_DEFAULTCHAR, "Set non-printable replacement character (default='.')", &cliOption,
 		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
+		OPT_READONLY,    "Set file mode to read-only", &cliOption,
 		OPT_SI,          "Use SI suffixes instead of IEC", &setting.si,
 		"m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
 		"f|file",        "Force opening file as regular", &cliFile,

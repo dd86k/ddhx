@@ -75,7 +75,8 @@ int startInteractive(long skip = 0) {
 	adjustViewBuffer();
 	if (io.read())
 		return errorWrite;
-	render();
+	render;
+	screenUpdateCursor;
 	
 	version (Trace) trace("loop");
 	TerminalInput event;
@@ -84,17 +85,15 @@ L_INPUT:
 	terminalInput(event);
 	version (Trace) trace("type=%d", event.type);
 	
-	switch (event.type) with (InputType)
-	{
-	case keyDown: goto L_KEYDOWN;
-	default: goto L_INPUT;
+	switch (event.type) with (InputType) {
+	case keyDown:	goto L_KEYDOWN;
+	default:	goto L_INPUT;
 	}
 
 L_KEYDOWN:
 	version (Trace) trace("key=%d", event.key);
 	
-	switch (event.key) with (Key) with (Mod)
-	{
+	switch (event.key) with (Key) with (Mod) {
 	
 	//
 	// Navigation
@@ -157,7 +156,7 @@ int startDump(long skip, long length) {
 	if (length < 0)
 		return errorWrite(1, "Length must be a positive value");
 	
-	terminalInit(TermFeat.minimum);
+	terminalInit(TermFeat.none);
 	
 	version (Trace) trace("skip=%d length=%d", skip, length);
 	
@@ -193,7 +192,7 @@ int startDump(long skip, long length) {
 		io.seek(Seek.start, skip);
 	
 	// top bar to stdout
-	screen.renderOffsetBar();
+	screen.renderOffsetBar(false);
 	
 	// mitigate unaligned reads/renders
 	const uint a = setting.width * 16; 
@@ -395,81 +394,70 @@ void moveEnd() {
 	seek(io.size - io.readSize);
 }
 /// Align view to start of row
-deprecated
 void moveAlignStart() {
-	seek(io.position - (io.position % setting.width));
+	//seek(io.position - (io.position % setting.width));
+	editor.cursorHome;
+	screenUpdateCursor;
 }
 /// Align view to end of row (start of row + row size)
-deprecated
 void moveAlignEnd() {
-	const long n = io.position +
+	/*const long n = io.position +
 		(setting.width - io.position % setting.width);
-	seek(n + io.readSize <= io.size ? n : io.size - io.readSize);
+	seek(n + io.readSize <= io.size ? n : io.size - io.readSize);*/
+	editor.cursorEnd;
+	screenUpdateCursor;
 }
 /// Move view to one data group to the left (backwards)
 void moveLeft() {
-	if (io.position - 1 >= 0) // Else already at 0
-		seek(io.position - 1);
+	/*if (io.position - 1 >= 0) // Else already at 0
+		seek(io.position - 1);*/
+	editor.cursorLeft;
+	screenUpdateCursor;
 }
 /// Move view to one data group to the right (forwards)
 void moveRight() {
-	if (io.position + io.readSize + 1 <= io.size)
+	/*if (io.position + io.readSize + 1 <= io.size)
 		seek(io.position + 1);
 	else
-		seek(io.size - io.readSize);
+		seek(io.size - io.readSize);*/
+	editor.cursorRight;
+	screenUpdateCursor;
 }
 /// Move view to one row size up (backwards)
 void moveRowUp() {
-	if (io.position - setting.width >= 0)
+	/*if (io.position - setting.width >= 0)
 		seek(io.position - setting.width);
 	else
-		seek(0);
+		seek(0);*/
+	editor.cursorUp;
+	screenUpdateCursor;
 }
 /// Move view to one row size down (forwards)
 void moveRowDown() {
-	if (io.position + io.readSize + setting.width <= io.size)
+	/*if (io.position + io.readSize + setting.width <= io.size)
 		seek(io.position + setting.width);
 	else
-		seek(io.size - io.readSize);
+		seek(io.size - io.readSize);*/
+	editor.cursorDown;
+	screenUpdateCursor;
 }
 /// Move view to one page size up (backwards)
 void movePageUp() {
-	if (io.position - cast(long)io.readSize >= 0)
+	/*if (io.position - cast(long)io.readSize >= 0)
 		seek(io.position - io.readSize);
 	else
-		seek(0);
+		seek(0);*/
+	editor.cursorPageUp;
+	screenUpdateCursor;
 }
 /// Move view to one page size down (forwards)
 void movePageDown() {
-	if (io.position + (io.readSize << 1) <= io.size)
+	/*if (io.position + (io.readSize << 1) <= io.size)
 		seek(io.position + io.readSize);
 	else
-		seek(io.size - io.readSize);
-}
-
-void cursorStart() {
-	
-}
-void cursorEnd() {
-	
-}
-void cursorRowStart() {
-	
-}
-void cursorRowEnd() {
-	
-}
-void cursorLeft() {
-	
-}
-void cursorRight() {
-	
-}
-void cursorUp() {
-	
-}
-void cursorDown() {
-	
+		seek(io.size - io.readSize);*/
+	editor.cursorDown;
+	screenUpdateCursor;
 }
 
 /// Adjust view read size depending on available screen size for data.

@@ -86,7 +86,7 @@ version (Posix) {
 //TODO: captureCtrlC: Block CTRL+C
 enum TermFeat : ushort {
 	/// Initiate only the basic
-	minimum	= 0,
+	none	= 0,
 	/// Initiate the input system.
 	inputSys	= 1,
 	/// Initiate the alternative screen buffer.

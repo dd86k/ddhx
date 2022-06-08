@@ -30,6 +30,26 @@ import os.terminal, os.file;
 //      or be able to specify/toggle seperate regardless of column length.
 //      Probably useful for dump app.
 
+//string screenPrompt(string prompt)
+
+void screenUpdateCursor() {
+	if (editor.edits.mode == EditMode.readOnly)
+		return;
+	
+	terminalPos(
+		13 + (editor.cursor.x * 3) + editor.cursor.lownibble,
+		1 + editor.cursor.y
+	);
+}
+
+// Called after an editing action (undo/redo/insert/overwrite)
+void screenUpdateDirty() {
+	int x = 11 + (setting.width * 3) + 2;
+	terminalPos(x, 0);
+	cwrite(editor.dirty ? '*' : ' ');
+}
+
+/// Clear entire terminal screen
 void screenClear() {
 	terminalClear;
 }
@@ -345,6 +365,8 @@ void renderStatusBar(bool cursor = true) {
 //      renderContentByte(size_t bufpos, ubyte newData)
 
 uint renderContent(bool cursor = true) {
+	version (Trace) trace("cursor=%d", cursor);
+	
 	if (cursor)
 		terminalPos(0, 1);
 	
@@ -440,6 +462,10 @@ unittest {
 
 // SECTION Console Write functions
 
+size_t cwriteAt(int x, int y, char c) {
+	terminalPos(x, y);
+	return cwrite(c);
+}
 size_t cwriteAt(int x, int y, const(char)[] str) {
 	terminalPos(x, y);
 	return cwrite(str);
@@ -455,6 +481,12 @@ size_t cwritefAt(A...)(int x, int y, const(char)[] fmt, A args) {
 size_t cwriteflnAt(A...)(int x, int y, const(char)[] fmt, A args) {
 	terminalPos(x, y);
 	return cwritefln(fmt, args);
+}
+size_t cwrite(char c) {
+	import std.stdio : stdout;
+	import core.stdc.stdio : fwrite, FILE;
+	
+	return fwrite(&c, 1, 1, stdout.getFP);
 }
 size_t cwrite(const(char)[] _str) {
 	import std.stdio : stdout;

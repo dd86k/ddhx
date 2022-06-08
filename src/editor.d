@@ -9,6 +9,20 @@ import core.stdc.stdio : FILE;
 import os.file, os.mmfile;
 import os.terminal;
 
+// NOTE: Cursor management.
+//
+//       Viewport ("camera").
+//
+//       The file position controls the position of the start of the view
+//       port and the side of the read buffer determines the screen buffer
+//       size.
+//
+//       Cursor ("pointer").
+//
+//       The cursor is governed in a 2-dimensional zero-based position relative
+//       to the viewport in bytes and is nibble aware. The application calls
+//       the cursorX functions and updates the position on-screen manually.
+
 /// FileMode for Io.
 enum FileMode {
 	file,	/// Normal file.
@@ -24,9 +38,9 @@ enum SourceInput {
 
 /// Editor editing mode.
 enum EditMode : ushort {
-	readOnly,	/// Editing data will be disallowed.
 	insert,	/// Data will be inserted.
 	overwrite,	/// Data will be overwritten.
+	readOnly,	/// Editing data is disallowed by user or permission.
 }
 
 /// Represents a single edit
@@ -55,7 +69,8 @@ private union Source {
 	OSMmFile     mmfile;
 	File         stream;
 	MemoryStream memory;
-} private __gshared Source source;
+}
+private __gshared Source source;
 
 // File properties
 
@@ -70,12 +85,19 @@ private struct Editing {
 	SList!Edit history;	/// Temporary file edits
 	size_t count;	/// Amount of edits in history
 	size_t index;	/// Current edit position
-} private Editing edits;
+}
+__gshared Editing edits;
+
+struct cursor_t {
+	int x, y;
+	bool lownibble;
+}
+__gshared cursor_t cursor;
 
 // View properties
 
-size_t viewSize;	/// ?
-ubyte[] viewBuffer;	/// ?
+__gshared size_t viewSize;	/// ?
+__gshared ubyte[] viewBuffer;	/// ?
 
 bool eof() {
 	final switch (fileMode) {
@@ -173,11 +195,11 @@ void seek(long pos) {
 }
 
 long tell() {
-	final switch (fileMode) {
-	case FileMode.file:	return source.osfile.tell;
-	case FileMode.mmfile:	return source.mmfile.tell;
-	case FileMode.stream:	return source.stream.tell;
-	case fileMode.memory:	return source.memory.tell;
+	final switch (fileMode) with (FileMode) {
+	case file:	return source.osfile.tell;
+	case mmfile:	return source.mmfile.tell;
+	case stream:	return source.stream.tell;
+	case memory:	return source.memory.tell;
 	}
 }
 
@@ -207,16 +229,18 @@ ubyte[] view() {
 	return null;
 }
 
-/// Append change
-void change(ubyte data, long pos, EditMode mode) {
-	debug assert(mode != EditMode.readOnly,
+/// Append change at current position
+void appendEdit(ubyte data) {
+	debug assert(edits.mode != EditMode.readOnly,
 		"Editor should not be getting edits in read-only mode");
 	
 	
 }
 
-/// Write all changes to file
-void writeChanges() {
+/// Write all changes to file.
+/// Only edits [0..index] will be carried over.
+/// When done, [0..index] edits will be cleared.
+void writeEdits() {
 	
 }
 
@@ -224,20 +248,62 @@ void writeChanges() {
 // !SECTION
 
 long size() {
-	version (Trace) trace("");
+	long sz = void;
 	
 	final switch (fileMode) with (FileMode) {
-	case file:   return source.osfile.size;
-	case mmfile: return source.mmfile.length;
-	case memory: return source.memory.size;
-	case stream: return source.stream.size;
+	case file:	sz = source.osfile.size;	break;
+	case mmfile:	sz = source.mmfile.length;	break;
+	case memory:	sz = source.memory.size;	break;
+	case stream:	sz = source.stream.size;	break;
 	}
+	
+	version (Trace) trace("sz=%u", sz);
+	
+	return sz;
 }
 
-// long newSize() ?
+// long allocsize() ?
 
 
+//TODO: return int by # of bytes displaced when out of bounds??
+void cursorHome() {
+	cursor.x = 0;
+	cursor.lownibble = false;
+}
+void cursorEnd() {
+	cursor.x = setting.width - 1;
+	cursor.lownibble = false;
+}
+void cursorLeft() {
+	if (cursor.x == 0)
+		return;
+	
+	--cursor.x;
+}
+void cursorRight() {
+	if (cursor.x == setting.width - 1)
+		return;
+	
+	++cursor.x;
+}
+void cursorUp() {
+	--cursor.y;
+}
+void cursorDown() {
+	++cursor.y;
+}
+void cursorPageUp() {
+	
+}
+void cursorPageDown() {
+	
+}
 
+void insertKey(Key key) {
+	
+	//TODO: Check by panel
+	
+}
 
 //TODO: from other types
 /+int toMemory(long skip = 0, long length = 0) {
