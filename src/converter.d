@@ -150,20 +150,20 @@ int convertToVal(T)(ref T v, string val) {
 /// 
 @system unittest {
 	int i;
-	assert(toVal(i, "256") == ErrorCode.success);
+	assert(convertToVal(i, "256") == ErrorCode.success);
 	assert(i == 256);
-	assert(toVal(i, "0100") == ErrorCode.success);
+	assert(convertToVal(i, "0100") == ErrorCode.success);
 	assert(i == 64);
-	assert(toVal(i, "0x100") == ErrorCode.success);
+	assert(convertToVal(i, "0x100") == ErrorCode.success);
 	assert(i == 0x100);
 	ulong l;
-	assert(toVal(l, "1000000000000000") == ErrorCode.success);
+	assert(convertToVal(l, "1000000000000000") == ErrorCode.success);
 	assert(l == 1000000000000000);
-	assert(toVal(l, "01000000000000000") == ErrorCode.success);
+	assert(convertToVal(l, "01000000000000000") == ErrorCode.success);
 	assert(l == 35184372088832);
-	assert(toVal(l, "0x1000000000000000") == ErrorCode.success);
+	assert(convertToVal(l, "0x1000000000000000") == ErrorCode.success);
 	assert(l == 0x1000000000000000);
 	wstring w;
-	assert(toVal(w, "hello") == ErrorCode.success);
+	assert(convertToVal(w, "hello") == ErrorCode.success);
 	assert(w == "hello"w);
 }
