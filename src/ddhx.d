@@ -9,7 +9,7 @@ import os.terminal;
 public import
 	editor,
 	searcher,
-	transcoder,
+	encoding,
 	error,
 	converter,
 	settings,

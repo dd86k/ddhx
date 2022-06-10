@@ -31,11 +31,35 @@ immutable string OPT_READONLY	= "R|readonly";
 immutable string OPT_SI	= "si";
 immutable string OPT_WIDTH	= "w|width";
 immutable string OPT_OFFSET	= "o|offset";
+immutable string OPT_DATA	= "d|data";
 immutable string OPT_DEFAULTCHAR	= "C|char";
 immutable string OPT_CHARSET	= "c|charset";
 immutable string OPT_VERSION	= "version";
 immutable string OPT_VER	= "ver";
 immutable string OPT_SECRET	= "assistant";
+
+bool askingHelp(string v) {
+	return v == "help" || v == "list";
+}
+
+void cliList(string opt) {
+	writeln("Values available for option ",opt,":");
+	import std.traits : EnumMembers;
+	switch (opt) {
+	case OPT_OFFSET, OPT_DATA:
+		foreach (m; EnumMembers!NumberType) {
+			writeln(m);
+		}
+		break;
+	case OPT_CHARSET:
+		foreach (m; EnumMembers!CharacterSet) {
+			writeln(m);
+		}
+		break;
+	default:
+	}
+	exit(0);
+}
 
 void cliOption(string opt, string val) {
 	final switch (opt) {
@@ -47,7 +71,15 @@ void cliOption(string opt, string val) {
 			break;
 		return;
 	case OPT_OFFSET:
+		if (askingHelp(val))
+			cliList(opt);
 		if (settingsOffset(val))
+			break;
+		return;
+	case OPT_DATA:
+		if (askingHelp(val))
+			cliList(opt);
+		if (settingsData(val))
 			break;
 		return;
 	case OPT_DEFAULTCHAR:
@@ -55,6 +87,8 @@ void cliOption(string opt, string val) {
 			break;
 		return;
 	case OPT_CHARSET:
+		if (askingHelp(val))
+			cliList(opt);
 		if (settingsCharset(val))
 			break;
 		return;
@@ -89,6 +123,7 @@ int main(string[] args) {
 		res = args.getopt(config.caseSensitive,
 		OPT_WIDTH,       "Set column width in bytes ('a'=automatic, default=16)", &cliOption,
 		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
+		OPT_DATA,        "Set data mode (decimal, hex, or octal)", &cliOption,
 		OPT_DEFAULTCHAR, "Set non-printable replacement character (default='.')", &cliOption,
 		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
 		OPT_READONLY,    "Set file mode to read-only", &cliOption,

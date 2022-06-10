@@ -4,7 +4,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
-module transcoder;
+module encoding;
 
 import std.encoding : codeUnits, CodeUnits;
 
@@ -48,19 +48,14 @@ private immutable Transcoder[4] transcoders = [
 	{ "mac",	&transcodeMac },
 ];
 
-/// 
-public __gshared Transcoder transcode;
-
-/// Current transcoder name
-__gshared string name = "ascii";
-/// Current transcoder transformation function
-__gshared immutable(char)[] function(ubyte) transform = &transcodeASCII;
+/// Current transcoder
+public __gshared Transcoder transcoder;
 
 /// Select a new transcoder.
 /// Params: charSet = Character set.
 void transcoderSelect(CharacterSet charset) {
 	debug assert(charset <= CharacterSet.max);
-	transcode = transcoders[charset];
+	transcoder = transcoders[charset];
 }
 
 private alias U  = char[];
