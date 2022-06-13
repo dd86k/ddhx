@@ -68,6 +68,9 @@ version (Windows) {
 	static assert(0, "Implement file I/O");
 }
 
+//TODO: FileType GetType(string)
+//      Pipe, device, etc.
+
 import std.mmfile;
 import std.string : toStringz;
 import std.utf : toUTF16z;
@@ -252,6 +255,12 @@ struct OSFile2 {
 			i.QuadPart = pos;
 			err = SetFilePointerEx(handle, i, &i, origin) == FALSE;
 			return i.QuadPart;
+		} else version (OSX) {
+			// NOTE: Darwin has set off_t as long
+			//       and doesn't have lseek64
+			pos = lseek(handle, pos, origin);
+			err = pos == -1;
+			return pos;
 		} else version (Posix) {
 			pos = lseek64(handle, pos, origin);
 			err = pos == -1;
