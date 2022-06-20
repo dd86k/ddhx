@@ -103,7 +103,6 @@ struct cursor_t {
 	int x;	/// Data group column position
 	int y;	/// Data group row position
 	int nibble;	/// Data group nibble position
-	deprecated bool lownibble;
 }
 __gshared cursor_t cursor;
 

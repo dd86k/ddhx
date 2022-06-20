@@ -25,39 +25,6 @@ private enum : float {
 
 /// Format byte size.
 /// Params:
-///   buf = Character buffer.
-///   size = Binary number.
-///   b10  = Use SI suffixes instead of IEC suffixes.
-/// Returns: Character slice using sformat
-deprecated("use formatBin instead")
-char[] formatSize(ref char[32] buf, long size, bool b10 = false) {
-	import std.format : sformat;
-	
-	if (b10) {
-		if (size >= TB)
-			return buf.sformat!"%0.2f TB"(size / TB);
-		if (size >= GB)
-			return buf.sformat!"%0.2f GB"(size / GB);
-		if (size >= MB)
-			return buf.sformat!"%0.1f MB"(size / MB);
-		if (size >= kB)
-			return buf.sformat!"%0.1f kB"(size / kB);
-	} else {
-		if (size >= TiB)
-			return buf.sformat!"%0.2f TiB"(size / TiB);
-		if (size >= GiB)
-			return buf.sformat!"%0.2f GiB"(size / GiB);
-		if (size >= MiB)
-			return buf.sformat!"%0.1f MiB"(size / MiB);
-		if (size >= KiB)
-			return buf.sformat!"%0.1f KiB"(size / KiB);
-	}
-	
-	return buf.sformat!"%u B"(size);
-}
-
-/// Format byte size.
-/// Params:
 ///   size = Binary number.
 ///   b10  = Use SI suffixes instead of IEC suffixes.
 /// Returns: Character slice using sformat

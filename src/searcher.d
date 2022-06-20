@@ -4,11 +4,9 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module searcher;
 
-deprecated import ddhx;
-deprecated import os.file;
 import std.array : uninitializedArray;
 import core.stdc.string : memcmp;
-import editor;
+import editor, error;
 
 alias compare = memcmp; // avoids confusion with memcpy/memcmp
 
