@@ -4,12 +4,13 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module os.terminal;
 
-//TODO: Move this to os.terminal
 //TODO: Register function for terminal size change
 //      Under Windows, that's under a regular input event
 //      Under Linux, that's under a signal (and function pointer)
 //TODO: readline
 //      automatically pause input, stdio.readln, resume input
+//TODO: Check for TERM
+//      xterm, xterm-color, xterm-256color, linux, vt100
 
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
@@ -275,6 +276,8 @@ TerminalSize terminalSize() {
 		size.height = c.srWindow.Bottom - c.srWindow.Top + 1;
 		size.width  = c.srWindow.Right - c.srWindow.Left + 1;
 	} else version (Posix) {
+		//TODO: Consider using LINES and COLUMNS environment variables
+		//      as fallback if ioctl returns -1.
 		winsize ws = void;
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
 		size.height = ws.ws_row;
@@ -291,12 +294,12 @@ TerminalSize terminalSize() {
 ///   x = X position (horizontal)
 ///   y = Y position (vertical)
 void terminalPos(int x, int y) {
-	version (Windows) { // 0-based, like us
+	version (Windows) { // 0-based
 		COORD c = void;
 		c.X = cast(short)x;
 		c.Y = cast(short)y;
 		SetConsoleCursorPosition(hOut, c);
-	} else version (Posix) { // we're 0-based but posix is 1-based
+	} else version (Posix) { // 1-based, so 0,0 needs to be output as 1,1
 		printf("\033[%d;%dH", ++y, ++x);
 	}
 }
@@ -519,7 +522,7 @@ L_READ:
 		//TODO: Checking for mouse inputs
 		//      Starts with \033[M
 		
-		// Checking for key inputs
+		// Checking for other key inputs
 		for (size_t i; i < keyInputs.length; ++i) {
 			immutable(KeyInfo) *ki = &keyInputs[i];
 			if (r != ki.text.length) continue;

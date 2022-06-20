@@ -131,8 +131,7 @@ struct OSFile {
 			if (handle == INVALID_HANDLE_VALUE)
 				return errorSet(ErrorCode.os);
 		} else version (Posix) {
-			alias osopen = core.sys.posix.fcntl.open;
-			handle = osopen(path.toStringz, O_RDWR);
+			handle = .open(path.toStringz, O_RDWR);
 			if (handle == -1)
 				return errorSet(ErrorCode.os);
 		}
@@ -171,8 +170,7 @@ struct OSFile {
 			eof = r < len;
 			result = buffer[0..r];
 		} else version (Posix) {
-			alias osread = core.sys.posix.unistd.read;
-			ssize_t r = osread(handle, buffer.ptr, buffer.length);
+			ssize_t r = .read(handle, buffer.ptr, buffer.length);
 			if (r < 0)
 				return errorSet(ErrorCode.os);
 			eof = r < buffer.length;

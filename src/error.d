@@ -155,10 +155,10 @@ const(char)[] errorMessage() {
 	}
 }
 
-int errorWrite() {
-	return errorWrite(ecode, last.message);
+int errorPrint() {
+	return errorPrint(ecode, last.message);
 }
-int errorWrite(A...)(int code, const(char)[] fmt, A args) {
+int errorPrint(A...)(int code, const(char)[] fmt, A args) {
 	stderr.write("error: ");
 	stderr.writefln(fmt, args);
 	return code;

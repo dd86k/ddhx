@@ -32,18 +32,15 @@ import os.terminal, os.file;
 
 //string screenPrompt(string prompt)
 
-void screenUpdateCursor() {
-	if (editor.edits.mode == EditMode.readOnly)
-		return;
-	
-	terminalPos(
-		13 + (editor.cursor.x * 3) + editor.cursor.lownibble,
-		1 + editor.cursor.y
-	);
+/// Update cursor position on the terminal screen
+void cursor(int x, int y, int nibble) {
+	//TODO: (x * 3) -> x * datawidth
+	terminalPos(13 + (x * 3) + nibble, 1 + y);
 }
 
 // Called after an editing action (undo/redo/insert/overwrite)
 void screenUpdateDirty() {
+	//TODO: (w * 3) -> w * datawidth
 	int x = 11 + (setting.width * 3) + 2;
 	terminalPos(x, 0);
 	cwrite(editor.dirty ? '*' : ' ');
@@ -329,26 +326,33 @@ void renderOffsetBar(bool cursor = true) {
 }
 
 /// 
-void renderStatusBar(bool cursor = true) {
+void renderStatusBar(const(char)[] dataTypeName,
+	const(char)[] transcoderName,
+	const(char)[] bufferSize,
+	const(char)[] filePosition,
+	const(char)[] percent,
+	bool cursor = true) {
 	import std.format : sformat;
+	
+	TerminalSize tsize = terminalSize;
+	
+	if (cursor)
+		terminalPos(0, tsize.height - 1);
 	
 	//TODO: [0.5] Include editing mode (insert/overwrite)
 	//            INS/OVR
 	__gshared size_t last;
-	char[32] c1 = void, c3 = void;
 	char[128] buf = void;
 	
-	if (cursor)
-		terminalPos(0, terminalSize.height - 1);
-	
-	const double fpos = ddhx.io.position;
-	char[] f = sformat!" %s | %s | %s | %s (%f%%)"(buf,
-		numbers[setting.dataType].name,
-		transcoder.name,
-		formatBin(ddhx.io.readSize, setting.si), // Buffer size
-		formatBin(ddhx.io.position + ddhx.io.readSize, setting.si), // Formatted position
-		((fpos + ddhx.io.readSize) / ddhx.io.size) * 100, // Pos/input.size%
+	char[] f = sformat!" %s | %s | %s | %s (%s%%)"(buf,
+		dataTypeName,
+		transcoderName,
+		bufferSize, // Buffer size
+		filePosition, // Formatted position
+		percent,
 	);
+	
+	//TODO: Fill rest of terminal width unconditionally
 	
 	const size_t flen = f.length;
 	
@@ -364,18 +368,16 @@ void renderStatusBar(bool cursor = true) {
 //TODO: [0.5] Possibility to only redraw a specific byte.
 //      renderContentByte(size_t bufpos, ubyte newData)
 
-uint renderContent(bool cursor = true) {
-	version (Trace) trace("cursor=%d", cursor);
+/// Update display from buffer.
+/// Returns: Numbers of row written.
+uint renderContent(long position, ubyte[] data, bool cursor = true) {
+	version (Trace)
+		trace("position=%u data.len=%u cursor=%s",
+			position, data.length, cursor);
 	
 	if (cursor)
 		terminalPos(0, 1);
 	
-	return renderContent(ddhx.io.position, ddhx.io.buffer);
-}
-
-/// Update display from buffer.
-/// Returns: Numbers of row written.
-uint renderContent(long position, ubyte[] data) {
 	// Setup formatting related stuff
 	prepareView;
 	
@@ -447,6 +449,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 }
 
 //TODO: More renderRow unittests
+//TODO: Maybe split rendering components?
 unittest {
 	// With defaults
 	prepareView;
@@ -455,7 +458,6 @@ unittest {
 		"          0  00                                               .");
 	assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0x10) ==
 		"         10  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
-	
 }
 
 // !SECTION

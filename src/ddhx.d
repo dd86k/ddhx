@@ -36,30 +36,14 @@ enum NumberType : ubyte {
 /// Default buffer size if none was given.
 private enum DEFAULT_BUFFER_SIZE = 4096;
 
-import os.file;
-deprecated __gshared Io io;
+private __gshared ubyte[] data;
+
+//TODO: Seprate start functions into their own modules
 
 /// Interactive application.
 /// Params: skip = Seek to file/data position.
 /// Returns: Error code.
 int startInteractive(long skip = 0) {
-	// NOTE: File I/O handled before due to stdin
-	//TODO: negative should be starting from end of file (if not stdin)
-	//      stdin: use seek
-	if (skip < 0)
-		// skip = +skip;
-		return errorWrite(1, "Skip value must be positive");
-	
-	if (io.mode == FileMode.stream) {
-		version (Trace) trace("slurp skip=%u", skip);
-		if (io.toMemory(skip, 0))
-			return errorWrite;
-	} else {
-		version (Trace) trace("seek skip=%u", skip);
-		if (io.seek(Seek.start, skip))
-			return errorWrite;
-	}
-	
 	// Terminal setup (resets stdin if PIPE/FIFO is detected)
 	version (Trace) trace("terminalInit");
 	terminalInit(TermFeat.all);
@@ -68,36 +52,59 @@ int startInteractive(long skip = 0) {
 	TerminalSize termsize = terminalSize;
 	
 	if (termsize.height < 3)
-		return errorWrite(1, "Need at least 3 lines to display properly");
+		return errorPrint(1, "Need at least 3 lines to display properly");
 	if (termsize.width < 20)
-		return errorWrite(1, "Need at least 20 columns to display properly");
+		return errorPrint(1, "Need at least 20 columns to display properly");
 	
-	adjustViewBuffer();
-	if (io.read())
-		return errorWrite;
-	render;
-	screenUpdateCursor;
+	//TODO: negative should be starting from end of file (if not stdin)
+	//      stdin: use seek
+	if (skip < 0)
+		return errorPrint(1, "Skip value must be positive");
+	
+	if (editor.fileMode == FileMode.stream) {
+		version (Trace) trace("slurp skip=%u", skip);
+		if (editor.slurp(skip, 0))
+			return errorPrint;
+	} else if (skip) {
+		version (Trace) trace("seek skip=%u", skip);
+		editor.seek(skip);
+		if (editor.err)
+			return errorPrint;
+	}
+	
+	adjustViewBuffer;
+	screen.renderOffsetBar;
+	readRender;
 	
 	version (Trace) trace("loop");
 	TerminalInput event;
-
+	
+	//
+	// Input
+	//
+	
 L_INPUT:
 	terminalInput(event);
 	version (Trace) trace("type=%d", event.type);
 	
 	switch (event.type) with (InputType) {
 	case keyDown:	goto L_KEYDOWN;
-	default:	goto L_INPUT;
+	default:	goto L_INPUT; // unknown
 	}
-
+	
+	//
+	// Keyboard
+	//
+	
 L_KEYDOWN:
 	version (Trace) trace("key=%d", event.key);
 	
 	switch (event.key) with (Key) with (Mod) {
 	
-	//
 	// Navigation
-	//
+	
+	//TODO: ctrl+(up|down) = move view only
+	//TODO: ctrl+(left|right) = move to next word
 	
 	case UpArrow, K:    moveRowUp; break;
 	case DownArrow, J:  moveRowDown; break;
@@ -110,9 +117,7 @@ L_KEYDOWN:
 	case End:           moveAlignEnd; break;
 	case End | ctrl:    moveEnd; break;
 	
-	//
 	// Actions/Shortcuts
-	//
 	
 	case '/':
 		menu(null, "/");
@@ -154,33 +159,35 @@ L_KEYDOWN:
 /// Returns: Error code.
 int startDump(long skip, long length) {
 	if (length < 0)
-		return errorWrite(1, "Length must be a positive value");
+		return errorPrint(1, "Length must be a positive value");
 	
 	terminalInit(TermFeat.none);
 	
 	version (Trace) trace("skip=%d length=%d", skip, length);
 	
-	switch (io.mode) with (FileMode) {
-	case file, mmfile: // Has size
+	switch (editor.fileMode) with (FileMode) {
+	case file, mmfile: // Seekable
+		long fsize = editor.fileSize;
+		
 		// negative skip value: from end of file
 		if (skip < 0)
-			skip = io.size + skip;
+			skip = fsize + skip;
 		
 		// adjust length if unset
 		if (length == 0)
-			length = io.size - skip;
+			length = fsize - skip;
 		else if (length < 0)
-			return errorWrite(1, "Length value must be positive");
+			return errorPrint(1, "Length value must be positive");
 		
 		// overflow check
 		//TODO: This shouldn't error and should take the size we get from file.
-		if (skip + length > io.size)
-			return errorWrite(1, "Specified length overflows file size");
+		if (skip + length > fsize)
+			return errorPrint(1, "Specified length overflows file size");
 		
 		break;
-	case stream: // Has no size
+	case stream: // Unseekable
 		if (skip < 0)
-			return errorWrite(1, "Skip value must be positive with stream");
+			return errorPrint(1, "Skip value must be positive with stream");
 		if (length == 0)
 			length = long.max;
 		break;
@@ -189,27 +196,25 @@ int startDump(long skip, long length) {
 	
 	// start skipping
 	if (skip)
-		io.seek(Seek.start, skip);
+		editor.seek(skip);
 	
 	// top bar to stdout
 	screen.renderOffsetBar(false);
 	
 	// mitigate unaligned reads/renders
-	const uint a = setting.width * 16; 
-	io.resizeBuffer(a);
-	
-	if (a > length) {
-		io.resizeBuffer(cast(uint)length);
-	}
+	size_t a = setting.width * 16;
+	if (a > length)
+		a = cast(size_t)length;
+	editor.setBuffer(a);
 	
 	// read until EOF or length spec
 	long r;
 	do {
-		io.read();
-		screen.renderContent(false);
-		r += io.buffer.length;
-		io.position = r;
-	} while (io.eof == false && r < length);
+		data = editor.read;
+		screen.renderContent(editor.position, data);
+		r += data.length;
+		//io.position = r;
+	} while (editor.eof == false && r < length);
 	
 	return 0;
 }
@@ -293,7 +298,10 @@ int command(string[] argv) {
 		case "skip":
 			ubyte byte_ = void;
 			if (argc <= 1) {
-				byte_ = ddhx.io.buffer[0];
+				size_t p =
+					(editor.cursor.y * setting.width) +
+					editor.cursor.x;
+				byte_ = data[p];
 			} else {
 				if (argv[1] == "zero")
 					byte_ = 0;
@@ -385,70 +393,72 @@ string input(string prompt) {
 	return readln;
 }*/
 
-/// Move the view to the start of the data
+/// Move the cursor to the start of the data
 void moveStart() {
-	seek(0);
+	editor.cursorFileStart;
+	readRender;
 }
-/// Move the view to the end of the data
+/// Move the cursor to the end of the data
 void moveEnd() {
-	seek(io.size - io.readSize);
+	editor.cursorFileEnd;
+	readRender;
 }
-/// Align view to start of row
+/// Align cursor to start of row
 void moveAlignStart() {
 	//seek(io.position - (io.position % setting.width));
 	editor.cursorHome;
-	screenUpdateCursor;
+	readRender;
 }
-/// Align view to end of row (start of row + row size)
+/// Align cursor to end of row
 void moveAlignEnd() {
 	/*const long n = io.position +
 		(setting.width - io.position % setting.width);
 	seek(n + io.readSize <= io.size ? n : io.size - io.readSize);*/
 	editor.cursorEnd;
-	screenUpdateCursor;
+	readRender;
 }
-/// Move view to one data group to the left (backwards)
+/// Move cursor to one data group to the left (backwards)
 void moveLeft() {
 	/*if (io.position - 1 >= 0) // Else already at 0
 		seek(io.position - 1);*/
 	editor.cursorLeft;
-	screenUpdateCursor;
+	readRender;
 }
-/// Move view to one data group to the right (forwards)
+/// Move cursor to one data group to the right (forwards)
 void moveRight() {
 	/*if (io.position + io.readSize + 1 <= io.size)
 		seek(io.position + 1);
 	else
 		seek(io.size - io.readSize);*/
 	editor.cursorRight;
-	screenUpdateCursor;
+	readRender;
 }
-/// Move view to one row size up (backwards)
+/// Move cursor to one row size up (backwards)
 void moveRowUp() {
 	/*if (io.position - setting.width >= 0)
 		seek(io.position - setting.width);
 	else
 		seek(0);*/
 	editor.cursorUp;
-	screenUpdateCursor;
+	readRender;
 }
-/// Move view to one row size down (forwards)
+/// Move cursor to one row size down (forwards)
 void moveRowDown() {
 	/*if (io.position + io.readSize + setting.width <= io.size)
 		seek(io.position + setting.width);
 	else
 		seek(io.size - io.readSize);*/
 	editor.cursorDown;
-	screenUpdateCursor;
+	readRender;
 }
-/// Move view to one page size up (backwards)
+/// Move cursor to one page size up (backwards)
 void movePageUp() {
 	/*if (io.position - cast(long)io.readSize >= 0)
 		seek(io.position - io.readSize);
 	else
 		seek(0);*/
 	editor.cursorPageUp;
-	screenUpdateCursor;
+	readRender;
 }
 /// Move view to one page size down (forwards)
 void movePageDown() {
@@ -457,17 +467,65 @@ void movePageDown() {
 	else
 		seek(io.size - io.readSize);*/
 	editor.cursorDown;
-	screenUpdateCursor;
+	readRender;
 }
 
 /// Adjust view read size depending on available screen size for data.
 void adjustViewBuffer(TerminalSize termsize = terminalSize) {
-	long fsize = io.size; /// data size
+	long fsz = editor.fileSize; /// data size
 	int ssize = (termsize.height - 2) * setting.width; /// screen size
 	
-	version (Trace) trace("fsz=%u ssz=%u", fsize, ssize);
+	version (Trace) trace("fsz=%u ssz=%u", fsz, ssize);
 	
-	io.resizeBuffer(ssize >= fsize ? cast(uint)fsize : ssize);
+	uint nsize = ssize >= fsz ? cast(uint)fsz : ssize;
+	editor.setBuffer(nsize);
+}
+
+// read at current position
+int read() {
+	version (Trace) trace("");
+	
+	editor.seek(editor.position);
+//	if (editor.err)
+//		return errorSet(ErrorCode.os);
+	data = editor.read();
+//	if (editor.err)
+//		return errorSet(ErrorCode.os);
+	return 0;
+}
+
+/// Render screen (all elements)
+void render() {
+	import std.format : format;
+	
+	version (Trace) trace("");
+	
+	long cpos = editor.position + editor.readSize;
+	
+	screen.renderContent(editor.position, data);
+	screen.renderStatusBar(
+		//TODO: screen obviously should return current data type
+		"hex", //numbers[setting.dataType].name,
+		transcoder.name,
+		formatBin(editor.readSize, setting.si),
+		formatBin(cpos, setting.si),
+		format("%f", ((cast(float)cpos) / editor.fileSize) * 100),
+		false);
+	updateCursor;
+}
+
+void updateCursor() {
+	version (Trace)
+		with (editor.cursor)
+			trace("x=%u y=%u n=%u", x, y, nibble);
+	
+	with (editor.cursor)
+		screen.cursor(x, y, nibble);
+}
+
+void readRender() {
+	read;
+	render;
 }
 
 /// Refresh the entire screen by:
@@ -477,18 +535,12 @@ void adjustViewBuffer(TerminalSize termsize = terminalSize) {
 /// 4. Clear the terminal
 /// 5. Render
 void refresh() {
-	adjustViewBuffer();
-	io.seek(Seek.start, io.position);
-	io.read();
-	screenClear();
-	render();
-}
-
-/// Render screen (all elements)
-void render() {
-	screen.renderOffsetBar;
-	screen.renderContent(false);
-	screen.renderStatusBar;
+	version (Trace) trace("");
+	
+	adjustViewBuffer;
+	read;
+	screen.screenClear;
+	render;
 }
 
 /// Seek to position in data, reads view's worth, and display that.
@@ -498,14 +550,14 @@ void render() {
 void seek(long pos) {
 	version (Trace) trace("pos=%d", pos);
 	
-	if (io.readSize >= io.size) {
-		screenMessage("Navigation disabled, buffer too small");
+	if (editor.readSize >= editor.fileSize) {
+		screenMessage("Navigation disabled, file too small");
 		return;
 	}
-
-	io.seek(Seek.start, pos);
-	io.read();
-	render();
+	
+	//TODO: cursorTo
+	editor.seek(pos);
+	readRender;
 }
 
 /// Parses the string as a long and navigates to the file location.
@@ -525,15 +577,15 @@ void seek(string str) {
 	}
 	switch (seekmode) {
 	case '+': // Relative, add
-		safeSeek(io.position + newPos);
+		safeSeek(editor.position + newPos);
 		break;
 	case '-': // Relative, substract
-		safeSeek(io.position - newPos);
+		safeSeek(editor.position - newPos);
 		break;
 	default: // Absolute
 		if (newPos < 0) {
 			screenMessage("Range underflow: %d (0x%x)", newPos, newPos);
-		} else if (newPos >= io.size - io.readSize) {
+		} else if (newPos >= editor.fileSize - editor.readSize) {
 			screenMessage("Range overflow: %d (0x%x)", newPos, newPos);
 		} else {
 			seek(newPos);
@@ -547,12 +599,14 @@ void seek(string str) {
 void safeSeek(long pos) {
 	version (Trace) trace("pos=%s", pos);
 	
-	if (pos + io.readSize >= io.size)
-		pos = io.size - io.readSize;
+	long fsize = editor.fileSize;
+	
+	if (pos + editor.readSize >= fsize)
+		pos = fsize - editor.readSize;
 	else if (pos < 0)
 		pos = 0;
 	
-	seek(pos);
+	editor.cursorTo(pos);
 }
 
 private enum LAST_BUFFER_SIZE = 128;
@@ -564,6 +618,7 @@ private __gshared bool lastAvailable;
 
 /// Search last item.
 /// Returns: Error code if set.
+//TODO: I don't think the return code is ever used...
 int next() {
 	if (lastAvailable == false) {
 		return errorSet(ErrorCode.noLastItem);
@@ -635,7 +690,9 @@ int skip(ubyte data) {
 
 /// Print file information
 void printFileInfo() {
-	screenMessage("%11s  %s", io.sizeString, io.name);
+	screenMessage("%11s  %s",
+		formatBin(editor.fileSize, setting.si),
+		editor.fileName);
 }
 
 /// Exit ddhx.

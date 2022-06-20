@@ -1,40 +1,62 @@
 module editor;
 
-import ddhx;
+//import ddhx;
 import std.container.slist;
 import std.stdio : File;
 import std.path : baseName;
 import std.file : getSize;
 import core.stdc.stdio : FILE;
-import os.file, os.mmfile;
-import os.terminal;
+import settings, error;
+import os.file, os.mmfile, os.terminal;
+import utils.memory;
 
 // NOTE: Cursor management.
 //
 //       Viewport ("camera").
 //
 //       The file position controls the position of the start of the view
-//       port and the side of the read buffer determines the screen buffer
+//       port and the size of the read buffer determines the screen buffer
 //       size.
 //
 //       Cursor ("pointer").
 //
 //       The cursor is governed in a 2-dimensional zero-based position relative
 //       to the viewport in bytes and is nibble aware. The application calls
-//       the cursorX functions and updates the position on-screen manually.
+//       the cursorXYZ functions and updates the position on-screen manually.
+
+// NOTE: Dependencies
+//
+//       If the editor doesn't directly invoke screen handlers, the editor
+//       code could potentially be re-used in other projects.
+
+//TODO: Error mechanism
+//TODO: Consider function hooks for basic events
+//      Like when the cursor has changed position, camera moved, etc.
+//      Trying to find a purpose for this...
+//TODO: [0.5] Virtual change system.
+//      For editing/rendering/saving.
+//      Array!(Edit) or sorted dictionary?
+//      Obviously CTRL+Z for undo, CTRL+Y for redo.
+//TODO: [0.5] ubyte[] view
+//      Copy screen buffer, modify depending on changes, send
+//      foreach edit
+//        if edit.position within current position + screen length
+//          modify screen result buffer
+//TODO: File watcher
+//TODO: File lock mechanic
 
 /// FileMode for Io.
 enum FileMode {
 	file,	/// Normal file.
 	mmfile,	/// Memory-mapped file.
-	stream,	/// Standard streaming I/O.
+	stream,	/// Standard streaming I/O, often pipes.
 	memory,	/// Typically from a stream buffered into memory.
 }
 
-enum SourceInput {
-	File,
-	Stream,
-}
+/*enum SourceType {
+	file,
+	pipe,
+}*/
 
 /// Editor editing mode.
 enum EditMode : ushort {
@@ -51,19 +73,6 @@ struct Edit {
 	// or ubyte[]?
 }
 
-/// Editor.
-//TODO: [0.5] Virtual change system.
-//      For editing/rendering/saving.
-//      Array!(Edit) or sorted dictionary?
-//      Obviously CTRL+Z for undo, CTRL+Y for redo.
-//TODO: [0.5] ubyte[] view
-//      Copy screen buffer, modify depending on changes, send
-//      foreach edit
-//        if edit.position within current position + screen length
-//          modify screen result buffer
-//TODO: File watcher
-//TODO: File lock mechanic
-
 private union Source {
 	OSFile2      osfile;
 	OSMmFile     mmfile;
@@ -74,9 +83,11 @@ private __gshared Source source;
 
 // File properties
 
-private __gshared ubyte[] readBuffer;	/// For input input
-private __gshared size_t readSize;	/// For input input
-private __gshared FileMode fileMode;	/// Current file mode.
+__gshared const(char)[] fileName;	/// File base name.
+__gshared FileMode fileMode;	/// Current file mode.
+__gshared long position;	/// Last known set position.
+private __gshared ubyte[] readBuffer;	/// For input input.
+__gshared size_t readSize;	/// For input input.
 
 // Editing stuff
 
@@ -89,8 +100,10 @@ private struct Editing {
 __gshared Editing edits;
 
 struct cursor_t {
-	int x, y;
-	bool lownibble;
+	int x;	/// Data group column position
+	int y;	/// Data group row position
+	int nibble;	/// Data group nibble position
+	deprecated bool lownibble;
 }
 __gshared cursor_t cursor;
 
@@ -130,6 +143,7 @@ int openFile(string path) {
 		return errorSet(ErrorCode.os);
 	
 	fileMode = FileMode.file;
+	fileName = baseName(path);
 	return 0;
 }
 
@@ -143,18 +157,21 @@ int openMmfile(string path/*, bool create*/) {
 	}
 	
 	fileMode = FileMode.mmfile;
+	fileName = baseName(path);
 	return 0; 
 }
 
 int openStream(File file) {
 	source.stream = file;
 	fileMode = FileMode.stream;
+	fileName = null;
 	return 0;
 }
 
 int openMemory(ubyte[] data) {
 	source.memory.open(data);
 	fileMode = FileMode.memory;
+	fileName = null;
 	return 0;
 }
 
@@ -175,9 +192,12 @@ void setBuffer(size_t size) {
 
 // !SECTION
 
-// SECTION: Position management
+//
+// SECTION: View position management
+//
 
 void seek(long pos) {
+	position = pos;
 	final switch (fileMode) with (FileMode) {
 	case file:
 		source.osfile.seek(Seek.start, pos);
@@ -205,7 +225,9 @@ long tell() {
 
 // !SECTION
 
+//
 // SECTION: Reading
+//
 
 ubyte[] read() {
 	final switch (fileMode) with (FileMode) {
@@ -213,6 +235,14 @@ ubyte[] read() {
 	case mmfile:	return source.mmfile.read(readSize);
 	case stream:	return source.stream.rawRead(readBuffer);
 	case memory:	return source.memory.read(readSize);
+	}
+}
+ubyte[] read(ubyte[] buffer) {
+	final switch (fileMode) with (FileMode) {
+	case file:	return source.osfile.read(buffer);
+	case mmfile:	return source.mmfile.read(buffer.length);
+	case stream:	return source.stream.rawRead(buffer);
+	case memory:	return source.memory.read(buffer.length);
 	}
 }
 
@@ -227,6 +257,15 @@ ubyte[] view() {
 	
 	
 	return null;
+}
+
+void insertKey(Key key) {
+	debug assert(edits.mode != EditMode.readOnly,
+		"Editor should not be getting edits in read-only mode");
+	
+	//TODO: Check by panel (binary or text)
+	//TODO: nibble-awareness
+	
 }
 
 /// Append change at current position
@@ -247,7 +286,130 @@ void writeEdits() {
 
 // !SECTION
 
-long size() {
+//
+// SECTION View position management
+//
+
+
+// Reserve bytes for file allocation
+// void reserve(long nsize) ?
+
+void moveStart() {
+	position = 0;
+}
+void moveEnd() {
+	position = fileSize - readSize;
+}
+void moveUp() {
+	if (position - setting.width >= 0)
+		position -= setting.width;
+	else
+		position = 0;
+}
+void moveDown() {
+	long fsize = fileSize;
+	if (position + readSize + setting.width <= fsize)
+		seek(position + setting.width);
+	else
+		seek(fsize - readSize);
+}
+
+// !SECTION
+
+//
+// SECTION Cursor position management
+//
+
+long tellPosition() {
+	return position + (cursor.y * setting.width) + cursor.x;
+}
+
+void cursorFileStart() {
+	moveStart;
+	with (cursor) x = y = nibble = 0;
+}
+void cursorFileEnd() {
+	moveEnd;
+	with (cursor) {
+		x = setting.width - 1;
+		y = (cast(int)readSize / setting.width) - 1;
+		nibble = 0;
+	}
+}
+
+
+void cursorHome() {
+	cursor.x = cursor.nibble = 0;
+}
+void cursorEnd() {
+	cursor.x = setting.width - 1;
+	cursor.nibble = 0;
+}
+void cursorLeft() {
+	if (cursor.x == 0) {
+		if (cursor.y == 0)
+			return;
+		
+		--cursor.y;
+		cursorEnd;
+		return;
+	}
+	
+	--cursor.x;
+}
+void cursorRight() {
+	if (cursor.x == setting.width - 1) {
+		size_t r = readSize / setting.width;
+		if (cursor.y == r)
+			return;
+		
+		++cursor.y;
+		cursorHome;
+		return;
+	}
+	
+	++cursor.x;
+}
+void cursorUp() {
+	if (cursor.y == 0) {
+		moveUp;
+		return;
+	}
+	
+	--cursor.y;
+}
+void cursorDown() {
+	size_t r = readSize / setting.width;
+	
+	version (Trace) trace("rsz=%u w=%u r=%u", readSize, setting.width, r);
+	
+	if (cursor.y == r - 1) {
+		moveDown;
+		return;
+	}
+	
+	++cursor.y;
+}
+void cursorPageUp() {
+	
+}
+void cursorPageDown() {
+	
+}
+void cursorTo(long m) { // absolute
+	// Per view chunks, then per y chunks, then x
+	//long npos = 
+	
+}
+void cursorJump(long m) { // relative
+	
+	//long npos = 
+	
+}
+
+// !SECTION
+
+long fileSize() {
 	long sz = void;
 	
 	final switch (fileMode) with (FileMode) {
@@ -262,86 +424,65 @@ long size() {
 	return sz;
 }
 
-// long allocsize() ?
-
-
-//TODO: return int by # of bytes displaced when out of bounds??
-void cursorHome() {
-	cursor.x = 0;
-	cursor.lownibble = false;
-}
-void cursorEnd() {
-	cursor.x = setting.width - 1;
-	cursor.lownibble = false;
-}
-void cursorLeft() {
-	if (cursor.x == 0)
-		return;
-	
-	--cursor.x;
-}
-void cursorRight() {
-	if (cursor.x == setting.width - 1)
-		return;
-	
-	++cursor.x;
-}
-void cursorUp() {
-	--cursor.y;
-}
-void cursorDown() {
-	++cursor.y;
-}
-void cursorPageUp() {
-	
-}
-void cursorPageDown() {
-	
-}
-
-void insertKey(Key key) {
-	
-	//TODO: Check by panel
-	
-}
-
-//TODO: from other types
-/+int toMemory(long skip = 0, long length = 0) {
+//TODO: from other types?
+int slurp(long skip = 0, long length = 0) {
 	import std.array : uninitializedArray;
 	import core.stdc.stdio : fread;
 	import core.stdc.stdlib : malloc, free;
 	import std.algorithm.comparison : min;
+	import std.outbuffer : OutBuffer;
+	import std.typecons : scoped;
 	
-	ubyte *defbuf = cast(ubyte*)malloc(DEFAULT_BUFFER_SIZE);
-	if (defbuf == null)
+	enum READ_SIZE = 4096;
+	
+	//
+	// Skiping
+	//
+	
+	ubyte *b = cast(ubyte*)malloc(READ_SIZE);
+	if (b == null)
 		return errorSet(ErrorCode.os);
 	
-	if (skip)
-		seek(Seek.start, skip);
+	FILE *_file = source.stream.getFP;
 	
-	// If no length to read is set, just read as much as possible.
+	if (skip) {
+		/*while (skip > 0) {
+			if (skip - READ_SIZE > 0) {
+				break;
+			}
+			
+			skip -= fread(b, READ_SIZE, 1, _file);
+		}
+		if (skip > 0) { // remaining
+			fread(b, cast(size_t)skip, 1, _file);
+		}*/
+		do {
+			size_t bsize = cast(size_t)min(READ_SIZE, skip);
+			skip -= fread(b, 1, bsize, _file);
+		} while (skip > 0);
+	}
+	
+	//
+	// Reading
+	//
+	
+	auto outbuf = scoped!OutBuffer;
+	
+	// If no length set, just read as much as possible.
 	if (length == 0) length = long.max;
-	
-	FILE *_file = stream.getFP;
-	size_t len = void;
-	size_t bufSize = void;
 	
 	// Loop ends when len (read length) is under the buffer's length
 	// or requested length.
-	readBuffer.length = 0;
 	do {
-		bufSize = cast(size_t)min(DEFAULT_BUFFER_SIZE, length);
-		len = fread(defbuf/*.ptr*/, 1, bufSize, _file);
-		// ok to append without init because we got a global instance
-		readBuffer ~= defbuf[0..len];
+		size_t bsize = cast(size_t)min(READ_SIZE, length);
+		size_t len = fread(b, 1, bsize, _file);
+		outbuf.put(b[0..len]);
 		length -= len;
-	} while (len >= DEFAULT_BUFFER_SIZE && length > 0);
+	} while (length > 0);
 	
-	free(defbuf);
+	free(b);
 	
-	size = readBuffer.length;
-	
+	source.memory.open(outbuf.toBytes.dup);
 	fileMode = FileMode.memory;
-	setMeta(null, "-");
 	return 0;
-}+/
+}

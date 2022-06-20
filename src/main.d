@@ -8,11 +8,14 @@ module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;
 import core.stdc.stdlib : exit;
-import ddhx;
+import ddhx, editor;
 
 //TODO: --only=n
 //             text: only display translated text
 //             data: only display hex data
+//TODO: --memory
+//      read all into memory
+//      current seeing no need for this
 
 private:
 
@@ -93,7 +96,7 @@ void cliOption(string opt, string val) {
 			break;
 		return;
 	}
-	errorWrite(1, "Invalid value for %s: %s", opt, val);
+	errorPrint(1, "Invalid value for %s: %s", opt, val);
 	exit(1);
 }
 
@@ -139,7 +142,7 @@ int main(string[] args) {
 		OPT_SECRET,      "", &page
 		);
 	} catch (Exception ex) {
-		return errorWrite(1, ex.msg);
+		return errorPrint(1, ex.msg);
 	}
 	
 	if (res.helpWanted) {
@@ -168,27 +171,27 @@ int main(string[] args) {
 	// Open file
 	long skip, length;
 	if (cliStdin) {
-		if (ddhx.io.openStream(stdin))
-			return errorWrite;
+		if (editor.openStream(stdin))
+			return errorPrint;
 	} else if (cliFile ? false : cliMmfile) {
-		if (ddhx.io.openMmfile(cliPath))
-			return errorWrite;
+		if (editor.openMmfile(cliPath))
+			return errorPrint;
 	} else {
-		if (ddhx.io.openFile(cliPath))
-			return errorWrite;
+		if (editor.openFile(cliPath))
+			return errorPrint;
 	}
 	
 	// Convert skip value
 	if (cliSeek) {
 		if (convertToVal(skip, cliSeek))
-			return errorWrite;
+			return errorPrint;
 	}
 	
 	// App: dump
 	if (cliDump) {
 		if (cliLength) {
 			if (convertToVal(length, cliLength))
-				return errorWrite;
+				return errorPrint;
 		}
 		return ddhx.startDump(skip, length);
 	}

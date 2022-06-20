@@ -7,6 +7,15 @@ module settings;
 import ddhx;
 import os.terminal : TerminalSize, terminalSize;
 
+//TODO: Settings should be per module
+//      editor settings:
+//      - row width
+//      - offset type
+//      - data type
+//      - default char
+//      ddhx (app):
+//      - si
+
 private struct settings_t {
 	/// Bytes per row
 	ushort width = 16;
@@ -16,7 +25,7 @@ private struct settings_t {
 	NumberType dataType;
 	/// Default character to use for non-ascii characters
 	char defaultChar = '.';
-	/// Use SI prefixes over IEC
+	/// Use ISO base-10 prefixes over IEC base-2
 	bool si;
 }
 
