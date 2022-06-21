@@ -211,7 +211,7 @@ int startDump(long skip, long length) {
 	long r;
 	do {
 		data = editor.read;
-		screen.renderContent(editor.position, data);
+		screen.renderContent(r, data, false);
 		r += data.length;
 		//io.position = r;
 	} while (editor.eof == false && r < length);
@@ -509,8 +509,7 @@ void render() {
 		transcoder.name,
 		formatBin(editor.readSize, setting.si),
 		formatBin(cpos, setting.si),
-		format("%f", ((cast(float)cpos) / editor.fileSize) * 100),
-		false);
+		format("%f", ((cast(float)cpos) / editor.fileSize) * 100));
 	updateCursor;
 }
 

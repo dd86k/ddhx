@@ -358,9 +358,12 @@ void cursorLeft() {
 }
 void cursorRight() {
 	if (cursor.x == setting.width - 1) {
-		size_t r = readSize / setting.width;
-		if (cursor.y == r)
+		size_t r = (readSize / setting.width) - 1;
+		if (cursor.y == r) {
+			moveDown;
+			cursorHome;
 			return;
+		}
 		
 		++cursor.y;
 		cursorHome;
@@ -378,11 +381,11 @@ void cursorUp() {
 	--cursor.y;
 }
 void cursorDown() {
-	size_t r = readSize / setting.width;
+	size_t r = (readSize / setting.width) - 1;
 	
 	version (Trace) trace("rsz=%u w=%u r=%u", readSize, setting.width, r);
 	
-	if (cursor.y == r - 1) {
+	if (cursor.y == r) {
 		moveDown;
 		return;
 	}
