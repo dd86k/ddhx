@@ -31,14 +31,22 @@ ddhx is a quick and dirty TUI hexadecimal viewer meant to replace my
 [0xdd](https://github.com/dd86k/0xdd) utility, written in a proper system
 language, mostly for myself to use.
 
-Modes supported:
-- Interactive (default).
-- Dump (`--dump`).
+# Usage
 
-# Screen
+At the moment, there are only two modes:
+- Interactive (default)
+- Dump (`--dump`)
+
+## Interactive Mode
+
+This is the default mode. It allows you to navigate files and block devices
+
+
+### Screen
 
 ```text
-  Offset           Binary data and byte offset               Text representation
+   Base                  Binary data and                           Text
+   Offset                  byte offset                         representation
  ____^____    __________________^__________________________    ______^_______
 /         \  /                                             \  /              \
 Offset(Hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
