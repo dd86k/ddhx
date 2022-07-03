@@ -8,7 +8,7 @@ module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;
 import core.stdc.stdlib : exit;
-import ddhx, editor;
+import ddhx, editor, dump;
 
 //TODO: --only=n
 //             text: only display translated text
@@ -32,11 +32,11 @@ SECRET";
 
 immutable string OPT_READONLY	= "R|readonly";
 immutable string OPT_SI	= "si";
-immutable string OPT_WIDTH	= "w|width";
+immutable string OPT_WIDTH	= "w|width";	//TODO: rename to c|columns
 immutable string OPT_OFFSET	= "o|offset";
 immutable string OPT_DATA	= "d|data";
-immutable string OPT_DEFAULTCHAR	= "C|char";
-immutable string OPT_CHARSET	= "c|charset";
+immutable string OPT_DEFAULTCHAR	= "C|char";	//TODO: rename to F|filler
+immutable string OPT_CHARSET	= "c|charset";	//TODO: rename to C|charset
 immutable string OPT_VERSION	= "version";
 immutable string OPT_VER	= "ver";
 immutable string OPT_SECRET	= "assistant";
@@ -50,14 +50,12 @@ void cliList(string opt) {
 	import std.traits : EnumMembers;
 	switch (opt) {
 	case OPT_OFFSET, OPT_DATA:
-		foreach (m; EnumMembers!NumberType) {
+		foreach (m; EnumMembers!NumberType)
 			writeln(m);
-		}
 		break;
 	case OPT_CHARSET:
-		foreach (m; EnumMembers!CharacterSet) {
+		foreach (m; EnumMembers!CharacterSet)
 			writeln(m);
-		}
 		break;
 	default:
 	}
@@ -102,8 +100,8 @@ void cliOption(string opt, string val) {
 
 void page(string opt) {
 	import std.compiler : version_major, version_minor;
-	enum COMPILER_VERSION = format("%d.%03d", version_major, version_minor);
-	enum VERSTR = 
+	static immutable string COMPILER_VERSION = format("%d.%03d", version_major, version_minor);
+	static immutable string VERSTR = 
 		DDHX_ABOUT~"\n"~
 		DDHX_COPYRIGHT~"\n"~
 		"License: MIT <https://mit-license.org/>\n"~
@@ -111,8 +109,8 @@ void page(string opt) {
 		"Compiler: "~__VENDOR__~" "~COMPILER_VERSION;
 	final switch (opt) {
 	case OPT_VERSION: opt = VERSTR; break;
-	case OPT_VER: opt = DDHX_VERSION; break;
-	case OPT_SECRET: opt = SECRET; break;
+	case OPT_VER:     opt = DDHX_VERSION; break;
+	case OPT_SECRET:  opt = SECRET; break;
 	}
 	writeln(opt);
 	exit(0);
@@ -162,11 +160,11 @@ int main(string[] args) {
 		return 0;
 	}
 	
+	version (Trace) traceInit;
+	
 	string cliPath = args.length > 1 ? args[1] : "-";
 	
 	if (cliStdin == false) cliStdin = args.length <= 1;
-	
-	version (Trace) traceInit;
 	
 	// Open file
 	long skip, length;
@@ -193,9 +191,9 @@ int main(string[] args) {
 			if (convertToVal(length, cliLength))
 				return errorPrint;
 		}
-		return ddhx.startDump(skip, length);
+		return dump.start(skip, length);
 	}
 	
 	// App: interactive
-	return ddhx.startInteractive(skip);
+	return ddhx.start(skip);
 }

@@ -1,6 +1,5 @@
 module editor;
 
-//import ddhx;
 import std.container.slist;
 import std.stdio : File;
 import std.path : baseName;
@@ -45,6 +44,28 @@ import utils.memory;
 //TODO: File watcher
 //TODO: File lock mechanic
 
+//TODO: Make editor hold more states and settings
+//      Lower module has internal function pointers set from received option
+
+/*private struct settings_t {
+	/// Bytes per row
+	//TODO: Rename to columns
+	ushort width = 16;
+	/// Current offset view type
+	NumberType offsetType;
+	/// Current data view type
+	NumberType dataType;
+	/// Default character to use for non-ascii characters
+	char defaultChar = '.';
+	/// Use ISO base-10 prefixes over IEC base-2
+	bool si;
+}
+
+/// Current settings.
+public __gshared settings_t settings2;*/
+
+// File properties
+
 /// FileMode for Io.
 enum FileMode {
 	file,	/// Normal file.
@@ -59,6 +80,7 @@ enum FileMode {
 }*/
 
 /// Editor editing mode.
+//TODO: "get string" with "ins","ovr","rdo"
 enum EditMode : ushort {
 	insert,	/// Data will be inserted.
 	overwrite,	/// Data will be overwritten.
@@ -81,8 +103,6 @@ private union Source {
 }
 private __gshared Source source;
 
-// File properties
-
 __gshared const(char)[] fileName;	/// File base name.
 __gshared FileMode fileMode;	/// Current file mode.
 __gshared long position;	/// Last known set position.
@@ -93,6 +113,7 @@ __gshared size_t readSize;	/// For input input.
 
 private struct Editing {
 	EditMode mode;	/// Current editing mode
+	const(char[]) modestr = "ins";	/// Current editing mode string
 	SList!Edit history;	/// Temporary file edits
 	size_t count;	/// Amount of edits in history
 	size_t index;	/// Current edit position
@@ -258,7 +279,7 @@ ubyte[] view() {
 	return null;
 }
 
-void insertKey(Key key) {
+void keydown(Key key) {
 	debug assert(edits.mode != EditMode.readOnly,
 		"Editor should not be getting edits in read-only mode");
 	
@@ -396,12 +417,22 @@ void cursorPageUp() {
 	
 }
 void cursorPageDown() {
+	size_t r = (readSize / setting.width) - 1;
 	
+	
+}
+/// Get cursor absolute position
+long cursorTell() {
+	return position + cursorView;
 }
 void cursorTo(long m) { // absolute
 	// Per view chunks, then per y chunks, then x
 	//long npos = 
 	
+}
+/// Get cursor relative position to view
+long cursorView() {
+	return (cursor.y * setting.width) + cursor.x;
 }
 void cursorJump(long m) { // relative
 	

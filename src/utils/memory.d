@@ -28,7 +28,7 @@ struct MemoryStream {
 	}
 	void open(File stream) {
 		buffer = buffer.init;
-		//TODO: use OutBuffer
+		//TODO: use OutBuffer+reserve (if possible to get filesize)
 		foreach (ubyte[] a; stream.byChunk(4096)) {
 			buffer ~= a;
 		}

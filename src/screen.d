@@ -6,7 +6,7 @@ module screen;
 
 import std.range : chunks;
 import std.stdio : stdout; // for cwrite family
-import ddhx;
+import ddhx; // for setting, NumberType
 import os.terminal, os.file;
 
 //TODO: Data grouping (1, 2, 4, 8, 16)
@@ -30,6 +30,16 @@ import os.terminal, os.file;
 //      or be able to specify/toggle seperate regardless of column length.
 //      Probably useful for dump app.
 
+__gshared TerminalSize termSize;
+
+void initiate() {
+	terminalInit(TermFeat.all);
+}
+
+void updateTermSize() {
+	termSize = terminalSize;
+}
+
 //string screenPrompt(string prompt)
 
 /// Update cursor position on the terminal screen
@@ -39,6 +49,7 @@ void cursor(int x, int y, int nibble) {
 }
 
 // Called after an editing action (undo/redo/insert/overwrite)
+// Not sure...
 void screenUpdateDirty() {
 	//TODO: (w * 3) -> w * datawidth
 	int x = 11 + (setting.width * 3) + 2;
@@ -52,22 +63,23 @@ void screenClear() {
 }
 
 /*void clearStatusBar() {
-	screen.cwritefAt(0,0,"%*s", terminalSize.width - 1, " ");
+	screen.cwritefAt(0,0,"%*s", termSize.width - 1, " ");
 }*/
 /// Display a formatted message at the bottom of the screen.
 /// Params:
 ///   fmt = Formatting message string.
 ///   args = Arguments.
 void screenMessage(A...)(const(char)[] fmt, A args) {
+	//TODO: Consider using a scoped outbuffer + private screenMessage(outbuf)
 	import std.format : format;
 	screenMessage(format(fmt, args));
 }
 /// Display a message at the bottom of the screen.
 /// Params: str = Message.
 void screenMessage(const(char)[] str) {
-	TerminalSize termsize = terminalSize;
-	terminalPos(0, termsize.height - 1);
-	cwritef("%-*s", termsize.width - 1, str);
+	//TODO: Consider using a scoped outbuffer + private screenMessage(outbuf)
+	terminalPos(0, termSize.height - 1);
+	cwritef("%-*s", termSize.width - 1, str);
 }
 
 private struct NumberFormatter {
@@ -87,6 +99,8 @@ private immutable NumberFormatter[3] numbers = [
 //
 // SECTION Formatting
 //
+
+//TODO: Move formatting stuff to module format.
 
 private immutable string hexMap = "0123456789abcdef";
 
@@ -281,88 +295,70 @@ size_t format11o(char *buffer, long v) {
 // SECTION Rendering
 //
 
+void cursorOffset() {
+	terminalPos(0, 0);
+}
+void cursorContent() {
+	terminalPos(0, 1);
+}
+void cursorStatusbar() {
+	terminalPos(0, termSize.height - 1);
+}
+
 void clearOffsetBar() {
-	screen.cwritefAt(0,0,"%*s", terminalSize.width - 1, " ");
+	screen.cwritefAt(0, 0, "%*s", termSize.width - 1, " ");
 }
 /// 
 //TODO: Add "edited" or '*' to end if file edited
-void renderOffsetBar(bool cursor = true) {
+void renderOffset() {
 	import std.outbuffer : OutBuffer;
 	import std.typecons : scoped;
 	import std.conv : octal;
 	
-	__gshared size_t last;
-	
-	if (cursor)
-		terminalPos(0, 0);
-	
 	// Setup index formatting
-	//TODO: Consider SingleSpec
+	//TODO: Consider SingleSpec or "maker" function
+	int dsz = numbers[setting.dataType].size;
 	__gshared char[4] offsetFmt = " %__";
-	offsetFmt[2] = cast(char)(numbers[setting.dataType].size + '0');
+	offsetFmt[2] = cast(char)(dsz + '0');
 	offsetFmt[3] = numbers[setting.offsetType].fmtchar;
 	
-	// Recommended to use 'auto' due to struct Scoped
 	auto outbuf = scoped!OutBuffer();
-	outbuf.reserve(256); // e.g. 8 + 2 + (16 * 3) + 2 + 8 = 68
+	outbuf.reserve(16 + (setting.width * dsz));
 	outbuf.write("Offset(");
 	outbuf.write(numbers[setting.offsetType].name);
 	outbuf.write(") ");
 	
-	// Print column values
-	for (ushort i; i < setting.width; ++i)
+	// Add offsets
+	uint i;
+	for (; i < setting.width; ++i)
 		outbuf.writef(offsetFmt, i);
-	
-	// Fill out remains since this is damage-based
-	if (last > outbuf.offset + 1) { // +null
-		const size_t c = cast(size_t)(last - outbuf.offset);
-		for (size_t i; i < c; ++i)
+	// Fill rest of terminal width if in interactive mode
+	if (termSize.width) {
+		for (i = cast(uint)outbuf.offset; i < termSize.width; ++i)
 			outbuf.put(' ');
 	}
 	
-	last = outbuf.offset;
 	// OutBuffer.toString duplicates it, what a waste!
 	cwriteln(cast(const(char)[])outbuf.toBytes);
 }
 
 /// 
-void renderStatusBar(const(char)[] dataTypeName,
-	const(char)[] transcoderName,
-	const(char)[] bufferSize,
-	const(char)[] filePosition,
-	const(char)[] percent,
-	bool cursor = true) {
-	import std.format : sformat;
+void renderStatusBar(const(char)[][] items ...) {
+	import std.outbuffer : OutBuffer;
+	import std.typecons : scoped;
 	
-	TerminalSize tsize = terminalSize;
-	
-	if (cursor)
-		terminalPos(0, tsize.height - 1);
-	
-	//TODO: [0.5] Include editing mode (insert/overwrite)
-	//            INS/OVR
-	__gshared size_t last;
-	char[128] buf = void;
-	
-	char[] f = sformat!" %s | %s | %s | %s (%s%%)"(buf,
-		dataTypeName,
-		transcoderName,
-		bufferSize, // Buffer size
-		filePosition, // Formatted position
-		percent,
-	);
-	
-	//TODO: Fill rest of terminal width unconditionally
-	
-	const size_t flen = f.length;
-	
-	if (last > flen) { // Fill by blanks
-		cwritef("%*s", -cast(int)(flen + (last - flen)), f);
-	} else { // Overwrites by default
-		cwrite(f);
+	auto outbuf = scoped!OutBuffer();
+	outbuf.reserve(termSize.width);
+	outbuf.put(' ');
+	foreach (item; items) {
+		if (outbuf.offset > 1) outbuf.put(" | ");
+		outbuf.put(item);
 	}
+	// Fill rest by space
+	outbuf.data[outbuf.offset..termSize.width] = ' ';
+	outbuf.offset = termSize.width; // used in .toBytes
 	
-	last = flen;
+	cwrite(cast(const(char)[])outbuf.toBytes);
 }
 
 //TODO: [0.5] Possibility to only redraw a specific byte.
@@ -370,13 +366,10 @@ void renderStatusBar(const(char)[] dataTypeName,
 
 /// Update display from buffer.
 /// Returns: Numbers of row written.
-uint renderContent(long position, ubyte[] data, bool cursor = true) {
+uint renderContent(long position, ubyte[] data) {
 	version (Trace)
 		trace("position=%u data.len=%u cursor=%s",
 			position, data.length, cursor);
-	
-	if (cursor)
-		terminalPos(0, 1);
 	
 	// Setup formatting related stuff
 	prepareView;

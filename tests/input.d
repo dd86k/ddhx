@@ -1,7 +1,7 @@
 module tests.input;
 
 import std.stdio;
-import ddhx.terminal;
+import os.terminal;
 
 @system unittest {
 	enum MODS = Mod.ctrl | Mod.alt | Mod.shift;

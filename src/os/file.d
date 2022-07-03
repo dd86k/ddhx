@@ -71,16 +71,8 @@ version (Windows) {
 //TODO: FileType GetType(string)
 //      Pipe, device, etc.
 
-import std.mmfile;
 import std.string : toStringz;
 import std.utf : toUTF16z;
-import std.file : getSize;
-import std.path : baseName;
-import std.stdio : File;
-import core.stdc.stdio : FILE;
-
-/// Default buffer size.
-private enum DEFAULT_BUFFER_SIZE = 4 * 1024;
 
 /// File seek origin.
 enum Seek {
@@ -142,7 +134,7 @@ struct OSFile2 {
 			pos = lseek(handle, pos, origin);
 			err = pos == -1;
 			return pos;
-		} else version (Posix) {
+		} else version (Posix) { // Should cover glibc and musl
 			pos = lseek64(handle, pos, origin);
 			err = pos == -1;
 			return pos;
@@ -184,27 +176,35 @@ struct OSFile2 {
 	}
 	
 	ubyte[] read(ubyte[] buffer) {
+		return read(buffer.ptr, buffer.length);
+	}
+	
+	ubyte[] read(ubyte *buffer, size_t size) {
 		version (Windows) {
-			uint len = cast(uint)buffer.length;
-			err = ReadFile(handle, buffer.ptr, len, &len, null) == FALSE;
+			uint len = cast(uint)size;
+			err = ReadFile(handle, buffer, len, &len, null) == FALSE;
 			if (err) return null;
-			eof = len < buffer.length;
+			eof = len < size;
 			return buffer[0..len];
 		} else version (Posix) {
-			ssize_t len = .read(handle, buffer.ptr, buffer.length);
+			ssize_t len = .read(handle, buffer, size);
 			if ((err = len < 0) == true) return null;
-			eof = len < buffer.length;
+			eof = len < size;
 			return buffer[0..len];
 		}
 	}
 	
 	size_t write(ubyte[] data) {
+		return write(data.ptr, data.length);
+	}
+	
+	size_t write(ubyte *data, size_t size) {
 		version (Windows) {
-			uint len = cast(uint)data.length;
-			err = WriteFile(handle, data.ptr, len, &len, null) == FALSE;
+			uint len = cast(uint)size;
+			err = WriteFile(handle, data, len, &len, null) == FALSE;
 			return len; // 0 on error anyway
 		} else version (Posix) {
-			ssize_t len = .write(handle, data.ptr, data.length);
+			ssize_t len = .write(handle, data, size);
 			err = len < 0;
 			return err ? 0 : len;
 		}

@@ -5,7 +5,6 @@
 module error;
  
 import std.stdio;
-import ddhx;
 
 /// Error codes
 enum ErrorCode {

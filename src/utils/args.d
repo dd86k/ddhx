@@ -19,22 +19,18 @@ string[] arguments(string buffer) {
 	const size_t buflen = buffer.length;
 	char delim = void;
 	
-	for (size_t index, start; index < buflen; ++index)
-	{
+	for (size_t index, start; index < buflen; ++index) {
 		char c = buffer[index];
 		
 		if (isControl(c) || isWhite(c))
 			continue;
 		
-		switch (c)
-		{
+		switch (c) {
 		case '"', '\'':
 			delim = c;
 			
-			for (start = ++index, ++index; index < buflen; ++index)
-			{
+			for (start = ++index, ++index; index < buflen; ++index) {
 				c = buffer[index];
-				
 				if (c == delim)
 					break;
 			}
@@ -42,10 +38,8 @@ string[] arguments(string buffer) {
 			results ~= buffer[start..(index++)];
 			break;
 		default:
-			for (start = index, ++index; index < buflen; ++index)
-			{
-				c = buffer[index];
-				
+			for (start = index, ++index; index < buflen; ++index) {
+				c = buffer[index]; 
 				if (isControl(c) || isWhite(c))
 					break;
 			}

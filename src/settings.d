@@ -4,21 +4,21 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module settings;
 
-import ddhx;
+import ddhx; // for NumberType
 import os.terminal : TerminalSize, terminalSize;
 
-//TODO: Settings should be per module
+//TODO: Move settings should be per module
 //      editor settings:
 //      - row width
 //      - offset type
 //      - data type
 //      - default char
-//      ddhx (app):
 //      - si
-
+//      And possibly deprecate settings
 private struct settings_t {
 	/// Bytes per row
-	ushort width = 16;
+	//TODO: Rename to columns
+	int width = 16;
 	/// Current offset view type
 	NumberType offsetType;
 	/// Current data view type
@@ -38,24 +38,26 @@ void resetSettings() {
 	transcoderSelect(CharacterSet.ascii);
 }
 
+/// Determines the optimal column width given terminal width.
+int optimalWidth() {
+	TerminalSize termsize = terminalSize;
+	int dataSize = void;
+	final switch (setting.dataType) with (NumberType) {
+	case hexadecimal: dataSize = 2; break;
+	case decimal, octal: dataSize = 3; break;
+	}
+	dataSize += 2; // Account for space
+	//TODO: +groups
+	//width = cast(ushort)((w - 12) / 4);
+	return (termsize.width - 16) / dataSize;
+}
+
 int settingsWidth(string val) {
-	debug assert(val);
-	debug assert(val.length > 0);
+	if (val == null || val.length == 0)
+		return errorSet(ErrorCode.invalidParameter);
 	switch (val[0]) {
 	case 'a': // Automatic (fit terminal width)
-		TerminalSize termsize = terminalSize;
-		//TODO: A dedicated module should return data size
-		int dataSize = void;
-		final switch (setting.dataType) with (NumberType) {
-		case hexadecimal: dataSize = 2; break;
-		case decimal, octal: dataSize = 3; break;
-		}
-		dataSize += 2; // Account for space
-		// This should get the number of data entries per row optimal
-		// given terminal width
-		setting.width = cast(ushort)((termsize.width - 16) / (dataSize));
-		//TODO: +groups
-		//width = cast(ushort)((w - 12) / 4);
+		setting.width = optimalWidth;
 		break;
 	case 'd': // Default
 		setting.width = 16;

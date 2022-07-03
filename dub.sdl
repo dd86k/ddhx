@@ -7,14 +7,23 @@ license "MIT"
 preBuildCommands "pre.cmd" platform="windows"
 preBuildCommands "./pre.sh" platform="posix"
 
-buildType "verbose" {
-	dflags "-vgc" "-vtls"
+#
+# Debug builds
+#
+
+buildType "debugv" {
+	dflags "-vgc" "-vtls" platform="dmd"
+	dflags "--vgc" "--vtls" platform="ldc"
 }
 
 buildType "trace" {
 	versions "Trace"
 	buildOptions "debugMode" "debugInfo"
 }
+
+#
+# Tests
+#
 
 buildType "input" {
 	versions "TestInput"

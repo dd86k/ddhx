@@ -4,6 +4,8 @@
 /// Authors: $(LINK2 github.com/dd86k, dd86k)
 module ddhx;
 
+//TODO: Consider moving all bits into editor module.
+
 import gitinfo;
 import os.terminal;
 public import
@@ -20,9 +22,10 @@ public import
 
 /// Copyright string
 enum DDHX_COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
+private enum DESCRIPTION = GIT_DESCRIPTION[1..$];
 /// App version
-debug enum DDHX_VERSION = GIT_DESCRIPTION[1..$]~"+debug";
-else  enum DDHX_VERSION = GIT_DESCRIPTION[1..$]; /// Ditto
+debug enum DDHX_VERSION = DESCRIPTION~"+debug";
+else  enum DDHX_VERSION = DESCRIPTION; /// Ditto
 /// Version line
 enum DDHX_ABOUT = "ddhx "~DDHX_VERSION~" (built: "~__TIMESTAMP__~")";
 
@@ -33,20 +36,13 @@ enum NumberType : ubyte {
 	octal
 }
 
-/// Default buffer size if none was given.
-private enum DEFAULT_BUFFER_SIZE = 4096;
-
-private __gshared ubyte[] data;
-
 //TODO: Seprate start functions into their own modules
 
 /// Interactive application.
 /// Params: skip = Seek to file/data position.
 /// Returns: Error code.
-int startInteractive(long skip = 0) {
-	// Terminal setup (resets stdin if PIPE/FIFO is detected)
-	version (Trace) trace("terminalInit");
-	terminalInit(TermFeat.all);
+int start(long skip = 0) {
+	screen.initiate;
 	
 	version (Trace) trace("terminalSize");
 	TerminalSize termsize = terminalSize;
@@ -72,8 +68,9 @@ int startInteractive(long skip = 0) {
 			return errorPrint;
 	}
 	
-	adjustViewBuffer;
-	screen.renderOffsetBar;
+	initiate;
+	screen.cursorOffset;
+	screen.renderOffset;
 	readRender;
 	
 	version (Trace) trace("loop");
@@ -152,79 +149,13 @@ L_KEYDOWN:
 	goto L_INPUT;
 }
 
-/// Dump to stdout, akin to xxd(1).
-/// Params:
-/// 	skip = If set, number of bytes to skip.
-/// 	length = If set, maximum length to read.
-/// Returns: Error code.
-int startDump(long skip, long length) {
-	if (length < 0)
-		return errorPrint(1, "Length must be a positive value");
-	
-	terminalInit(TermFeat.none);
-	
-	version (Trace) trace("skip=%d length=%d", skip, length);
-	
-	switch (editor.fileMode) with (FileMode) {
-	case file, mmfile: // Seekable
-		long fsize = editor.fileSize;
-		
-		// negative skip value: from end of file
-		if (skip < 0)
-			skip = fsize + skip;
-		
-		// adjust length if unset
-		if (length == 0)
-			length = fsize - skip;
-		else if (length < 0)
-			return errorPrint(1, "Length value must be positive");
-		
-		// overflow check
-		//TODO: This shouldn't error and should take the size we get from file.
-		if (skip + length > fsize)
-			return errorPrint(1, "Specified length overflows file size");
-		
-		break;
-	case stream: // Unseekable
-		if (skip < 0)
-			return errorPrint(1, "Skip value must be positive with stream");
-		if (length == 0)
-			length = long.max;
-		break;
-	default: // Memory mode is never initiated from CLI
-	}
-	
-	// start skipping
-	if (skip)
-		editor.seek(skip);
-	
-	// top bar to stdout
-	screen.renderOffsetBar(false);
-	
-	// mitigate unaligned reads/renders
-	size_t a = setting.width * 16;
-	if (a > length)
-		a = cast(size_t)length;
-	editor.setBuffer(a);
-	
-	// read until EOF or length spec
-	long r;
-	do {
-		data = editor.read;
-		screen.renderContent(r, data, false);
-		r += data.length;
-		//io.position = r;
-	} while (editor.eof == false && r < length);
-	
-	return 0;
-}
+private:
 
-/// int startDiff(string path1, string path2)
+__gshared ubyte[] readdata;
 
 //TODO: revamp menu system
 //      char mode: character mode (':', '/', '?')
 //      string command: command shortcut (e.g., 'g' + ' ' default)
-private
 void menu(string cmdPrepend = null, string cmdAlias = null) {
 	import std.stdio : readln;
 	
@@ -241,18 +172,17 @@ void menu(string cmdPrepend = null, string cmdAlias = null) {
 	string line = cmdPrepend ~ cmdAlias ~ readln();
 	
 	// draw upper bar, clearing input
-	screen.renderOffsetBar;
+	screen.cursorOffset;
+	screen.renderOffset;
 	
 	if (command(line))
 		screenMessage(errorMessage());
 }
 
-private
 int command(string line) {
 	return command(arguments(line));
 }
 
-private
 int command(string[] argv) {
 	const size_t argc = argv.length;
 	if (argc == 0) return 0;
@@ -301,7 +231,7 @@ int command(string[] argv) {
 				size_t p =
 					(editor.cursor.y * setting.width) +
 					editor.cursor.x;
-				byte_ = data[p];
+				byte_ = readdata[p];
 			} else {
 				if (argv[1] == "zero")
 					byte_ = 0;
@@ -470,10 +400,12 @@ void movePageDown() {
 	readRender;
 }
 
-/// Adjust view read size depending on available screen size for data.
-void adjustViewBuffer(TerminalSize termsize = terminalSize) {
+/// Initiate screen buffer
+void initiate() {
+	screen.updateTermSize;
+	
 	long fsz = editor.fileSize; /// data size
-	int ssize = (termsize.height - 2) * setting.width; /// screen size
+	int ssize = (screen.termSize.height - 2) * setting.width; /// screen size
 	
 	version (Trace) trace("fsz=%u ssz=%u", fsz, ssize);
 	
@@ -488,7 +420,7 @@ int read() {
 	editor.seek(editor.position);
 //	if (editor.err)
 //		return errorSet(ErrorCode.os);
-	data = editor.read();
+	readdata = editor.read();
 //	if (editor.err)
 //		return errorSet(ErrorCode.os);
 	return 0;
@@ -496,21 +428,38 @@ int read() {
 
 /// Render screen (all elements)
 void render() {
-	import std.format : format;
-	
 	version (Trace) trace("");
+	
+	updateContent;
+	updateStatus;
+	updateCursor;
+}
+
+void updateOffset() {
+	screen.cursorOffset;
+	screen.renderOffset;
+}
+
+void updateContent(bool cursor = true) {
+	screen.cursorContent;
+	screen.renderContent(editor.position, readdata);
+}
+
+void updateStatus(bool cursor = true) {
+	import std.format : format;
 	
 	long cpos = editor.position + editor.readSize;
 	
-	screen.renderContent(editor.position, data);
+	screen.cursorStatusbar;
 	screen.renderStatusBar(
-		//TODO: screen obviously should return current data type
+		editor.edits.modestr,
+		//TODO: editor obviously should return current data type
 		"hex", //numbers[setting.dataType].name,
 		transcoder.name,
 		formatBin(editor.readSize, setting.si),
-		formatBin(cpos, setting.si),
-		format("%f", ((cast(float)cpos) / editor.fileSize) * 100));
-	updateCursor;
+		format("%s (%f%%)",
+			formatBin(cpos, setting.si),
+			((cast(float)cpos) / editor.fileSize) * 100));
 }
 
 void updateCursor() {
@@ -528,17 +477,18 @@ void readRender() {
 }
 
 /// Refresh the entire screen by:
-/// 1. automatically resizing the view buffer
-/// 2. Re-seeking to the current position (failsafe)
-/// 3. Read buffer
-/// 4. Clear the terminal
+/// 1. Clearing the terminal
+/// 2. Automatically resizing the view buffer
+/// 3. Re-seeking to the current position (failsafe)
+/// 4. Read buffer
 /// 5. Render
 void refresh() {
 	version (Trace) trace("");
 	
-	adjustViewBuffer;
-	read;
 	screen.screenClear;
+	initiate;
+	read;
+	updateOffset;
 	render;
 }
 
