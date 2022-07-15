@@ -146,6 +146,8 @@ struct OSFile2 {
 			LARGE_INTEGER i; // .init
 			SetFilePointerEx(handle, i, &i, FILE_CURRENT);
 			return i.QuadPart;
+		} else version (OSX) {
+			return lseek(handle, 0, SEEK_CUR);
 		} else version (Posix) {
 			return lseek64(handle, 0, SEEK_CUR);
 		}
