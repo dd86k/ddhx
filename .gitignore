@@ -6,6 +6,7 @@ __dummy.html
 *.obj
 __test__*__
 *.exe
+*.pdb
 dub.selections.json
 /ddhx
 ddhx.log
