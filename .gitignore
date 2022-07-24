@@ -2,25 +2,25 @@
 .dub
 docs.json
 __dummy.html
-*.o
-*.obj
-__test__*__
-*.exe
-*.pdb
 dub.selections.json
+ddhx-test-library
 /ddhx
 ddhx.log
+__test__*__
+*.o
+*.obj
+*.exe
+*.pdb
 *.zip
 *.tar
 *.gz
 *.xz
 *.bzip2
-ddhx-test-library
 .fuse_*
 
 # Project
 src/gitinfo.d
 
 # Personal
-NOTES
+perso/
 examples/
