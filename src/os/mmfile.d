@@ -11,13 +11,18 @@ import std.mmfile : MmFile;
 // temp
 public class OSMmFile : MmFile {
 	private void *address;
-	this(string path) {
-		super(path, MmFile.Mode.read, 0, address);
+	this(string path, bool readOnly) {
+		super(path,
+			readOnly ?
+				MmFile.Mode.read :
+				MmFile.Mode.readWriteNew,
+			0,
+			address);
 	}
 	bool eof, err;
 	private long position;
-	void seek(long pos) { // only do seek_set for now
-		position = pos;
+	long seek(long pos) { // only do seek_set for now
+		return position = pos;
 	}
 	long tell() {
 		return position;

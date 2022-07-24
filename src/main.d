@@ -30,7 +30,10 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
+immutable string OPT_INSERT	= "insert";
+immutable string OPT_OVERWRITE	= "overwrite";
 immutable string OPT_READONLY	= "R|readonly";
+immutable string OPT_VIEW	= "view";
 immutable string OPT_SI	= "si";
 immutable string OPT_WIDTH	= "w|width";	//TODO: rename to c|columns
 immutable string OPT_OFFSET	= "o|offset";
@@ -46,16 +49,16 @@ bool askingHelp(string v) {
 }
 
 void cliList(string opt) {
-	writeln("Values available for option ",opt,":");
+	writeln("Available values for ",opt,":");
 	import std.traits : EnumMembers;
 	switch (opt) {
 	case OPT_OFFSET, OPT_DATA:
 		foreach (m; EnumMembers!NumberType)
-			writeln(m);
+			writeln("\t=", m);
 		break;
 	case OPT_CHARSET:
 		foreach (m; EnumMembers!CharacterSet)
-			writeln(m);
+			writeln("\t=", m);
 		break;
 	default:
 	}
@@ -64,8 +67,17 @@ void cliList(string opt) {
 
 void cliOption(string opt, string val) {
 	final switch (opt) {
+	case OPT_INSERT:
+		editor.editMode = EditMode.insert;
+		return;
+	case OPT_OVERWRITE:
+		editor.editMode = EditMode.overwrite;
+		return;
 	case OPT_READONLY:
-		editor.edits.mode = EditMode.readOnly;
+		editor.editMode = EditMode.readOnly;
+		return;
+	case OPT_VIEW:
+		editor.editMode = EditMode.view;
 		return;
 	case OPT_WIDTH:
 		if (settingsWidth(val))
@@ -127,7 +139,10 @@ int main(string[] args) {
 		OPT_DATA,        "Set data mode (decimal, hex, or octal)", &cliOption,
 		OPT_DEFAULTCHAR, "Set non-printable replacement character (default='.')", &cliOption,
 		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
-		OPT_READONLY,    "Set file mode to read-only", &cliOption,
+		OPT_INSERT,      "Open file in insert editing mode", &cliOption,
+		OPT_OVERWRITE,   "Open file in overwrite editing mode", &cliOption,
+		OPT_READONLY,    "Open file in read-only editing mode", &cliOption,
+		OPT_VIEW,        "Open file in view editing mode", &cliOption,
 		OPT_SI,          "Use SI suffixes instead of IEC", &setting.si,
 		"m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
 		"f|file",        "Force opening file as regular", &cliFile,
@@ -160,13 +175,17 @@ int main(string[] args) {
 		return 0;
 	}
 	
-	version (Trace) traceInit;
+	version (Trace) {
+		traceInit;
+		trace(DDHX_ABOUT);
+	}
 	
 	string cliPath = args.length > 1 ? args[1] : "-";
 	
 	if (cliStdin == false) cliStdin = args.length <= 1;
 	
 	// Open file
+	//TODO: Open memory
 	long skip, length;
 	if (cliStdin) {
 		if (editor.openStream(stdin))

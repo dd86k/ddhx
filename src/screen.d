@@ -8,9 +8,10 @@ import std.range : chunks;
 import std.stdio : stdout; // for cwrite family
 import ddhx; // for setting, NumberType
 import os.terminal, os.file;
+version (Trace) import std.datetime.stopwatch;
 
 //TODO: Data grouping (1, 2, 4, 8, 16)
-//      e.g., cd ab -> abcd
+//      e.g., cd ab -> abcd, 128 64 -> 192
 //      cast(uint[]) is probably possible on a ubyte[] range
 //TODO: Group endianness (when >1)
 //      native (default), little, big
@@ -29,8 +30,16 @@ import os.terminal, os.file;
 //      Rendering engine should be capable to take off whereever it stopped
 //      or be able to specify/toggle seperate regardless of column length.
 //      Probably useful for dump app.
+//TODO: Consider buffer strategy full for terminal-altscreen mode
+//      + manual flushes here
 
+/// Last known terminal size.
 __gshared TerminalSize termSize;
+// Internal buffer filling character.
+// For dump, that should be spaces and 0,
+// For interactive, that should be spaces and spaces.
+//__gshared char binaryFiller;
+//__gshared char textFiller;
 
 void initiate() {
 	terminalInit(TermFeat.all);
@@ -43,23 +52,20 @@ void updateTermSize() {
 //string screenPrompt(string prompt)
 
 /// Update cursor position on the terminal screen
-void cursor(int x, int y, int nibble) {
+void cursor(uint pos, uint nibble) {
 	//TODO: (x * 3) -> x * datawidth
+	uint y = pos / setting.width;
+	uint x = pos % setting.width;
 	terminalPos(13 + (x * 3) + nibble, 1 + y);
 }
 
-// Called after an editing action (undo/redo/insert/overwrite)
-// Not sure...
-void screenUpdateDirty() {
-	//TODO: (w * 3) -> w * datawidth
-	int x = 11 + (setting.width * 3) + 2;
-	terminalPos(x, 0);
-	cwrite(editor.dirty ? '*' : ' ');
+/// Clear entire terminal screen
+void clear() {
+	terminalClear;
 }
 
-/// Clear entire terminal screen
-void screenClear() {
-	terminalClear;
+string name() {
+	return dataFmt.name;
 }
 
 /*void clearStatusBar() {
@@ -83,7 +89,7 @@ void screenMessage(const(char)[] str) {
 }
 
 private struct NumberFormatter {
-	immutable(char)[] name;	/// Short offset name
+	string name;	/// Short offset name
 	align(2) char fmtchar;	/// Format character for printf-like functions
 	uint size;	/// Size for formatted byte
 	size_t function(char*,long) offset;	/// Function to format offset
@@ -315,6 +321,10 @@ void renderOffset() {
 	import std.typecons : scoped;
 	import std.conv : octal;
 	
+	version (Trace) {
+		StopWatch sw = StopWatch(AutoStart.yes);
+	}
+	
 	// Setup index formatting
 	//TODO: Consider SingleSpec or "maker" function
 	int dsz = numbers[setting.dataType].size;
@@ -338,8 +348,19 @@ void renderOffset() {
 			outbuf.put(' ');
 	}
 	
+	version (Trace) {
+		Duration a = sw.peek;
+	}
+	
 	// OutBuffer.toString duplicates it, what a waste!
 	cwriteln(cast(const(char)[])outbuf.toBytes);
+	
+	version (Trace) {
+		Duration b = sw.peek;
+		trace("gen='%s µs' print='%s µs'",
+			a.total!"usecs",
+			(b - a).total!"usecs");
+	}
 }
 
 /// 
@@ -347,29 +368,50 @@ void renderStatusBar(const(char)[][] items ...) {
 	import std.outbuffer : OutBuffer;
 	import std.typecons : scoped;
 	
+	version (Trace) {
+		StopWatch sw = StopWatch(AutoStart.yes);
+	}
+	
+	int w = termSize.width;
+	
 	auto outbuf = scoped!OutBuffer();
-	outbuf.reserve(termSize.width);
+	outbuf.reserve(w);
 	outbuf.put(' ');
 	foreach (item; items) {
 		if (outbuf.offset > 1) outbuf.put(" | ");
 		outbuf.put(item);
+		if (outbuf.offset >= w) {
+			
+		}
 	}
 	// Fill rest by space
-	outbuf.data[outbuf.offset..termSize.width] = ' ';
-	outbuf.offset = termSize.width; // used in .toBytes
+	outbuf.data[outbuf.offset..w] = ' ';
+	outbuf.offset = w; // used in .toBytes
 	
+	version (Trace) {
+		Duration a = sw.peek;
+	}
+	
+L_WRITE:
 	cwrite(cast(const(char)[])outbuf.toBytes);
+	
+	version (Trace) {
+		sw.stop;
+		Duration b = sw.peek;
+		trace("gen='%s µs' print='%s µs'",
+			a.total!"usecs",
+			(b - a).total!"usecs");
+	}
 }
-
-//TODO: [0.5] Possibility to only redraw a specific byte.
-//      renderContentByte(size_t bufpos, ubyte newData)
 
 /// Update display from buffer.
 /// Returns: Numbers of row written.
 uint renderContent(long position, ubyte[] data) {
-	version (Trace)
-		trace("position=%u data.len=%u cursor=%s",
-			position, data.length, cursor);
+	version (Trace) {
+		trace("position=%u data.len=%u",
+			position, data.length);
+		StopWatch swtotal = StopWatch(AutoStart.yes);
+	}
 	
 	// Setup formatting related stuff
 	prepareView;
@@ -380,6 +422,11 @@ uint renderContent(long position, ubyte[] data) {
 		cwriteln(renderRow(chunk, position));
 		position += setting.width;
 		++lines;
+	}
+	
+	version (Trace) {
+		swtotal.stop;
+		trace("totaltime='%s µs'", swtotal.peek.total!"usecs");
 	}
 	
 	return lines;
@@ -400,6 +447,8 @@ private __gshared immutable(NumberFormatter) *dataFmt;
 private char[] renderRow(ubyte[] chunk, long pos) {
 	import core.stdc.string : memset;
 	
+	//TODO: Consider realloc on terminal width
+	//      In screen.initiate
 	enum BUFFER_SIZE = 2048;
 	__gshared char[BUFFER_SIZE] buffer;
 	__gshared char *bufferptr = buffer.ptr;
@@ -410,6 +459,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 	
 	const uint dataLen = (setting.width * (dataFmt.size + 1)); /// data row character count
 	size_t indexChar = indexData + dataLen; // Position for character column
+	
 	*(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
 	indexChar += 2; // indexChar: indexData + dataLen + spacer
 	
@@ -417,8 +467,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 	// NOTE: Smaller loops could fit in cache...
 	//       And would separate data/text logic
 	foreach (data; chunk) {
-//	for (size_t i; i < chunk.length; ++i) {
-//		const ubyte data = chunk[i]; /// byte data
+		//TODO: Maybe binary data formatter should include space
 		// Data translation
 		bufferptr[indexData++] = ' ';
 		indexData += dataFmt.data(bufferptr + indexData, data);
@@ -430,15 +479,22 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 		} else // Invalid character, insert default character
 			bufferptr[indexChar++] = setting.defaultChar;
 	}
-	// data length < minimum row requirement = pad DATA
+	
+	size_t end = indexChar;
+	
+	// data length < minimum row requirement = in-fill data and text columns
 	if (chunk.length < setting.width) {
-		size_t left =
-			(setting.width - chunk.length) // Bytes left
-			* (dataFmt.size + 1);  // space + 1x data size
-		memset(bufferptr + indexData, ' ', left);
+		// In-fill characters: left = Columns - ChunkLength
+		size_t leftchar = (setting.width - chunk.length); // Bytes left
+		memset(bufferptr + indexChar, ' ', leftchar);
+		// In-fill binary data: left = CharactersLeft * (DataSize + 1)
+		size_t leftdata = leftchar * (dataFmt.size + 1);
+		memset(bufferptr + indexData, ' ', leftdata);
+		
+		end += leftchar;
 	}
 	
-	return buffer[0..indexChar];
+	return buffer[0..end];
 }
 
 //TODO: More renderRow unittests
@@ -447,16 +503,33 @@ unittest {
 	// With defaults
 	prepareView;
 	//	 Offset(hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-	assert(renderRow([ 0 ], 0) ==
-		"          0  00                                               .");
-	assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0x10) ==
-		"         10  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
+	assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0) ==
+		"          0  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
+	assert(renderRow([ 0 ], 0x10) ==
+		"         10  00                                               .               ");
 }
 
 // !SECTION
 
 // SECTION Console Write functions
 
+size_t cwrite(char c) {
+	return terminalOutput(&c, 1);
+}
+size_t cwrite(const(char)[] _str) {
+	return terminalOutput(_str.ptr, _str.length);
+}
+size_t cwriteln(const(char)[] _str) {
+	return cwrite(_str) + cwrite('\n');
+}
+size_t cwritef(A...)(const(char)[] fmt, A args) {
+	import std.format : sformat;
+	char[128] buf = void;
+	return cwrite(sformat(buf, fmt, args));
+}
+size_t cwritefln(A...)(const(char)[] fmt, A args) {
+	return cwritef(fmt, args) + cwrite('\n');
+}
 size_t cwriteAt(int x, int y, char c) {
 	terminalPos(x, y);
 	return cwrite(c);
@@ -476,33 +549,6 @@ size_t cwritefAt(A...)(int x, int y, const(char)[] fmt, A args) {
 size_t cwriteflnAt(A...)(int x, int y, const(char)[] fmt, A args) {
 	terminalPos(x, y);
 	return cwritefln(fmt, args);
-}
-size_t cwrite(char c) {
-	import std.stdio : stdout;
-	import core.stdc.stdio : fwrite, FILE;
-	
-	return fwrite(&c, 1, 1, stdout.getFP);
-}
-size_t cwrite(const(char)[] _str) {
-	import std.stdio : stdout;
-	import core.stdc.stdio : fwrite, FILE;
-	
-	return fwrite(_str.ptr, 1, _str.length, stdout.getFP);
-}
-size_t cwriteln(const(char)[] _str) {
-	size_t c = cwrite(_str);
-	cwrite("\n");
-	return ++c;
-}
-size_t cwritef(A...)(const(char)[] fmt, A args) {
-	import std.format : sformat;
-	char[128] buf = void;
-	return cwrite(sformat(buf, fmt, args));
-}
-size_t cwritefln(A...)(const(char)[] fmt, A args) {
-	size_t c = cwritef(fmt, args);
-	cwrite("\n");
-	return ++c;
 }
 
 // !SECTION

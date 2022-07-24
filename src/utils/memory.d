@@ -35,10 +35,10 @@ struct MemoryStream {
 		
 	}
 	
-	void seek(long pos) {
+	long seek(long pos) {
 		/*final switch (origin) with (Seek) {
 		case start:*/
-			position = pos;
+			return position = pos;
 		/*	return 0;
 		case current:
 			position += pos;

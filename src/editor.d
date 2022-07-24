@@ -80,11 +80,23 @@ enum FileMode {
 }*/
 
 /// Editor editing mode.
-//TODO: "get string" with "ins","ovr","rdo"
 enum EditMode : ushort {
-	insert,	/// Data will be inserted.
-	overwrite,	/// Data will be overwritten.
-	readOnly,	/// Editing data is disallowed by user or permission.
+	/// Incoming data will be inserted at cursor position.
+	/// Editing: Enabled
+	/// Cursor: Enabled
+	insert,
+	/// Incoming data will be overwritten at cursor position.
+	/// Editing: Enabled
+	/// Cursor: Enabled
+	overwrite,
+	/// The file cannot be edited.
+	/// Editing: Disabled
+	/// Cursor: Enabled
+	readOnly,
+	/// The file can only be viewed.
+	/// Editing: Disabled
+	/// Cursor: Disabled
+	view,
 }
 
 /// Represents a single edit
@@ -96,7 +108,7 @@ struct Edit {
 }
 
 private union Source {
-	OSFile2      osfile;
+	OSFile       osfile;
 	OSMmFile     mmfile;
 	File         stream;
 	MemoryStream memory;
@@ -106,26 +118,39 @@ private __gshared Source source;
 __gshared const(char)[] fileName;	/// File base name.
 __gshared FileMode fileMode;	/// Current file mode.
 __gshared long position;	/// Last known set position.
-private __gshared ubyte[] readBuffer;	/// For input input.
-__gshared size_t readSize;	/// For input input.
+__gshared size_t readSize;	/// For input size.
+private __gshared ubyte[] readBuffer;	/// For input data.
+private __gshared uint vheight;	/// 
 
 // Editing stuff
 
-private struct Editing {
-	EditMode mode;	/// Current editing mode
-	const(char[]) modestr = "ins";	/// Current editing mode string
-	SList!Edit history;	/// Temporary file edits
-	size_t count;	/// Amount of edits in history
-	size_t index;	/// Current edit position
-}
-__gshared Editing edits;
+private __gshared size_t editIndex;	/// Current edit position
+private __gshared size_t editCount;	/// Amount of edits in history
+private __gshared SList!Edit editHistory;	/// Temporary file edits
+__gshared EditMode editMode;	/// Current editing mode
 
-struct cursor_t {
-	int x;	/// Data group column position
-	int y;	/// Data group row position
-	int nibble;	/// Data group nibble position
+string editModeString(EditMode mode = editMode) {
+	final switch (mode) with (EditMode) {
+	case insert: return "inse";
+	case overwrite: return "over";
+	case readOnly: return "read";
+	case view: return "view";
+	}
 }
-__gshared cursor_t cursor;
+bool editModeReadOnly(EditMode mode) {
+	switch (mode) with (EditMode) {
+	case readOnly, view: return true;
+	default: return false;
+	}
+}
+
+private struct cursor_t {
+	//TODO: Transform into an 1D position system
+	//      2D is just clumsy...
+	uint position;	/// Screen cursor byte position
+	uint nibble;	/// Data group nibble position
+}
+__gshared cursor_t cursor;	/// Cursor state
 
 // View properties
 
@@ -151,7 +176,7 @@ bool err() {
 }
 
 bool dirty() {
-	return edits.index == 0;
+	return editIndex == 0;
 }
 
 // SECTION: File opening
@@ -159,7 +184,7 @@ bool dirty() {
 int openFile(string path) {
 	version (Trace) trace("path='%s'", path);
 	
-	if (source.osfile.open(path))
+	if (source.osfile.open(path, editModeReadOnly(editMode)))
 		return errorSet(ErrorCode.os);
 	
 	fileMode = FileMode.file;
@@ -167,11 +192,11 @@ int openFile(string path) {
 	return 0;
 }
 
-int openMmfile(string path/*, bool create*/) {
+int openMmfile(string path) {
 	version (Trace) trace("path='%s'", path);
 	
 	try {
-		source.mmfile = new OSMmFile(path);
+		source.mmfile = new OSMmFile(path, editModeReadOnly(editMode));
 	} catch (Exception ex) {
 		return errorSet(ex);
 	}
@@ -216,21 +241,15 @@ void setBuffer(size_t size) {
 // SECTION: View position management
 //
 
-void seek(long pos) {
+long seek(long pos) {
 	position = pos;
 	final switch (fileMode) with (FileMode) {
-	case file:
-		source.osfile.seek(Seek.start, pos);
-		return;
-	case mmfile:
-		source.mmfile.seek(pos);
-		return;
-	case memory:
-		source.memory.seek(pos);
-		return;
+	case file:   return source.osfile.seek(Seek.start, pos);
+	case mmfile: return source.mmfile.seek(pos);
+	case memory: return source.memory.seek(pos);
 	case stream:
 		source.stream.seek(pos);
-		return;
+		return pos;
 	}
 }
 
@@ -280,7 +299,7 @@ ubyte[] view() {
 }
 
 void keydown(Key key) {
-	debug assert(edits.mode != EditMode.readOnly,
+	debug assert(editMode != EditMode.readOnly,
 		"Editor should not be getting edits in read-only mode");
 	
 	//TODO: Check by panel (binary or text)
@@ -290,7 +309,7 @@ void keydown(Key key) {
 
 /// Append change at current position
 void appendEdit(ubyte data) {
-	debug assert(edits.mode != EditMode.readOnly,
+	debug assert(editMode != EditMode.readOnly,
 		"Editor should not be getting edits in read-only mode");
 	
 	
@@ -310,28 +329,28 @@ void writeEdits() {
 // SECTION View position management
 //
 
-
-// Reserve bytes for file allocation
-// void reserve(long nsize) ?
-
-void moveStart() {
+bool viewStart() {
+	bool z = cursor.position > readSize;
 	position = 0;
+	return z;
 }
-void moveEnd() {
+bool viewEnd() {
+	long old = position;
 	position = fileSize - readSize;
+	return position != old;
 }
-void moveUp() {
-	if (position - setting.width >= 0)
-		position -= setting.width;
-	else
-		position = 0;
+bool viewUp() {
+	if (position - setting.width < 0)
+		return false;
+	position -= setting.width;
+	return true;
 }
-void moveDown() {
+bool viewDown() {
 	long fsize = fileSize;
-	if (position + readSize + setting.width <= fsize)
-		seek(position + setting.width);
-	else
-		seek(fsize - readSize);
+	if (position + readSize > fsize)
+		return false;
+	position += setting.width;
+	return true;
 }
 
 // !SECTION
@@ -340,102 +359,120 @@ void moveDown() {
 // SECTION Cursor position management
 //
 
-long tellPosition() {
-	return position + (cursor.y * setting.width) + cursor.x;
+void cursorBound() {
+	if (cursor.position < 0)
+		cursor.position = 0;
+	else if (cursor.position >= readSize) {
+		if (cursor.position - setting.width >= readSize)
+			cursor.position = cast(uint)(readSize - 1);
+		else
+			cursor.position -= setting.width;
+	}
 }
 
-void cursorFileStart() {
-	moveStart;
-	with (cursor) x = y = nibble = 0;
+// These return true if view moves.
+
+bool cursorFileStart() {
+	viewStart;
+	with (cursor) position = nibble = 0;
+	return true;
 }
-void cursorFileEnd() {
-	moveEnd;
+bool cursorFileEnd() {
+	viewEnd;
 	with (cursor) {
-		x = setting.width - 1;
-		y = (cast(int)readSize / setting.width) - 1;
+		position = cast(uint)readSize - 1;
 		nibble = 0;
 	}
+	return true;
 }
 
-
-void cursorHome() {
-	cursor.x = cursor.nibble = 0;
-}
-void cursorEnd() {
-	cursor.x = setting.width - 1;
+bool cursorHome() {
+	with (setting)
+		cursor.position = (cursor.position / width) * width;
 	cursor.nibble = 0;
+	return false;
 }
-void cursorLeft() {
-	if (cursor.x == 0) {
-		if (cursor.y == 0)
-			return;
-		
-		--cursor.y;
+bool cursorEnd() {
+	with (setting)
+		cursor.position = ((cursor.position / width) * width) + width - 1;
+	cursor.nibble = 0;
+	return false;
+}
+bool cursorLeft() {
+	if (cursor.position == 0) {
+		if (position == 0)
+			return false;
 		cursorEnd;
-		return;
+		return viewUp;
 	}
 	
-	--cursor.x;
+	--cursor.position;
+	cursor.nibble = 0;
+	return false;
 }
-void cursorRight() {
-	if (cursor.x == setting.width - 1) {
-		size_t r = (readSize / setting.width) - 1;
-		if (cursor.y == r) {
-			moveDown;
-			cursorHome;
-			return;
-		}
-		
-		++cursor.y;
+bool cursorRight() {
+	if (cursorTell >= fileSize - 1)
+		return false;
+	
+	if (cursor.position == readSize - 1) {
 		cursorHome;
-		return;
+		return viewDown;
 	}
 	
-	++cursor.x;
+	++cursor.position;
+	cursor.nibble = 0;
+	return false;
 }
-void cursorUp() {
-	if (cursor.y == 0) {
-		moveUp;
-		return;
+bool cursorUp() {
+	if (cursor.position < setting.width) {
+		return viewUp;
 	}
 	
-	--cursor.y;
+	cursor.position -= setting.width;
+	return false;
 }
-void cursorDown() {
-	size_t r = (readSize / setting.width) - 1;
+bool cursorDown() {
+	long fs = fileSize;
 	
-	version (Trace) trace("rsz=%u w=%u r=%u", readSize, setting.width, r);
+	// last line
+	bool last = cursor.position > readSize - setting.width;
+	// should move down
+	bool force = cursorTell + setting.width >= fs;
+	bool ok = last && force;
 	
-	if (cursor.y == r) {
-		moveDown;
-		return;
+	if (cursor.position + setting.width >= readSize) {
+		bool m = viewDown;
+		if (force)
+			goto L_FORCE_CURSOR;
+		return m;
 	}
 	
-	++cursor.y;
+L_FORCE_CURSOR:
+	if (force) {
+		uint rem = cast(uint)(fs % setting.width);
+		cursor.position = cast(uint)(readSize - setting.width + rem) - 1;
+		return false;
+	}
+	
+	cursor.position += setting.width;
+	return false;
 }
-void cursorPageUp() {
+bool cursorPageUp() {
 	
+	
+	return false;
 }
-void cursorPageDown() {
-	size_t r = (readSize / setting.width) - 1;
+bool cursorPageDown() {
 	
 	
+	return false;
 }
 /// Get cursor absolute position
 long cursorTell() {
-	return position + cursorView;
+	return position + cursor.position;
 }
-void cursorTo(long m) { // absolute
+void cursorJump(long m, bool absolute) {
 	// Per view chunks, then per y chunks, then x
-	//long npos = 
-	
-}
-/// Get cursor relative position to view
-long cursorView() {
-	return (cursor.y * setting.width) + cursor.x;
-}
-void cursorJump(long m) { // relative
-	
 	//long npos = 
 	
 }

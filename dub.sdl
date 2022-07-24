@@ -5,7 +5,7 @@ copyright "Copyright © 2017-2022 dd86k"
 license "MIT"
 
 # NOTE: Somehow, the dmd package in the Alpine repo does not contain rdmd.
-preBuildCommands "dmd -run setup.d version" platform="dmd"
+preBuildCommands "rdmd setup.d version" platform="dmd"
 preBuildCommands "ldmd2 -run setup.d version" platform="ldc"
 preBuildCommands "gdmd -run setup.d version" platform="gdc"
 
@@ -18,9 +18,9 @@ buildType "debugv" {
 	dflags "--vgc" "--vtls" platform="ldc"
 }
 
-buildType "trace" {
+configuration "trace" {
+	targetType "executable"
 	versions "Trace"
-	buildOptions "debugMode" "debugInfo"
 }
 
 #

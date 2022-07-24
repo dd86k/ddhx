@@ -169,6 +169,10 @@ version (Trace) {
 	void traceInit() {
 		log.open("ddhx.log", "w");
 	}
+	void trace(string func = __FUNCTION__, int line = __LINE__, A...)() {
+		log.writefln("TRACE:%s:%u", func, line);
+		log.flush;
+	}
 	void trace(string func = __FUNCTION__, int line = __LINE__, A...)(string fmt, A args) {
 		log.writef("TRACE:%s:%u: ", func, line);
 		log.writefln(fmt, args);

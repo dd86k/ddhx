@@ -68,10 +68,7 @@ int start(long skip = 0) {
 			return errorPrint;
 	}
 	
-	initiate;
-	screen.cursorOffset;
-	screen.renderOffset;
-	readRender;
+	refresh;
 	
 	version (Trace) trace("loop");
 	TerminalInput event;
@@ -190,9 +187,8 @@ int command(string[] argv) {
 	version (Trace) trace("%(%s %)", argv);
 	
 	string command = argv[0];
-	//TODO: Check length of command string?
 	
-	switch (command[0]) {
+	switch (command[0]) { // shortcuts
 	case '/': // Search
 		if (command.length <= 1)
 			return errorSet(ErrorCode.missingArgumentType);
@@ -207,109 +203,109 @@ int command(string[] argv) {
 			return errorSet(ErrorCode.missingArgumentNeedle);
 		
 		return ddhx.lookup(command[1..$], argv[1], false, true);
-	default: // Regular
-		switch (argv[0]) {
-		case "g", "goto":
-			if (argc <= 1)
-				return errorSet(ErrorCode.missingArgumentPosition);
-			
-			switch (argv[1])
-			{
-			case "e", "end":
-				moveEnd;
-				break;
-			case "h", "home":
-				moveStart;
-				break;
-			default:
-				seek(argv[1]);
-			}
-			return 0;
-		case "skip":
-			ubyte byte_ = void;
-			if (argc <= 1) {
-				size_t p =
-					(editor.cursor.y * setting.width) +
-					editor.cursor.x;
-				byte_ = readdata[p];
-			} else {
-				if (argv[1] == "zero")
-					byte_ = 0;
-				else if (convertToVal(byte_, argv[1]))
-					return error.ecode;
-			}
-			return skip(byte_);
-		case "i", "info":
-			printFileInfo;
-			return 0;
-		case "refresh":
-			refresh;
-			return 0;
-		case "q", "quit":
-			exit;
-			return 0;
-		case "about":
-			enum C = "Written by dd86k. " ~ DDHX_COPYRIGHT;
-			screenMessage(C);
-			return 0;
-		case "version":
-			screenMessage(DDHX_ABOUT);
-			return 0;
-		//
-		// Settings
-		//
-		case "w", "width":
-			if (argc <= 1)
-				return errorSet(ErrorCode.missingArgumentWidth);
-			
-			if (settingsWidth(argv[1]))
-				return error.ecode;
-			
-			refresh;
-			return 0;
-		case "o", "offset":
-			if (argc <= 1)
-				return errorSet(ErrorCode.missingArgumentType);
-			
-			if (settingsOffset(argv[1]))
-				return error.ecode;
-			
-			render;
-			return 0;
-		case "d", "data":
-			if (argc <= 1)
-				return errorSet(ErrorCode.missingArgumentType);
-			
-			if (settingsData(argv[1]))
-				return error.ecode;
-			
-			render;
-			return 0;
-		case "C", "defaultchar":
-			if (argc <= 1)
-				return errorSet(ErrorCode.missingArgumentCharacter);
-			
-			if (settingsDefaultChar(argv[1]))
-				return error.ecode;
-			
-			render;
-			return 0;
-		case "cp", "charset":
-			if (argc <= 1)
-				return errorSet(ErrorCode.missingArgumentCharset);
-			
-			if (settingsCharset(argv[1]))
-				return error.ecode;
-			
-			render;
-			return 0;
-		case "reset":
-			resetSettings();
-			render;
-			return 0;
+	default:
+	}
+	
+	switch (argv[0]) { // regular commands
+	case "g", "goto":
+		if (argc <= 1)
+			return errorSet(ErrorCode.missingArgumentPosition);
+		
+		switch (argv[1])
+		{
+		case "e", "end":
+			moveEnd;
+			break;
+		case "h", "home":
+			moveStart;
+			break;
 		default:
-			return errorSet(ErrorCode.invalidCommand);
+			seek(argv[1]);
 		}
+		return 0;
+	case "skip":
+		ubyte byte_ = void;
+		if (argc <= 1) {
+			byte_ = readdata[editor.cursor.position];
+		} else {
+			if (argv[1] == "zero")
+				byte_ = 0;
+			else if (convertToVal(byte_, argv[1]))
+				return error.ecode;
+		}
+		return skip(byte_);
+	case "i", "info":
+		printFileInfo;
+		return 0;
+	case "refresh":
+		refresh;
+		return 0;
+	case "q", "quit":
+		exit;
+		return 0;
+	case "about":
+		enum C = "Written by dd86k. " ~ DDHX_COPYRIGHT;
+		screenMessage(C);
+		return 0;
+	case "version":
+		screenMessage(DDHX_ABOUT);
+		return 0;
+	//
+	// Settings
+	//
+	case "w", "width":
+		if (argc <= 1)
+			return errorSet(ErrorCode.missingArgumentWidth);
+		
+		if (settingsWidth(argv[1]))
+			return error.ecode;
+		
+		refresh;
+		return 0;
+	case "o", "offset":
+		if (argc <= 1)
+			return errorSet(ErrorCode.missingArgumentType);
+		
+		if (settingsOffset(argv[1]))
+			return error.ecode;
+		
+		screen.cursorOffset;
+		screen.renderOffset;
+		render;
+		return 0;
+	case "d", "data":
+		if (argc <= 1)
+			return errorSet(ErrorCode.missingArgumentType);
+		
+		if (settingsData(argv[1]))
+			return error.ecode;
+		
+		render;
+		return 0;
+	case "C", "defaultchar":
+		if (argc <= 1)
+			return errorSet(ErrorCode.missingArgumentCharacter);
+		
+		if (settingsDefaultChar(argv[1]))
+			return error.ecode;
+		
+		render;
+		return 0;
+	case "cp", "charset":
+		if (argc <= 1)
+			return errorSet(ErrorCode.missingArgumentCharset);
+		
+		if (settingsCharset(argv[1]))
+			return error.ecode;
+		
+		render;
+		return 0;
+	case "reset":
+		resetSettings();
+		render;
+		return 0;
+	default:
+		return errorSet(ErrorCode.invalidCommand);
 	}
 }
 
@@ -325,79 +321,71 @@ string input(string prompt) {
 
 /// Move the cursor to the start of the data
 void moveStart() {
-	editor.cursorFileStart;
-	readRender;
+	if (editor.cursorFileStart)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Move the cursor to the end of the data
 void moveEnd() {
-	editor.cursorFileEnd;
-	readRender;
+	if (editor.cursorFileEnd)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Align cursor to start of row
 void moveAlignStart() {
-	//seek(io.position - (io.position % setting.width));
 	editor.cursorHome;
-	readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Align cursor to end of row
 void moveAlignEnd() {
-	/*const long n = io.position +
-		(setting.width - io.position % setting.width);
-	seek(n + io.readSize <= io.size ? n : io.size - io.readSize);*/
 	editor.cursorEnd;
-	readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Move cursor to one data group to the left (backwards)
 void moveLeft() {
-	/*if (io.position - 1 >= 0) // Else already at 0
-		seek(io.position - 1);*/
-	editor.cursorLeft;
-	readRender;
+	if (editor.cursorLeft)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Move cursor to one data group to the right (forwards)
 void moveRight() {
-	/*if (io.position + io.readSize + 1 <= io.size)
-		seek(io.position + 1);
-	else
-		seek(io.size - io.readSize);*/
-	editor.cursorRight;
-	readRender;
+	if (editor.cursorRight)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Move cursor to one row size up (backwards)
 void moveRowUp() {
-	/*if (io.position - setting.width >= 0)
-		seek(io.position - setting.width);
-	else
-		seek(0);*/
-	editor.cursorUp;
-	readRender;
+	if (editor.cursorUp)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Move cursor to one row size down (forwards)
 void moveRowDown() {
-	/*if (io.position + io.readSize + setting.width <= io.size)
-		seek(io.position + setting.width);
-	else
-		seek(io.size - io.readSize);*/
-	editor.cursorDown;
-	readRender;
+	if (editor.cursorDown)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Move cursor to one page size up (backwards)
 void movePageUp() {
-	/*if (io.position - cast(long)io.readSize >= 0)
-		seek(io.position - io.readSize);
-	else
-		seek(0);*/
-	editor.cursorPageUp;
-	readRender;
+	if (editor.cursorPageUp)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 /// Move view to one page size down (forwards)
 void movePageDown() {
-	/*if (io.position + (io.readSize << 1) <= io.size)
-		seek(io.position + io.readSize);
-	else
-		seek(io.size - io.readSize);*/
-	editor.cursorDown;
-	readRender;
+	if (editor.cursorPageDown)
+		readRender;
+	updateStatus;
+	updateCursor;
 }
 
 /// Initiate screen buffer
@@ -415,7 +403,7 @@ void initiate() {
 
 // read at current position
 int read() {
-	version (Trace) trace("");
+	version (Trace) trace;
 	
 	editor.seek(editor.position);
 //	if (editor.err)
@@ -426,13 +414,14 @@ int read() {
 	return 0;
 }
 
+//TODO: Consider render with multiple parameters to select what to render
+
 /// Render screen (all elements)
 void render() {
-	version (Trace) trace("");
+	version (Trace) trace;
 	
 	updateContent;
 	updateStatus;
-	updateCursor;
 }
 
 void updateOffset() {
@@ -440,35 +429,34 @@ void updateOffset() {
 	screen.renderOffset;
 }
 
-void updateContent(bool cursor = true) {
+void updateContent() {
 	screen.cursorContent;
 	screen.renderContent(editor.position, readdata);
 }
 
-void updateStatus(bool cursor = true) {
+void updateStatus() {
 	import std.format : format;
 	
-	long cpos = editor.position + editor.readSize;
+	long c = editor.cursorTell + 1;
 	
 	screen.cursorStatusbar;
 	screen.renderStatusBar(
-		editor.edits.modestr,
-		//TODO: editor obviously should return current data type
-		"hex", //numbers[setting.dataType].name,
+		editor.editModeString,
+		screen.name,
 		transcoder.name,
 		formatBin(editor.readSize, setting.si),
 		format("%s (%f%%)",
-			formatBin(cpos, setting.si),
-			((cast(float)cpos) / editor.fileSize) * 100));
+			formatBin(c, setting.si),
+			((cast(double)c) / editor.fileSize) * 100));
 }
 
 void updateCursor() {
 	version (Trace)
 		with (editor.cursor)
-			trace("x=%u y=%u n=%u", x, y, nibble);
+			trace("pos=%u n=%u", position, nibble);
 	
 	with (editor.cursor)
-		screen.cursor(x, y, nibble);
+		screen.cursor(position, nibble);
 }
 
 void readRender() {
@@ -483,13 +471,14 @@ void readRender() {
 /// 4. Read buffer
 /// 5. Render
 void refresh() {
-	version (Trace) trace("");
+	version (Trace) trace;
 	
-	screen.screenClear;
+	screen.clear;
 	initiate;
 	read;
 	updateOffset;
 	render;
+	updateCursor;
 }
 
 /// Seek to position in data, reads view's worth, and display that.
@@ -555,15 +544,15 @@ void safeSeek(long pos) {
 	else if (pos < 0)
 		pos = 0;
 	
-	editor.cursorTo(pos);
+	editor.cursorJump(pos, true);
 }
 
-private enum LAST_BUFFER_SIZE = 128;
-private __gshared ubyte[LAST_BUFFER_SIZE] lastItem;
-private __gshared size_t lastSize;
-private __gshared string lastType;
-private __gshared bool lastForward;
-private __gshared bool lastAvailable;
+enum LAST_BUFFER_SIZE = 128;
+__gshared ubyte[LAST_BUFFER_SIZE] lastItem;
+__gshared size_t lastSize;
+__gshared string lastType;
+__gshared bool lastForward;
+__gshared bool lastAvailable;
 
 /// Search last item.
 /// Returns: Error code if set.

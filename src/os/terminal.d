@@ -20,7 +20,8 @@ module os.terminal;
 ///
 private extern (C) int putchar(int);
 
-private import std.stdio : printf, stdin, stdout, _IONBF;
+private import std.stdio : _IONBF, _IOLBF, _IOFBF,
+	 printf, stdin, stdout;
 private import core.stdc.stdlib : system, atexit;
 
 version (Windows) {
@@ -34,14 +35,25 @@ version (Windows) {
 	private __gshared HANDLE hIn, hOut;
 	private __gshared USHORT defaultColor = DEFAULT_COLOR;
 	private __gshared DWORD oldCP;
-}
-version (Posix) {
+} else version (Posix) {
 	private import core.sys.posix.sys.stat;
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
 	
-	version (CRuntime_Musl) {
+	// Bionic depends on the Linux system it's compiled on.
+	// But Glibc and Musl have the same settings, so does Bionic.
+	// ...And uClibc, at least on Linux.
+	// D are missing the following bindings.
+	version (CRuntime_Musl)
+		version = IncludeTermiosLinux;
+	version (CRuntime_Bionic)
+		version = IncludeTermiosLinux;
+	version (CRuntime_UClibc)
+		version = IncludeTermiosLinux;
+	
+	version (IncludeTermiosLinux) {
+		// termios.h, bits/termios.h
 		private alias uint tcflag_t;
 		private alias uint speed_t;
 		private alias char cc_t;
@@ -49,7 +61,6 @@ version (Posix) {
 		private enum NCCS	= 32;
 		private enum ICANON	= 2;
 		private enum ECHO	= 10;
-		private enum TIOCGWINSZ	= 0x5413;
 		private enum BRKINT	= 2;
 		private enum INPCK	= 20;
 		private enum ISTRIP	= 40;
@@ -68,14 +79,16 @@ version (Posix) {
 			speed_t __c_ispeed;
 			speed_t __c_ospeed;
 		}
+		private extern (C) int tcgetattr(int fd, termios *termios_p);
+		private extern (C) int tcsetattr(int fd, int a, termios *termios_p);
+		// ioctl.h
+		private enum TIOCGWINSZ	= 0x5413;
 		private struct winsize {
 			ushort ws_row;
 			ushort ws_col;
 			ushort ws_xpixel;
 			ushort ws_ypixel;
 		}
-		private extern (C) int tcgetattr(int fd, termios *termios_p);
-		private extern (C) int tcsetattr(int fd, int a, termios *termios_p);
 		private extern (C) int ioctl(int fd, ulong request, ...);
 	}
 	
@@ -145,6 +158,7 @@ void terminalInit(TermFeat features) {
 			if (hOut == INVALID_HANDLE_VALUE)
 				throw new WindowsException(GetLastError);
 			
+			stdout.flush;
 			stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
 			
 			SetStdHandle(STD_OUTPUT_HANDLE, hOut);
@@ -301,6 +315,28 @@ void terminalPos(int x, int y) {
 		SetConsoleCursorPosition(hOut, c);
 	} else version (Posix) { // 1-based, so 0,0 needs to be output as 1,1
 		printf("\033[%d;%dH", ++y, ++x);
+		stdout.flush;
+	}
+}
+
+/// Directly write to output.
+/// Params:
+/// 	data = Character data.
+/// 	size = Amount in bytes.
+/// Returns: Number of bytes written.
+size_t terminalOutput(const(void) *data, size_t size) {
+	version (Windows) {
+		import core.sys.windows.winbase : STD_OUTPUT_HANDLE,
+			WriteFile, GetStdHandle;
+		uint r = void;
+		assert(WriteFile(hOut, data, cast(uint)size, &r, null));
+		return r;
+	} else version (Posix) {
+		import core.sys.posix.unistd : write, STDOUT_FILENO;
+		import core.sys.posix.sys.types : ssize_t;
+		ssize_t r = write(STDOUT_FILENO, data, size);
+		assert(r >= 0);
+		return r;
 	}
 }
 

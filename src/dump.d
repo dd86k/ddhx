@@ -7,7 +7,19 @@ module dump;
 import os.terminal;
 import error, editor, screen, settings;
 
-/// Dump to stdout, akin to xxd(1).
+/*TODO: DumpOutput
+//      Then add to function as parameter
+
+// With custom "byte" formatter
+// Default formatter has " " as prefix/suffix
+// HTML formatter will have "<td>" as prefix and "</td>" as suffix
+
+enum DumpOutput {
+	text,
+	html
+}*/
+
+/// Dump to stdout, akin to xxd(1) or hexdump(1).
 /// Params:
 /// 	skip = If set, number of bytes to skip.
 /// 	length = If set, maximum length to read.

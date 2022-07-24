@@ -85,7 +85,7 @@ enum Seek {
 //	useful when writing all changes to file
 //	Win32: Seek + SetEndOfFile
 //	others: ftruncate
-struct OSFile2 {
+struct OSFile {
 	private OSHANDLE handle;
 	bool eof, err;
 	
@@ -100,7 +100,7 @@ struct OSFile2 {
 	//      By default, at least on Windows, files aren't shared. Enabling
 	//      sharing would allow refreshing view (manually) when a program
 	//      writes to file.
-	bool open(string path) {
+	bool open(string path, bool readOnly) {
 		version (Windows) {
 			// NOTE: toUTF16z/tempCStringW
 			//       Phobos internally uses tempCStringW from std.internal
@@ -108,7 +108,9 @@ struct OSFile2 {
 			//       Legacy baggage?
 			handle = CreateFileW(
 				path.toUTF16z,	// lpFileName
-				GENERIC_READ | GENERIC_WRITE,	// dwDesiredAccess
+				readOnly ?	// dwDesiredAccess
+					GENERIC_READ :
+					GENERIC_READ | GENERIC_WRITE,
 				0,	// dwShareMode
 				null,	// lpSecurityAttributes
 				OPEN_EXISTING,	// dwCreationDisposition
@@ -117,7 +119,7 @@ struct OSFile2 {
 			);
 			return err = handle == INVALID_HANDLE_VALUE;
 		} else version (Posix) {
-			handle = .open(path.toStringz, O_RDWR);
+			handle = .open(path.toStringz, readOnly ? O_RDONLY : O_RDWR);
 			return err = handle == -1;
 		}
 	}
