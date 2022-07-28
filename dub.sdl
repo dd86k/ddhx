@@ -9,6 +9,14 @@ preBuildCommands "rdmd setup.d version" platform="dmd"
 preBuildCommands "ldmd2 -run setup.d version" platform="ldc"
 preBuildCommands "gdmd -run setup.d version" platform="gdc"
 
+configuration "default" {
+	targetType "executable"
+}
+configuration "trace" {
+	targetType "executable"
+	versions "Trace"
+}
+
 #
 # Debug builds
 #
@@ -18,10 +26,6 @@ buildType "debugv" {
 	dflags "--vgc" "--vtls" platform="ldc"
 }
 
-configuration "trace" {
-	targetType "executable"
-	versions "Trace"
-}
 
 #
 # Tests
