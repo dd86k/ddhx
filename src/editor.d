@@ -118,6 +118,7 @@ private __gshared Source source;
 __gshared const(char)[] fileName;	/// File base name.
 __gshared FileMode fileMode;	/// Current file mode.
 __gshared long position;	/// Last known set position.
+//TODO: rename to viewSize
 __gshared size_t readSize;	/// For input size.
 private __gshared ubyte[] readBuffer;	/// For input data.
 private __gshared uint vheight;	/// 
@@ -290,7 +291,7 @@ ubyte[] read(ubyte[] buffer) {
 // SECTION: Editing
 
 /// 
-ubyte[] view() {
+ubyte[] peek() {
 	ubyte[] t = read().dup;
 	
 	
@@ -329,28 +330,48 @@ void writeEdits() {
 // SECTION View position management
 //
 
+private
 bool viewStart() {
 	bool z = cursor.position > readSize;
 	position = 0;
 	return z;
 }
+private
 bool viewEnd() {
+	//TODO: align to columns
 	long old = position;
 	position = fileSize - readSize;
 	return position != old;
 }
+private
 bool viewUp() {
-	if (position - setting.width < 0)
+	long npos = position - setting.width;
+	if (npos < 0)
 		return false;
-	position -= setting.width;
+	position = npos;
 	return true;
 }
+private
 bool viewDown() {
 	long fsize = fileSize;
 	if (position + readSize > fsize)
 		return false;
 	position += setting.width;
 	return true;
+}
+private
+bool viewPageUp() {
+	long npos = position - readSize;
+	bool ok = npos >= 0;
+	if (ok) position = npos;
+	return ok;
+}
+private
+bool viewPageDown() {
+	long npos = position + readSize;
+	bool ok = npos < fileSize;
+	if (ok) position = npos;
+	return ok;
 }
 
 // !SECTION
@@ -386,15 +407,15 @@ bool cursorFileEnd() {
 	return true;
 }
 
-bool cursorHome() {
-	with (setting)
-		cursor.position = (cursor.position / width) * width;
+bool cursorHome() { // put cursor at the start of row
+	cursor.position = cursor.position - (cursor.position % setting.width);
 	cursor.nibble = 0;
 	return false;
 }
-bool cursorEnd() {
-	with (setting)
-		cursor.position = ((cursor.position / width) * width) + width - 1;
+bool cursorEnd() { // put cursor at the end of the row
+	cursor.position =
+		(cursor.position - (cursor.position % setting.width))
+		+ setting.width - 1;
 	cursor.nibble = 0;
 	return false;
 }
@@ -432,25 +453,36 @@ bool cursorUp() {
 	return false;
 }
 bool cursorDown() {
-	long fs = fileSize;
+	/// File size
+	long fsize = fileSize;
+	/// Normalized file size with last row (remaining) trimmed
+	long fsizenorm = fsize - (fsize % setting.width);
+	/// Absolute cursor position
+	long acpos = cursorTell;
 	
-	// last line
+	bool bottom = cursor.position + setting.width >= readSize; // cursor bottom
+	bool finalr = acpos >= fsizenorm; /// final row
+	
+	/* /// set if cursor within last row
 	bool last = cursor.position > readSize - setting.width;
-	// should move down
-	bool force = cursorTell + setting.width >= fs;
-	bool ok = last && force;
+	/// set if camera wants to be pushed down
+	bool move = cpos + setting.width >= fsize;
+	/// set if at the end of file
+	bool end = cpos > fsize - setting.width;
+	bool ok = last && move; */
 	
-	if (cursor.position + setting.width >= readSize) {
-		bool m = viewDown;
-		if (force)
-			goto L_FORCE_CURSOR;
-		return m;
+	version (Trace) trace("bottom=%s final=%s", bottom, finalr);
+	
+	if (finalr)
+		return false;
+	
+	if (bottom) {
+		return viewDown;
 	}
 	
-L_FORCE_CURSOR:
-	if (force) {
-		uint rem = cast(uint)(fs % setting.width);
-		cursor.position = cast(uint)(readSize - setting.width + rem) - 1;
+	if (acpos + setting.width > fsize) {
+		uint rem = cast(uint)(fsize % setting.width);
+		cursor.position = cast(uint)(readSize - setting.width + rem);
 		return false;
 	}
 	
@@ -458,16 +490,12 @@ L_FORCE_CURSOR:
 	return false;
 }
 bool cursorPageUp() {
-	
-	
-	return false;
+	return viewPageUp;
 }
 bool cursorPageDown() {
-	
-	
-	return false;
+	return viewPageDown;
 }
-/// Get cursor absolute position
+/// Get cursor absolute position within the file
 long cursorTell() {
 	return position + cursor.position;
 }

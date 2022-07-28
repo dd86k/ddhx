@@ -33,6 +33,20 @@ version (Trace) import std.datetime.stopwatch;
 //TODO: Consider buffer strategy full for terminal-altscreen mode
 //      + manual flushes here
 
+private struct NumberFormatter {
+	string name;	/// Short offset name
+	char fmtchar;	/// Format character for printf-like functions
+	ubyte size;	/// Size for formatted byte (excluding space)
+	size_t function(char*,long) offset;	/// Function to format offset
+	size_t function(char*,ubyte) data;	/// Function to format data
+}
+
+private immutable NumberFormatter[3] formatters = [
+	{ "hex", 'x', 2, &format11x, &format02x },
+	{ "dec", 'u', 3, &format11d, &format03d },
+	{ "oct", 'o', 3, &format11o, &format03o },
+];
+
 /// Last known terminal size.
 __gshared TerminalSize termSize;
 // Internal buffer filling character.
@@ -41,12 +55,22 @@ __gshared TerminalSize termSize;
 //__gshared char binaryFiller;
 //__gshared char textFiller;
 
+__gshared NumberFormatter offsetFormatter = formatters[0];
+__gshared NumberFormatter binaryFormatter = formatters[0];
+
 void initiate() {
 	terminalInit(TermFeat.all);
 }
 
 void updateTermSize() {
 	termSize = terminalSize;
+}
+
+void setOffsetFormat(NumberType type) {
+	offsetFormatter = formatters[type];
+}
+void setBinaryFormat(NumberType type) {
+	binaryFormatter = formatters[type];
 }
 
 //string screenPrompt(string prompt)
@@ -64,10 +88,6 @@ void clear() {
 	terminalClear;
 }
 
-string name() {
-	return dataFmt.name;
-}
-
 /*void clearStatusBar() {
 	screen.cwritefAt(0,0,"%*s", termSize.width - 1, " ");
 }*/
@@ -75,32 +95,18 @@ string name() {
 /// Params:
 ///   fmt = Formatting message string.
 ///   args = Arguments.
-void screenMessage(A...)(const(char)[] fmt, A args) {
-	//TODO: Consider using a scoped outbuffer + private screenMessage(outbuf)
+void message(A...)(const(char)[] fmt, A args) {
+	//TODO: Consider using a scoped outbuffer + private message(outbuf)
 	import std.format : format;
-	screenMessage(format(fmt, args));
+	message(format(fmt, args));
 }
 /// Display a message at the bottom of the screen.
 /// Params: str = Message.
-void screenMessage(const(char)[] str) {
-	//TODO: Consider using a scoped outbuffer + private screenMessage(outbuf)
+void message(const(char)[] str) {
+	//TODO: Consider using a scoped outbuffer + private message(outbuf)
 	terminalPos(0, termSize.height - 1);
 	cwritef("%-*s", termSize.width - 1, str);
 }
-
-private struct NumberFormatter {
-	string name;	/// Short offset name
-	align(2) char fmtchar;	/// Format character for printf-like functions
-	uint size;	/// Size for formatted byte
-	size_t function(char*,long) offset;	/// Function to format offset
-	size_t function(char*,ubyte) data;	/// Function to format data
-}
-
-private immutable NumberFormatter[3] numbers = [
-	{ "hex", 'x', 2, &format11x, &format02x },
-	{ "dec", 'u', 3, &format11d, &format03d },
-	{ "oct", 'o', 3, &format11o, &format03o },
-];
 
 //
 // SECTION Formatting
@@ -326,16 +332,15 @@ void renderOffset() {
 	}
 	
 	// Setup index formatting
-	//TODO: Consider SingleSpec or "maker" function
-	int dsz = numbers[setting.dataType].size;
+	int datasize = binaryFormatter.size;
 	__gshared char[4] offsetFmt = " %__";
-	offsetFmt[2] = cast(char)(dsz + '0');
-	offsetFmt[3] = numbers[setting.offsetType].fmtchar;
+	offsetFmt[2] = cast(char)(datasize + '0');
+	offsetFmt[3] = formatters[setting.offsetType].fmtchar;
 	
 	auto outbuf = scoped!OutBuffer();
-	outbuf.reserve(16 + (setting.width * dsz));
+	outbuf.reserve(16 + (setting.width * datasize));
 	outbuf.write("Offset(");
-	outbuf.write(numbers[setting.offsetType].name);
+	outbuf.write(formatters[setting.offsetType].name);
 	outbuf.write(") ");
 	
 	// Add offsets
@@ -413,9 +418,6 @@ uint renderContent(long position, ubyte[] data) {
 		StopWatch swtotal = StopWatch(AutoStart.yes);
 	}
 	
-	// Setup formatting related stuff
-	prepareView;
-	
 	// print lines in bulk (for entirety of view buffer)
 	uint lines;
 	foreach (chunk; chunks(data, setting.width)) {
@@ -432,15 +434,6 @@ uint renderContent(long position, ubyte[] data) {
 	return lines;
 }
 
-private void prepareView(NumberType offset = setting.offsetType,
-	NumberType data = setting.dataType) {
-	offsetFmt = &numbers[offset];
-	dataFmt = &numbers[data];
-}
-
-private __gshared immutable(NumberFormatter) *offsetFmt;
-private __gshared immutable(NumberFormatter) *dataFmt;
-
 //TODO: bool insertPosition?
 //TODO: bool insertData?
 //TODO: bool insertText?
@@ -454,10 +447,10 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 	__gshared char *bufferptr = buffer.ptr;
 	
 	// Insert OFFSET
-	size_t indexData = offsetFmt.offset(bufferptr, pos);
+	size_t indexData = offsetFormatter.offset(bufferptr, pos);
 	bufferptr[indexData++] = ' '; // index: OFFSET + space
 	
-	const uint dataLen = (setting.width * (dataFmt.size + 1)); /// data row character count
+	const uint dataLen = (setting.width * (binaryFormatter.size + 1)); /// data row character count
 	size_t indexChar = indexData + dataLen; // Position for character column
 	
 	*(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
@@ -470,7 +463,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 		//TODO: Maybe binary data formatter should include space
 		// Data translation
 		bufferptr[indexData++] = ' ';
-		indexData += dataFmt.data(bufferptr + indexData, data);
+		indexData += binaryFormatter.data(bufferptr + indexData, data);
 		// Character translation
 		immutable(char)[] units = transcoder.transform(data);
 		if (units.length) { // Has utf-8 codepoints
@@ -488,7 +481,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 		size_t leftchar = (setting.width - chunk.length); // Bytes left
 		memset(bufferptr + indexChar, ' ', leftchar);
 		// In-fill binary data: left = CharactersLeft * (DataSize + 1)
-		size_t leftdata = leftchar * (dataFmt.size + 1);
+		size_t leftdata = leftchar * (binaryFormatter.size + 1);
 		memset(bufferptr + indexData, ' ', leftdata);
 		
 		end += leftchar;

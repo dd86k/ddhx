@@ -80,6 +80,7 @@ int settingsOffset(string val) {
 	case 'h','H':	setting.offsetType = NumberType.hexadecimal; break;
 	default:	return errorSet(ErrorCode.invalidParameter);
 	}
+	screen.setOffsetFormat(setting.offsetType);
 	return 0;
 }
 
@@ -92,6 +93,7 @@ int settingsData(string val) {
 	case 'h','H':	setting.dataType = NumberType.hexadecimal; break;
 	default:	return errorSet(ErrorCode.invalidParameter);
 	}
+	screen.setBinaryFormat(setting.dataType);
 	return 0;
 }
 

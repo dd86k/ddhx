@@ -148,6 +148,7 @@ L_KEYDOWN:
 
 private:
 
+//TODO: rename to "readbuffer"?
 __gshared ubyte[] readdata;
 
 //TODO: revamp menu system
@@ -173,7 +174,7 @@ void menu(string cmdPrepend = null, string cmdAlias = null) {
 	screen.renderOffset;
 	
 	if (command(line))
-		screenMessage(errorMessage());
+		screen.message(errorMessage());
 }
 
 int command(string line) {
@@ -211,8 +212,7 @@ int command(string[] argv) {
 		if (argc <= 1)
 			return errorSet(ErrorCode.missingArgumentPosition);
 		
-		switch (argv[1])
-		{
+		switch (argv[1]) {
 		case "e", "end":
 			moveEnd;
 			break;
@@ -245,10 +245,10 @@ int command(string[] argv) {
 		return 0;
 	case "about":
 		enum C = "Written by dd86k. " ~ DDHX_COPYRIGHT;
-		screenMessage(C);
+		screen.message(C);
 		return 0;
 	case "version":
-		screenMessage(DDHX_ABOUT);
+		screen.message(DDHX_ABOUT);
 		return 0;
 	//
 	// Settings
@@ -439,10 +439,14 @@ void updateStatus() {
 	
 	long c = editor.cursorTell + 1;
 	
+	//TODO: Cursor position should be formatted depending on current offset type
+	//      So instead of saying "2 B" to say we're at byte 1
+	//      It should be simply be the absolute position given by cursorTell
+	
 	screen.cursorStatusbar;
 	screen.renderStatusBar(
 		editor.editModeString,
-		screen.name,
+		screen.binaryFormatter.name,
 		transcoder.name,
 		formatBin(editor.readSize, setting.si),
 		format("%s (%f%%)",
@@ -489,7 +493,7 @@ void seek(long pos) {
 	version (Trace) trace("pos=%d", pos);
 	
 	if (editor.readSize >= editor.fileSize) {
-		screenMessage("Navigation disabled, file too small");
+		screen.message("Navigation disabled, file too small");
 		return;
 	}
 	
@@ -510,7 +514,7 @@ void seek(string str) {
 	}
 	long newPos = void;
 	if (convertToVal(newPos, str)) {
-		screenMessage("Could not parse number");
+		screen.message("Could not parse number");
 		return;
 	}
 	switch (seekmode) {
@@ -522,9 +526,9 @@ void seek(string str) {
 		break;
 	default: // Absolute
 		if (newPos < 0) {
-			screenMessage("Range underflow: %d (0x%x)", newPos, newPos);
+			screen.message("Range underflow: %d (0x%x)", newPos, newPos);
 		} else if (newPos >= editor.fileSize - editor.readSize) {
-			screenMessage("Range overflow: %d (0x%x)", newPos, newPos);
+			screen.message("Range overflow: %d (0x%x)", newPos, newPos);
 		} else {
 			seek(newPos);
 		}
@@ -566,13 +570,13 @@ int next() {
 	int e = searchData(pos, lastItem.ptr, lastSize, lastForward);
 	
 	if (e) {
-		screenMessage("Not found");
+		screen.message("Not found");
 		return e;
 	}
 	
 	safeSeek(pos);
 	//TODO: Format position found with current offset type
-	screenMessage("Found at 0x%x", pos);
+	screen.message("Found at 0x%x", pos);
 	return 0;
 }
 
@@ -593,42 +597,42 @@ int lookup(string type, string data, bool forward, bool save) {
 		lastAvailable = true;
 	}
 	
-	screenMessage("Searching for %s...", type);
+	screen.message("Searching for %s...", type);
 	
 	long pos = void;
 	int e = searchData(pos, p, len, forward);
 	
 	if (e) {
-		screenMessage("Not found");
+		screen.message("Not found");
 		return e;
 	}
 	
 	safeSeek(pos);
 	//TODO: Format position found with current offset type
-	screenMessage("Found at 0x%x", pos);
+	screen.message("Found at 0x%x", pos);
 	return 0;
 }
 
 int skip(ubyte data) {
-	screenMessage("Skipping all 0x%x...", data);
+	screen.message("Skipping all 0x%x...", data);
 	
 	long pos = void;
 	const int e = searchSkip(data, pos);
 	
 	if (e) {
-		screenMessage("End of file reached");
+		screen.message("End of file reached");
 		return e;
 	}
 	
 	safeSeek(pos);
 	//TODO: Format position found with current offset type
-	screenMessage("Found at 0x%x", pos);
+	screen.message("Found at 0x%x", pos);
 	return 0;
 }
 
 /// Print file information
 void printFileInfo() {
-	screenMessage("%11s  %s",
+	screen.message("%11s  %s",
 		formatBin(editor.fileSize, setting.si),
 		editor.fileName);
 }
