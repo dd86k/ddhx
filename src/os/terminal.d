@@ -536,6 +536,9 @@ L_READ:
 			case 0: // Ctrl+Space
 				event.key = Key.Spacebar | Mod.ctrl;
 				return;
+			case 13:
+				event.key = Key.Enter;
+				return;
 			case 8, 127: // ^H
 				event.key = Key.Backspace;
 				return;
