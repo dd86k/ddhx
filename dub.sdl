@@ -11,6 +11,7 @@ preBuildCommands "gdmd -run setup.d version" platform="gdc"
 
 configuration "default" {
 	targetType "executable"
+	mainSourceFile "src/main.d"
 }
 configuration "trace" {
 	targetType "executable"

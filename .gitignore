@@ -4,6 +4,7 @@ docs.json
 __dummy.html
 dub.selections.json
 ddhx-test-library
+ddhx-test-default
 /ddhx
 ddhx.log
 __test__*__

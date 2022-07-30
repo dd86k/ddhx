@@ -216,7 +216,7 @@ void terminalInit(TermFeat features) {
 			// maximum amount of time to wait for input,
 			// 1 being 1/10 of a second (100 milliseconds)
 			//new_ios.c_cc[VTIME] = 0;
-			tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
+			terminalResumeInput;
 		}
 		if (features & TermFeat.altScreen) {
 			// change to alternative screen buffer
@@ -224,12 +224,12 @@ void terminalInit(TermFeat features) {
 		}
 	}
 	
-	atexit(&ddhx_terminal_quit);
+	atexit(&terminalQuit);
 }
 
 private
 extern (C)
-void ddhx_terminal_quit() {
+void terminalQuit() {
 	terminalRestore;
 }
 
@@ -410,8 +410,8 @@ L_READ:
 		default: goto L_READ;
 		}
 	} else version (Posix) {
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
-		scope (exit) tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
+		//tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
+		//scope (exit) tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 		
 		//TODO: Mouse reporting in Posix terminals
 		//      * X10 compatbility mode (mouse-down only)
@@ -437,42 +437,51 @@ L_READ:
 		//      - string table (current, works alright)
 		//      - string[string]
 		//        - needs active init though
-		//      - string decoding
+		//      - string decoding (slower?)
 		//        [ -> escape
 		//        1;2 -> shift (optional)
 		//        B -> right arrow
-		//      - long+template+0-init
-		//        - cursed but if they don't never go above 8 bytes,
-		//          worth it?
+		//      - template char[8] to long
+		//        - very cursed
+		//        - screwed if there are keys more than 8 bytes
+		//        - template should do endianness
 		
 		struct KeyInfo {
 			string text;
 			int value;
 		}
+		//TODO: Consider an associated array
 		static immutable KeyInfo[] keyInputs = [
 			// text		Key value
 			{ "\033[A",	Key.UpArrow },
 			{ "\033[1;2A",	Key.UpArrow | Mod.shift },
 			{ "\033[1;3A",	Key.UpArrow | Mod.alt },
 			{ "\033[1;5A",	Key.UpArrow | Mod.ctrl },
+			{ "\033[A:4A",	Key.UpArrow | Mod.shift | Mod.alt },
 			{ "\033[B",	Key.DownArrow },
 			{ "\033[1;2B",	Key.DownArrow | Mod.shift },
 			{ "\033[1;3B",	Key.DownArrow | Mod.alt },
 			{ "\033[1;5B",	Key.DownArrow | Mod.ctrl },
+			{ "\033[A:4B",	Key.DownArrow | Mod.shift | Mod.alt },
 			{ "\033[C",	Key.RightArrow },
 			{ "\033[1;2C",	Key.RightArrow | Mod.shift },
 			{ "\033[1;3C",	Key.RightArrow | Mod.alt },
 			{ "\033[1;5C",	Key.RightArrow | Mod.ctrl },
+			{ "\033[A:4C",	Key.RightArrow | Mod.shift | Mod.alt },
 			{ "\033[D",	Key.LeftArrow },
 			{ "\033[1;2D",	Key.LeftArrow | Mod.shift },
 			{ "\033[1;3D",	Key.LeftArrow | Mod.alt },
 			{ "\033[1;5D",	Key.LeftArrow | Mod.ctrl },
+			{ "\033[A:4D",	Key.LeftArrow | Mod.shift | Mod.alt },
 			{ "\033[2~",	Key.Insert },
+			{ "\033[2;3~",	Key.Insert | Mod.alt },
 			{ "\033[3~",	Key.Delete },
 			{ "\033[3;5~",	Key.Delete | Mod.ctrl },
 			{ "\033[H",	Key.Home },
+			{ "\033[1;3H",	Key.Home | Mod.alt },
 			{ "\033[1;5H",	Key.Home | Mod.ctrl },
 			{ "\033[F",	Key.End },
+			{ "\033[1;3F",	Key.End | Mod.alt },
 			{ "\033[1;5F",	Key.End | Mod.ctrl },
 			{ "\033[5~",	Key.PageUp },
 			{ "\033[5;5~",	Key.PageUp | Mod.ctrl },
@@ -509,32 +518,37 @@ L_READ:
 		enum BLEN = 8;
 		char[BLEN] b = void;
 	L_READ:
-		ssize_t r = read(STDIN_FILENO, &b, BLEN);
+		ssize_t r = read(STDIN_FILENO, b.ptr, BLEN);
 		
 		event.type = InputType.keyDown; // Assuming for now
+		event.key  = 0; // clear as safety measure
 		
 		switch (r) {
 		case -1: assert(0, "read(2) failed");
-		case 0:  goto L_READ; // HOW EVEN
+		case 0: // How even
+			version (TestInput) printf("stdin: empty\n");
+			goto L_READ;
 		case 1:
-			version (TestInput) printf("stdin: \\0%o\n", b[0]);
-			event.key = b[0];
+			char c = b[0];
+			version (TestInput) printf("stdin: \\0%o (%d)\n", c, c);
 			// Filtering here adjusts the value only if necessary.
-			switch (event.key) {
-			case 0: goto L_READ; // Invalid
-			case 8: // ^H
-				event.key |= Mod.ctrl;
+			switch (c) {
+			case 0: // Ctrl+Space
+				event.key = Key.Spacebar | Mod.ctrl;
 				return;
-			case 127:
+			case 8, 127: // ^H
 				event.key = Key.Backspace;
 				return;
 			default:
 			}
-			if (event.key >= 'a' && event.key <= 'z') {
-				event.key = cast(ushort)(event.key - 32);
-			} else if (event.key >= 'A' && event.key <= 'Z') {
-				event.key |= Mod.shift;
-			}
+			if (c >= 'a' && c <= 'z')
+				event.key = cast(ushort)(c - 32);
+			else if (c >= 'A' && c <= 'Z')
+				event.key = c | Mod.shift;
+			else if (c < 32)
+				event.key = (c + 64) | Mod.ctrl;
+			else
+				event.key = c;
 			return;
 		default:
 		}
@@ -559,8 +573,7 @@ L_READ:
 		//      Starts with \033[M
 		
 		// Checking for other key inputs
-		for (size_t i; i < keyInputs.length; ++i) {
-			immutable(KeyInfo) *ki = &keyInputs[i];
+		foreach (ki; keyInputs) {
 			if (r != ki.text.length) continue;
 			if (inputString != ki.text) continue;
 			event.key  = ki.value;
@@ -587,6 +600,7 @@ enum Mod {
 	alt   = 1 << 18,
 }
 /// Key codes map.
+//TODO: Consider mapping these to os/ascii-specific
 enum Key {
 	Undefined = 0,
 	Backspace = 8,

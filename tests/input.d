@@ -5,7 +5,7 @@ import os.terminal;
 
 @system unittest {
 	enum MODS = Mod.ctrl | Mod.alt | Mod.shift;
-	terminalInit(TermFeat.input);
+	terminalInit(TermFeat.inputSys);
 	
 	// Tests terminalInit if we haven't screwed with stdout
 	writeln("Exit by CTRL+C");
