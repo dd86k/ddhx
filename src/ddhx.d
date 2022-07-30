@@ -430,12 +430,18 @@ void updateOffset() {
 }
 
 void updateContent() {
-	screen.cursorContent;
-	screen.renderContent(editor.position, readdata);
+	screen.cursorContent; // Set pos
+	screen.renderEmpty( // After content, this does filling
+		screen.renderContent(editor.position, readdata)
+	);
 }
 
 void updateStatus() {
 	import std.format : format;
+	
+	long pos = editor.cursorTell;
+	char[12] offset = void;
+	size_t l = screen.offsetFormatter.offset(offset.ptr, pos);
 	
 	long c = editor.cursorTell + 1;
 	
@@ -449,8 +455,8 @@ void updateStatus() {
 		screen.binaryFormatter.name,
 		transcoder.name,
 		formatBin(editor.readSize, setting.si),
-		format("%s (%f%%)",
-			formatBin(c, setting.si),
+		offset[0..l],
+		format("%f%%",
 			((cast(double)c) / editor.fileSize) * 100));
 }
 
@@ -548,7 +554,7 @@ void safeSeek(long pos) {
 	else if (pos < 0)
 		pos = 0;
 	
-	editor.cursorJump(pos, true);
+	editor.cursorGoto(pos);
 }
 
 enum LAST_BUFFER_SIZE = 128;

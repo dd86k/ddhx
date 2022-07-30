@@ -493,13 +493,15 @@ bool cursorPageUp() {
 	return viewPageUp;
 }
 bool cursorPageDown() {
+	//TODO: Fix cursor position if out of bounds
+	//      Should stay on the same column
 	return viewPageDown;
 }
 /// Get cursor absolute position within the file
 long cursorTell() {
 	return position + cursor.position;
 }
-void cursorJump(long m, bool absolute) {
+void cursorGoto(long m) {
 	// Per view chunks, then per y chunks, then x
 	//long npos = 
 	

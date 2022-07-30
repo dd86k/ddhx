@@ -8,6 +8,8 @@ import std.range : chunks;
 import std.stdio : stdout; // for cwrite family
 import ddhx; // for setting, NumberType
 import os.terminal, os.file;
+import core.stdc.string : memset;
+import core.stdc.stdlib : malloc, free;
 version (Trace) import std.datetime.stopwatch;
 
 //TODO: Data grouping (1, 2, 4, 8, 16)
@@ -73,14 +75,12 @@ void setBinaryFormat(NumberType type) {
 	binaryFormatter = formatters[type];
 }
 
-//string screenPrompt(string prompt)
-
 /// Update cursor position on the terminal screen
 void cursor(uint pos, uint nibble) {
-	//TODO: (x * 3) -> x * datawidth
 	uint y = pos / setting.width;
 	uint x = pos % setting.width;
-	terminalPos(13 + (x * 3) + nibble, 1 + y);
+	int  d = binaryFormatter.size + 1;
+	terminalPos(13 + (x * d) + nibble, 1 + y);
 }
 
 /// Clear entire terminal screen
@@ -413,9 +413,8 @@ L_WRITE:
 /// Returns: Numbers of row written.
 uint renderContent(long position, ubyte[] data) {
 	version (Trace) {
-		trace("position=%u data.len=%u",
-			position, data.length);
-		StopWatch swtotal = StopWatch(AutoStart.yes);
+		trace("position=%u data.len=%u", position, data.length);
+		StopWatch sw = StopWatch(AutoStart.yes);
 	}
 	
 	// print lines in bulk (for entirety of view buffer)
@@ -427,19 +426,39 @@ uint renderContent(long position, ubyte[] data) {
 	}
 	
 	version (Trace) {
-		swtotal.stop;
-		trace("totaltime='%s µs'", swtotal.peek.total!"usecs");
+		sw.stop;
+		trace("time='%s µs'", sw.peek.total!"usecs");
 	}
 	
 	return lines;
+}
+void renderEmpty(uint rows) {
+	version (Trace) {
+		trace("rows=%u", rows);
+		StopWatch sw = StopWatch(AutoStart.yes);
+	}
+	uint t = termSize.height - 2;
+	if (t == rows)
+		return;
+	debug assert(termSize.height);
+	char *p = cast(char*)malloc(termSize.width+1);
+	debug assert(p);
+	int w = termSize.width - 1;
+	memset(p, ' ', w);
+	uint r = t - rows - 2;
+	for (; r < t; ++r)
+		cwriteln(p, w);
+	free(p);
+	version (Trace) {
+		sw.stop;
+		trace("time='%s µs'", sw.peek.total!"usecs");
+	}
 }
 
 //TODO: bool insertPosition?
 //TODO: bool insertData?
 //TODO: bool insertText?
 private char[] renderRow(ubyte[] chunk, long pos) {
-	import core.stdc.string : memset;
-	
 	//TODO: Consider realloc on terminal width
 	//      In screen.initiate
 	enum BUFFER_SIZE = 2048;
@@ -511,6 +530,9 @@ size_t cwrite(char c) {
 }
 size_t cwrite(const(char)[] _str) {
 	return terminalOutput(_str.ptr, _str.length);
+}
+size_t cwriteln(char *_str, size_t size) {
+	return terminalOutput(_str, size);
 }
 size_t cwriteln(const(char)[] _str) {
 	return cwrite(_str) + cwrite('\n');
