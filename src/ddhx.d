@@ -253,7 +253,7 @@ int command(string[] argv) {
 	//
 	// Settings
 	//
-	case "w", "width":
+	case "c", "columns":
 		if (argc <= 1)
 			return errorSet(ErrorCode.missingArgumentWidth);
 		
@@ -393,7 +393,7 @@ void initiate() {
 	screen.updateTermSize;
 	
 	long fsz = editor.fileSize; /// data size
-	int ssize = (screen.termSize.height - 2) * setting.width; /// screen size
+	int ssize = (screen.termSize.height - 2) * setting.columns; /// screen size
 	
 	version (Trace) trace("fsz=%u ssz=%u", fsz, ssize);
 	
@@ -443,12 +443,6 @@ void updateStatus() {
 	char[12] offset = void;
 	size_t l = screen.offsetFormatter.offset(offset.ptr, pos);
 	
-	long c = editor.cursorTell + 1;
-	
-	//TODO: Cursor position should be formatted depending on current offset type
-	//      So instead of saying "2 B" to say we're at byte 1
-	//      It should be simply be the absolute position given by cursorTell
-	
 	screen.cursorStatusbar;
 	screen.renderStatusBar(
 		editor.editModeString,
@@ -457,7 +451,7 @@ void updateStatus() {
 		formatBin(editor.readSize, setting.si),
 		offset[0..l],
 		format("%f%%",
-			((cast(double)c) / editor.fileSize) * 100));
+			((cast(double)pos) / editor.fileSize) * 100));
 }
 
 void updateCursor() {

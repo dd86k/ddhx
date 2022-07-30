@@ -132,22 +132,17 @@ __gshared EditMode editMode;	/// Current editing mode
 
 string editModeString(EditMode mode = editMode) {
 	final switch (mode) with (EditMode) {
-	case insert: return "inse";
-	case overwrite: return "over";
-	case readOnly: return "read";
-	case view: return "view";
+	case insert:	return "in";
+	case overwrite:	return "ov";
+	case readOnly:	return "rd";
+	case view:	return "vw";
 	}
 }
 bool editModeReadOnly(EditMode mode) {
-	switch (mode) with (EditMode) {
-	case readOnly, view: return true;
-	default: return false;
-	}
+	return mode >= EditMode.readOnly;
 }
 
 private struct cursor_t {
-	//TODO: Transform into an 1D position system
-	//      2D is just clumsy...
 	uint position;	/// Screen cursor byte position
 	uint nibble;	/// Data group nibble position
 }
@@ -177,7 +172,7 @@ bool err() {
 }
 
 bool dirty() {
-	return editIndex == 0;
+	return editIndex > 0;
 }
 
 // SECTION: File opening
@@ -245,12 +240,12 @@ void setBuffer(size_t size) {
 long seek(long pos) {
 	position = pos;
 	final switch (fileMode) with (FileMode) {
-	case file:   return source.osfile.seek(Seek.start, pos);
-	case mmfile: return source.mmfile.seek(pos);
-	case memory: return source.memory.seek(pos);
+	case file:	return source.osfile.seek(Seek.start, pos);
+	case mmfile:	return source.mmfile.seek(pos);
+	case memory:	return source.memory.seek(pos);
 	case stream:
 		source.stream.seek(pos);
-		return pos;
+		return source.stream.tell;
 	}
 }
 
@@ -330,22 +325,28 @@ void writeEdits() {
 // SECTION View position management
 //
 
+// NOTE: These return true if the position of the view changed.
+//       This is to determine if it's really necessary to update the
+//       view on screen, because pointlessly rendering content on-screen
+//       is not something I want to waste.
+
 private
 bool viewStart() {
-	bool z = cursor.position > readSize;
+	bool z = position != 0;
 	position = 0;
 	return z;
 }
 private
 bool viewEnd() {
-	//TODO: align to columns
 	long old = position;
-	position = fileSize - readSize;
+	long npos = (fileSize - readSize) + setting.columns;
+	npos -= npos % setting.columns; // re-align to columns
+	position = npos;
 	return position != old;
 }
 private
 bool viewUp() {
-	long npos = position - setting.width;
+	long npos = position - setting.columns;
 	if (npos < 0)
 		return false;
 	position = npos;
@@ -356,14 +357,14 @@ bool viewDown() {
 	long fsize = fileSize;
 	if (position + readSize > fsize)
 		return false;
-	position += setting.width;
+	position += setting.columns;
 	return true;
 }
 private
 bool viewPageUp() {
 	long npos = position - readSize;
 	bool ok = npos >= 0;
-	if (ok) position = npos;
+	position = ok ? npos : 0;
 	return ok;
 }
 private
@@ -381,44 +382,54 @@ bool viewPageDown() {
 //
 
 void cursorBound() {
-	if (cursor.position < 0)
+	if (cursor.position < 0) {
 		cursor.position = 0;
-	else if (cursor.position >= readSize) {
-		if (cursor.position - setting.width >= readSize)
+		return;
+	}
+	if (cursor.position >= readSize) {
+		if (cursor.position - setting.columns >= readSize)
 			cursor.position = cast(uint)(readSize - 1);
 		else
-			cursor.position -= setting.width;
+			cursor.position -= setting.columns;
+		return;
 	}
 }
 
-// These return true if view moves.
+// NOTE: These return true if view has moved.
 
+/// Move cursor at the absolute start of the file.
+/// Returns: True if the view moved.
 bool cursorFileStart() {
-	viewStart;
 	with (cursor) position = nibble = 0;
-	return true;
+	return viewStart;
 }
+/// Move cursor at the absolute end of the file.
+/// Returns: True if the view moved.
 bool cursorFileEnd() {
-	viewEnd;
 	with (cursor) {
 		position = cast(uint)readSize - 1;
 		nibble = 0;
 	}
-	return true;
+	return viewEnd;
 }
-
+/// Move cursor at the start of the row.
+/// Returns: True if the view moved.
 bool cursorHome() { // put cursor at the start of row
-	cursor.position = cursor.position - (cursor.position % setting.width);
+	cursor.position = cursor.position - (cursor.position % setting.columns);
 	cursor.nibble = 0;
 	return false;
 }
+/// Move cursor at the end of the row.
+/// Returns: True if the view moved.
 bool cursorEnd() { // put cursor at the end of the row
 	cursor.position =
-		(cursor.position - (cursor.position % setting.width))
-		+ setting.width - 1;
+		(cursor.position - (cursor.position % setting.columns))
+		+ setting.columns - 1;
 	cursor.nibble = 0;
 	return false;
 }
+/// Move cursor up the file by a data group.
+/// Returns: True if the view moved.
 bool cursorLeft() {
 	if (cursor.position == 0) {
 		if (position == 0)
@@ -431,8 +442,10 @@ bool cursorLeft() {
 	cursor.nibble = 0;
 	return false;
 }
+/// Move cursor down the file by a data group.
+/// Returns: True if the view moved.
 bool cursorRight() {
-	if (cursorTell >= fileSize - 1)
+	if (cursorTell >= fileSize)
 		return false;
 	
 	if (cursor.position == readSize - 1) {
@@ -444,63 +457,67 @@ bool cursorRight() {
 	cursor.nibble = 0;
 	return false;
 }
+/// Move cursor up the file by the number of columns.
+/// Returns: True if the view moved.
 bool cursorUp() {
-	if (cursor.position < setting.width) {
+	if (cursor.position < setting.columns) {
 		return viewUp;
 	}
 	
-	cursor.position -= setting.width;
+	cursor.position -= setting.columns;
 	return false;
 }
+/// Move cursor down the file by the bymber of columns.
+/// Returns: True if the view moved.
 bool cursorDown() {
 	/// File size
 	long fsize = fileSize;
 	/// Normalized file size with last row (remaining) trimmed
-	long fsizenorm = fsize - (fsize % setting.width);
+	long fsizenorm = fsize - (fsize % setting.columns);
 	/// Absolute cursor position
 	long acpos = cursorTell;
 	
-	bool bottom = cursor.position + setting.width >= readSize; // cursor bottom
+	bool bottom = cursor.position + setting.columns >= readSize; // cursor bottom
 	bool finalr = acpos >= fsizenorm; /// final row
-	
-	/* /// set if cursor within last row
-	bool last = cursor.position > readSize - setting.width;
-	/// set if camera wants to be pushed down
-	bool move = cpos + setting.width >= fsize;
-	/// set if at the end of file
-	bool end = cpos > fsize - setting.width;
-	bool ok = last && move; */
 	
 	version (Trace) trace("bottom=%s final=%s", bottom, finalr);
 	
 	if (finalr)
 		return false;
 	
-	if (bottom) {
+	if (bottom)
 		return viewDown;
-	}
 	
-	if (acpos + setting.width > fsize) {
-		uint rem = cast(uint)(fsize % setting.width);
-		cursor.position = cast(uint)(readSize - setting.width + rem);
+	if (acpos + setting.columns > fsize) {
+		uint rem = cast(uint)(fsize % setting.columns);
+		cursor.position = cast(uint)(readSize - setting.columns + rem);
 		return false;
 	}
 	
-	cursor.position += setting.width;
+	cursor.position += setting.columns;
 	return false;
 }
+/// Move cursor by a page up the file.
+/// Returns: True if the view moved.
 bool cursorPageUp() {
+	//TODO: Move cursor by viewSize
+	int v = readSize / setting.columns;
 	return viewPageUp;
 }
+/// Move cursor by a page down the file.
+/// Returns: True if the view moved.
 bool cursorPageDown() {
-	//TODO: Fix cursor position if out of bounds
-	//      Should stay on the same column
+	//TODO: Move cursor by viewSize
 	return viewPageDown;
 }
-/// Get cursor absolute position within the file
+/// Get cursor absolute position within the file.
+/// Returns: Cursor absolute position in file.
 long cursorTell() {
 	return position + cursor.position;
 }
+/// Make the cursor jump to an absolute position within the file.
+/// This is used for search results.
+/// Returns: True if the view moved.
 void cursorGoto(long m) {
 	// Per view chunks, then per y chunks, then x
 	//long npos = 

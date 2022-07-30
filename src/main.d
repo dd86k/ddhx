@@ -35,7 +35,7 @@ immutable string OPT_OVERWRITE	= "overwrite";
 immutable string OPT_READONLY	= "R|readonly";
 immutable string OPT_VIEW	= "view";
 immutable string OPT_SI	= "si";
-immutable string OPT_WIDTH	= "w|width";	//TODO: rename to c|columns
+immutable string OPT_COLUMNS	= "c|columns";	//TODO: rename to c|columns
 immutable string OPT_OFFSET	= "o|offset";
 immutable string OPT_DATA	= "d|data";
 immutable string OPT_DEFAULTCHAR	= "C|char";	//TODO: rename to F|filler
@@ -134,7 +134,7 @@ int main(string[] args) {
 	GetoptResult res = void;
 	try {
 		res = args.getopt(config.caseSensitive,
-		OPT_WIDTH,       "Set column width in bytes ('a'=automatic, default=16)", &cliOption,
+		OPT_COLUMNS,     "Set column size ('a'=automatic, default=16)", &cliOption,
 		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
 		OPT_DATA,        "Set data mode (decimal, hex, or octal)", &cliOption,
 		OPT_DEFAULTCHAR, "Set non-printable replacement character (default='.')", &cliOption,

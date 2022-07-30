@@ -77,8 +77,8 @@ void setBinaryFormat(NumberType type) {
 
 /// Update cursor position on the terminal screen
 void cursor(uint pos, uint nibble) {
-	uint y = pos / setting.width;
-	uint x = pos % setting.width;
+	uint y = pos / setting.columns;
+	uint x = pos % setting.columns;
 	int  d = binaryFormatter.size + 1;
 	terminalPos(13 + (x * d) + nibble, 1 + y);
 }
@@ -338,14 +338,14 @@ void renderOffset() {
 	offsetFmt[3] = formatters[setting.offsetType].fmtchar;
 	
 	auto outbuf = scoped!OutBuffer();
-	outbuf.reserve(16 + (setting.width * datasize));
+	outbuf.reserve(16 + (setting.columns * datasize));
 	outbuf.write("Offset(");
 	outbuf.write(formatters[setting.offsetType].name);
 	outbuf.write(") ");
 	
 	// Add offsets
 	uint i;
-	for (; i < setting.width; ++i)
+	for (; i < setting.columns; ++i)
 		outbuf.writef(offsetFmt, i);
 	// Fill rest of terminal width if in interactive mode
 	if (termSize.width) {
@@ -419,9 +419,9 @@ uint renderContent(long position, ubyte[] data) {
 	
 	// print lines in bulk (for entirety of view buffer)
 	uint lines;
-	foreach (chunk; chunks(data, setting.width)) {
+	foreach (chunk; chunks(data, setting.columns)) {
 		cwriteln(renderRow(chunk, position));
-		position += setting.width;
+		position += setting.columns;
 		++lines;
 	}
 	
@@ -469,7 +469,7 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 	size_t indexData = offsetFormatter.offset(bufferptr, pos);
 	bufferptr[indexData++] = ' '; // index: OFFSET + space
 	
-	const uint dataLen = (setting.width * (binaryFormatter.size + 1)); /// data row character count
+	const uint dataLen = (setting.columns * (binaryFormatter.size + 1)); /// data row character count
 	size_t indexChar = indexData + dataLen; // Position for character column
 	
 	*(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
@@ -495,9 +495,9 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 	size_t end = indexChar;
 	
 	// data length < minimum row requirement = in-fill data and text columns
-	if (chunk.length < setting.width) {
+	if (chunk.length < setting.columns) {
 		// In-fill characters: left = Columns - ChunkLength
-		size_t leftchar = (setting.width - chunk.length); // Bytes left
+		size_t leftchar = (setting.columns - chunk.length); // Bytes left
 		memset(bufferptr + indexChar, ' ', leftchar);
 		// In-fill binary data: left = CharactersLeft * (DataSize + 1)
 		size_t leftdata = leftchar * (binaryFormatter.size + 1);
@@ -512,8 +512,6 @@ private char[] renderRow(ubyte[] chunk, long pos) {
 //TODO: More renderRow unittests
 //TODO: Maybe split rendering components?
 unittest {
-	// With defaults
-	prepareView;
 	//	 Offset(hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
 	assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0) ==
 		"          0  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
@@ -539,7 +537,7 @@ size_t cwriteln(const(char)[] _str) {
 }
 size_t cwritef(A...)(const(char)[] fmt, A args) {
 	import std.format : sformat;
-	char[128] buf = void;
+	char[256] buf = void;
 	return cwrite(sformat(buf, fmt, args));
 }
 size_t cwritefln(A...)(const(char)[] fmt, A args) {

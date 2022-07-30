@@ -69,7 +69,7 @@ int start(long skip, long length) {
 	screen.renderOffset;
 	
 	// mitigate unaligned reads/renders
-	size_t a = setting.width * 16;
+	size_t a = setting.columns * 16;
 	if (a > length)
 		a = cast(size_t)length;
 	editor.setBuffer(a);

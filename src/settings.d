@@ -7,26 +7,66 @@ module settings;
 import ddhx; // for NumberType
 import os.terminal : TerminalSize, terminalSize;
 
-//TODO: Move settings should be per module
-//      editor settings:
-//      - row width
-//      - offset type
-//      - data type
-//      - default char
-//      - si
-//      And possibly deprecate settings
+enum SETTINGS_FILE = ".ddhxrc";
+enum MAX_STATUS_ITEMS = 10;
+
+enum StatusItem : ubyte {
+	/// Empty.
+	empty,
+	/// Shows editing mode, like insertion.
+	editMode,
+	/// Shows binary data display formatting type.
+	dataMode,
+	/// Shows current character translation.
+	charMode,
+	/// Shows size of the view buffer in size.
+	viewSize,
+	/// Shows absolute file position following offset setting.
+	absolutePosition,
+	/// Shows absolute file position that its type can be changed.
+	absolutePositionAlt,
+	/// Shows absolute file position relative to file size in percentage.
+	absolutePercentage,
+}
+
+immutable string COMMAND_COLUMNS = "columns";
+immutable string CLI_COLUMNS = "w|"~COMMAND_COLUMNS;
+
+//TODO: Consider having statusbar offset type seperate offset
+
 private struct settings_t {
-	/// Bytes per row
-	//TODO: Rename to columns
-	int width = 16;
-	/// Current offset view type
+	/// Bytes per row.
+	/// Default: 16
+	int columns = 16;
+	/// Offset number number formatting type.
+	/// Default: hexadecimal
 	NumberType offsetType;
-	/// Current data view type
+	/// Binary data number formatting type.
+	/// Default: hexadecimal
 	NumberType dataType;
+	// Number formatting type for absolute offset in statusbar.
+	// Default: hexadecimal
+//	NumberType statusType;
 	/// Default character to use for non-ascii characters
+	/// Default: Period ('.')
 	char defaultChar = '.';
 	/// Use ISO base-10 prefixes over IEC base-2
+	/// Default: false
 	bool si;
+	/// 
+	/// Default: As presented
+	StatusItem[MAX_STATUS_ITEMS] statusItems = [
+		StatusItem.editMode,
+		StatusItem.dataMode,
+		StatusItem.charMode,
+		StatusItem.viewSize,
+		StatusItem.absolutePosition,
+		StatusItem.empty,
+		StatusItem.empty,
+		StatusItem.empty,
+		StatusItem.empty,
+		StatusItem.empty,
+	];
 }
 
 /// Current settings.
@@ -57,16 +97,16 @@ int settingsWidth(string val) {
 		return errorSet(ErrorCode.invalidParameter);
 	switch (val[0]) {
 	case 'a': // Automatic (fit terminal width)
-		setting.width = optimalWidth;
+		setting.columns = optimalWidth;
 		break;
 	case 'd': // Default
-		setting.width = 16;
+		setting.columns = 16;
 		break;
 	default:
 		ushort l = void;
 		if (convertToVal(l, val))
 			return errorSet(ErrorCode.invalidNumber);
-		setting.width = l;
+		setting.columns = l;
 	}
 	return 0;
 }
