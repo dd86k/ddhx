@@ -1,12 +1,9 @@
 /// Terminal/console handling.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
-/// Authors: $(LINK2 github.com/dd86k, dd86k)
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module os.terminal;
 
-//TODO: Register function for terminal size change
-//      Under Windows, that's under a regular input event
-//      Under Linux, that's under a signal (and function pointer)
 //TODO: readline
 //      automatically pause input, stdio.readln, resume input
 //TODO: Check for TERM
@@ -40,6 +37,10 @@ version (Windows) {
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
+	private import core.sys.posix.signal;
+	
+	private
+	enum NULL_SIGACTION = cast(sigaction_t*)0;
 	
 	// Bionic depends on the Linux system it's compiled on.
 	// But Glibc and Musl have the same settings, so does Bionic.
@@ -53,6 +54,8 @@ version (Windows) {
 		version = IncludeTermiosLinux;
 	
 	version (IncludeTermiosLinux) {
+		//private SIGWINCH = 28;
+		//siginfo_t
 		// termios.h, bits/termios.h
 		private alias uint tcflag_t;
 		private alias uint speed_t;
@@ -96,10 +99,9 @@ version (Windows) {
 }
 
 /// Flags for terminalInit.
-//TODO: captureResize: Feature capture resizing terminal size
 //TODO: captureCtrlC: Block CTRL+C
 enum TermFeat : ushort {
-	/// Initiate only the basic
+	/// Initiate only the basic.
 	none	= 0,
 	/// Initiate the input system.
 	inputSys	= 1,
@@ -227,8 +229,7 @@ void terminalInit(TermFeat features) {
 	atexit(&terminalQuit);
 }
 
-private
-extern (C)
+private extern (C)
 void terminalQuit() {
 	terminalRestore;
 }
@@ -246,16 +247,33 @@ void terminalRestore() {
 		terminalPauseInput;
 }
 
-void terminalPauseInput() {
+private __gshared void function() terminalOnResizeEvent;
+
+void terminalOnResize(void function() func) {
 	version (Posix) {
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
+		sigaction_t sa = void;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_SIGINFO;
+		sa.sa_sigaction = &terminalResized;
+		assert(sigaction(SIGWINCH, &sa, NULL_SIGACTION) != -1);
 	}
+	terminalOnResizeEvent = func;
+}
+
+private extern (C)
+void terminalResized() {
+	if (terminalOnResizeEvent)
+		terminalOnResizeEvent();
+}
+
+void terminalPauseInput() {
+	version (Posix)
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 }
 
 void terminalResumeInput() {
-	version (Posix) {
+	version (Posix)
 		tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
-	}
 }
 
 /// Clear screen
@@ -407,12 +425,13 @@ L_READ:
 					Mouse.ScrollDown : Mouse.ScrollUp;
 			}
 			*/
+		case WINDOW_BUFFER_SIZE_EVENT:
+			if (terminalOnResizeEvent)
+				terminalOnResizeEvent();
+			goto L_READ;
 		default: goto L_READ;
 		}
 	} else version (Posix) {
-		//tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
-		//scope (exit) tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
-		
 		//TODO: Mouse reporting in Posix terminals
 		//      * X10 compatbility mode (mouse-down only)
 		//      Enable: ESC [ ? 9 h
