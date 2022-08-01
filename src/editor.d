@@ -501,7 +501,7 @@ bool cursorDown() {
 /// Returns: True if the view moved.
 bool cursorPageUp() {
 	//TODO: Move cursor by viewSize
-	int v = readSize / setting.columns;
+//	int v = readSize / setting.columns;
 	return viewPageUp;
 }
 /// Move cursor by a page down the file.

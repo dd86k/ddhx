@@ -79,7 +79,7 @@ void cliOption(string opt, string val) {
 	case OPT_VIEW:
 		editor.editMode = EditMode.view;
 		return;
-	case OPT_WIDTH:
+	case OPT_COLUMNS:
 		if (settingsWidth(val))
 			break;
 		return;
