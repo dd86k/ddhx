@@ -21,6 +21,7 @@ __test__*__
 
 # Project
 src/gitinfo.d
+.ddhxrc
 
 # Personal
 perso/
