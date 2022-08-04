@@ -1,10 +1,10 @@
 /// Main application.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
-/// Authors: $(LINK2 github.com/dd86k, dd86k)
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-//TODO: Consider moving all bits into editor module.
+//TODO: When searching strings, maybe convert it to current charset?
 
 import gitinfo;
 import os.terminal;
@@ -30,11 +30,13 @@ else  enum DDHX_VERSION = DESCRIPTION; /// Ditto
 enum DDHX_ABOUT = "ddhx "~DDHX_VERSION~" (built: "~__TIMESTAMP__~")";
 
 /// Number type to render either for offset or data
+//TODO: NumberType -> OffsetType
 enum NumberType : ubyte {
 	hexadecimal,
 	decimal,
 	octal
 }
+//TODO: enum DataType { hex8, ... } etc.
 
 //TODO: Seprate start functions into their own modules
 
@@ -42,40 +44,44 @@ enum NumberType : ubyte {
 /// Params: skip = Seek to file/data position.
 /// Returns: Error code.
 int start(long skip = 0) {
-	screen.initiate;
-	
-	version (Trace) trace("terminalSize");
-	TerminalSize termsize = terminalSize;
-	
-	if (termsize.height < 3)
-		return errorPrint(1, "Need at least 3 lines to display properly");
-	if (termsize.width < 20)
-		return errorPrint(1, "Need at least 20 columns to display properly");
-	
-	//TODO: negative should be starting from end of file (if not stdin)
-	//      stdin: use seek
-	if (skip < 0)
-		return errorPrint(1, "Skip value must be positive");
-	
-	if (editor.fileMode == FileMode.stream) {
-		version (Trace) trace("slurp skip=%u", skip);
-		if (editor.slurp(skip, 0))
-			return errorPrint;
-	} else if (skip) {
-		version (Trace) trace("seek skip=%u", skip);
-		editor.seek(skip);
-		if (editor.err)
-			return errorPrint;
+	if (skip) {
+		//TODO: negative should be starting from end of file (if not stdin)
+		//      stdin: use seek
+		if (skip < 0)
+			return errorPrint(1, "Skip value must be positive");
+		
+		if (editor.fileMode == FileMode.stream) {
+			version (Trace) trace("slurp skip=%u", skip);
+			if (editor.slurp(skip, 0))
+				return errorPrint;
+		} else if (skip) {
+			version (Trace) trace("seek skip=%u", skip);
+			editor.seek(skip);
+			if (editor.err)
+				return errorPrint;
+		}
 	}
+	
+	if (screen.initiate)
+		panic;
+	
+	screen.onResize(&eventResize);
 	
 	refresh;
 	
+	inputLoop;
+	return 0;
+}
+
+private:
+
+//TODO: rename to "readbuffer"? or "screenData"?
+//      screen.setData(...)?
+__gshared ubyte[] readdata;
+
+void inputLoop() {
 	version (Trace) trace("loop");
 	TerminalInput event;
-	
-	//
-	// Input
-	//
 	
 L_INPUT:
 	terminalInput(event);
@@ -107,9 +113,9 @@ L_KEYDOWN:
 	case PageUp:        movePageUp; break;
 	case PageDown:      movePageDown; break;
 	case Home:          moveAlignStart; break;
-	case Home | ctrl:   moveStart; break;
+	case Home | ctrl:   moveAbsStart; break;
 	case End:           moveAlignEnd; break;
-	case End | ctrl:    moveEnd; break;
+	case End | ctrl:    moveAbsEnd; break;
 	
 	// Actions/Shortcuts
 	
@@ -123,9 +129,7 @@ L_KEYDOWN:
 		next;
 		break;
 	case Escape, Enter, Colon:
-		terminalPauseInput;
 		menu;
-		terminalResumeInput;
 		break;
 	case G:
 		menu("g ");
@@ -137,7 +141,7 @@ L_KEYDOWN:
 		refresh;
 		break;
 	case A:
-		settingsWidth("a");
+		settingsColumns("a");
 		refresh;
 		break;
 	case Q: exit; break;
@@ -146,32 +150,30 @@ L_KEYDOWN:
 	goto L_INPUT;
 }
 
-private:
-
-//TODO: rename to "readbuffer"?
-__gshared ubyte[] readdata;
+void eventResize() {
+	screen.updateTermSize();
+	refresh; // temp
+}
 
 //TODO: revamp menu system
 //      char mode: character mode (':', '/', '?')
 //      string command: command shortcut (e.g., 'g' + ' ' default)
-void menu(string cmdPrepend = null, string cmdAlias = null) {
+void menu(string prefix = ":", string prepend = null) {
 	import std.stdio : readln;
+	import std.string : chomp, strip;
 	
 	// clear bar and command prepend
 	screen.clearOffsetBar;
 	
-	// write prompt
-	terminalPos(0, 0);
-	if (cmdAlias == null) screen.cwrite(":");
-	if (cmdAlias) screen.cwrite(cmdAlias);
-	if (cmdPrepend) screen.cwrite(cmdPrepend);
+	string line = screen.prompt(prefix, prepend);
 	
-	// read command
-	string line = cmdPrepend ~ cmdAlias ~ readln();
+	scope (exit) {
+		editor.cursorBound;
+		updateCursor;
+	}
 	
-	// draw upper bar, clearing input
-	screen.cursorOffset;
-	screen.renderOffset;
+	if (line.length == 0)
+		return;
 	
 	if (command(line))
 		screen.message(errorMessage());
@@ -185,23 +187,23 @@ int command(string[] argv) {
 	const size_t argc = argv.length;
 	if (argc == 0) return 0;
 	
-	version (Trace) trace("%(%s %)", argv);
+	version (Trace) trace("argv=%(%s %)", argv);
 	
 	string command = argv[0];
 	
 	switch (command[0]) { // shortcuts
 	case '/': // Search
-		if (command.length <= 1)
-			return errorSet(ErrorCode.missingArgumentType);
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentNeedle);
+		if (command.length < 2)
+			return errorSet(ErrorCode.missingType);
+		if (argc < 2)
+			return errorSet(ErrorCode.missingNeedle);
 		
 		return ddhx.lookup(command[1..$], argv[1], true, true);
 	case '?': // Search backwards
-		if (command.length <= 1)
-			return errorSet(ErrorCode.missingArgumentType);
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentNeedle);
+		if (command.length < 2)
+			return errorSet(ErrorCode.missingType);
+		if (argc < 2)
+			return errorSet(ErrorCode.missingNeedle);
 		
 		return ddhx.lookup(command[1..$], argv[1], false, true);
 	default:
@@ -209,15 +211,15 @@ int command(string[] argv) {
 	
 	switch (argv[0]) { // regular commands
 	case "g", "goto":
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentPosition);
+		if (argc < 2)
+			return errorSet(ErrorCode.missingValue);
 		
 		switch (argv[1]) {
 		case "e", "end":
-			moveEnd;
+			moveAbsEnd;
 			break;
 		case "h", "home":
-			moveStart;
+			moveAbsStart;
 			break;
 		default:
 			seek(argv[1]);
@@ -231,7 +233,7 @@ int command(string[] argv) {
 			if (argv[1] == "zero")
 				byte_ = 0;
 			else if (convertToVal(byte_, argv[1]))
-				return error.ecode;
+				return error.errorcode;
 		}
 		return skip(byte_);
 	case "i", "info":
@@ -250,60 +252,17 @@ int command(string[] argv) {
 	case "version":
 		screen.message(DDHX_ABOUT);
 		return 0;
-	//
-	// Settings
-	//
-	case "c", "columns":
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentWidth);
-		
-		if (settingsWidth(argv[1]))
-			return error.ecode;
-		
-		refresh;
-		return 0;
-	case "o", "offset":
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentType);
-		
-		if (settingsOffset(argv[1]))
-			return error.ecode;
-		
-		screen.cursorOffset;
-		screen.renderOffset;
-		render;
-		return 0;
-	case "d", "data":
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentType);
-		
-		if (settingsData(argv[1]))
-			return error.ecode;
-		
-		render;
-		return 0;
-	case "C", "defaultchar":
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentCharacter);
-		
-		if (settingsDefaultChar(argv[1]))
-			return error.ecode;
-		
-		render;
-		return 0;
-	case "cp", "charset":
-		if (argc <= 1)
-			return errorSet(ErrorCode.missingArgumentCharset);
-		
-		if (settingsCharset(argv[1]))
-			return error.ecode;
-		
-		render;
-		return 0;
 	case "reset":
 		resetSettings();
 		render;
 		return 0;
+	case "set":
+		if (argc < 2)
+			return errorSet(ErrorCode.missingOption);
+		
+		int e = settings.set(argv[1..$]);
+		if (e == 0) refresh;
+		return e;
 	default:
 		return errorSet(ErrorCode.invalidCommand);
 	}
@@ -313,22 +272,22 @@ int command(string[] argv) {
 // prompt="save as"
 // "save as: " + user input
 /*private
-string input(string prompt) {
+string input(string prompt, string include) {
 	terminalPos(0, 0);
-	screen.cwriteAt(0,0,prompt, ": ");
+	screen.cwriteAt(0, 0, prompt, ": ", include);
 	return readln;
 }*/
 
 /// Move the cursor to the start of the data
-void moveStart() {
-	if (editor.cursorFileStart)
+void moveAbsStart() {
+	if (editor.cursorAbsStart)
 		readRender;
 	updateStatus;
 	updateCursor;
 }
 /// Move the cursor to the end of the data
-void moveEnd() {
-	if (editor.cursorFileEnd)
+void moveAbsEnd() {
+	if (editor.cursorAbsEnd)
 		readRender;
 	updateStatus;
 	updateCursor;
@@ -394,34 +353,43 @@ void initiate() {
 	
 	long fsz = editor.fileSize; /// data size
 	int ssize = (screen.termSize.height - 2) * setting.columns; /// screen size
-	
-	version (Trace) trace("fsz=%u ssz=%u", fsz, ssize);
-	
 	uint nsize = ssize >= fsz ? cast(uint)fsz : ssize;
+	
+	version (Trace) trace("fsz=%u ssz=%u nsize=%u", fsz, ssize, nsize);
+	
 	editor.setBuffer(nsize);
 }
 
 // read at current position
-int read() {
+void read() {
 	version (Trace) trace;
 	
 	editor.seek(editor.position);
-//	if (editor.err)
-//		return errorSet(ErrorCode.os);
+	if (editor.err) panic;
+	
 	readdata = editor.read();
-//	if (editor.err)
-//		return errorSet(ErrorCode.os);
-	return 0;
+	if (editor.err) panic;
 }
 
 //TODO: Consider render with multiple parameters to select what to render
 
 /// Render screen (all elements)
+void renderAll() {
+	version (Trace) trace;
+	
+	updateOffset;
+	updateContent;
+	updateStatus;
+}
 void render() {
 	version (Trace) trace;
 	
 	updateContent;
 	updateStatus;
+}
+void readRender() {
+	read;
+	render;
 }
 
 void updateOffset() {
@@ -431,9 +399,12 @@ void updateOffset() {
 
 void updateContent() {
 	screen.cursorContent; // Set pos
-	screen.renderEmpty( // After content, this does filling
-		screen.renderContent(editor.position, readdata)
-	);
+	int maxline = screen.termSize.height - 2;
+	const int rows = screen.renderContent(editor.position, readdata, maxline);
+	version (Trace) trace("maxline=%d rows=%d", maxline, rows);
+	maxline -= rows;
+	if (maxline > 0)
+		screen.renderEmpty(maxline); // Filling
 }
 
 void updateStatus() {
@@ -461,11 +432,6 @@ void updateCursor() {
 	
 	with (editor.cursor)
 		screen.cursor(position, nibble);
-}
-
-void readRender() {
-	read;
-	render;
 }
 
 /// Refresh the entire screen by:
@@ -585,7 +551,7 @@ int lookup(string type, string data, bool forward, bool save) {
 	void *p = void;
 	size_t len = void;
 	if (convertToRaw(p, len, data, type))
-		return error.ecode;
+		return error.errorcode;
 	
 	if (save) {
 		import core.stdc.string : memcpy;
@@ -637,10 +603,28 @@ void printFileInfo() {
 		editor.fileName);
 }
 
-/// Exit ddhx.
+/// Exit the interactive ddhx session.
 /// Params: code = Exit code.
-void exit(int code = 0) {
+deprecated("Use exit or panic")
+void exit(int code) {
 	import core.stdc.stdlib : exit;
 	version (Trace) trace("code=%u", code);
 	exit(code);
+}
+
+
+void exit() {
+	import core.stdc.stdlib : exit;
+	version (Trace) trace();
+	exit(0);
+}
+
+void panic() {
+	import std.stdio : stderr;
+	import core.stdc.stdlib : exit;
+	version (Trace) trace("code=%u", errorcode);
+	
+	stderr.writeln("error: (", errorcode, ") ", errorMessage(errorcode));
+	
+	exit(errorcode);
 }

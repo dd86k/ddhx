@@ -6,8 +6,9 @@ module os.terminal;
 
 //TODO: readline
 //      automatically pause input, stdio.readln, resume input
-//TODO: Check for TERM
+//TODO: Switch key input depending on $TERM
 //      xterm, xterm-color, xterm-256color, linux, vt100
+//TODO: Invert color support
 
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
@@ -18,7 +19,7 @@ module os.terminal;
 private extern (C) int putchar(int);
 
 private import std.stdio : _IONBF, _IOLBF, _IOFBF,
-	 printf, stdin, stdout;
+	printf, stdin, stdout;
 private import core.stdc.stdlib : system, atexit;
 
 version (Windows) {
@@ -42,6 +43,8 @@ version (Windows) {
 	private
 	enum NULL_SIGACTION = cast(sigaction_t*)0;
 	
+	private enum SIGWINCH = 28;
+	
 	// Bionic depends on the Linux system it's compiled on.
 	// But Glibc and Musl have the same settings, so does Bionic.
 	// ...And uClibc, at least on Linux.
@@ -54,7 +57,6 @@ version (Windows) {
 		version = IncludeTermiosLinux;
 	
 	version (IncludeTermiosLinux) {
-		//private SIGWINCH = 28;
 		//siginfo_t
 		// termios.h, bits/termios.h
 		private alias uint tcflag_t;
@@ -94,6 +96,74 @@ version (Windows) {
 		}
 		private extern (C) int ioctl(int fd, ulong request, ...);
 	}
+	
+	struct KeyInfo {
+		string text;
+		int value;
+	}
+	immutable KeyInfo[] keyInputsVTE = [
+		// text		Key value
+		{ "\033[A",	Key.UpArrow },
+		{ "\033[1;2A",	Key.UpArrow | Mod.shift },
+		{ "\033[1;3A",	Key.UpArrow | Mod.alt },
+		{ "\033[1;5A",	Key.UpArrow | Mod.ctrl },
+		{ "\033[A:4A",	Key.UpArrow | Mod.shift | Mod.alt },
+		{ "\033[B",	Key.DownArrow },
+		{ "\033[1;2B",	Key.DownArrow | Mod.shift },
+		{ "\033[1;3B",	Key.DownArrow | Mod.alt },
+		{ "\033[1;5B",	Key.DownArrow | Mod.ctrl },
+		{ "\033[A:4B",	Key.DownArrow | Mod.shift | Mod.alt },
+		{ "\033[C",	Key.RightArrow },
+		{ "\033[1;2C",	Key.RightArrow | Mod.shift },
+		{ "\033[1;3C",	Key.RightArrow | Mod.alt },
+		{ "\033[1;5C",	Key.RightArrow | Mod.ctrl },
+		{ "\033[A:4C",	Key.RightArrow | Mod.shift | Mod.alt },
+		{ "\033[D",	Key.LeftArrow },
+		{ "\033[1;2D",	Key.LeftArrow | Mod.shift },
+		{ "\033[1;3D",	Key.LeftArrow | Mod.alt },
+		{ "\033[1;5D",	Key.LeftArrow | Mod.ctrl },
+		{ "\033[A:4D",	Key.LeftArrow | Mod.shift | Mod.alt },
+		{ "\033[2~",	Key.Insert },
+		{ "\033[2;3~",	Key.Insert | Mod.alt },
+		{ "\033[3~",	Key.Delete },
+		{ "\033[3;5~",	Key.Delete | Mod.ctrl },
+		{ "\033[H",	Key.Home },
+		{ "\033[1;3H",	Key.Home | Mod.alt },
+		{ "\033[1;5H",	Key.Home | Mod.ctrl },
+		{ "\033[F",	Key.End },
+		{ "\033[1;3F",	Key.End | Mod.alt },
+		{ "\033[1;5F",	Key.End | Mod.ctrl },
+		{ "\033[5~",	Key.PageUp },
+		{ "\033[5;5~",	Key.PageUp | Mod.ctrl },
+		{ "\033[6~",	Key.PageDown },
+		{ "\033[6;5~",	Key.PageDown | Mod.ctrl },
+		{ "\033OP",	Key.F1 },
+		{ "\033[1;2P",	Key.F1 | Mod.shift, },
+		{ "\033[1;3R",	Key.F1 | Mod.alt, },
+		{ "\033[1;5P",	Key.F1 | Mod.ctrl, },
+		{ "\033OQ",	Key.F2 },
+		{ "\033[1;2Q",	Key.F2 | Mod.shift },
+		{ "\033OR",	Key.F3 },
+		{ "\033[1;2R",	Key.F3 | Mod.shift },
+		{ "\033OS",	Key.F4 },
+		{ "\033[1;2S",	Key.F4 | Mod.shift },
+		{ "\033[15~",	Key.F5 },
+		{ "\033[15;2~",	Key.F5 | Mod.shift },
+		{ "\033[17~",	Key.F6 },
+		{ "\033[17;2~",	Key.F6 | Mod.shift },
+		{ "\033[18~",	Key.F7 },
+		{ "\033[18;2~",	Key.F7 | Mod.shift },
+		{ "\033[19~",	Key.F8 },
+		{ "\033[19;2~",	Key.F8 | Mod.shift },
+		{ "\033[20~",	Key.F9 },
+		{ "\033[20;2~",	Key.F9 | Mod.shift },
+		{ "\033[21~",	Key.F10 },
+		{ "\033[21;2~",	Key.F10 | Mod.shift },
+		{ "\033[23~",	Key.F11 },
+		{ "\033[23;2~",	Key.F11 | Mod.shift},
+		{ "\033[24~",	Key.F12 },
+		{ "\033[24;2~",	Key.F12 | Mod.shift },
+	];
 	
 	private __gshared termios old_ios, new_ios;
 }
@@ -261,7 +331,7 @@ void terminalOnResize(void function() func) {
 }
 
 private extern (C)
-void terminalResized() {
+void terminalResized(int signo, siginfo_t *info, void *content) {
 	if (terminalOnResizeEvent)
 		terminalOnResizeEvent();
 }
@@ -407,8 +477,10 @@ L_READ:
 				
 				// '?' on a fr-ca kb is technically shift+6,
 				// breaking app input since expecting no modifiers
-				if (c < 'A' || c > 'Z')
+				if (c < 'A' || c > 'Z') {
+					event.key = Mod.shift;
 					return;
+				}
 			} else {
 				event.key = keycode;
 			}
@@ -464,75 +536,6 @@ L_READ:
 		//        - very cursed
 		//        - screwed if there are keys more than 8 bytes
 		//        - template should do endianness
-		
-		struct KeyInfo {
-			string text;
-			int value;
-		}
-		//TODO: Consider an associated array
-		static immutable KeyInfo[] keyInputs = [
-			// text		Key value
-			{ "\033[A",	Key.UpArrow },
-			{ "\033[1;2A",	Key.UpArrow | Mod.shift },
-			{ "\033[1;3A",	Key.UpArrow | Mod.alt },
-			{ "\033[1;5A",	Key.UpArrow | Mod.ctrl },
-			{ "\033[A:4A",	Key.UpArrow | Mod.shift | Mod.alt },
-			{ "\033[B",	Key.DownArrow },
-			{ "\033[1;2B",	Key.DownArrow | Mod.shift },
-			{ "\033[1;3B",	Key.DownArrow | Mod.alt },
-			{ "\033[1;5B",	Key.DownArrow | Mod.ctrl },
-			{ "\033[A:4B",	Key.DownArrow | Mod.shift | Mod.alt },
-			{ "\033[C",	Key.RightArrow },
-			{ "\033[1;2C",	Key.RightArrow | Mod.shift },
-			{ "\033[1;3C",	Key.RightArrow | Mod.alt },
-			{ "\033[1;5C",	Key.RightArrow | Mod.ctrl },
-			{ "\033[A:4C",	Key.RightArrow | Mod.shift | Mod.alt },
-			{ "\033[D",	Key.LeftArrow },
-			{ "\033[1;2D",	Key.LeftArrow | Mod.shift },
-			{ "\033[1;3D",	Key.LeftArrow | Mod.alt },
-			{ "\033[1;5D",	Key.LeftArrow | Mod.ctrl },
-			{ "\033[A:4D",	Key.LeftArrow | Mod.shift | Mod.alt },
-			{ "\033[2~",	Key.Insert },
-			{ "\033[2;3~",	Key.Insert | Mod.alt },
-			{ "\033[3~",	Key.Delete },
-			{ "\033[3;5~",	Key.Delete | Mod.ctrl },
-			{ "\033[H",	Key.Home },
-			{ "\033[1;3H",	Key.Home | Mod.alt },
-			{ "\033[1;5H",	Key.Home | Mod.ctrl },
-			{ "\033[F",	Key.End },
-			{ "\033[1;3F",	Key.End | Mod.alt },
-			{ "\033[1;5F",	Key.End | Mod.ctrl },
-			{ "\033[5~",	Key.PageUp },
-			{ "\033[5;5~",	Key.PageUp | Mod.ctrl },
-			{ "\033[6~",	Key.PageDown },
-			{ "\033[6;5~",	Key.PageDown | Mod.ctrl },
-			{ "\033OP",	Key.F1 },
-			{ "\033[1;2P",	Key.F1 | Mod.shift, },
-			{ "\033[1;3R",	Key.F1 | Mod.alt, },
-			{ "\033[1;5P",	Key.F1 | Mod.ctrl, },
-			{ "\033OQ",	Key.F2 },
-			{ "\033[1;2Q",	Key.F2 | Mod.shift },
-			{ "\033OR",	Key.F3 },
-			{ "\033[1;2R",	Key.F3 | Mod.shift },
-			{ "\033OS",	Key.F4 },
-			{ "\033[1;2S",	Key.F4 | Mod.shift },
-			{ "\033[15~",	Key.F5 },
-			{ "\033[15;2~",	Key.F5 | Mod.shift },
-			{ "\033[17~",	Key.F6 },
-			{ "\033[17;2~",	Key.F6 | Mod.shift },
-			{ "\033[18~",	Key.F7 },
-			{ "\033[18;2~",	Key.F7 | Mod.shift },
-			{ "\033[19~",	Key.F8 },
-			{ "\033[19;2~",	Key.F8 | Mod.shift },
-			{ "\033[20~",	Key.F9 },
-			{ "\033[20;2~",	Key.F9 | Mod.shift },
-			{ "\033[21~",	Key.F10 },
-			{ "\033[21;2~",	Key.F10 | Mod.shift },
-			{ "\033[23~",	Key.F11 },
-			{ "\033[23;2~",	Key.F11 | Mod.shift},
-			{ "\033[24~",	Key.F12 },
-			{ "\033[24;2~",	Key.F12 | Mod.shift },
-		];
 		
 		enum BLEN = 8;
 		char[BLEN] b = void;
@@ -595,7 +598,7 @@ L_READ:
 		//      Starts with \033[M
 		
 		// Checking for other key inputs
-		foreach (ki; keyInputs) {
+		foreach (ki; keyInputsVTE) {
 			if (r != ki.text.length) continue;
 			if (inputString != ki.text) continue;
 			event.key  = ki.value;
@@ -787,8 +790,14 @@ struct TerminalInput {
 
 /// Terminal size structure
 struct TerminalSize {
-	/// Terminal width in character columns
-	int width;
-	/// Terminal height in character rows
-	int height;
+	union {
+		/// Terminal width in character columns
+		int width;
+		int columns; /// Ditto
+	}
+	union {
+		/// Terminal height in character rows
+		int height;
+		int rows; /// Ditto
+	}
 }

@@ -1,7 +1,7 @@
 /// Terminal screen handling.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
-/// Authors: $(LINK2 github.com/dd86k, dd86k)
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module screen;
 
 import std.range : chunks;
@@ -12,9 +12,13 @@ import core.stdc.string : memset;
 import core.stdc.stdlib : malloc, free;
 version (Trace) import std.datetime.stopwatch;
 
-//TODO: Data grouping (1, 2, 4, 8, 16)
-//      e.g., cd ab -> abcd, 128 64 -> 192
-//      cast(uint[]) is probably possible on a ubyte[] range
+//TODO: Data viewer groups
+//      hex: h8, h16, h32, h64
+//      signed decimal: i8, i16, i32, i64
+//      unsigned decimal: u8, u16, u32, u64
+//      signed octal: oi8, oi16, oi32, oi64
+//      unsigned octal: ou8, ou16, ou32, ou64
+//      float: f32, f64
 //TODO: Group endianness (when >1)
 //      native (default), little, big
 //TODO: View display mode (data+text, data, text)
@@ -32,8 +36,6 @@ version (Trace) import std.datetime.stopwatch;
 //      Rendering engine should be capable to take off whereever it stopped
 //      or be able to specify/toggle seperate regardless of column length.
 //      Probably useful for dump app.
-//TODO: Consider buffer strategy full for terminal-altscreen mode
-//      + manual flushes here
 
 private struct NumberFormatter {
 	string name;	/// Short offset name
@@ -51,21 +53,33 @@ private immutable NumberFormatter[3] formatters = [
 
 /// Last known terminal size.
 __gshared TerminalSize termSize;
-// Internal buffer filling character.
-// For dump, that should be spaces and 0,
-// For interactive, that should be spaces and spaces.
-//__gshared char binaryFiller;
-//__gshared char textFiller;
+
+//TODO: Have single __gshared Formatter format instance
+//      .offset(long)
+//      .data()...
 
 __gshared NumberFormatter offsetFormatter = formatters[0];
 __gshared NumberFormatter binaryFormatter = formatters[0];
 
-void initiate() {
+int initiate() {
 	terminalInit(TermFeat.all);
+	
+	updateTermSize;
+	
+	if (termSize.height < 3)
+		return errorSet(ErrorCode.screenMinimumRows);
+	if (termSize.width < 20)
+		return errorSet(ErrorCode.screenMinimumColumns);
+	
+	return 0;
 }
 
 void updateTermSize() {
 	termSize = terminalSize;
+}
+
+void onResize(void function() func) {
+	terminalOnResize(func);
 }
 
 void setOffsetFormat(NumberType type) {
@@ -91,6 +105,7 @@ void clear() {
 /*void clearStatusBar() {
 	screen.cwritefAt(0,0,"%*s", termSize.width - 1, " ");
 }*/
+
 /// Display a formatted message at the bottom of the screen.
 /// Params:
 ///   fmt = Formatting message string.
@@ -103,13 +118,37 @@ void message(A...)(const(char)[] fmt, A args) {
 /// Display a message at the bottom of the screen.
 /// Params: str = Message.
 void message(const(char)[] str) {
-	//TODO: Consider using a scoped outbuffer + private message(outbuf)
 	terminalPos(0, termSize.height - 1);
 	cwritef("%-*s", termSize.width - 1, str);
 }
 
+string prompt(string prefix, string include) {
+	import std.stdio : readln;
+	import std.string : chomp;
+	
+	scope (exit) {
+		cursorOffset;
+		renderOffset;
+	}
+	
+	clearOffsetBar;
+	
+	terminalPos(0, 0);
+	
+	cwrite(prefix);
+	if (include) cwrite(include);
+	
+	terminalPauseInput;
+	
+	string line = include ~ chomp(readln());
+	
+	terminalResumeInput;
+	
+	return line;
+}
+
 //
-// SECTION Formatting
+// SECTION Rendering
 //
 
 //TODO: Move formatting stuff to module format.
@@ -397,7 +436,6 @@ void renderStatusBar(const(char)[][] items ...) {
 		Duration a = sw.peek;
 	}
 	
-L_WRITE:
 	cwrite(cast(const(char)[])outbuf.toBytes);
 	
 	version (Trace) {
@@ -411,44 +449,54 @@ L_WRITE:
 
 /// Update display from buffer.
 /// Returns: Numbers of row written.
-uint renderContent(long position, ubyte[] data) {
+int renderContent(long position, ubyte[] data, int maxline) {
 	version (Trace) {
 		trace("position=%u data.len=%u", position, data.length);
 		StopWatch sw = StopWatch(AutoStart.yes);
 	}
 	
+	if (maxline == 0) maxline = maxline.max;
+	
 	// print lines in bulk (for entirety of view buffer)
-	uint lines;
+	//TODO: Output to scoped OutBuffer
+	//auto outbuf = scoped!OutBuffer();
+	int line;
 	foreach (chunk; chunks(data, setting.columns)) {
+		//outbuf.put(renderRow(chunk, position));
 		cwriteln(renderRow(chunk, position));
 		position += setting.columns;
-		++lines;
+		if (++line == maxline) break;
 	}
+	
+	//cwriteln(cast(const(char)[])outbuf.toBytes);
 	
 	version (Trace) {
 		sw.stop;
 		trace("time='%s µs'", sw.peek.total!"usecs");
 	}
 	
-	return lines;
+	return line;
 }
-void renderEmpty(uint rows) {
+void renderEmpty(int lines) {
+	debug assert(termSize.rows);
+	debug assert(termSize.columns);
+	
 	version (Trace) {
-		trace("rows=%u", rows);
+		trace("lines=%u rows=%u cols=%u", lines, termSize.rows, termSize.columns);
 		StopWatch sw = StopWatch(AutoStart.yes);
 	}
-	uint t = termSize.height - 2;
-	if (t == rows)
-		return;
-	debug assert(termSize.height);
-	char *p = cast(char*)malloc(termSize.width+1);
+	
+	char *p = cast(char*)malloc(termSize.columns);
 	debug assert(p);
-	int w = termSize.width - 1;
+	int w = termSize.columns;
 	memset(p, ' ', w);
-	uint r = t - rows - 2;
-	for (; r < t; ++r)
+	
+	//TODO: Output to scoped OutBuffer
+	for (int i; i < lines; ++i)
 		cwriteln(p, w);
+	
 	free(p);
+	
 	version (Trace) {
 		sw.stop;
 		trace("time='%s µs'", sw.peek.total!"usecs");

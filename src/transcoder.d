@@ -3,7 +3,7 @@
 /// Translates single-byte characters into utf-8.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
-/// Authors: $(LINK2 github.com/dd86k, dd86k)
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module encoding;
 
 import std.encoding : codeUnits, CodeUnits;
@@ -18,6 +18,10 @@ enum CharacterSet : ubyte {
 //	gsm,	/// GSM 03.38
 }
 
+//TODO: Consider registering encoders to EncodingScheme
+//      to transcode to other charsets other than UTF-8
+//TODO: Translation function could return something specific if it needs another byte
+//      With static param, internally cleared when successful
 //TODO: Other single-byte character sets
 //      - ISO/IEC 8859-1 "iso8859-1"
 //        https://en.wikipedia.org/wiki/ISO/IEC_8859-1
@@ -41,6 +45,8 @@ private struct Transcoder {
 	immutable(char)[] function(ubyte) transform = &transcodeASCII;
 }
 
+private immutable(char)[] emptychar = []; 
+
 private immutable Transcoder[4] transcoders = [
 	{ "ascii",	&transcodeASCII },
 	{ "cp437",	&transcodeCP437 },
@@ -52,7 +58,7 @@ private immutable Transcoder[4] transcoders = [
 public __gshared Transcoder transcoder;
 
 /// Select a new transcoder.
-/// Params: charSet = Character set.
+/// Params: charset = Character set.
 void transcoderSelect(CharacterSet charset) {
 	debug assert(charset <= CharacterSet.max);
 	transcoder = transcoders[charset];
@@ -124,7 +130,7 @@ unittest {
 	assert(transcodeCP437(1) == [ '\xe2', '\x98', '\xba' ]);
 }
 
-private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40)
+private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40) just unprintable
 //         0      1      2      3      4      5      6      7 
 /*40*/	C!' ', C!' ', C!'â', C!'ä', C!'à', C!'á', C!'ã', C!'å',
 /*48*/	C!'ç', C!'ñ', C!'¢', C!'.', C!'<', C!'(', C!'+', C!'|',
@@ -153,8 +159,7 @@ private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40)
 ];
 private
 immutable(char)[] transcodeEBCDIC(ubyte data) {
-	__gshared immutable(char)[] empty = [];
-	return data >= 0x40 ? mapEBCDIC[data-0x40] : empty;
+	return data >= 0x40 ? mapEBCDIC[data-0x40] : emptychar;
 }
 unittest {
 	assert(transcodeEBCDIC(0) == [ ]);
@@ -198,8 +203,7 @@ private immutable U[224] mapMac = [ // 256 - 32 (0x20)
 ];
 private
 immutable(char)[] transcodeMac(ubyte data) {
-	__gshared immutable(char)[] empty = [];
-	return data >= 0x20 ? mapMac[data-0x20] : empty;
+	return data >= 0x20 ? mapMac[data-0x20] : emptychar;
 }
 unittest {
 	assert(transcodeMac(0) == [ ]);

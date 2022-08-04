@@ -1,7 +1,7 @@
 /// Dumps binary data to stdout.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
-/// Authors: $(LINK2 github.com/dd86k, dd86k)
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module dump;
 
 import os.terminal;
@@ -77,9 +77,9 @@ int start(long skip, long length) {
 	// read until EOF or length spec
 	long r;
 	do {
-		ubyte[] readdata = editor.read;
-		screen.renderContent(r, readdata);
-		r += readdata.length;
+		ubyte[] data = editor.read;
+		screen.renderContent(r, data, 0);
+		r += data.length;
 		//io.position = r;
 	} while (editor.eof == false && r < length);
 	

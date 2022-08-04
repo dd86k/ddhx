@@ -3,7 +3,7 @@
 /// Some of these functions are private for linter reasons
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
-/// Authors: $(LINK2 github.com/dd86k, dd86k)
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;
@@ -30,23 +30,27 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
-immutable string OPT_INSERT	= "insert";
-immutable string OPT_OVERWRITE	= "overwrite";
-immutable string OPT_READONLY	= "R|readonly";
-immutable string OPT_VIEW	= "view";
-immutable string OPT_SI	= "si";
-immutable string OPT_COLUMNS	= "c|columns";
-immutable string OPT_OFFSET	= "o|offset";
-immutable string OPT_DATA	= "d|data";
-immutable string OPT_DEFAULTCHAR	= "F|filler";
-immutable string OPT_CHARSET	= "C|charset";
+// CLI command options
+
+immutable string OPT_COLUMNS	= "c|"~COMMAND_COLUMNS;
+immutable string OPT_INSERT	= COMMAND_INSERT;
+immutable string OPT_OVERWRITE	= COMMAND_OVERWRITE;
+immutable string OPT_READONLY	= "R|"~COMMAND_READONLY;
+immutable string OPT_VIEW	= COMMAND_VIEW;
+immutable string OPT_SI	= COMMAND_SI;
+immutable string OPT_IEC	= COMMAND_IEC;
+immutable string OPT_OFFSET	= "o|"~COMMAND_OFFSET;
+immutable string OPT_DATA	= "d|"~COMMAND_DATA;
+immutable string OPT_FILLER	= "F|"~COMMAND_FILLER;
+immutable string OPT_CHARSET	= "C|"~COMMAND_CHARSET;
+
+// CLI common options
+
 immutable string OPT_VERSION	= "version";
 immutable string OPT_VER	= "ver";
 immutable string OPT_SECRET	= "assistant";
 
-bool askingHelp(string v) {
-	return v == "help" || v == "list";
-}
+bool askingHelp(string v) { return v == "help"; }
 
 void cliList(string opt) {
 	writeln("Available values for ",opt,":");
@@ -80,7 +84,7 @@ void cliOption(string opt, string val) {
 		editor.editMode = EditMode.view;
 		return;
 	case OPT_COLUMNS:
-		if (settingsWidth(val))
+		if (settingsColumns(val))
 			break;
 		return;
 	case OPT_OFFSET:
@@ -95,8 +99,8 @@ void cliOption(string opt, string val) {
 		if (settingsData(val))
 			break;
 		return;
-	case OPT_DEFAULTCHAR:
-		if (settingsDefaultChar(val))
+	case OPT_FILLER:
+		if (settingsFiller(val))
 			break;
 		return;
 	case OPT_CHARSET:
@@ -130,14 +134,15 @@ void page(string opt) {
 
 int main(string[] args) {
 	bool cliMmfile, cliFile, cliDump, cliStdin;
-	string cliSeek, cliLength;
+	bool cliNoRC;
+	string cliSeek, cliLength, cliRC;
 	GetoptResult res = void;
 	try {
 		res = args.getopt(config.caseSensitive,
 		OPT_COLUMNS,     "Set column size ('a'=automatic, default=16)", &cliOption,
 		OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
 		OPT_DATA,        "Set data mode (decimal, hex, or octal)", &cliOption,
-		OPT_DEFAULTCHAR, "Set non-printable replacement character (default='.')", &cliOption,
+		OPT_FILLER,      "Set non-printable default character (default='.')", &cliOption,
 		OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
 		OPT_INSERT,      "Open file in insert editing mode", &cliOption,
 		OPT_OVERWRITE,   "Open file in overwrite editing mode", &cliOption,
@@ -150,6 +155,8 @@ int main(string[] args) {
 		"s|seek",        "Seek at position", &cliSeek,
 		"D|dump",        "Non-interactive dump", &cliDump,
 		"l|length",      "Dump: Length of data to read", &cliLength,
+		"I|norc",        "Ignore user configuration files, use defaults", &cliNoRC,
+		"r|rc",          "Use supplied RC file", &cliRC,
 		OPT_VERSION,     "Print the version screen and exit", &page,
 		OPT_VER,         "Print only the version and exit", &page,
 		OPT_SECRET,      "", &page
@@ -175,41 +182,37 @@ int main(string[] args) {
 		return 0;
 	}
 	
-	version (Trace) {
-		traceInit;
-		trace(DDHX_ABOUT);
-	}
+	version (Trace)
+		traceInit(DDHX_ABOUT);
 	
-	string cliPath = args.length > 1 ? args[1] : "-";
-	
-	if (cliStdin == false) cliStdin = args.length <= 1;
-	
-	// Open file
-	//TODO: Open memory
 	long skip, length;
-	if (cliStdin) {
-		if (editor.openStream(stdin))
-			return errorPrint;
-	} else if (cliFile ? false : cliMmfile) {
-		if (editor.openMmfile(cliPath))
-			return errorPrint;
-	} else {
-		if (editor.openFile(cliPath))
-			return errorPrint;
-	}
 	
 	// Convert skip value
 	if (cliSeek) {
 		if (convertToVal(skip, cliSeek))
-			return errorPrint;
+			return errorPrint();
+		
+		if (skip < 0)
+			return errorPrint(1, "Skip value must be positive");
 	}
+	
+	// Open file or stream
+	//TODO: Open MemoryStream
+	if ((args.length <= 1 || cliStdin) && editor.openStream(stdin)) {
+		return errorPrint;
+	} else if (cliFile ? false : cliMmfile && editor.openMmfile(args[1])) {
+		return errorPrint;
+	} else if (editor.openFile(args[1]))
+		return errorPrint;
+	
+	// Parse settings
+	if (cliNoRC == false && loadSettings(cliRC))
+		return errorPrint;
 	
 	// App: dump
 	if (cliDump) {
-		if (cliLength) {
-			if (convertToVal(length, cliLength))
-				return errorPrint;
-		}
+		if (cliLength && convertToVal(length, cliLength))
+			return errorPrint;
 		return dump.start(skip, length);
 	}
 	

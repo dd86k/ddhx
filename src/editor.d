@@ -11,17 +11,14 @@ import utils.memory;
 
 // NOTE: Cursor management.
 //
-//       Viewport ("camera").
-//
-//       The file position controls the position of the start of the view
-//       port and the size of the read buffer determines the screen buffer
-//       size.
-//
-//       Cursor ("pointer").
-//
-//       The cursor is governed in a 2-dimensional zero-based position relative
-//       to the viewport in bytes and is nibble aware. The application calls
-//       the cursorXYZ functions and updates the position on-screen manually.
+//        +-> File position is at 0x10, at the start of the read buffer
+//        |
+//        |   hex 01 02 03 04
+//       00000010 ab cd 11 22 -+
+//       00000014 33 44<55>66  +- Read buffer
+//       00000018 77 88 99 ff -+
+//                      ^^
+//                      ++------ Cursor is at position 6 of read buffer
 
 // NOTE: Dependencies
 //
@@ -122,6 +119,7 @@ __gshared long position;	/// Last known set position.
 __gshared size_t readSize;	/// For input size.
 private __gshared ubyte[] readBuffer;	/// For input data.
 private __gshared uint vheight;	/// 
+__gshared long fileSize;	/// Last size of file
 
 // Editing stuff
 
@@ -181,10 +179,11 @@ int openFile(string path) {
 	version (Trace) trace("path='%s'", path);
 	
 	if (source.osfile.open(path, editModeReadOnly(editMode)))
-		return errorSet(ErrorCode.os);
+		return errorSetOs;
 	
 	fileMode = FileMode.file;
 	fileName = baseName(path);
+	refreshFileSize;
 	return 0;
 }
 
@@ -199,6 +198,7 @@ int openMmfile(string path) {
 	
 	fileMode = FileMode.mmfile;
 	fileName = baseName(path);
+	refreshFileSize;
 	return 0; 
 }
 
@@ -213,6 +213,7 @@ int openMemory(ubyte[] data) {
 	source.memory.open(data);
 	fileMode = FileMode.memory;
 	fileName = null;
+	refreshFileSize;
 	return 0;
 }
 
@@ -382,15 +383,15 @@ bool viewPageDown() {
 //
 
 void cursorBound() {
-	if (cursor.position < 0) {
-		cursor.position = 0;
-		return;
-	}
-	if (cursor.position >= readSize) {
-		if (cursor.position - setting.columns >= readSize)
-			cursor.position = cast(uint)(readSize - 1);
-		else
-			cursor.position -= setting.columns;
+	// NOTE: It is impossible for the cursor to be at a negative position
+	//       Because it is unsigned and the cursor is 0-based
+	
+	long fsize = fileSize;
+	bool nok = cursorTell > fsize;
+	
+	if (nok) {
+		int l = cast(int)(cursorTell - fsize);
+		cursor.position -= l;
 		return;
 	}
 }
@@ -399,17 +400,22 @@ void cursorBound() {
 
 /// Move cursor at the absolute start of the file.
 /// Returns: True if the view moved.
-bool cursorFileStart() {
+bool cursorAbsStart() {
 	with (cursor) position = nibble = 0;
 	return viewStart;
 }
 /// Move cursor at the absolute end of the file.
 /// Returns: True if the view moved.
-bool cursorFileEnd() {
-	with (cursor) {
-		position = cast(uint)readSize - 1;
-		nibble = 0;
-	}
+bool cursorAbsEnd() {
+	
+	
+	
+	
+	
+	uint base = cast(uint)(readSize < fileSize ? fileSize : readSize);
+	uint rem = cast(uint)(fileSize % setting.columns);
+	uint h = cast(uint)(base / setting.columns);
+	cursor.position = h + rem;
 	return viewEnd;
 }
 /// Move cursor at the start of the row.
@@ -425,6 +431,10 @@ bool cursorEnd() { // put cursor at the end of the row
 	cursor.position =
 		(cursor.position - (cursor.position % setting.columns))
 		+ setting.columns - 1;
+	if (cursorTell > fileSize) {
+		uint rem = cast(uint)(fileSize % setting.columns);
+		cursor.position = (cursor.position + setting.columns - rem);
+	}
 	cursor.nibble = 0;
 	return false;
 }
@@ -491,6 +501,7 @@ bool cursorDown() {
 	if (acpos + setting.columns > fsize) {
 		uint rem = cast(uint)(fsize % setting.columns);
 		cursor.position = cast(uint)(readSize - setting.columns + rem);
+		//cursor.position = cast(uint)((fsize + cursor.position) - fsize);
 		return false;
 	}
 	
@@ -500,15 +511,15 @@ bool cursorDown() {
 /// Move cursor by a page up the file.
 /// Returns: True if the view moved.
 bool cursorPageUp() {
-	//TODO: Move cursor by viewSize
 //	int v = readSize / setting.columns;
 	return viewPageUp;
 }
 /// Move cursor by a page down the file.
 /// Returns: True if the view moved.
 bool cursorPageDown() {
-	//TODO: Move cursor by viewSize
-	return viewPageDown;
+	bool ok = viewPageDown;
+	cursorBound;
+	return ok;
 }
 /// Get cursor absolute position within the file.
 /// Returns: Cursor absolute position in file.
@@ -526,22 +537,21 @@ void cursorGoto(long m) {
 
 // !SECTION
 
-long fileSize() {
-	long sz = void;
-	
+long refreshFileSize() {
 	final switch (fileMode) with (FileMode) {
-	case file:	sz = source.osfile.size;	break;
-	case mmfile:	sz = source.mmfile.length;	break;
-	case memory:	sz = source.memory.size;	break;
-	case stream:	sz = source.stream.size;	break;
+	case file:	fileSize = source.osfile.size;	break;
+	case mmfile:	fileSize = source.mmfile.length;	break;
+	case memory:	fileSize = source.memory.size;	break;
+	case stream:	fileSize = source.stream.size;	break;
 	}
 	
-	version (Trace) trace("sz=%u", sz);
+	version (Trace) trace("sz=%u", fileSize);
 	
-	return sz;
+	return fileSize;
 }
 
 //TODO: from other types?
+//      or implement this via MemoryStream?
 int slurp(long skip = 0, long length = 0) {
 	import std.array : uninitializedArray;
 	import core.stdc.stdio : fread;
@@ -558,21 +568,11 @@ int slurp(long skip = 0, long length = 0) {
 	
 	ubyte *b = cast(ubyte*)malloc(READ_SIZE);
 	if (b == null)
-		return errorSet(ErrorCode.os);
+		return errorSetOs;
 	
 	FILE *_file = source.stream.getFP;
 	
 	if (skip) {
-		/*while (skip > 0) {
-			if (skip - READ_SIZE > 0) {
-				break;
-			}
-			
-			skip -= fread(b, READ_SIZE, 1, _file);
-		}
-		if (skip > 0) { // remaining
-			fread(b, cast(size_t)skip, 1, _file);
-		}*/
 		do {
 			size_t bsize = cast(size_t)min(READ_SIZE, skip);
 			skip -= fread(b, 1, bsize, _file);
