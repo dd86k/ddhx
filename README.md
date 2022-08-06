@@ -41,7 +41,6 @@ At the moment, there are only two modes:
 
 This is the default mode. It allows you to navigate files and block devices
 
-
 ### Screen
 
 ```text
