@@ -330,6 +330,7 @@ void terminalOnResize(void function() func) {
 	terminalOnResizeEvent = func;
 }
 
+version (Posix)
 private extern (C)
 void terminalResized(int signo, siginfo_t *info, void *content) {
 	if (terminalOnResizeEvent)
@@ -364,8 +365,7 @@ void terminalClear() {
 		// \033c is a Reset
 		// \033[2J is "Erase whole display"
 		printf("\033[2J");
-	}
-	else static assert(0, "Clear: Not implemented");
+	} else static assert(0, "Clear: Not implemented");
 }
 
 /// Get terminal window size in characters.
@@ -380,13 +380,13 @@ TerminalSize terminalSize() {
 	} else version (Posix) {
 		//TODO: Consider using LINES and COLUMNS environment variables
 		//      as fallback if ioctl returns -1.
+		//TODO: Consider ESC [ 18 t for fallback of environment.
+		//      Reply: ESC [ 8 ; ROWS ; COLUMNS t
 		winsize ws = void;
 		ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
 		size.height = ws.ws_row;
 		size.width  = ws.ws_col;
-	} else {
-		static assert(0, "terminalSize: Not implemented");
-	}
+	} else static assert(0, "terminalSize: Not implemented");
 	return size;
 }
 

@@ -448,14 +448,18 @@ void renderStatusBar(const(char)[][] items ...) {
 }
 
 /// Update display from buffer.
+/// Params:
+/// 	position = Base position.
+/// 	data = Data chunk.
+/// 	limit = Maximum number of lines to print.
 /// Returns: Numbers of row written.
-int renderContent(long position, ubyte[] data, int maxline) {
+int renderContent(long position, ubyte[] data, int limit) {
 	version (Trace) {
 		trace("position=%u data.len=%u", position, data.length);
 		StopWatch sw = StopWatch(AutoStart.yes);
 	}
 	
-	if (maxline == 0) maxline = maxline.max;
+	if (limit == 0) limit = limit.max;
 	
 	// print lines in bulk (for entirety of view buffer)
 	//TODO: Output to scoped OutBuffer
@@ -465,7 +469,7 @@ int renderContent(long position, ubyte[] data, int maxline) {
 		//outbuf.put(renderRow(chunk, position));
 		cwriteln(renderRow(chunk, position));
 		position += setting.columns;
-		if (++line == maxline) break;
+		if (++line == limit) break;
 	}
 	
 	//cwriteln(cast(const(char)[])outbuf.toBytes);

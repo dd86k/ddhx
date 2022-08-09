@@ -78,14 +78,15 @@ enum FileMode {
 
 /// Editor editing mode.
 enum EditMode : ushort {
+	/// Incoming data will be overwritten at cursor position.
+	/// This is the default.
+	/// Editing: Enabled
+	/// Cursor: Enabled
+	overwrite,
 	/// Incoming data will be inserted at cursor position.
 	/// Editing: Enabled
 	/// Cursor: Enabled
 	insert,
-	/// Incoming data will be overwritten at cursor position.
-	/// Editing: Enabled
-	/// Cursor: Enabled
-	overwrite,
 	/// The file cannot be edited.
 	/// Editing: Disabled
 	/// Cursor: Enabled
@@ -130,8 +131,8 @@ __gshared EditMode editMode;	/// Current editing mode
 
 string editModeString(EditMode mode = editMode) {
 	final switch (mode) with (EditMode) {
-	case insert:	return "in";
 	case overwrite:	return "ov";
+	case insert:	return "in";
 	case readOnly:	return "rd";
 	case view:	return "vw";
 	}
