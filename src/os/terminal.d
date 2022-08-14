@@ -34,6 +34,7 @@ version (Windows) {
 	private __gshared HANDLE hIn, hOut;
 	private __gshared USHORT defaultColor = DEFAULT_COLOR;
 	private __gshared DWORD oldCP;
+	private __gshared ushort oldAttr;
 } else version (Posix) {
 	private import core.stdc.stdio : snprintf;
 	private import core.sys.posix.sys.stat;
@@ -44,14 +45,6 @@ version (Windows) {
 	
 	private enum NULL_SIGACTION = cast(sigaction_t*)0;
 	private enum SIGWINCH = 28;
-	
-	// \033c is a Reset
-	// \033[2J is "Erase whole display"
-	private immutable string ESC_CLEAR = "\033[2J";
-	private immutable string ESC_SHOWCURSOR = "\033[?25h";
-	private immutable string ESC_HIDECURSOR = "\033[?25l";
-	private immutable string ESC_COLORINVERT = "\033[?5h";
-	private immutable string ESC_COLORRESET  = "\033[?5l";
 	
 	// Bionic depends on the Linux system it's compiled on.
 	// But Glibc and Musl have the same settings, so does Bionic.
@@ -197,6 +190,8 @@ private __gshared TermFeat current_features;
 void terminalInit(TermFeat features) {
 	current_features = features;
 	version (Windows) {
+		CONSOLE_SCREEN_BUFFER_INFO csbi = void;
+		
 		if (features & TermFeat.inputSys) {
 			//NOTE: Re-opening stdin before new screen fixes quite a few things
 			//      - usage with CreateConsoleScreenBuffer
@@ -220,7 +215,6 @@ void terminalInit(TermFeat features) {
 			if (hIn == INVALID_HANDLE_VALUE)
 				throw new WindowsException(GetLastError);
 			
-			CONSOLE_SCREEN_BUFFER_INFO csbi = void;
 			if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
 				throw new WindowsException(GetLastError);
 			
@@ -261,6 +255,8 @@ void terminalInit(TermFeat features) {
 			throw new WindowsException(GetLastError);
 		
 		//TODO: Get active (or default) colors
+		GetConsoleScreenBufferInfo(hOut, &csbi);
+		oldAttr = csbi.wAttributes;
 	} else version (Posix) {
 		stdout.setvbuf(0, _IONBF);
 		if (features & TermFeat.inputSys) {
@@ -319,7 +315,8 @@ void terminalRestore() {
 	} else version (Posix) {
 		// restore main screen buffer
 		if (current_features & TermFeat.altScreen)
-			stdout.write("\033[?1049l");
+			terminalOutput2("\033[?1049l");
+		terminalShowCursor;
 	}
 	if (current_features & TermFeat.inputSys)
 		terminalPauseInput;
@@ -370,7 +367,9 @@ void terminalClear() {
 		} else // If that fails, run cls.
 			system("cls");
 	} else version (Posix) {
-		terminalOutput(ESC_CLEAR.ptr, ESC_CLEAR.length);
+		// \033c is a Reset
+		// \033[2J is "Erase whole display"
+		terminalOutput2("\033[2J");
 	} else static assert(0, "Clear: Not implemented");
 }
 
@@ -423,7 +422,7 @@ void terminalHideCursor() {
 		cci.bVisible = FALSE;
 		SetConsoleCursorInfo(hOut, &cci);
 	} else version (Posix) {
-		terminalOutput(ESC_HIDECURSOR.ptr, ESC_HIDECURSOR.length);
+		terminalOutput2("\033[?25l");
 	}
 }
 /// Show the terminal cursor.
@@ -434,28 +433,47 @@ void terminalShowCursor() {
 		cci.bVisible = TRUE;
 		SetConsoleCursorInfo(hOut, &cci);
 	} else version (Posix) {
-		terminalOutput(ESC_SHOWCURSOR.ptr, ESC_SHOWCURSOR.length);
+		terminalOutput2("\033[?25h");
 	}
 }
 
+void terminalHighlight() {
+	version (Windows) {
+		SetConsoleTextAttribute(hOut, oldAttr | BACKGROUND_RED);
+	} else version (Posix) {
+		terminalOutput2("\033[41m");
+	}
+}
 /// Invert color.
 void terminalInvertColor() {
 	version (Windows) {
-		SetConsoleTextAttribute(hOut, COMMON_LVB_REVERSE_VIDEO);
+		SetConsoleTextAttribute(hOut, oldAttr | COMMON_LVB_REVERSE_VIDEO);
 	} else version (Posix) {
-		terminalOutput(ESC_COLORINVERT.ptr, ESC_COLORINVERT.length);
+		terminalOutput2("\033[7m");
+	}
+}
+/// Underline.
+/// Bugs: Does not work on Windows Terminal. See https://github.com/microsoft/terminal/issues/8037
+void terminalUnderline() {
+	version (Windows) {
+		SetConsoleTextAttribute(hOut, oldAttr | COMMON_LVB_UNDERSCORE);
+	} else version (Posix) {
+		terminalOutput2("\033[4m");
 	}
 }
 /// Reset color.
 void terminalResetColor() {
 	version (Windows) {
-		SetConsoleTextAttribute(hOut, COMMON_LVB_REVERSE_VIDEO);
+		SetConsoleTextAttribute(hOut, oldAttr);
 	} else version (Posix) {
-		terminalOutput(ESC_COLORRESET.ptr, ESC_COLORRESET.length);
+		terminalOutput2("\033[0m");
 	}
 }
 
-//TODO: Consider an const(void)[] wrapper?
+size_t terminalOutput2(const(void)[] data) {
+	return terminalOutput(data.ptr, data.length);
+}
+
 /// Directly write to output.
 /// Params:
 /// 	data = Character data.

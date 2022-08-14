@@ -278,65 +278,74 @@ string input(string prompt, string include) {
 	return readln;
 }*/
 
+//TODO: When screen doesn't move: Only render lines affected
+
 /// Move the cursor to the start of the data
 void moveAbsStart() {
 	if (editor.cursorAbsStart)
 		readRender;
-	updateStatus;
+	else
+		render;
 	updateCursor;
 }
 /// Move the cursor to the end of the data
 void moveAbsEnd() {
 	if (editor.cursorAbsEnd)
 		readRender;
-	updateStatus;
+	else
+		render;
 	updateCursor;
 }
 /// Align cursor to start of row
 void moveAlignStart() {
 	editor.cursorHome;
-	updateStatus;
+	render;
 	updateCursor;
 }
 /// Align cursor to end of row
 void moveAlignEnd() {
 	editor.cursorEnd;
-	updateStatus;
+	render;
 	updateCursor;
 }
 /// Move cursor to one data group to the left (backwards)
 void moveLeft() {
 	if (editor.cursorLeft)
 		readRender;
-	updateStatus;
+	else
+		render;
 	updateCursor;
 }
 /// Move cursor to one data group to the right (forwards)
 void moveRight() {
 	if (editor.cursorRight)
 		readRender;
-	updateStatus;
+	else
+		render;
 	updateCursor;
 }
 /// Move cursor to one row size up (backwards)
 void moveRowUp() {
 	if (editor.cursorUp)
 		readRender;
-	updateStatus;
+	else
+		render;
 	updateCursor;
 }
 /// Move cursor to one row size down (forwards)
 void moveRowDown() {
 	if (editor.cursorDown)
 		readRender;
-	updateStatus;
+	else
+		render;
 	updateCursor;
 }
 /// Move cursor to one page size up (backwards)
 void movePageUp() {
 	if (editor.cursorPageUp)
 		readRender;
-	updateStatus;
+	else
+		render;
 	updateCursor;
 }
 /// Move view to one page size down (forwards)
@@ -399,12 +408,12 @@ void updateOffset() {
 
 void updateContent() {
 	screen.cursorContent; // Set pos
-	int maxline = screen.termSize.height - 2;
-	const int rows = screen.renderContent(editor.position, readdata, maxline);
-	version (Trace) trace("maxline=%d rows=%d", maxline, rows);
-	maxline -= rows;
-	if (maxline > 0)
-		screen.renderEmpty(maxline); // Filling
+	//const int rows = screen.renderContent(editor.position, readdata);
+	const int rows = screen.renderContentCursor(
+		editor.position,
+		readdata,
+		editor.cursor.position);
+	screen.renderEmpty(rows);
 }
 
 void updateStatus() {
@@ -430,8 +439,8 @@ void updateCursor() {
 		with (editor.cursor)
 			trace("pos=%u n=%u", position, nibble);
 	
-	with (editor.cursor)
-		screen.cursor(position, nibble);
+	//with (editor.cursor)
+	//	screen.cursor(position, nibble);
 }
 
 /// Refresh the entire screen by:

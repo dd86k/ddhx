@@ -78,7 +78,7 @@ int start(long skip, long length) {
 	long r;
 	do {
 		ubyte[] data = editor.read;
-		screen.renderContent(r, data, 0);
+		screen.renderContent(r, data);
 		r += data.length;
 		//io.position = r;
 	} while (editor.eof == false && r < length);

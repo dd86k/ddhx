@@ -9,6 +9,8 @@ import ddhx; // for setting, NumberType
 import os.terminal, os.file;
 import core.stdc.string : memset;
 import core.stdc.stdlib : malloc, free;
+import std.outbuffer : OutBuffer;
+import std.typecons : scoped;
 
 //TODO: Data viewer groups
 //      hex: h8, h16, h32, h64
@@ -34,6 +36,9 @@ private struct NumberFormatter {
 	size_t function(char*,ubyte) data;	/// Function to format data
 }
 
+//TODO: Replace with OffsetFormatter and BinaryFormatter structures
+//      XXXFormatter.select()
+
 private immutable NumberFormatter[3] formatters = [
 	{ "hex", 'x', 2, &format11x, &format02x },
 	{ "dec", 'u', 3, &format11d, &format03d },
@@ -42,12 +47,11 @@ private immutable NumberFormatter[3] formatters = [
 
 /// Last known terminal size.
 __gshared TerminalSize termSize;
-
-//TODO: Have single __gshared Formatter format instance
-//      .offset(long)
-//      .data()...
-
+/// 
+__gshared uint maxLine = uint.max;
+/// Offset formatter.
 __gshared NumberFormatter offsetFormatter = formatters[0];
+/// Binary data formatter.
 __gshared NumberFormatter binaryFormatter = formatters[0];
 
 int initiate() {
@@ -60,11 +64,14 @@ int initiate() {
 	if (termSize.width < 20)
 		return errorSet(ErrorCode.screenMinimumColumns);
 	
+	terminalHideCursor;
+	
 	return 0;
 }
 
 void updateTermSize() {
 	termSize = terminalSize;
+	maxLine = termSize.height - 2;
 }
 
 void onResize(void function() func) {
@@ -127,10 +134,12 @@ string prompt(string prefix, string include) {
 	cwrite(prefix);
 	if (include) cwrite(include);
 	
+	terminalShowCursor;
 	terminalPauseInput;
 	
 	string line = include ~ chomp(readln());
 	
+	terminalHideCursor;
 	terminalResumeInput;
 	
 	return line;
@@ -351,8 +360,6 @@ void clearOffsetBar() {
 /// 
 //TODO: Add "edited" or '*' to end if file edited
 void renderOffset() {
-	import std.outbuffer : OutBuffer;
-	import std.typecons : scoped;
 	import std.conv : octal;
 	
 	version (Trace) {
@@ -397,10 +404,7 @@ void renderOffset() {
 }
 
 /// 
-void renderStatusBar(const(char)[][] items ...) {
-	import std.outbuffer : OutBuffer;
-	import std.typecons : scoped;
-	
+void renderStatusBar(const(char)[][] items ...) {	
 	version (Trace) {
 		StopWatch sw = StopWatch(AutoStart.yes);
 	}
@@ -436,43 +440,128 @@ void renderStatusBar(const(char)[][] items ...) {
 	}
 }
 
-/// Update display from buffer.
-/// Params:
-/// 	position = Base position.
-/// 	data = Data chunk.
-/// 	limit = Maximum number of lines to print.
-/// Returns: Numbers of row written.
-int renderContent(long position, ubyte[] data, int limit) {
+private
+const(char)[] renderOffset(ulong pos) {
+	__gshared char[1024] buffer = void;
+	size_t indexData = offsetFormatter.offset(buffer.ptr, pos);
+	return buffer[0..indexData];
+}
+private
+const(char)[] renderData(ubyte data) {
+	__gshared char[1024] buffer = void;
+	size_t indexData = binaryFormatter.data(buffer.ptr, data);
+	return buffer[0..indexData];
+}
+private
+const(char)[] renderText(ubyte data) {
+	__gshared char[1] a;
+	const(char)[] r = transcoder.transform(data);
+	if (r)
+		return r;
+	a[0] = setting.defaultChar;
+	return a;
+}
+
+//int renderContentCursorLine(long position, ubyte[] data, uint cursor)
+
+int renderContentCursor(long position, ubyte[] data, uint cursor) {
+	
+	uint crow = cursor / setting.columns;
+	uint ccol = cursor % setting.columns;
+	
 	version (Trace) {
-		trace("position=%u data.len=%u", position, data.length);
+		trace("P=%u D=%u R=%u C=%u",
+			position, data.length, crow, ccol);
 		StopWatch sw = StopWatch(AutoStart.yes);
 	}
 	
-	if (limit == 0) limit = limit.max;
-	
-	// print lines in bulk (for entirety of view buffer)
-	//TODO: Output to scoped OutBuffer
-	//auto outbuf = scoped!OutBuffer();
-	int line;
+	int lines;
 	foreach (chunk; chunks(data, setting.columns)) {
-		//outbuf.put(renderRow(chunk, position));
-		cwriteln(renderRow(chunk, position));
+		if (lines == crow) {
+			cwrite(renderOffset(position));
+			cwrite("  ");
+			uint i;
+			foreach (g; chunk) {
+				if (i++ == ccol) {
+					terminalInvertColor;
+					cwrite(renderData(g));
+					terminalResetColor;
+				} else {
+					cwrite(renderData(g));
+				}
+				cwrite(" ");
+			}
+			cwrite(" ");
+			i = 0;
+			foreach (g; chunk) {
+				if (i++ == ccol) {
+					terminalHighlight;
+					cwrite(renderText(g));
+					terminalResetColor;
+				} else {
+					cwrite(renderText(g));
+				}
+			}
+			cwrite('\n');
+		} else {
+			auto buffer = scoped!OutBuffer();
+			
+			buffer.put(renderOffset(position));
+			buffer.put("  ");
+			foreach (g; chunk) {
+				buffer.put(renderData(g));
+				buffer.put(' ');
+			}
+			buffer.put(" ");
+			foreach (g; chunk) {
+				buffer.put(renderText(g));
+			}
+			cwriteln(cast(const(char)[])buffer.toBytes);
+		}
+		
 		position += setting.columns;
-		if (++line == limit) break;
+		if (++lines == maxLine) break;
 	}
-	
-	//cwriteln(cast(const(char)[])outbuf.toBytes);
 	
 	version (Trace) {
 		sw.stop;
 		trace("time='%s µs'", sw.peek.total!"usecs");
 	}
 	
-	return line;
+	return lines;
 }
-void renderEmpty(int lines) {
+
+/// Update display from buffer.
+/// Params:
+/// 	position = Base position.
+/// 	data = Data chunk.
+/// Returns: Numbers of row written.
+uint renderContent(long position, ubyte[] data) {
+	version (Trace) {
+		trace("position=%u data.len=%u", position, data.length);
+		StopWatch sw = StopWatch(AutoStart.yes);
+	}
+	
+	// print lines in bulk (for entirety of view buffer)
+	uint lines;
+	foreach (chunk; chunks(data, setting.columns)) {
+		cwriteln(renderRow(chunk, position));
+		position += setting.columns;
+		if (++lines == maxLine) break;
+	}
+	
+	version (Trace) {
+		sw.stop;
+		trace("time='%s µs'", sw.peek.total!"usecs");
+	}
+	
+	return lines;
+}
+void renderEmpty(uint rows) {
 	debug assert(termSize.rows);
 	debug assert(termSize.columns);
+	
+	uint lines = maxLine - rows;
 	
 	version (Trace) {
 		trace("lines=%u rows=%u cols=%u", lines, termSize.rows, termSize.columns);
@@ -480,7 +569,7 @@ void renderEmpty(int lines) {
 	}
 	
 	char *p = cast(char*)malloc(termSize.columns);
-	debug assert(p);
+	assert(p);
 	int w = termSize.columns;
 	memset(p, ' ', w);
 	
