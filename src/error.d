@@ -185,6 +185,8 @@ int errorPrint(A...)(int code, const(char)[] fmt, A args) {
 }
 
 version (Trace) {
+	public import std.datetime.stopwatch;
+	
 	private __gshared File log;
 	
 	void traceInit(string n) {

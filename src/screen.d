@@ -5,12 +5,10 @@
 module screen;
 
 import std.range : chunks;
-import std.stdio : stdout; // for cwrite family
 import ddhx; // for setting, NumberType
 import os.terminal, os.file;
 import core.stdc.string : memset;
 import core.stdc.stdlib : malloc, free;
-version (Trace) import std.datetime.stopwatch;
 
 //TODO: Data viewer groups
 //      hex: h8, h16, h32, h64
@@ -23,15 +21,6 @@ version (Trace) import std.datetime.stopwatch;
 //      native (default), little, big
 //TODO: View display mode (data+text, data, text)
 //      Currently very low priority
-//TODO: Consider hiding cursor when drawing
-//      + save/restore position
-//      terminalCursorHide()
-//        windows: SetConsoleCursorInfo
-//                 https://docs.microsoft.com/en-us/windows/console/setconsolecursorinfo
-//        posix: \033[?25l
-//      terminalCursorShow()
-//        windows: SetConsoleCursorInfo
-//        posix: \033[?25h
 //TODO: Unaligned rendering.
 //      Rendering engine should be capable to take off whereever it stopped
 //      or be able to specify/toggle seperate regardless of column length.

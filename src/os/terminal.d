@@ -18,11 +18,12 @@ module os.terminal;
 ///
 private extern (C) int putchar(int);
 
-private import std.stdio : _IONBF, _IOLBF, _IOFBF,
-	printf, stdin, stdout;
+private import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
+version (TestInput) private import std.stdio : printf;
 private import core.stdc.stdlib : system, atexit;
 
 version (Windows) {
+	//TODO: To reduce output binary, import only modules necessary
 	private import core.sys.windows.windows;
 	private import std.windows.syserror : WindowsException;
 	private enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
@@ -34,16 +35,23 @@ version (Windows) {
 	private __gshared USHORT defaultColor = DEFAULT_COLOR;
 	private __gshared DWORD oldCP;
 } else version (Posix) {
+	private import core.stdc.stdio : snprintf;
 	private import core.sys.posix.sys.stat;
 	private import core.sys.posix.sys.ioctl;
 	private import core.sys.posix.unistd;
 	private import core.sys.posix.termios;
 	private import core.sys.posix.signal;
 	
-	private
-	enum NULL_SIGACTION = cast(sigaction_t*)0;
-	
+	private enum NULL_SIGACTION = cast(sigaction_t*)0;
 	private enum SIGWINCH = 28;
+	
+	// \033c is a Reset
+	// \033[2J is "Erase whole display"
+	private immutable string ESC_CLEAR = "\033[2J";
+	private immutable string ESC_SHOWCURSOR = "\033[?25h";
+	private immutable string ESC_HIDECURSOR = "\033[?25l";
+	private immutable string ESC_COLORINVERT = "\033[?5h";
+	private immutable string ESC_COLORRESET  = "\033[?5l";
 	
 	// Bionic depends on the Linux system it's compiled on.
 	// But Glibc and Musl have the same settings, so does Bionic.
@@ -362,9 +370,7 @@ void terminalClear() {
 		} else // If that fails, run cls.
 			system("cls");
 	} else version (Posix) {
-		// \033c is a Reset
-		// \033[2J is "Erase whole display"
-		printf("\033[2J");
+		terminalOutput(ESC_CLEAR.ptr, ESC_CLEAR.length);
 	} else static assert(0, "Clear: Not implemented");
 }
 
@@ -402,11 +408,54 @@ void terminalPos(int x, int y) {
 		c.Y = cast(short)y;
 		SetConsoleCursorPosition(hOut, c);
 	} else version (Posix) { // 1-based, so 0,0 needs to be output as 1,1
-		printf("\033[%d;%dH", ++y, ++x);
-		stdout.flush;
+		char[16] b = void;
+		int r = snprintf(b.ptr, 16, "\033[%d;%dH", ++y, ++x);
+		assert(r > 0);
+		terminalOutput(b.ptr, r);
 	}
 }
 
+/// Hide the terminal cursor.
+void terminalHideCursor() {
+	version (Windows) {
+		CONSOLE_CURSOR_INFO cci = void;
+		GetConsoleCursorInfo(hOut, &cci);
+		cci.bVisible = FALSE;
+		SetConsoleCursorInfo(hOut, &cci);
+	} else version (Posix) {
+		terminalOutput(ESC_HIDECURSOR.ptr, ESC_HIDECURSOR.length);
+	}
+}
+/// Show the terminal cursor.
+void terminalShowCursor() {
+	version (Windows) {
+		CONSOLE_CURSOR_INFO cci = void;
+		GetConsoleCursorInfo(hOut, &cci);
+		cci.bVisible = TRUE;
+		SetConsoleCursorInfo(hOut, &cci);
+	} else version (Posix) {
+		terminalOutput(ESC_SHOWCURSOR.ptr, ESC_SHOWCURSOR.length);
+	}
+}
+
+/// Invert color.
+void terminalInvertColor() {
+	version (Windows) {
+		SetConsoleTextAttribute(hOut, COMMON_LVB_REVERSE_VIDEO);
+	} else version (Posix) {
+		terminalOutput(ESC_COLORINVERT.ptr, ESC_COLORINVERT.length);
+	}
+}
+/// Reset color.
+void terminalResetColor() {
+	version (Windows) {
+		SetConsoleTextAttribute(hOut, COMMON_LVB_REVERSE_VIDEO);
+	} else version (Posix) {
+		terminalOutput(ESC_COLORRESET.ptr, ESC_COLORRESET.length);
+	}
+}
+
+//TODO: Consider an const(void)[] wrapper?
 /// Directly write to output.
 /// Params:
 /// 	data = Character data.
