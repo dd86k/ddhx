@@ -603,6 +603,9 @@ L_READ:
 		//        - very cursed
 		//        - screwed if there are keys more than 8 bytes
 		//        - template should do endianness
+		//      - Manually hash it
+		//        - Allows static arrays
+		//        - std.digest.murmurhash already available
 		
 		enum BLEN = 8;
 		char[BLEN] b = void;

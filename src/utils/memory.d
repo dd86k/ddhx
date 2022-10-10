@@ -1,6 +1,5 @@
 module utils.memory;
 
-
 import std.stdio : File;
 import std.container.array;
 
@@ -22,9 +21,8 @@ struct MemoryStream {
 	/*void open(string path) {
 	}*/
 	void open(ubyte[] data) {
-		buffer = data;
-		
-		
+		buffer = new ubyte[data.length];
+		buffer[0..$] = data[0..$];
 	}
 	void open(File stream) {
 		buffer = buffer.init;
@@ -52,7 +50,10 @@ struct MemoryStream {
 	ubyte[] read(size_t size) {
 		long p2 = position + size;
 		
-		return null;
+		if (p2 > buffer.length)
+			return buffer[position..$];
+		
+		return buffer[position..p2];
 	}
 	
 	// not inout ref, just want to read

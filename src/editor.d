@@ -204,6 +204,8 @@ int openMmfile(string path) {
 }
 
 int openStream(File file) {
+	version (Trace) trace();
+	
 	source.stream = file;
 	fileMode = FileMode.stream;
 	fileName = null;
@@ -211,6 +213,8 @@ int openStream(File file) {
 }
 
 int openMemory(ubyte[] data) {
+	version (Trace) trace();
+	
 	source.memory.open(data);
 	fileMode = FileMode.memory;
 	fileName = null;
@@ -240,6 +244,7 @@ void setBuffer(size_t size) {
 //
 
 long seek(long pos) {
+	version (Trace) trace("mode=%s", fileMode);
 	position = pos;
 	final switch (fileMode) with (FileMode) {
 	case file:	return source.osfile.seek(Seek.start, pos);
@@ -252,6 +257,7 @@ long seek(long pos) {
 }
 
 long tell() {
+	version (Trace) trace("mode=%s", fileMode);
 	final switch (fileMode) with (FileMode) {
 	case file:	return source.osfile.tell;
 	case mmfile:	return source.mmfile.tell;
@@ -267,6 +273,7 @@ long tell() {
 //
 
 ubyte[] read() {
+	version (Trace) trace("mode=%s", fileMode);
 	final switch (fileMode) with (FileMode) {
 	case file:	return source.osfile.read(readBuffer);
 	case mmfile:	return source.mmfile.read(readSize);
@@ -275,6 +282,7 @@ ubyte[] read() {
 	}
 }
 ubyte[] read(ubyte[] buffer) {
+	version (Trace) trace("mode=%s", fileMode);
 	final switch (fileMode) with (FileMode) {
 	case file:	return source.osfile.read(buffer);
 	case mmfile:	return source.mmfile.read(buffer.length);
@@ -408,11 +416,6 @@ bool cursorAbsStart() {
 /// Move cursor at the absolute end of the file.
 /// Returns: True if the view moved.
 bool cursorAbsEnd() {
-	
-	
-	
-	
-	
 	uint base = cast(uint)(readSize < fileSize ? fileSize : readSize);
 	uint rem = cast(uint)(fileSize % setting.columns);
 	uint h = cast(uint)(base / setting.columns);
@@ -563,6 +566,8 @@ int slurp(long skip = 0, long length = 0) {
 	
 	enum READ_SIZE = 4096;
 	
+	version (Trace) trace("skip=%u length=%u", skip, length);
+	
 	//
 	// Skiping
 	//
@@ -594,13 +599,20 @@ int slurp(long skip = 0, long length = 0) {
 	do {
 		size_t bsize = cast(size_t)min(READ_SIZE, length);
 		size_t len = fread(b, 1, bsize, _file);
+		if (len == 0) break;
 		outbuf.put(b[0..len]);
+		if (len < bsize) break;
 		length -= len;
 	} while (length > 0);
 	
 	free(b);
 	
-	source.memory.open(outbuf.toBytes.dup);
+	version (Trace) trace("outbuf.offset=%u", outbuf.offset);
+	
+	source.memory.open(outbuf.toBytes);
+	
+	version (Trace) trace("source.memory.size=%u", source.memory.size);
+	
 	fileMode = FileMode.memory;
 	return 0;
 }

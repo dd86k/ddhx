@@ -8,7 +8,7 @@ module main;
 
 import std.stdio, std.mmfile, std.format, std.getopt;
 import core.stdc.stdlib : exit;
-import ddhx, editor, dump;
+import ddhx, editor, dump, reverser;
 
 //TODO: --only=n
 //             text: only display translated text
@@ -135,7 +135,7 @@ void page(string opt) {
 int main(string[] args) {
 	bool cliMmfile, cliFile, cliDump, cliStdin;
 	bool cliNoRC;
-	string cliSeek, cliLength, cliRC;
+	string cliSeek, cliLength, cliRC, cliReverse;
 	GetoptResult res = void;
 	try {
 		res = args.getopt(config.caseSensitive,
@@ -156,7 +156,8 @@ int main(string[] args) {
 		"D|dump",        "Non-interactive dump", &cliDump,
 		"l|length",      "Dump: Length of data to read", &cliLength,
 		"I|norc",        "Ignore user configuration files, use defaults", &cliNoRC,
-		"r|rc",          "Use supplied RC file", &cliRC,
+		"rc",            "Use supplied RC file", &cliRC,
+		"r|reverse",     "Reverse operation: Turn hex into a binary file", &cliReverse,
 		OPT_VERSION,     "Print the version screen and exit", &page,
 		OPT_VER,         "Print only the version and exit", &page,
 		OPT_SECRET,      "", &page
@@ -189,6 +190,8 @@ int main(string[] args) {
 	
 	// Convert skip value
 	if (cliSeek) {
+		version (Trace) trace("seek=%s", cliSeek);
+		
 		if (convertToVal(skip, cliSeek))
 			return errorPrint();
 		
@@ -202,7 +205,7 @@ int main(string[] args) {
 		return errorPrint;
 	} else if (cliFile ? false : cliMmfile && editor.openMmfile(args[1])) {
 		return errorPrint;
-	} else if (editor.openFile(args[1]))
+	} else if (args.length > 1 && editor.openFile(args[1]))
 		return errorPrint;
 	
 	// Parse settings
@@ -214,6 +217,11 @@ int main(string[] args) {
 		if (cliLength && convertToVal(length, cliLength))
 			return errorPrint;
 		return dump.start(skip, length);
+	}
+	
+	// App: reverse
+	if (cliReverse) {
+		return reverser.start(cliReverse);
 	}
 	
 	// App: interactive

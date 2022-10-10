@@ -62,6 +62,10 @@ int start(long skip = 0) {
 		}
 	}
 	
+	if (editor.fileMode == FileMode.stream) {
+		editor.slurp(skip);
+	}
+	
 	if (screen.initiate)
 		panic;
 	
@@ -371,13 +375,15 @@ void initiate() {
 
 // read at current position
 void read() {
-	version (Trace) trace;
-	
 	editor.seek(editor.position);
 	if (editor.err) panic;
 	
+	version (Trace) trace("editor.position=%u", editor.position);
+	
 	readdata = editor.read();
 	if (editor.err) panic;
+	
+	version (Trace) trace("readdata.length=%u", readdata.length);
 }
 
 //TODO: Consider render with multiple parameters to select what to render
