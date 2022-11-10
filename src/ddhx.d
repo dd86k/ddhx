@@ -132,7 +132,7 @@ L_KEYDOWN:
 	case N:
 		next;
 		break;
-	case Escape, Enter, Colon:
+	case Escape, Enter, ':':
 		menu;
 		break;
 	case G:

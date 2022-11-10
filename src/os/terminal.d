@@ -528,30 +528,29 @@ L_READ:
 			
 			// Filter out single modifier key events
 			switch (keycode) {
-			case 16, 17, 18: // shift,ctrl,alt
-				goto L_READ;
+			case 16, 17, 18: goto L_READ; // shift,ctrl,alt
 			default:
 			}
 			
 			event.type = InputType.keyDown;
 			
-			const char c = ir.KeyEvent.AsciiChar;
+			const char ascii = ir.KeyEvent.AsciiChar;
 			
-			if (c >= 'a' && c <= 'z') {
-				event.key = c - 32;
-			} else if (c) {
-				event.key = c;
+			if (ascii >= 'a' && ascii <= 'z') {
+				event.key = ascii - 32;
+				return;
+			} else if (ascii >= 0x20 && ascii < 0x7f) {
+				event.key = ascii;
 				
 				// '?' on a fr-ca kb is technically shift+6,
 				// breaking app input since expecting no modifiers
-				if (c < 'A' || c > 'Z') {
+				if (ascii >= 'A' && ascii <= 'Z')
 					event.key = Mod.shift;
-					return;
-				}
-			} else {
-				event.key = keycode;
+				
+				return;
 			}
 			
+			event.key = keycode;
 			const DWORD state = ir.KeyEvent.dwControlKeyState;
 			if (state & ALT_PRESSED) event.key |= Mod.alt;
 			if (state & CTRL_PRESSED) event.key |= Mod.ctrl;
@@ -562,8 +561,7 @@ L_READ:
 				// Up=0x00780000 Down=0xFF880000
 				event.type = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
 					Mouse.ScrollDown : Mouse.ScrollUp;
-			}
-			*/
+			}*/
 		case WINDOW_BUFFER_SIZE_EVENT:
 			if (terminalOnResizeEvent)
 				terminalOnResizeEvent();
