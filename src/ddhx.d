@@ -43,18 +43,23 @@ enum NumberType : ubyte {
 /// Interactive application.
 /// Params: skip = Seek to file/data position.
 /// Returns: Error code.
-int start(long skip = 0) {
-    if (skip) {
+int start(long skip = 0)
+{
+    if (skip)
+    {
         //TODO: negative should be starting from end of file (if not stdin)
         //      stdin: use seek
         if (skip < 0)
             return errorPrint(1, "Skip value must be positive");
         
-        if (editor.fileMode == FileMode.stream) {
+        if (editor.fileMode == FileMode.stream)
+        {
             version (Trace) trace("slurp skip=%u", skip);
             if (editor.slurp(skip, 0))
                 return errorPrint;
-        } else if (skip) {
+        }
+        else if (skip)
+        {
             version (Trace) trace("seek skip=%u", skip);
             editor.seek(skip);
             if (editor.err)
@@ -62,7 +67,8 @@ int start(long skip = 0) {
         }
     }
     
-    if (editor.fileMode == FileMode.stream) {
+    if (editor.fileMode == FileMode.stream)
+    {
         editor.slurp(skip);
     }
     
@@ -83,7 +89,8 @@ private:
 //      screen.setData(...)?
 __gshared ubyte[] readdata;
 
-void inputLoop() {
+void inputLoop()
+{
     version (Trace) trace("loop");
     TerminalInput event;
     
@@ -154,7 +161,8 @@ L_KEYDOWN:
     goto L_INPUT;
 }
 
-void eventResize() {
+void eventResize()
+{
     screen.updateTermSize();
     refresh; // temp
 }
@@ -162,7 +170,8 @@ void eventResize() {
 //TODO: revamp menu system
 //      char mode: character mode (':', '/', '?')
 //      string command: command shortcut (e.g., 'g' + ' ' default)
-void menu(string prefix = ":", string prepend = null) {
+void menu(string prefix = ":", string prepend = null)
+{
     import std.stdio : readln;
     import std.string : chomp, strip;
     
@@ -171,7 +180,8 @@ void menu(string prefix = ":", string prepend = null) {
     
     string line = screen.prompt(prefix, prepend);
     
-    scope (exit) {
+    scope (exit)
+    {
         editor.cursorBound;
         updateCursor;
     }
@@ -183,11 +193,13 @@ void menu(string prefix = ":", string prepend = null) {
         screen.message(errorMessage());
 }
 
-int command(string line) {
+int command(string line)
+{
     return command(arguments(line));
 }
 
-int command(string[] argv) {
+int command(string[] argv)
+{
     const size_t argc = argv.length;
     if (argc == 0) return 0;
     
@@ -231,7 +243,8 @@ int command(string[] argv) {
         return 0;
     case "skip":
         ubyte byte_ = void;
-        if (argc <= 1) {
+        if (argc <= 1)
+        {
             byte_ = readdata[editor.cursor.position];
         } else {
             if (argv[1] == "zero")
@@ -276,7 +289,8 @@ int command(string[] argv) {
 // prompt="save as"
 // "save as: " + user input
 /*private
-string input(string prompt, string include) {
+string input(string prompt, string include)
+{
     terminalPos(0, 0);
     screen.cwriteAt(0, 0, prompt, ": ", include);
     return readln;
@@ -285,7 +299,8 @@ string input(string prompt, string include) {
 //TODO: When screen doesn't move: Only render lines affected
 
 /// Move the cursor to the start of the data
-void moveAbsStart() {
+void moveAbsStart()
+{
     if (editor.cursorAbsStart)
         readRender;
     else
@@ -293,7 +308,8 @@ void moveAbsStart() {
     updateCursor;
 }
 /// Move the cursor to the end of the data
-void moveAbsEnd() {
+void moveAbsEnd()
+{
     if (editor.cursorAbsEnd)
         readRender;
     else
@@ -301,19 +317,22 @@ void moveAbsEnd() {
     updateCursor;
 }
 /// Align cursor to start of row
-void moveAlignStart() {
+void moveAlignStart()
+{
     editor.cursorHome;
     render;
     updateCursor;
 }
 /// Align cursor to end of row
-void moveAlignEnd() {
+void moveAlignEnd()
+{
     editor.cursorEnd;
     render;
     updateCursor;
 }
 /// Move cursor to one data group to the left (backwards)
-void moveLeft() {
+void moveLeft()
+{
     if (editor.cursorLeft)
         readRender;
     else
@@ -321,7 +340,8 @@ void moveLeft() {
     updateCursor;
 }
 /// Move cursor to one data group to the right (forwards)
-void moveRight() {
+void moveRight()
+{
     if (editor.cursorRight)
         readRender;
     else
@@ -329,7 +349,8 @@ void moveRight() {
     updateCursor;
 }
 /// Move cursor to one row size up (backwards)
-void moveRowUp() {
+void moveRowUp()
+{
     if (editor.cursorUp)
         readRender;
     else
@@ -337,7 +358,8 @@ void moveRowUp() {
     updateCursor;
 }
 /// Move cursor to one row size down (forwards)
-void moveRowDown() {
+void moveRowDown()
+{
     if (editor.cursorDown)
         readRender;
     else
@@ -345,7 +367,8 @@ void moveRowDown() {
     updateCursor;
 }
 /// Move cursor to one page size up (backwards)
-void movePageUp() {
+void movePageUp()
+{
     if (editor.cursorPageUp)
         readRender;
     else
@@ -353,7 +376,8 @@ void movePageUp() {
     updateCursor;
 }
 /// Move view to one page size down (forwards)
-void movePageDown() {
+void movePageDown()
+{
     if (editor.cursorPageDown)
         readRender;
     updateStatus;
@@ -361,7 +385,8 @@ void movePageDown() {
 }
 
 /// Initiate screen buffer
-void initiate() {
+void initiate()
+{
     screen.updateTermSize;
     
     long fsz = editor.fileSize; /// data size
@@ -374,7 +399,8 @@ void initiate() {
 }
 
 // read at current position
-void read() {
+void read()
+{
     editor.seek(editor.position);
     if (editor.err) panic;
     
@@ -389,30 +415,35 @@ void read() {
 //TODO: Consider render with multiple parameters to select what to render
 
 /// Render screen (all elements)
-void renderAll() {
+void renderAll()
+{
     version (Trace) trace;
     
     updateOffset;
     updateContent;
     updateStatus;
 }
-void render() {
+void render()
+{
     version (Trace) trace;
     
     updateContent;
     updateStatus;
 }
-void readRender() {
+void readRender()
+{
     read;
     render;
 }
 
-void updateOffset() {
+void updateOffset()
+{
     screen.cursorOffset;
     screen.renderOffset;
 }
 
-void updateContent() {
+void updateContent()
+{
     screen.cursorContent; // Set pos
     //const int rows = screen.renderContent(editor.position, readdata);
     const int rows = screen.renderContentCursor(
@@ -422,7 +453,8 @@ void updateContent() {
     screen.renderEmpty(rows);
 }
 
-void updateStatus() {
+void updateStatus()
+{
     import std.format : format;
     
     long pos = editor.cursorTell;
@@ -440,7 +472,8 @@ void updateStatus() {
             ((cast(double)pos) / editor.fileSize) * 100));
 }
 
-void updateCursor() {
+void updateCursor()
+{
     version (Trace)
         with (editor.cursor)
             trace("pos=%u n=%u", position, nibble);
@@ -455,7 +488,8 @@ void updateCursor() {
 /// 3. Re-seeking to the current position (failsafe)
 /// 4. Read buffer
 /// 5. Render
-void refresh() {
+void refresh()
+{
     version (Trace) trace;
     
     screen.clear;
@@ -470,10 +504,12 @@ void refresh() {
 /// Ignores bounds checking for performance reasons.
 /// Sets CurrentPosition.
 /// Params: pos = New position
-void seek(long pos) {
+void seek(long pos)
+{
     version (Trace) trace("pos=%d", pos);
     
-    if (editor.readSize >= editor.fileSize) {
+    if (editor.readSize >= editor.fileSize)
+    {
         screen.message("Navigation disabled, file too small");
         return;
     }
@@ -486,15 +522,18 @@ void seek(long pos) {
 /// Parses the string as a long and navigates to the file location.
 /// Includes offset checking (+/- notation).
 /// Params: str = String as a number
-void seek(string str) {
+void seek(string str)
+{
     version (Trace) trace("str=%s", str);
     
     const char seekmode = str[0];
-    if (seekmode == '+' || seekmode == '-') { // relative input.position
+    if (seekmode == '+' || seekmode == '-') // relative input.position
+    {
         str = str[1..$];
     }
     long newPos = void;
-    if (convertToVal(newPos, str)) {
+    if (convertToVal(newPos, str))
+    {
         screen.message("Could not parse number");
         return;
     }
@@ -506,11 +545,16 @@ void seek(string str) {
         safeSeek(editor.position - newPos);
         break;
     default: // Absolute
-        if (newPos < 0) {
+        if (newPos < 0)
+        {
             screen.message("Range underflow: %d (0x%x)", newPos, newPos);
-        } else if (newPos >= editor.fileSize - editor.readSize) {
+        }
+        else if (newPos >= editor.fileSize - editor.readSize)
+        {
             screen.message("Range overflow: %d (0x%x)", newPos, newPos);
-        } else {
+        }
+        else
+        {
             seek(newPos);
         }
     }
@@ -519,7 +563,8 @@ void seek(string str) {
 /// Goes to the specified position in the file.
 /// Checks bounds and calls Goto.
 /// Params: pos = New position
-void safeSeek(long pos) {
+void safeSeek(long pos)
+{
     version (Trace) trace("pos=%s", pos);
     
     long fsize = editor.fileSize;
@@ -542,15 +587,18 @@ __gshared bool lastAvailable;
 /// Search last item.
 /// Returns: Error code if set.
 //TODO: I don't think the return code is ever used...
-int next() {
-    if (lastAvailable == false) {
+int next()
+{
+    if (lastAvailable == false)
+    {
         return errorSet(ErrorCode.noLastItem);
     }
     
     long pos = void;
     int e = searchData(pos, lastItem.ptr, lastSize, lastForward);
     
-    if (e) {
+    if (e)
+    {
         screen.message("Not found");
         return e;
     }
@@ -562,13 +610,15 @@ int next() {
 }
 
 // Search data
-int lookup(string type, string data, bool forward, bool save) {
+int lookup(string type, string data, bool forward, bool save)
+{
     void *p = void;
     size_t len = void;
     if (convertToRaw(p, len, data, type))
         return error.errorcode;
     
-    if (save) {
+    if (save)
+    {
         import core.stdc.string : memcpy;
         lastType = type;
         lastSize = len;
@@ -583,7 +633,8 @@ int lookup(string type, string data, bool forward, bool save) {
     long pos = void;
     int e = searchData(pos, p, len, forward);
     
-    if (e) {
+    if (e)
+    {
         screen.message("Not found");
         return e;
     }
@@ -594,13 +645,15 @@ int lookup(string type, string data, bool forward, bool save) {
     return 0;
 }
 
-int skip(ubyte data) {
+int skip(ubyte data)
+{
     screen.message("Skipping all 0x%x...", data);
     
     long pos = void;
     const int e = searchSkip(data, pos);
     
-    if (e) {
+    if (e)
+    {
         screen.message("End of file reached");
         return e;
     }
@@ -612,7 +665,8 @@ int skip(ubyte data) {
 }
 
 /// Print file information
-void printFileInfo() {
+void printFileInfo()
+{
     screen.message("%11s  %s",
         formatBin(editor.fileSize, setting.si),
         editor.fileName);
@@ -621,20 +675,23 @@ void printFileInfo() {
 /// Exit the interactive ddhx session.
 /// Params: code = Exit code.
 deprecated("Use exit or panic")
-void exit(int code) {
+void exit(int code)
+{
     import core.stdc.stdlib : exit;
     version (Trace) trace("code=%u", code);
     exit(code);
 }
 
 
-void exit() {
+void exit()
+{
     import core.stdc.stdlib : exit;
     version (Trace) trace();
     exit(0);
 }
 
-void panic() {
+void panic()
+{
     import std.stdio : stderr;
     import core.stdc.stdlib : exit;
     version (Trace) trace("code=%u", errorcode);

@@ -13,7 +13,8 @@ alias compare = memcmp; // avoids confusion with memcpy/memcmp
 /// Search buffer size.
 private enum BUFFER_SIZE = 4 * 1024;
 
-/*int data(ref Editor editor, out long pos, const(void) *data, size_t len, bool dir) {
+/*int data(ref Editor editor, out long pos, const(void) *data, size_t len, bool dir)
+{
 }*/
 
 /// Binary search.
@@ -23,7 +24,8 @@ private enum BUFFER_SIZE = 4 * 1024;
 ///     len = Needle length.
 ///     dir = Search direction. If set, forwards. If unset, backwards.
 /// Returns: Error code if set.
-int searchData(out long pos, const(void) *data, size_t len, bool dir) {
+int searchData(out long pos, const(void) *data, size_t len, bool dir)
+{
     int function(out long, const(void)*, size_t) F = dir ? &forward : &backward;
     return F(pos, data, len);
 }
@@ -35,7 +37,8 @@ int searchData(out long pos, const(void) *data, size_t len, bool dir) {
 ///     len = Data length.
 /// Returns: Error code if set.
 private
-int forward(out long newPos, const(void) *data, size_t len) {
+int forward(out long newPos, const(void) *data, size_t len)
+{
     version (Trace) trace("data=%s len=%u", data, len);
     
     ubyte *needle = cast(ubyte*)data;
@@ -66,7 +69,8 @@ L_CONTINUE:
     const size_t haystackLen = haystack.length;
     
     // For every byte
-    for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex) {
+    for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex)
+    {
         // Check first byte
         if (haystack[haystackIndex] != firstByte) continue;
         
@@ -76,7 +80,8 @@ L_CONTINUE:
         
         // In-haystack or out-haystack check
         // Determined if needle fits within haystack (chunk)
-        if (haystackIndex + len < haystackLen) { // fits inside haystack
+        if (haystackIndex + len < haystackLen) // fits inside haystack
+        {
             if (compare(haystack.ptr + haystackIndex, needle, len) == 0)
                 goto L_FOUND;
         } else { // needle spans across haystacks
@@ -114,7 +119,8 @@ L_FOUND: // Found
 ///     len = Data length.
 /// Returns: Error code if set.
 private
-int backward(out long newPos, const(void) *data, size_t len) {
+int backward(out long newPos, const(void) *data, size_t len)
+{
     version (Trace) trace("data=%s len=%u", data, len);
     
     if (editor.position < 2)
@@ -149,7 +155,8 @@ L_CONTINUE:
     pos -= haystackLen;
     
     // Adjusts buffer size to read chunk if it goes past start of haystack.
-    if (pos < 0) {
+    if (pos < 0)
+    {
         haystackLen += pos;
         fileBuffer = uninitializedArray!(ubyte[])(haystackLen);
         pos = 0;
@@ -159,7 +166,8 @@ L_CONTINUE:
     ubyte[] haystack = editor.read;
     
     // For every byte
-    for (haystackIndex = haystackLen; haystackIndex-- > 0;) {
+    for (haystackIndex = haystackLen; haystackIndex-- > 0;)
+    {
         // Check last byte
         if (haystack[haystackIndex] != lastByte) continue;
         
@@ -175,7 +183,8 @@ L_CONTINUE:
         
         // In-haystack or out-haystack check
         // Determined if needle fits within haystack (chunk)
-        if (diff >= 0) { // fits inside haystack
+        if (diff >= 0) // fits inside haystack
+        {
             if (compare(haystack.ptr + diff, needle, len) == 0)
                 goto L_FOUND;
         } else { // needle spans across haystacks
@@ -204,7 +213,8 @@ L_FOUND: // Found
 ///     data = Byte.
 ///     newPos = Found position.
 /// Returns: Error code.
-int searchSkip(ubyte data, out long newPos) {
+int searchSkip(ubyte data, out long newPos)
+{
     version (Trace) trace("data=0x%x", data);
     
     /// File buffer.
@@ -220,7 +230,8 @@ L_CONTINUE:
     const size_t haystackLen = haystack.length;
     
     // For every byte
-    for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex) {
+    for (haystackIndex = 0; haystackIndex < haystackLen; ++haystackIndex)
+    {
         if (haystack[haystackIndex] != data)
             goto L_FOUND;
     }

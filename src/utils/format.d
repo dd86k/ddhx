@@ -28,14 +28,17 @@ private enum : float {
 ///   size = Binary number.
 ///   b10  = Use SI suffixes instead of IEC suffixes.
 /// Returns: Character slice using sformat
-const(char)[] formatBin(long size, bool b10 = false) {
+const(char)[] formatBin(long size, bool b10 = false)
+{
     import std.format : format;
     
     // NOTE: ulong.max = (2^64)-1 Bytes = 16 EiB - 1 = 16 * 1024⁵
     
     //TODO: Pretty this up with some clever math
+    //      Not great, not terrible...
     
-    if (b10) { // base 1000
+    if (b10) // base 1000
+    {
         if (size >= EB)
             return format("%0.2f EB", size / EB);
         if (size >= PB)
@@ -48,7 +51,9 @@ const(char)[] formatBin(long size, bool b10 = false) {
             return format("%0.1f MB", size / MB);
         if (size >= kB)
             return format("%0.1f kB", size / kB);
-    } else { // base 1024
+    }
+    else // base 1024
+    {
         if (size >= EiB)
             return format("%0.2f EiB", size / EiB);
         if (size >= PiB)

@@ -59,10 +59,12 @@ private __gshared last_t last;
 __gshared int errorcode; /// Last error code.
 
 private
-const(char)[] systemMessage(int code) {
+const(char)[] systemMessage(int code)
+{
     import std.string : fromStringz;
     
-    version (Windows) {
+    version (Windows)
+    {
         import core.sys.windows.winbase :
             LocalFree, FormatMessageA,
             FORMAT_MESSAGE_ALLOCATE_BUFFER, FORMAT_MESSAGE_FROM_SYSTEM,
@@ -85,7 +87,8 @@ const(char)[] systemMessage(int code) {
             0,
             null);
         
-        if (strerror) {
+        if (strerror)
+        {
             if (strerror[r - 1] == '\n') --r;
             if (strerror[r - 1] == '\r') --r;
             string msg = strerror[0..r].idup;
@@ -101,8 +104,10 @@ const(char)[] systemMessage(int code) {
     }
 }
 
-int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
-    version (unittest) {
+int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__)
+{
+    version (unittest)
+    {
         import std.stdio : writefln;
         writefln("%s:%u: %s", file, line, code);
     }
@@ -113,12 +118,15 @@ int errorSet(ErrorCode code, string file = __FILE__, int line = __LINE__) {
     return (errorcode = code);
 }
 
-int errorSet(Exception ex) {
-    version (unittest) {
+int errorSet(Exception ex)
+{
+    version (unittest)
+    {
         import std.stdio : writeln;
         writeln(ex);
     }
-    version (Trace) {
+    version (Trace)
+    {
         debug trace("%s", ex);
         else  trace("%s", ex.msg);
     }
@@ -129,11 +137,15 @@ int errorSet(Exception ex) {
     return (errorcode = ErrorCode.exception);
 }
 
-int errorSetOs(string file = __FILE__, int line = __LINE__) {
-    version (Windows) {
+int errorSetOs(string file = __FILE__, int line = __LINE__)
+{
+    version (Windows)
+    {
         import core.sys.windows.winbase : GetLastError;
         errorcode = GetLastError();
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         import core.stdc.errno : errno;
         errorcode = errno;
     }
@@ -144,7 +156,8 @@ int errorSetOs(string file = __FILE__, int line = __LINE__) {
     return errorcode;
 }
 
-const(char)[] errorMessage(int code = errorcode) {
+const(char)[] errorMessage(int code = errorcode)
+{
     final switch (last.source) with (ErrorSource) {
     case os: return systemMessage(errorcode);
     case exception: return last.message;
@@ -175,29 +188,35 @@ const(char)[] errorMessage(int code = errorcode) {
     }
 }
 
-int errorPrint() {
+int errorPrint()
+{
     return errorPrint(errorcode, errorMessage());
 }
-int errorPrint(A...)(int code, const(char)[] fmt, A args) {
+int errorPrint(A...)(int code, const(char)[] fmt, A args)
+{
     stderr.write("error: ");
     stderr.writefln(fmt, args);
     return code;
 }
 
-version (Trace) {
+version (Trace)
+{
     public import std.datetime.stopwatch;
     
     private __gshared File log;
     
-    void traceInit(string n) {
+    void traceInit(string n)
+    {
         log.open("ddhx.log", "w");
         trace(n);
     }
-    void trace(string func = __FUNCTION__, int line = __LINE__, A...)() {
+    void trace(string func = __FUNCTION__, int line = __LINE__, A...)()
+    {
         log.writefln("TRACE:%s:%u", func, line);
         log.flush;
     }
-    void trace(string func = __FUNCTION__, int line = __LINE__, A...)(string fmt, A args) {
+    void trace(string func = __FUNCTION__, int line = __LINE__, A...)(string fmt, A args)
+    {
         log.writef("TRACE:%s:%u: ", func, line);
         log.writefln(fmt, args);
         log.flush;

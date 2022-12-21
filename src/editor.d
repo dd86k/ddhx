@@ -129,15 +129,18 @@ private __gshared size_t editCount;    /// Amount of edits in history
 private __gshared SList!Edit editHistory;    /// Temporary file edits
 __gshared EditMode editMode;    /// Current editing mode
 
-string editModeString(EditMode mode = editMode) {
-    final switch (mode) with (EditMode) {
+string editModeString(EditMode mode = editMode)
+{
+    final switch (mode) with (EditMode)
+{
     case overwrite:    return "ov";
     case insert:    return "in";
     case readOnly:    return "rd";
     case view:    return "vw";
     }
 }
-bool editModeReadOnly(EditMode mode) {
+bool editModeReadOnly(EditMode mode)
+{
     return mode >= EditMode.readOnly;
 }
 
@@ -152,8 +155,10 @@ __gshared cursor_t cursor;    /// Cursor state
 __gshared size_t viewSize;    /// ?
 __gshared ubyte[] viewBuffer;    /// ?
 
-bool eof() {
-    final switch (fileMode) {
+bool eof()
+{
+    final switch (fileMode)
+{
     case FileMode.file:    return source.osfile.eof;
     case FileMode.mmfile:    return source.mmfile.eof;
     case FileMode.stream:    return source.stream.eof;
@@ -161,8 +166,10 @@ bool eof() {
     }
 }
 
-bool err() {
-    final switch (fileMode) {
+bool err()
+{
+    final switch (fileMode)
+{
     case FileMode.file:    return source.osfile.err;
     case FileMode.mmfile:    return source.mmfile.err;
     case FileMode.stream:    return source.stream.error;
@@ -170,13 +177,15 @@ bool err() {
     }
 }
 
-bool dirty() {
+bool dirty()
+{
     return editIndex > 0;
 }
 
 // SECTION: File opening
 
-int openFile(string path) {
+int openFile(string path)
+{
     version (Trace) trace("path='%s'", path);
     
     if (source.osfile.open(path, editModeReadOnly(editMode)))
@@ -188,12 +197,14 @@ int openFile(string path) {
     return 0;
 }
 
-int openMmfile(string path) {
+int openMmfile(string path)
+{
     version (Trace) trace("path='%s'", path);
     
     try {
         source.mmfile = new OSMmFile(path, editModeReadOnly(editMode));
-    } catch (Exception ex) {
+    } catch (Exception ex)
+{
         return errorSet(ex);
     }
     
@@ -203,7 +214,8 @@ int openMmfile(string path) {
     return 0; 
 }
 
-int openStream(File file) {
+int openStream(File file)
+{
     version (Trace) trace();
     
     source.stream = file;
@@ -212,7 +224,8 @@ int openStream(File file) {
     return 0;
 }
 
-int openMemory(ubyte[] data) {
+int openMemory(ubyte[] data)
+{
     version (Trace) trace();
     
     source.memory.open(data);
@@ -226,10 +239,12 @@ int openMemory(ubyte[] data) {
 
 // SECTION: Buffer management
 
-void setBuffer(size_t size) {
+void setBuffer(size_t size)
+{
     readSize = size;
     
-    switch (fileMode) with (FileMode) {
+    switch (fileMode) with (FileMode)
+{
     case file, stream:
         readBuffer = new ubyte[size];
         return;
@@ -243,10 +258,12 @@ void setBuffer(size_t size) {
 // SECTION: View position management
 //
 
-long seek(long pos) {
+long seek(long pos)
+{
     version (Trace) trace("mode=%s", fileMode);
     position = pos;
-    final switch (fileMode) with (FileMode) {
+    final switch (fileMode) with (FileMode)
+{
     case file:    return source.osfile.seek(Seek.start, pos);
     case mmfile:    return source.mmfile.seek(pos);
     case memory:    return source.memory.seek(pos);
@@ -256,9 +273,11 @@ long seek(long pos) {
     }
 }
 
-long tell() {
+long tell()
+{
     version (Trace) trace("mode=%s", fileMode);
-    final switch (fileMode) with (FileMode) {
+    final switch (fileMode) with (FileMode)
+{
     case file:    return source.osfile.tell;
     case mmfile:    return source.mmfile.tell;
     case stream:    return source.stream.tell;
@@ -272,18 +291,22 @@ long tell() {
 // SECTION: Reading
 //
 
-ubyte[] read() {
+ubyte[] read()
+{
     version (Trace) trace("mode=%s", fileMode);
-    final switch (fileMode) with (FileMode) {
+    final switch (fileMode) with (FileMode)
+{
     case file:    return source.osfile.read(readBuffer);
     case mmfile:    return source.mmfile.read(readSize);
     case stream:    return source.stream.rawRead(readBuffer);
     case memory:    return source.memory.read(readSize);
     }
 }
-ubyte[] read(ubyte[] buffer) {
+ubyte[] read(ubyte[] buffer)
+{
     version (Trace) trace("mode=%s", fileMode);
-    final switch (fileMode) with (FileMode) {
+    final switch (fileMode) with (FileMode)
+{
     case file:    return source.osfile.read(buffer);
     case mmfile:    return source.mmfile.read(buffer.length);
     case stream:    return source.stream.rawRead(buffer);
@@ -296,7 +319,8 @@ ubyte[] read(ubyte[] buffer) {
 // SECTION: Editing
 
 /// 
-ubyte[] peek() {
+ubyte[] peek()
+{
     ubyte[] t = read().dup;
     
     
@@ -304,7 +328,8 @@ ubyte[] peek() {
     return null;
 }
 
-void keydown(Key key) {
+void keydown(Key key)
+{
     debug assert(editMode != EditMode.readOnly,
         "Editor should not be getting edits in read-only mode");
     
@@ -314,7 +339,8 @@ void keydown(Key key) {
 }
 
 /// Append change at current position
-void appendEdit(ubyte data) {
+void appendEdit(ubyte data)
+{
     debug assert(editMode != EditMode.readOnly,
         "Editor should not be getting edits in read-only mode");
     
@@ -324,7 +350,8 @@ void appendEdit(ubyte data) {
 /// Write all changes to file.
 /// Only edits [0..index] will be carried over.
 /// When done, [0..index] edits will be cleared.
-void writeEdits() {
+void writeEdits()
+{
     
 }
 
@@ -341,13 +368,15 @@ void writeEdits() {
 //       is not something I want to waste.
 
 private
-bool viewStart() {
+bool viewStart()
+{
     bool z = position != 0;
     position = 0;
     return z;
 }
 private
-bool viewEnd() {
+bool viewEnd()
+{
     long old = position;
     long npos = (fileSize - readSize) + setting.columns;
     npos -= npos % setting.columns; // re-align to columns
@@ -355,7 +384,8 @@ bool viewEnd() {
     return position != old;
 }
 private
-bool viewUp() {
+bool viewUp()
+{
     long npos = position - setting.columns;
     if (npos < 0)
         return false;
@@ -363,7 +393,8 @@ bool viewUp() {
     return true;
 }
 private
-bool viewDown() {
+bool viewDown()
+{
     long fsize = fileSize;
     if (position + readSize > fsize)
         return false;
@@ -371,14 +402,16 @@ bool viewDown() {
     return true;
 }
 private
-bool viewPageUp() {
+bool viewPageUp()
+{
     long npos = position - readSize;
     bool ok = npos >= 0;
     position = ok ? npos : 0;
     return ok;
 }
 private
-bool viewPageDown() {
+bool viewPageDown()
+{
     long npos = position + readSize;
     bool ok = npos < fileSize;
     if (ok) position = npos;
@@ -391,14 +424,16 @@ bool viewPageDown() {
 // SECTION Cursor position management
 //
 
-void cursorBound() {
+void cursorBound()
+{
     // NOTE: It is impossible for the cursor to be at a negative position
     //       Because it is unsigned and the cursor is 0-based
     
     long fsize = fileSize;
     bool nok = cursorTell > fsize;
     
-    if (nok) {
+    if (nok)
+{
         int l = cast(int)(cursorTell - fsize);
         cursor.position -= l;
         return;
@@ -409,13 +444,15 @@ void cursorBound() {
 
 /// Move cursor at the absolute start of the file.
 /// Returns: True if the view moved.
-bool cursorAbsStart() {
+bool cursorAbsStart()
+{
     with (cursor) position = nibble = 0;
     return viewStart;
 }
 /// Move cursor at the absolute end of the file.
 /// Returns: True if the view moved.
-bool cursorAbsEnd() {
+bool cursorAbsEnd()
+{
     uint base = cast(uint)(readSize < fileSize ? fileSize : readSize);
     uint rem = cast(uint)(fileSize % setting.columns);
     uint h = cast(uint)(base / setting.columns);
@@ -424,18 +461,21 @@ bool cursorAbsEnd() {
 }
 /// Move cursor at the start of the row.
 /// Returns: True if the view moved.
-bool cursorHome() { // put cursor at the start of row
+bool cursorHome()
+{ // put cursor at the start of row
     cursor.position = cursor.position - (cursor.position % setting.columns);
     cursor.nibble = 0;
     return false;
 }
 /// Move cursor at the end of the row.
 /// Returns: True if the view moved.
-bool cursorEnd() { // put cursor at the end of the row
+bool cursorEnd()
+{ // put cursor at the end of the row
     cursor.position =
         (cursor.position - (cursor.position % setting.columns))
         + setting.columns - 1;
-    if (cursorTell > fileSize) {
+    if (cursorTell > fileSize)
+{
         uint rem = cast(uint)(fileSize % setting.columns);
         cursor.position = (cursor.position + setting.columns - rem);
     }
@@ -444,8 +484,10 @@ bool cursorEnd() { // put cursor at the end of the row
 }
 /// Move cursor up the file by a data group.
 /// Returns: True if the view moved.
-bool cursorLeft() {
-    if (cursor.position == 0) {
+bool cursorLeft()
+{
+    if (cursor.position == 0)
+{
         if (position == 0)
             return false;
         cursorEnd;
@@ -458,11 +500,13 @@ bool cursorLeft() {
 }
 /// Move cursor down the file by a data group.
 /// Returns: True if the view moved.
-bool cursorRight() {
+bool cursorRight()
+{
     if (cursorTell >= fileSize)
         return false;
     
-    if (cursor.position == readSize - 1) {
+    if (cursor.position == readSize - 1)
+{
         cursorHome;
         return viewDown;
     }
@@ -473,8 +517,10 @@ bool cursorRight() {
 }
 /// Move cursor up the file by the number of columns.
 /// Returns: True if the view moved.
-bool cursorUp() {
-    if (cursor.position < setting.columns) {
+bool cursorUp()
+{
+    if (cursor.position < setting.columns)
+{
         return viewUp;
     }
     
@@ -483,7 +529,8 @@ bool cursorUp() {
 }
 /// Move cursor down the file by the bymber of columns.
 /// Returns: True if the view moved.
-bool cursorDown() {
+bool cursorDown()
+{
     /// File size
     long fsize = fileSize;
     /// Normalized file size with last row (remaining) trimmed
@@ -502,7 +549,8 @@ bool cursorDown() {
     if (bottom)
         return viewDown;
     
-    if (acpos + setting.columns > fsize) {
+    if (acpos + setting.columns > fsize)
+{
         uint rem = cast(uint)(fsize % setting.columns);
         cursor.position = cast(uint)(readSize - setting.columns + rem);
         //cursor.position = cast(uint)((fsize + cursor.position) - fsize);
@@ -514,26 +562,30 @@ bool cursorDown() {
 }
 /// Move cursor by a page up the file.
 /// Returns: True if the view moved.
-bool cursorPageUp() {
+bool cursorPageUp()
+{
 //    int v = readSize / setting.columns;
     return viewPageUp;
 }
 /// Move cursor by a page down the file.
 /// Returns: True if the view moved.
-bool cursorPageDown() {
+bool cursorPageDown()
+{
     bool ok = viewPageDown;
     cursorBound;
     return ok;
 }
 /// Get cursor absolute position within the file.
 /// Returns: Cursor absolute position in file.
-long cursorTell() {
+long cursorTell()
+{
     return position + cursor.position;
 }
 /// Make the cursor jump to an absolute position within the file.
 /// This is used for search results.
 /// Returns: True if the view moved.
-void cursorGoto(long m) {
+void cursorGoto(long m)
+{
     // Per view chunks, then per y chunks, then x
     //long npos = 
     
@@ -541,8 +593,10 @@ void cursorGoto(long m) {
 
 // !SECTION
 
-long refreshFileSize() {
-    final switch (fileMode) with (FileMode) {
+long refreshFileSize()
+{
+    final switch (fileMode) with (FileMode)
+{
     case file:    fileSize = source.osfile.size;    break;
     case mmfile:    fileSize = source.mmfile.length;    break;
     case memory:    fileSize = source.memory.size;    break;
@@ -556,7 +610,8 @@ long refreshFileSize() {
 
 //TODO: from other types?
 //      or implement this via MemoryStream?
-int slurp(long skip = 0, long length = 0) {
+int slurp(long skip = 0, long length = 0)
+{
     import std.array : uninitializedArray;
     import core.stdc.stdio : fread;
     import core.stdc.stdlib : malloc, free;
@@ -578,7 +633,8 @@ int slurp(long skip = 0, long length = 0) {
     
     FILE *_file = source.stream.getFP;
     
-    if (skip) {
+    if (skip)
+{
         do {
             size_t bsize = cast(size_t)min(READ_SIZE, skip);
             skip -= fread(b, 1, bsize, _file);

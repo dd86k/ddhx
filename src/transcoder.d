@@ -59,18 +59,18 @@ public __gshared Transcoder transcoder;
 
 /// Select a new transcoder.
 /// Params: charset = Character set.
-void transcoderSelect(CharacterSet charset) {
+void transcoderSelect(CharacterSet charset)
+{
     debug assert(charset <= CharacterSet.max);
     transcoder = transcoders[charset];
 }
 
 private alias U  = char[];
-private template C(dchar c) {
-    enum C = cast(immutable)codeUnits!char(c).s;
-}
+private template C(dchar c) { enum C = cast(immutable)codeUnits!char(c).s; }
 
 private
-immutable(char)[] transcodeASCII(ubyte data) {
+immutable(char)[] transcodeASCII(ubyte data)
+{
     __gshared immutable(char)[]  empty;
     __gshared char[1] c;
     if (data > 0x7E || data < 0x20)
@@ -121,7 +121,8 @@ private immutable U[256] mapCP437 = [
 /*f8*/    C!'°', C!'∙', C!'·', C!'√', C!'ⁿ', C!'²', C!'■', C!' '
 ];
 private
-immutable(char)[] transcodeCP437(ubyte data) {
+immutable(char)[] transcodeCP437(ubyte data)
+{
     return mapCP437[data];
 }
 unittest {
@@ -158,7 +159,8 @@ private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40) just unprintable
 /*f8*/    C!'8', C!'9', C!'³', C!'Û', C!'Ü', C!'Ù', C!'Ú',    []
 ];
 private
-immutable(char)[] transcodeEBCDIC(ubyte data) {
+immutable(char)[] transcodeEBCDIC(ubyte data)
+{
     return data >= 0x40 ? mapEBCDIC[data-0x40] : emptychar;
 }
 unittest {
@@ -202,7 +204,8 @@ private immutable U[224] mapMac = [ // 256 - 32 (0x20)
 /*f8*/    C!'¯', C!'˘', C!'˙', C!'˚', C!'¸', C!'˝', C!'˛', C!'ˇ',
 ];
 private
-immutable(char)[] transcodeMac(ubyte data) {
+immutable(char)[] transcodeMac(ubyte data)
+{
     return data >= 0x20 ? mapMac[data-0x20] : emptychar;
 }
 unittest {

@@ -24,7 +24,8 @@ enum DumpOutput {
 ///     skip = If set, number of bytes to skip.
 ///     length = If set, maximum length to read.
 /// Returns: Error code.
-int start(long skip, long length) {
+int start(long skip, long length)
+{
     if (length < 0)
         return errorPrint(1, "Length must be a positive value");
     
@@ -32,7 +33,8 @@ int start(long skip, long length) {
     
     version (Trace) trace("skip=%d length=%d", skip, length);
     
-    switch (editor.fileMode) with (FileMode) {
+    switch (editor.fileMode) with (FileMode)
+{
     case file, mmfile: // Seekable
         long fsize = editor.fileSize;
         

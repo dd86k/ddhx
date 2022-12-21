@@ -10,30 +10,37 @@ struct MemoryStream {
     
     bool err, eof;
     
-    void cleareof() {
+    void cleareof()
+    {
         eof = false;
     }
-    void clearerr() {
+    void clearerr()
+    {
         err = false;
     }
     
     // read file into memory
-    /*void open(string path) {
+    /*void open(string path)
+    {
     }*/
-    void open(ubyte[] data) {
+    void open(ubyte[] data)
+    {
         buffer = new ubyte[data.length];
         buffer[0..$] = data[0..$];
     }
-    void open(File stream) {
+    void open(File stream)
+    {
         buffer = buffer.init;
         //TODO: use OutBuffer+reserve (if possible to get filesize)
-        foreach (ubyte[] a; stream.byChunk(4096)) {
+        foreach (ubyte[] a; stream.byChunk(4096))
+        {
             buffer ~= a;
         }
         
     }
     
-    long seek(long pos) {
+    long seek(long pos)
+    {
         /*final switch (origin) with (Seek) {
         case start:*/
             return position = pos;
@@ -47,7 +54,8 @@ struct MemoryStream {
         }*/
     }
     
-    ubyte[] read(size_t size) {
+    ubyte[] read(size_t size)
+    {
         long p2 = position + size;
         
         if (p2 > buffer.length)
@@ -57,7 +65,8 @@ struct MemoryStream {
     }
     
     // not inout ref, just want to read
-    ubyte[] opSlice(size_t n1, size_t n2) {
+    ubyte[] opSlice(size_t n1, size_t n2)
+    {
         return buffer[n1..n2];
     }
     

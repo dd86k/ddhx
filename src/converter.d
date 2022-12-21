@@ -21,7 +21,8 @@ import error;
 ///     val = Value to parse.
 ///     type = Name of expected type.
 /// Returns: Error code.
-int convertToRaw(ref void *data, ref size_t len, string val, string type) {
+int convertToRaw(ref void *data, ref size_t len, string val, string type)
+{
     union TypeData {
         ulong  u64;
         long   i64;
@@ -120,19 +121,24 @@ int convertToRaw(ref void *data, ref size_t len, string val, string type) {
 ///     v = Data reference.
 ///     val = String value.
 /// Returns: Error code.
-int convertToVal(T)(ref T v, string val) {
+int convertToVal(T)(ref T v, string val)
+{
     import std.conv : ConvException;
     try {
         //TODO: ubyte[] input
-        static if (is(T == wstring) || is(T == dstring)) {
+        static if (is(T == wstring) || is(T == dstring))
+        {
             transcode(val, v);
         } else { // Scalar
             const size_t len = val.length;
             FormatSpec!char fmt = void;
-            if (len >= 3 && val[0..2] == "0x") {
+            if (len >= 3 && val[0..2] == "0x")
+            {
                 fmt = singleSpec("%x");
                 val = val[2..$];
-            } else if (len >= 2 && val[0] == '0') {
+            }
+            else if (len >= 2 && val[0] == '0')
+            {
                 fmt = singleSpec("%o");
                 val = val[1..$];
             } else {
@@ -140,7 +146,9 @@ int convertToVal(T)(ref T v, string val) {
             }
             v = unformatValue!T(val, fmt);
         }
-    } catch (Exception ex) {
+    }
+    catch (Exception ex)
+    {
         return errorSet(ex);
     }
     

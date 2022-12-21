@@ -54,7 +54,8 @@ __gshared NumberFormatter offsetFormatter = formatters[0];
 /// Binary data formatter.
 __gshared NumberFormatter binaryFormatter = formatters[0];
 
-int initiate() {
+int initiate()
+{
     terminalInit(TermFeat.all);
     
     updateTermSize;
@@ -69,24 +70,29 @@ int initiate() {
     return 0;
 }
 
-void updateTermSize() {
+void updateTermSize()
+{
     termSize = terminalSize;
     maxLine = termSize.height - 2;
 }
 
-void onResize(void function() func) {
+void onResize(void function() func)
+{
     terminalOnResize(func);
 }
 
-void setOffsetFormat(NumberType type) {
+void setOffsetFormat(NumberType type)
+{
     offsetFormatter = formatters[type];
 }
-void setBinaryFormat(NumberType type) {
+void setBinaryFormat(NumberType type)
+{
     binaryFormatter = formatters[type];
 }
 
 /// Update cursor position on the terminal screen
-void cursor(uint pos, uint nibble) {
+void cursor(uint pos, uint nibble)
+{
     uint y = pos / setting.columns;
     uint x = pos % setting.columns;
     int  d = binaryFormatter.size + 1;
@@ -94,11 +100,13 @@ void cursor(uint pos, uint nibble) {
 }
 
 /// Clear entire terminal screen
-void clear() {
+void clear()
+{
     terminalClear;
 }
 
-/*void clearStatusBar() {
+/*void clearStatusBar()
+{
     screen.cwritefAt(0,0,"%*s", termSize.width - 1, " ");
 }*/
 
@@ -106,23 +114,27 @@ void clear() {
 /// Params:
 ///   fmt = Formatting message string.
 ///   args = Arguments.
-void message(A...)(const(char)[] fmt, A args) {
+void message(A...)(const(char)[] fmt, A args)
+{
     //TODO: Consider using a scoped outbuffer + private message(outbuf)
     import std.format : format;
     message(format(fmt, args));
 }
 /// Display a message at the bottom of the screen.
 /// Params: str = Message.
-void message(const(char)[] str) {
+void message(const(char)[] str)
+{
     terminalPos(0, termSize.height - 1);
     cwritef("%-*s", termSize.width - 1, str);
 }
 
-string prompt(string prefix, string include) {
+string prompt(string prefix, string include)
+{
     import std.stdio : readln;
     import std.string : chomp;
     
-    scope (exit) {
+    scope (exit)
+    {
         cursorOffset;
         renderOffset;
     }
@@ -154,7 +166,8 @@ string prompt(string prefix, string include) {
 private immutable string hexMap = "0123456789abcdef";
 
 private
-size_t format02x(char *buffer, ubyte v) {
+size_t format02x(char *buffer, ubyte v)
+{
     buffer[1] = hexMap[v & 15];
     buffer[0] = hexMap[v >> 4];
     return 2;
@@ -169,15 +182,21 @@ size_t format02x(char *buffer, ubyte v) {
     assert(c[] == "ff", c);
 }
 private
-size_t format11x(char *buffer, long v) {
+size_t format11x(char *buffer, long v)
+{
     size_t pos;
     bool pad = true;
-    for (int shift = 60; shift >= 0; shift -= 4) {
+    for (int shift = 60; shift >= 0; shift -= 4)
+    {
         const ubyte b = (v >> shift) & 15;
-        if (b == 0) {
-            if (pad && shift >= 44) {
+        if (b == 0)
+        {
+            if (pad && shift >= 44)
+            {
                 continue; // cut
-            } else if (pad && shift >= 4) {
+            }
+            else if (pad && shift >= 4)
+            {
                 buffer[pos++] = pad ? ' ' : '0';
                 continue; // pad
             }
@@ -215,7 +234,8 @@ size_t format11x(char *buffer, long v) {
 
 private immutable static string decMap = "0123456789";
 private
-size_t format03d(char *buffer, ubyte v) {
+size_t format03d(char *buffer, ubyte v)
+{
     buffer[2] = (v % 10) + '0';
     buffer[1] = (v / 10 % 10) + '0';
     buffer[0] = (v / 100 % 10) + '0';
@@ -231,17 +251,23 @@ size_t format03d(char *buffer, ubyte v) {
     assert(c[] == "111", c);
 }
 private
-size_t format11d(char *buffer, long v) {
+size_t format11d(char *buffer, long v)
+{
     debug import std.conv : text;
     enum ulong I64MAX = 10_000_000_000_000_000_000UL;
     size_t pos;
     bool pad = true;
-    for (ulong d = I64MAX; d > 0; d /= 10) {
+    for (ulong d = I64MAX; d > 0; d /= 10)
+    {
         const long r = (v / d) % 10;
-        if (r == 0) {
-            if (pad && d >= 100_000_000_000) {
+        if (r == 0)
+        {
+            if (pad && d >= 100_000_000_000)
+            {
                 continue; // cut
-            } else if (pad && d >= 10) {
+            }
+            else if (pad && d >= 10)
+            {
                 buffer[pos++] = pad ? ' ' : '0';
                 continue;
             }
@@ -277,7 +303,8 @@ size_t format11d(char *buffer, long v) {
 }
 
 private
-size_t format03o(char *buffer, ubyte v) {
+size_t format03o(char *buffer, ubyte v)
+{
     buffer[2] = (v % 8) + '0';
     buffer[1] = (v / 8 % 8) + '0';
     buffer[0] = (v / 64 % 8) + '0';
@@ -294,16 +321,22 @@ size_t format03o(char *buffer, ubyte v) {
     assert(c[] == "133", c);
 }
 private
-size_t format11o(char *buffer, long v) {
+size_t format11o(char *buffer, long v)
+{
     size_t pos;
     if (v >> 63) buffer[pos++] = '1'; // ulong.max coverage
     bool pad = true;
-    for (int shift = 60; shift >= 0; shift -= 3) {
+    for (int shift = 60; shift >= 0; shift -= 3)
+    {
         const ubyte b = (v >> shift) & 7;
-        if (b == 0) {
-            if (pad && shift >= 33) {
+        if (b == 0)
+        {
+            if (pad && shift >= 33)
+            {
                 continue; // cut
-            } else if (pad && shift >= 3) {
+            }
+            else if (pad && shift >= 3)
+            {
                 buffer[pos++] = pad ? ' ' : '0';
                 continue;
             }
@@ -344,25 +377,31 @@ size_t format11o(char *buffer, long v) {
 // SECTION Rendering
 //
 
-void cursorOffset() {
+void cursorOffset()
+{
     terminalPos(0, 0);
 }
-void cursorContent() {
+void cursorContent()
+{
     terminalPos(0, 1);
 }
-void cursorStatusbar() {
+void cursorStatusbar()
+{
     terminalPos(0, termSize.height - 1);
 }
 
-void clearOffsetBar() {
+void clearOffsetBar()
+{
     screen.cwritefAt(0, 0, "%*s", termSize.width - 1, " ");
 }
 /// 
 //TODO: Add "edited" or '*' to end if file edited
-void renderOffset() {
+void renderOffset()
+{
     import std.conv : octal;
     
-    version (Trace) {
+    version (Trace)
+    {
         StopWatch sw = StopWatch(AutoStart.yes);
     }
     
@@ -383,19 +422,22 @@ void renderOffset() {
     for (; i < setting.columns; ++i)
         outbuf.writef(offsetFmt, i);
     // Fill rest of terminal width if in interactive mode
-    if (termSize.width) {
+    if (termSize.width)
+    {
         for (i = cast(uint)outbuf.offset; i < termSize.width; ++i)
             outbuf.put(' ');
     }
     
-    version (Trace) {
+    version (Trace)
+    {
         Duration a = sw.peek;
     }
     
     // OutBuffer.toString duplicates it, what a waste!
     cwriteln(cast(const(char)[])outbuf.toBytes);
     
-    version (Trace) {
+    version (Trace)
+    {
         Duration b = sw.peek;
         trace("gen='%s µs' print='%s µs'",
             a.total!"usecs",
@@ -404,8 +446,10 @@ void renderOffset() {
 }
 
 /// 
-void renderStatusBar(const(char)[][] items ...) {    
-    version (Trace) {
+void renderStatusBar(const(char)[][] items ...)
+{    
+    version (Trace)
+    {
         StopWatch sw = StopWatch(AutoStart.yes);
     }
     
@@ -414,10 +458,12 @@ void renderStatusBar(const(char)[][] items ...) {
     auto outbuf = scoped!OutBuffer();
     outbuf.reserve(w);
     outbuf.put(' ');
-    foreach (item; items) {
+    foreach (item; items)
+    {
         if (outbuf.offset > 1) outbuf.put(" | ");
         outbuf.put(item);
-        if (outbuf.offset >= w) {
+        if (outbuf.offset >= w)
+        {
             
         }
     }
@@ -425,13 +471,15 @@ void renderStatusBar(const(char)[][] items ...) {
     outbuf.data[outbuf.offset..w] = ' ';
     outbuf.offset = w; // used in .toBytes
     
-    version (Trace) {
+    version (Trace)
+    {
         Duration a = sw.peek;
     }
     
     cwrite(cast(const(char)[])outbuf.toBytes);
     
-    version (Trace) {
+    version (Trace)
+    {
         sw.stop;
         Duration b = sw.peek;
         trace("gen='%s µs' print='%s µs'",
@@ -441,19 +489,22 @@ void renderStatusBar(const(char)[][] items ...) {
 }
 
 private
-const(char)[] renderOffset(ulong pos) {
+const(char)[] renderOffset(ulong pos)
+{
     __gshared char[1024] buffer = void;
     size_t indexData = offsetFormatter.offset(buffer.ptr, pos);
     return buffer[0..indexData];
 }
 private
-const(char)[] renderData(ubyte data) {
+const(char)[] renderData(ubyte data)
+{
     __gshared char[1024] buffer = void;
     size_t indexData = binaryFormatter.data(buffer.ptr, data);
     return buffer[0..indexData];
 }
 private
-const(char)[] renderText(ubyte data) {
+const(char)[] renderText(ubyte data)
+{
     __gshared char[1] a;
     const(char)[] r = transcoder.transform(data);
     if (r)
@@ -464,41 +515,53 @@ const(char)[] renderText(ubyte data) {
 
 //int renderContentCursorLine(long position, ubyte[] data, uint cursor)
 
-int renderContentCursor(long position, ubyte[] data, uint cursor) {
+int renderContentCursor(long position, ubyte[] data, uint cursor)
+{
     
     uint crow = cursor / setting.columns;
     uint ccol = cursor % setting.columns;
     
-    version (Trace) {
+    version (Trace)
+    {
         trace("P=%u D=%u R=%u C=%u",
             position, data.length, crow, ccol);
         StopWatch sw = StopWatch(AutoStart.yes);
     }
     
     int lines;
-    foreach (chunk; chunks(data, setting.columns)) {
-        if (lines == crow) {
+    foreach (chunk; chunks(data, setting.columns))
+    {
+        if (lines == crow)
+        {
             cwrite(renderOffset(position));
             cwrite("  ");
             uint i;
-            foreach (g; chunk) {
-                if (i++ == ccol) {
+            foreach (g; chunk)
+            {
+                if (i++ == ccol)
+                {
                     terminalInvertColor;
                     cwrite(renderData(g));
                     terminalResetColor;
-                } else {
+                }
+                else
+                {
                     cwrite(renderData(g));
                 }
                 cwrite(" ");
             }
             cwrite(" ");
             i = 0;
-            foreach (g; chunk) {
-                if (i++ == ccol) {
+            foreach (g; chunk)
+            {
+                if (i++ == ccol)
+                {
                     terminalHighlight;
                     cwrite(renderText(g));
                     terminalResetColor;
-                } else {
+                }
+                else
+                {
                     cwrite(renderText(g));
                 }
             }
@@ -508,12 +571,14 @@ int renderContentCursor(long position, ubyte[] data, uint cursor) {
             
             buffer.put(renderOffset(position));
             buffer.put("  ");
-            foreach (g; chunk) {
+            foreach (g; chunk)
+            {
                 buffer.put(renderData(g));
                 buffer.put(' ');
             }
             buffer.put(" ");
-            foreach (g; chunk) {
+            foreach (g; chunk)
+            {
                 buffer.put(renderText(g));
             }
             cwriteln(cast(const(char)[])buffer.toBytes);
@@ -523,7 +588,8 @@ int renderContentCursor(long position, ubyte[] data, uint cursor) {
         if (++lines == maxLine) break;
     }
     
-    version (Trace) {
+    version (Trace)
+    {
         sw.stop;
         trace("time='%s µs'", sw.peek.total!"usecs");
     }
@@ -536,34 +602,40 @@ int renderContentCursor(long position, ubyte[] data, uint cursor) {
 ///     position = Base position.
 ///     data = Data chunk.
 /// Returns: Numbers of row written.
-uint renderContent(long position, ubyte[] data) {
-    version (Trace) {
+uint renderContent(long position, ubyte[] data)
+{
+    version (Trace)
+    {
         trace("position=%u data.len=%u", position, data.length);
         StopWatch sw = StopWatch(AutoStart.yes);
     }
     
     // print lines in bulk (for entirety of view buffer)
     uint lines;
-    foreach (chunk; chunks(data, setting.columns)) {
+    foreach (chunk; chunks(data, setting.columns))
+    {
         cwriteln(renderRow(chunk, position));
         position += setting.columns;
         if (++lines == maxLine) break;
     }
     
-    version (Trace) {
+    version (Trace)
+    {
         sw.stop;
         trace("time='%s µs'", sw.peek.total!"usecs");
     }
     
     return lines;
 }
-void renderEmpty(uint rows) {
+void renderEmpty(uint rows)
+{
     debug assert(termSize.rows);
     debug assert(termSize.columns);
     
     uint lines = maxLine - rows;
     
-    version (Trace) {
+    version (Trace)
+    {
         trace("lines=%u rows=%u cols=%u", lines, termSize.rows, termSize.columns);
         StopWatch sw = StopWatch(AutoStart.yes);
     }
@@ -579,7 +651,8 @@ void renderEmpty(uint rows) {
     
     free(p);
     
-    version (Trace) {
+    version (Trace)
+    {
         sw.stop;
         trace("time='%s µs'", sw.peek.total!"usecs");
     }
@@ -588,7 +661,8 @@ void renderEmpty(uint rows) {
 //TODO: bool insertPosition?
 //TODO: bool insertData?
 //TODO: bool insertText?
-private char[] renderRow(ubyte[] chunk, long pos) {
+private char[] renderRow(ubyte[] chunk, long pos)
+{
     //TODO: Consider realloc on terminal width
     //      In screen.initiate
     enum BUFFER_SIZE = 2048;
@@ -608,14 +682,16 @@ private char[] renderRow(ubyte[] chunk, long pos) {
     // Format DATA and CHAR
     // NOTE: Smaller loops could fit in cache...
     //       And would separate data/text logic
-    foreach (data; chunk) {
+    foreach (data; chunk)
+    {
         //TODO: Maybe binary data formatter should include space
         // Data translation
         bufferptr[indexData++] = ' ';
         indexData += binaryFormatter.data(bufferptr + indexData, data);
         // Character translation
         immutable(char)[] units = transcoder.transform(data);
-        if (units.length) { // Has utf-8 codepoints
+        if (units.length) // Has utf-8 codepoints
+        {
             foreach (codeunit; units)
                 bufferptr[indexChar++] = codeunit;
         } else // Invalid character, insert default character
@@ -625,7 +701,8 @@ private char[] renderRow(ubyte[] chunk, long pos) {
     size_t end = indexChar;
     
     // data length < minimum row requirement = in-fill data and text columns
-    if (chunk.length < setting.columns) {
+    if (chunk.length < setting.columns)
+    {
         // In-fill characters: left = Columns - ChunkLength
         size_t leftchar = (setting.columns - chunk.length); // Bytes left
         memset(bufferptr + indexChar, ' ', leftchar);
@@ -653,43 +730,54 @@ unittest {
 
 // SECTION Console Write functions
 
-size_t cwrite(char c) {
+size_t cwrite(char c)
+{
     return terminalOutput(&c, 1);
 }
-size_t cwrite(const(char)[] _str) {
+size_t cwrite(const(char)[] _str)
+{
     return terminalOutput(_str.ptr, _str.length);
 }
-size_t cwriteln(char *_str, size_t size) {
+size_t cwriteln(char *_str, size_t size)
+{
     return terminalOutput(_str, size);
 }
-size_t cwriteln(const(char)[] _str) {
+size_t cwriteln(const(char)[] _str)
+{
     return cwrite(_str) + cwrite('\n');
 }
-size_t cwritef(A...)(const(char)[] fmt, A args) {
+size_t cwritef(A...)(const(char)[] fmt, A args)
+{
     import std.format : sformat;
     char[256] buf = void;
     return cwrite(sformat(buf, fmt, args));
 }
-size_t cwritefln(A...)(const(char)[] fmt, A args) {
+size_t cwritefln(A...)(const(char)[] fmt, A args)
+{
     return cwritef(fmt, args) + cwrite('\n');
 }
-size_t cwriteAt(int x, int y, char c) {
+size_t cwriteAt(int x, int y, char c)
+{
     terminalPos(x, y);
     return cwrite(c);
 }
-size_t cwriteAt(int x, int y, const(char)[] str) {
+size_t cwriteAt(int x, int y, const(char)[] str)
+{
     terminalPos(x, y);
     return cwrite(str);
 }
-size_t cwritelnAt(int x, int y, const(char)[] str) {
+size_t cwritelnAt(int x, int y, const(char)[] str)
+{
     terminalPos(x, y);
     return cwriteln(str);
 }
-size_t cwritefAt(A...)(int x, int y, const(char)[] fmt, A args) {
+size_t cwritefAt(A...)(int x, int y, const(char)[] fmt, A args)
+{
     terminalPos(x, y);
     return cwritef(fmt, args);
 }
-size_t cwriteflnAt(A...)(int x, int y, const(char)[] fmt, A args) {
+size_t cwriteflnAt(A...)(int x, int y, const(char)[] fmt, A args)
+{
     terminalPos(x, y);
     return cwritefln(fmt, args);
 }

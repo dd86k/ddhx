@@ -11,7 +11,8 @@ import std.mmfile : MmFile;
 // temp
 public class OSMmFile : MmFile {
     private void *address;
-    this(string path, bool readOnly) {
+    this(string path, bool readOnly)
+    {
         super(path,
             readOnly ?
                 MmFile.Mode.read :
@@ -21,21 +22,26 @@ public class OSMmFile : MmFile {
     }
     bool eof, err;
     private long position;
-    long seek(long pos) { // only do seek_set for now
+    long seek(long pos) // only do seek_set for now
+    {
         return position = pos;
     }
-    long tell() {
+    long tell()
+    {
         return position;
     }
-    ubyte[] read(size_t size) {
+    ubyte[] read(size_t size)
+    {
         long sz = cast(long)this.length;
         long p2 = position+size;
         eof = p2 > sz;
         if (eof) p2 = sz;
         return cast(ubyte[])this[position..p2];
     }
-    /*void seek(long pos) {
-        final switch (origin) with (Seek) {
+    /*void seek(long pos)
+    {
+        final switch (origin) with (Seek)
+        {
         case start:
             position = pos;
             return 0;
@@ -65,14 +71,18 @@ struct OSMmFile2 {
     ///   mode = mmfile operating mode.
     ///   size = 
     this(string filename, MmFileMode mode = Mode.read, ulong size = 0,
-        void* address = null, size_t window = 0) {
+        void* address = null, size_t window = 0)
+{
         
-        version (Windows) {
-        } else version (linux) {
+        version (Windows)
+{
+        } else version (linux)
+{
             int oflag;
             int fmode;
 
-            final switch (mode) with (MmFileMode) {
+            final switch (mode) with (MmFileMode)
+{
             case read:
                 flags = MAP_SHARED;
                 prot = PROT_READ;
@@ -647,11 +657,14 @@ private:
     void*  address;
     version (linux) File file;
 
-    version (Windows) {
+    version (Windows)
+    {
         HANDLE hFile = INVALID_HANDLE_VALUE;
         HANDLE hFileMap = null;
         uint dwDesiredAccess;
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         int fd;
         int prot;
         int flags;

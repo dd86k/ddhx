@@ -85,16 +85,19 @@ private struct settings_t {
 public __gshared settings_t setting;
 
 /// Reset all settings to default.
-void resetSettings() {
+void resetSettings()
+{
     setting = setting.init;
     transcoderSelect(CharacterSet.ascii);
 }
 
 /// Determines the optimal column width given terminal width.
-int optimalWidth() {
+int optimalWidth()
+{
     TerminalSize termsize = terminalSize;
     int dataSize = void;
-    final switch (setting.dataType) with (NumberType) {
+    final switch (setting.dataType) with (NumberType)
+    {
     case hexadecimal: dataSize = 2; break;
     case decimal, octal: dataSize = 3; break;
     }
@@ -104,7 +107,8 @@ int optimalWidth() {
     return (termsize.width - 16) / dataSize;
 }
 
-int settingsColumns(string val) {
+int settingsColumns(string val)
+{
     if (val == null || val.length == 0)
         return errorSet(ErrorCode.invalidParameter);
     
@@ -128,7 +132,8 @@ int settingsColumns(string val) {
     return 0;
 }
 
-int settingsOffset(string val) {
+int settingsOffset(string val)
+{
     if (val == null || val.length == 0)
         return errorSet(ErrorCode.invalidParameter);
     
@@ -144,7 +149,8 @@ int settingsOffset(string val) {
     return 0;
 }
 
-int settingsData(string val) {
+int settingsData(string val)
+{
     if (val == null || val.length == 0)
         return errorSet(ErrorCode.invalidParameter);
     
@@ -160,7 +166,8 @@ int settingsData(string val) {
     return 0;
 }
 
-int settingsFiller(string val) {
+int settingsFiller(string val)
+{
     if (val == null || val.length == 0)
         return errorSet(ErrorCode.invalidParameter);
     
@@ -174,7 +181,8 @@ int settingsFiller(string val) {
     return 0;
 }
 
-int settingsCharset(string val) {
+int settingsCharset(string val)
+{
     if (val == null || val.length == 0)
         return errorSet(ErrorCode.invalidParameter);
     
@@ -194,7 +202,8 @@ int settingsCharset(string val) {
 //      or enum size_t HASH_FILLER = "filler".hashOf();
 //      Low priority
 
-int set(string[] args) {
+int set(string[] args)
+{
     const size_t argc = args.length;
     
     if (argc == 0)
@@ -246,7 +255,8 @@ int set(string[] args) {
     return errorSet(ErrorCode.invalidSetting);
 }
 
-int loadSettings(string rc) {
+int loadSettings(string rc)
+{
     import std.stdio : File;
     import std.file : exists;
     import os.path : buildUserFile, buildUserAppFile;
@@ -256,7 +266,8 @@ int loadSettings(string rc) {
     
     static immutable string cfgname = ".ddhxrc";
     
-    if (rc == null) {
+    if (rc == null)
+    {
         rc = buildUserFile(cfgname);
         
         if (rc is null)
@@ -282,7 +293,8 @@ L_SELECTED:
     File file;
     file.open(rc);
     int linenum;
-    foreach (line; file.byLine()) {
+    foreach (line; file.byLine())
+    {
         ++linenum;
         if (line.length == 0) continue;
         if (line[0] == '#') continue;

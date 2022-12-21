@@ -22,7 +22,8 @@ private import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
 version (TestInput) private import std.stdio : printf;
 private import core.stdc.stdlib : system, atexit;
 
-version (Windows) {
+version (Windows)
+{
     //TODO: To reduce output binary, import only modules necessary
     private import core.sys.windows.windows;
     private import std.windows.syserror : WindowsException;
@@ -35,7 +36,9 @@ version (Windows) {
     private __gshared USHORT defaultColor = DEFAULT_COLOR;
     private __gshared DWORD oldCP;
     private __gshared ushort oldAttr;
-} else version (Posix) {
+}
+else version (Posix)
+{
     private import core.stdc.stdio : snprintf;
     private import core.sys.posix.sys.stat;
     private import core.sys.posix.sys.ioctl;
@@ -57,7 +60,8 @@ version (Windows) {
     version (CRuntime_UClibc)
         version = IncludeTermiosLinux;
     
-    version (IncludeTermiosLinux) {
+    version (IncludeTermiosLinux)
+    {
         //siginfo_t
         // termios.h, bits/termios.h
         private alias uint tcflag_t;
@@ -187,12 +191,15 @@ private __gshared TermFeat current_features;
 /// Initiate terminal.
 /// Params: features = Feature bits to initiate.
 /// Throws: (Windows) WindowsException on OS exception
-void terminalInit(TermFeat features) {
+void terminalInit(TermFeat features)
+{
     current_features = features;
-    version (Windows) {
+    version (Windows)
+    {
         CONSOLE_SCREEN_BUFFER_INFO csbi = void;
         
-        if (features & TermFeat.inputSys) {
+        if (features & TermFeat.inputSys)
+        {
             //NOTE: Re-opening stdin before new screen fixes quite a few things
             //      - usage with CreateConsoleScreenBuffer
             //      - readln (for menu)
@@ -203,10 +210,14 @@ void terminalInit(TermFeat features) {
             SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
             stdin.windowsHandleOpen(hIn, "r");
             SetStdHandle(STD_INPUT_HANDLE, hIn);
-        } else {
+        }
+        else
+        {
             hIn = GetStdHandle(STD_INPUT_HANDLE);
         }
-        if (features & TermFeat.altScreen) {
+        
+        if (features & TermFeat.altScreen)
+        {
             //
             // Setting up stdout
             //
@@ -257,9 +268,12 @@ void terminalInit(TermFeat features) {
         //TODO: Get active (or default) colors
         GetConsoleScreenBufferInfo(hOut, &csbi);
         oldAttr = csbi.wAttributes;
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         stdout.setvbuf(0, _IONBF);
-        if (features & TermFeat.inputSys) {
+        if (features & TermFeat.inputSys)
+        {
             // Should it re-open tty by default?
             stat_t s = void;
             fstat(STDIN_FILENO, &s);
@@ -294,7 +308,9 @@ void terminalInit(TermFeat features) {
             //new_ios.c_cc[VTIME] = 0;
             terminalResumeInput;
         }
-        if (features & TermFeat.altScreen) {
+        
+        if (features & TermFeat.altScreen)
+        {
             // change to alternative screen buffer
             stdout.write("\033[?1049h");
         }
@@ -304,15 +320,20 @@ void terminalInit(TermFeat features) {
 }
 
 private extern (C)
-void terminalQuit() {
+void terminalQuit()
+{
     terminalRestore;
 }
 
 /// Restore CP and other settings
-void terminalRestore() {
-    version (Windows) {
+void terminalRestore()
+{
+    version (Windows)
+{
         SetConsoleOutputCP(oldCP); // unconditionally
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         // restore main screen buffer
         if (current_features & TermFeat.altScreen)
             terminalOutput2("\033[?1049l");
@@ -324,8 +345,10 @@ void terminalRestore() {
 
 private __gshared void function() terminalOnResizeEvent;
 
-void terminalOnResize(void function() func) {
-    version (Posix) {
+void terminalOnResize(void function() func)
+{
+    version (Posix)
+    {
         sigaction_t sa = void;
         sigemptyset(&sa.sa_mask);
         sa.sa_flags = SA_SIGINFO;
@@ -337,24 +360,29 @@ void terminalOnResize(void function() func) {
 
 version (Posix)
 private extern (C)
-void terminalResized(int signo, siginfo_t *info, void *content) {
+void terminalResized(int signo, siginfo_t *info, void *content)
+{
     if (terminalOnResizeEvent)
         terminalOnResizeEvent();
 }
 
-void terminalPauseInput() {
+void terminalPauseInput()
+{
     version (Posix)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 }
 
-void terminalResumeInput() {
+void terminalResumeInput()
+{
     version (Posix)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
 }
 
 /// Clear screen
-void terminalClear() {
-    version (Windows) {
+void terminalClear()
+{
+    version (Windows)
+    {
         CONSOLE_SCREEN_BUFFER_INFO csbi = void;
         COORD c;
         GetConsoleScreenBufferInfo(hOut, &csbi);
@@ -362,11 +390,14 @@ void terminalClear() {
         DWORD num;
         if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
             /*||
-            FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/) {
+            FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/)
+        {
             terminalPos(0, 0);
         } else // If that fails, run cls.
             system("cls");
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         // \033c is a Reset
         // \033[2J is "Erase whole display"
         terminalOutput2("\033[2J");
@@ -375,14 +406,18 @@ void terminalClear() {
 
 /// Get terminal window size in characters.
 /// Returns: Size
-TerminalSize terminalSize() {
+TerminalSize terminalSize()
+{
     TerminalSize size = void;
-    version (Windows) {
+    version (Windows)
+    {
         CONSOLE_SCREEN_BUFFER_INFO c = void;
         GetConsoleScreenBufferInfo(hOut, &c);
         size.height = c.srWindow.Bottom - c.srWindow.Top + 1;
         size.width  = c.srWindow.Right - c.srWindow.Left + 1;
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         //TODO: Consider using LINES and COLUMNS environment variables
         //      as fallback if ioctl returns -1.
         //TODO: Consider ESC [ 18 t for fallback of environment.
@@ -400,13 +435,17 @@ TerminalSize terminalSize() {
 /// Params:
 ///   x = X position (horizontal)
 ///   y = Y position (vertical)
-void terminalPos(int x, int y) {
-    version (Windows) { // 0-based
+void terminalPos(int x, int y)
+{
+    version (Windows) // 0-based
+    {
         COORD c = void;
         c.X = cast(short)x;
         c.Y = cast(short)y;
         SetConsoleCursorPosition(hOut, c);
-    } else version (Posix) { // 1-based, so 0,0 needs to be output as 1,1
+    }
+    else version (Posix) // 1-based, so 0,0 needs to be output as 1,1
+    {
         char[16] b = void;
         int r = snprintf(b.ptr, 16, "\033[%d;%dH", ++y, ++x);
         assert(r > 0);
@@ -415,62 +454,87 @@ void terminalPos(int x, int y) {
 }
 
 /// Hide the terminal cursor.
-void terminalHideCursor() {
-    version (Windows) {
+void terminalHideCursor()
+{
+    version (Windows)
+    {
         CONSOLE_CURSOR_INFO cci = void;
         GetConsoleCursorInfo(hOut, &cci);
         cci.bVisible = FALSE;
         SetConsoleCursorInfo(hOut, &cci);
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         terminalOutput2("\033[?25l");
     }
 }
 /// Show the terminal cursor.
-void terminalShowCursor() {
-    version (Windows) {
+void terminalShowCursor()
+{
+    version (Windows)
+    {
         CONSOLE_CURSOR_INFO cci = void;
         GetConsoleCursorInfo(hOut, &cci);
         cci.bVisible = TRUE;
         SetConsoleCursorInfo(hOut, &cci);
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         terminalOutput2("\033[?25h");
     }
 }
 
-void terminalHighlight() {
-    version (Windows) {
+void terminalHighlight()
+{
+    version (Windows)
+    {
         SetConsoleTextAttribute(hOut, oldAttr | BACKGROUND_RED);
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         terminalOutput2("\033[41m");
     }
 }
 /// Invert color.
-void terminalInvertColor() {
-    version (Windows) {
+void terminalInvertColor()
+{
+    version (Windows)
+    {
         SetConsoleTextAttribute(hOut, oldAttr | COMMON_LVB_REVERSE_VIDEO);
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         terminalOutput2("\033[7m");
     }
 }
 /// Underline.
 /// Bugs: Does not work on Windows Terminal. See https://github.com/microsoft/terminal/issues/8037
-void terminalUnderline() {
-    version (Windows) {
+void terminalUnderline()
+{
+    version (Windows)
+    {
         SetConsoleTextAttribute(hOut, oldAttr | COMMON_LVB_UNDERSCORE);
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         terminalOutput2("\033[4m");
     }
 }
 /// Reset color.
-void terminalResetColor() {
-    version (Windows) {
+void terminalResetColor()
+{
+    version (Windows)
+    {
         SetConsoleTextAttribute(hOut, oldAttr);
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         terminalOutput2("\033[0m");
     }
 }
 
-size_t terminalOutput2(const(void)[] data) {
+size_t terminalOutput2(const(void)[] data)
+{
     return terminalOutput(data.ptr, data.length);
 }
 
@@ -479,14 +543,18 @@ size_t terminalOutput2(const(void)[] data) {
 ///     data = Character data.
 ///     size = Amount in bytes.
 /// Returns: Number of bytes written.
-size_t terminalOutput(const(void) *data, size_t size) {
-    version (Windows) {
+size_t terminalOutput(const(void) *data, size_t size)
+{
+    version (Windows)
+    {
         import core.sys.windows.winbase : STD_OUTPUT_HANDLE,
             WriteFile, GetStdHandle;
         uint r = void;
         assert(WriteFile(hOut, data, cast(uint)size, &r, null));
         return r;
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         import core.sys.posix.unistd : write, STDOUT_FILENO;
         import core.sys.posix.sys.types : ssize_t;
         ssize_t r = write(STDOUT_FILENO, data, size);
@@ -499,8 +567,10 @@ size_t terminalOutput(const(void) *data, size_t size) {
 /// Params:
 ///   event = TerminalInfo struct
 /// Throws: (Windows) WindowsException on OS error
-void terminalInput(ref TerminalInput event) {
-    version (Windows) {
+void terminalInput(ref TerminalInput event)
+{
+    version (Windows)
+    {
         INPUT_RECORD ir = void;
         DWORD num = void;
 L_READ:
@@ -515,7 +585,8 @@ L_READ:
             if (ir.KeyEvent.bKeyDown == FALSE)
                 goto L_READ;
             
-            version (TestInput) {
+            version (TestInput)
+            {
                 printf(
                 "KeyEvent: AsciiChar=%d wVirtualKeyCode=%d dwControlKeyState=%x\n",
                 ir.KeyEvent.AsciiChar,
@@ -536,10 +607,13 @@ L_READ:
             
             const char ascii = ir.KeyEvent.AsciiChar;
             
-            if (ascii >= 'a' && ascii <= 'z') {
+            if (ascii >= 'a' && ascii <= 'z')
+            {
                 event.key = ascii - 32;
                 return;
-            } else if (ascii >= 0x20 && ascii < 0x7f) {
+            }
+            else if (ascii >= 0x20 && ascii < 0x7f)
+            {
                 event.key = ascii;
                 
                 // '?' on a fr-ca kb is technically shift+6,
@@ -557,7 +631,8 @@ L_READ:
             if (state & SHIFT_PRESSED) event.key |= Mod.shift;
             return;
         /*case MOUSE_EVENT:
-            if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED) {
+            if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED)
+            {
                 // Up=0x00780000 Down=0xFF880000
                 event.type = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
                     Mouse.ScrollDown : Mouse.ScrollUp;
@@ -568,7 +643,9 @@ L_READ:
             goto L_READ;
         default: goto L_READ;
         }
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         //TODO: Mouse reporting in Posix terminals
         //      * X10 compatbility mode (mouse-down only)
         //      Enable: ESC [ ? 9 h
@@ -646,9 +723,11 @@ L_READ:
         default:
         }
         
-        version (TestInput) {
+        version (TestInput)
+        {
             printf("stdin:");
-            for (size_t i; i < r; ++i) {
+            for (size_t i; i < r; ++i)
+            {
                 char c = b[i];
                 if (c < 32 || c > 126)
                     printf(" \\0%o", c);
@@ -666,7 +745,8 @@ L_READ:
         //      Starts with \033[M
         
         // Checking for other key inputs
-        foreach (ki; keyInputsVTE) {
+        foreach (ki; keyInputsVTE)
+        {
             if (r != ki.text.length) continue;
             if (inputString != ki.text) continue;
             event.key  = ki.value;

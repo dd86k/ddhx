@@ -4,7 +4,8 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module os.path;
 
-version (Windows) {
+version (Windows)
+{
     import core.sys.windows.windef : S_OK;
     import core.sys.windows.shlobj :
         CSIDL_PROFILE, CSIDL_LOCAL_APPDATA, CSIDL_APPDATA,
@@ -12,7 +13,9 @@ version (Windows) {
     import core.stdc.stdlib : malloc, free;
     import core.stdc.wchar_ : wcslen;
     import std.encoding : transcode;
-} else version (Posix) {
+}
+else version (Posix)
+{
     import core.sys.posix.unistd : getuid, uid_t;
     import core.sys.posix.pwd : getpwuid, passwd;
     import core.stdc.string : strlen;
@@ -30,11 +33,14 @@ import std.file : exists;
 /// Windows: Typically C:\\Users\\%USERNAME%
 /// Posix: Typically /home/$USERNAME
 /// Returns: Path or null on failure.
-string getHomeFolder() {
-    version (Windows) {
+string getHomeFolder()
+{
+    version (Windows)
+    {
         // 1. SHGetFolderPath
         wchar *buffer = cast(wchar*)malloc(1024);
-        if (SHGetFolderPathW(null, CSIDL_PROFILE, null, 0, buffer) == S_OK) {
+        if (SHGetFolderPathW(null, CSIDL_PROFILE, null, 0, buffer) == S_OK)
+        {
             string path;
             transcode(buffer[0..wcslen(buffer)], path);
             free(buffer); // since transcode allocated
@@ -47,15 +53,19 @@ string getHomeFolder() {
         // 3. %HOMEDRIVE% and %HOMEPATH%
         if ("HOMEDRIVE" in environment && "HOMEPATH" in environment)
             return environment["HOMEDRIVE"] ~ environment["HOMEPATH"];
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         // 1. $HOME
         if ("HOME" in environment)
             return environment["HOME"];
         // 2. getpwuid+getuid
         uid_t uid = getuid();
-        if (uid >= 0) {
+        if (uid >= 0)
+        {
             passwd *wd = getpwuid(uid);
-            if (wd) {
+            if (wd)
+            {
                 return cast(immutable(char)[])
                     wd.pw_dir[0..strlen(wd.pw_dir)];
             }
@@ -70,11 +80,14 @@ string getHomeFolder() {
 /// Windows: Typically C:\\Users\\%USERNAME%\\AppData\\Roaming
 /// Posix: Typically /home/$USERNAME/.config
 /// Returns: Path or null on failure.
-string getUserDataFolder() {
-    version (Windows) {
+string getUserDataFolder()
+{
+    version (Windows)
+    {
         // 1. SHGetFolderPath
         wchar *buffer = cast(wchar*)malloc(1024);
-        if (SHGetFolderPathW(null, CSIDL_APPDATA, null, 0, buffer) == S_OK) {
+        if (SHGetFolderPathW(null, CSIDL_APPDATA, null, 0, buffer) == S_OK)
+        {
             string path;
             transcode(buffer[0..wcslen(buffer)], path);
             free(buffer); // transcode allocates
@@ -85,7 +98,9 @@ string getUserDataFolder() {
         //    Is is the exact same with CSIDL_APPDATA but anything can go wrong.
         if ("APPDATA" in environment)
             return environment["APPDATA"];
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         if ("XDG_CONFIG_HOME" in environment)
             return environment["XDG_CONFIG_HOME"];
     }
@@ -97,9 +112,12 @@ string getUserDataFolder() {
     if (base is null)
         return null;
     
-    version (Windows) {
+    version (Windows)
+    {
         return buildPath(base, "AppData", "Local");
-    } else version (Posix) {
+    }
+    else version (Posix)
+    {
         return buildPath(base, ".config");
     }
 }
@@ -110,7 +128,8 @@ string getUserDataFolder() {
 /// Posix: Typically /home/$USERNAME/{filename}
 /// Params: filename = Name of a file.
 /// Returns: Path or null on failure.
-string buildUserFile(string filename) {
+string buildUserFile(string filename)
+{
     string base = getHomeFolder;
     
     if (base is null)
@@ -127,7 +146,8 @@ string buildUserFile(string filename) {
 ///     appname = Name of the app. This acts as the parent folder.
 ///     filename = Name of a file.
 /// Returns: Path or null on failure.
-string buildUserAppFile(string appname, string filename) {
+string buildUserAppFile(string appname, string filename)
+{
     string base = getUserDataFolder;
     
     if (base is null)

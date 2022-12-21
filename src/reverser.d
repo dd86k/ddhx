@@ -4,12 +4,14 @@ import std.string : toStringz;
 import core.stdc.stdio : FILE, fopen, fwrite, ferror, perror;
 import editor;
 
-int start(string outpath) {
+int start(string outpath)
+{
     enum BUFSZ = 4096;
     ubyte[BUFSZ] data = void;
     
     outfile = fopen(outpath.toStringz, "wb");
-    if (ferror(outfile)) {
+    if (ferror(outfile))
+    {
         perror("fopen");
         return 2;
     }
@@ -17,21 +19,29 @@ int start(string outpath) {
 L_READ:
     ubyte[] r = editor.read(data);
     
-    if (editor.err) {
+    if (editor.err)
+    {
         return 3;
     }
     
-    foreach (ubyte b; r) {
-        if (b >= '0' && b <= '9') {
+    foreach (ubyte b; r)
+    {
+        if (b >= '0' && b <= '9')
+        {
             outnibble(b - 0x30);
-        } else if (b >= 'a' && b <= 'f') {
+        }
+        else if (b >= 'a' && b <= 'f')
+        {
             outnibble(b - 0x57);
-        } else if (b >= 'A' && b <= 'F') {
+        }
+        else if (b >= 'A' && b <= 'F')
+        {
             outnibble(b - 0x37);
         }
     }
     
-    if (editor.eof) {
+    if (editor.eof)
+    {
         outfinish;
         return 0;
     }
@@ -45,8 +55,10 @@ __gshared FILE *outfile;
 __gshared bool  low;
 __gshared ubyte data;
 
-void outnibble(int nibble) {
-    if (low == false) {
+void outnibble(int nibble)
+{
+    if (low == false)
+    {
         data = cast(ubyte)(nibble << 4);
         low = true;
         return;
@@ -57,7 +69,8 @@ void outnibble(int nibble) {
     fwrite(&b, 1, 1, outfile);
 }
 
-void outfinish() {
+void outfinish()
+{
     if (low == false) return;
     
     fwrite(&data, 1, 1, outfile);

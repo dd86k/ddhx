@@ -52,7 +52,8 @@ immutable string OPT_SECRET    = "assistant";
 
 bool askingHelp(string v) { return v == "help"; }
 
-void cliList(string opt) {
+void cliList(string opt)
+{
     writeln("Available values for ",opt,":");
     import std.traits : EnumMembers;
     switch (opt) {
@@ -69,7 +70,8 @@ void cliList(string opt) {
     exit(0);
 }
 
-void cliOption(string opt, string val) {
+void cliOption(string opt, string val)
+{
     final switch (opt) {
     case OPT_INSERT:
         editor.editMode = EditMode.insert;
@@ -114,7 +116,8 @@ void cliOption(string opt, string val) {
     exit(1);
 }
 
-void page(string opt) {
+void page(string opt)
+{
     import std.compiler : version_major, version_minor;
     static immutable string COMPILER_VERSION = format("%d.%03d", version_major, version_minor);
     static immutable string VERSTR = 
@@ -132,7 +135,8 @@ void page(string opt) {
     exit(0);
 }
 
-int main(string[] args) {
+int main(string[] args)
+{
     bool cliMmfile, cliFile, cliDump, cliStdin;
     bool cliNoRC;
     string cliSeek, cliLength, cliRC, cliReverse;
@@ -162,18 +166,22 @@ int main(string[] args) {
         OPT_VER,         "Print only the version and exit", &page,
         OPT_SECRET,      "", &page
         );
-    } catch (Exception ex) {
+    }
+    catch (Exception ex)
+    {
         return errorPrint(1, ex.msg);
     }
     
-    if (res.helpWanted) {
+    if (res.helpWanted)
+    {
         // Replace default help line
         res.options[$-1].help = "Print this help screen and exit";
         writeln("ddhx - Interactive hexadecimal file viewer\n"~
             "  Usage: ddhx [OPTIONS] [FILE|--stdin]\n"~
             "\n"~
             "OPTIONS");
-        foreach (opt; res.options) with (opt) {
+        foreach (opt; res.options) with (opt)
+        {
             if (help == "") continue;
             if (optShort)
                 writefln("%s, %-14s %s", optShort, optLong, help);
@@ -189,7 +197,8 @@ int main(string[] args) {
     long skip, length;
     
     // Convert skip value
-    if (cliSeek) {
+    if (cliSeek)
+    {
         version (Trace) trace("seek=%s", cliSeek);
         
         if (convertToVal(skip, cliSeek))
@@ -201,11 +210,11 @@ int main(string[] args) {
     
     // Open file or stream
     //TODO: Open MemoryStream
-    if ((args.length <= 1 || cliStdin) && editor.openStream(stdin)) {
+    if ((args.length <= 1 || cliStdin) && editor.openStream(stdin))
         return errorPrint;
-    } else if (cliFile ? false : cliMmfile && editor.openMmfile(args[1])) {
+    else if (cliFile ? false : cliMmfile && editor.openMmfile(args[1]))
         return errorPrint;
-    } else if (args.length > 1 && editor.openFile(args[1]))
+    else if (args.length > 1 && editor.openFile(args[1]))
         return errorPrint;
     
     // Parse settings
@@ -213,14 +222,16 @@ int main(string[] args) {
         return errorPrint;
     
     // App: dump
-    if (cliDump) {
+    if (cliDump)
+    {
         if (cliLength && convertToVal(length, cliLength))
             return errorPrint;
         return dump.start(skip, length);
     }
     
     // App: reverse
-    if (cliReverse) {
+    if (cliReverse)
+    {
         return reverser.start(cliReverse);
     }
     

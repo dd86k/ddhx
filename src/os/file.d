@@ -9,7 +9,8 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module os.file;
 
-version (Windows) {
+version (Windows)
+{
     import core.sys.windows.winnt :
         DWORD, HANDLE, LARGE_INTEGER, FALSE, TRUE,
         GENERIC_ALL, GENERIC_READ, GENERIC_WRITE;
@@ -27,7 +28,9 @@ version (Windows) {
     private alias SEEK_SET = FILE_BEGIN;
     private alias SEEK_CUR = FILE_CURRENT;
     private alias SEEK_END = FILE_END;
-} else version (Posix) {
+}
+else version (Posix)
+{
     import core.sys.posix.unistd;
     import core.sys.posix.sys.types;
     import core.sys.posix.sys.stat;
@@ -89,10 +92,12 @@ struct OSFile {
     private OSHANDLE handle;
     bool eof, err;
     
-    void cleareof() {
+    void cleareof()
+    {
         eof = false;
     }
-    void clearerr() {
+    void clearerr()
+    {
         err = false;
     }
     
@@ -100,8 +105,10 @@ struct OSFile {
     //      By default, at least on Windows, files aren't shared. Enabling
     //      sharing would allow refreshing view (manually) when a program
     //      writes to file.
-    bool open(string path, bool readOnly) {
-        version (Windows) {
+    bool open(string path, bool readOnly)
+    {
+        version (Windows)
+        {
             // NOTE: toUTF16z/tempCStringW
             //       Phobos internally uses tempCStringW from std.internal
             //       but I doubt it's meant for us to use so...
@@ -118,49 +125,66 @@ struct OSFile {
                 null,    // hTemplateFile
             );
             return err = handle == INVALID_HANDLE_VALUE;
-        } else version (Posix) {
+        } else version (Posix)
+{
             handle = .open(path.toStringz, readOnly ? O_RDONLY : O_RDWR);
             return err = handle == -1;
         }
     }
     
-    long seek(Seek origin, long pos) {
-        version (Windows) {
+    long seek(Seek origin, long pos)
+    {
+        version (Windows)
+        {
             LARGE_INTEGER i = void;
             i.QuadPart = pos;
             err = SetFilePointerEx(handle, i, &i, origin) == FALSE;
             return i.QuadPart;
-        } else version (OSX) {
+        }
+        else version (OSX)
+        {
             // NOTE: Darwin has set off_t as long
             //       and doesn't have lseek64
             pos = lseek(handle, pos, origin);
             err = pos == -1;
             return pos;
-        } else version (Posix) { // Should cover glibc and musl
+        }
+        else version (Posix) // Should cover glibc and musl
+        {
             pos = lseek64(handle, pos, origin);
             err = pos == -1;
             return pos;
         }
     }
     
-    long tell() {
-        version (Windows) {
+    long tell()
+    {
+        version (Windows)
+        {
             LARGE_INTEGER i; // .init
             SetFilePointerEx(handle, i, &i, FILE_CURRENT);
             return i.QuadPart;
-        } else version (OSX) {
+        }
+        else version (OSX)
+        {
             return lseek(handle, 0, SEEK_CUR);
-        } else version (Posix) {
+        }
+        else version (Posix)
+        {
             return lseek64(handle, 0, SEEK_CUR);
         }
     }
     
-    long size() {
-        version (Windows) {
+    long size()
+    {
+        version (Windows)
+        {
             LARGE_INTEGER li = void;
             err = GetFileSizeEx(handle, &li) == 0;
             return err ? -1 : li.QuadPart;
-        } else version (Posix) {
+        }
+        else version (Posix)
+        {
             stat_t stats = void;
             if (fstat(handle, &stats) == -1)
                 return -1;
@@ -179,18 +203,23 @@ struct OSFile {
         }
     }
     
-    ubyte[] read(ubyte[] buffer) {
+    ubyte[] read(ubyte[] buffer)
+    {
         return read(buffer.ptr, buffer.length);
     }
     
-    ubyte[] read(ubyte *buffer, size_t size) {
-        version (Windows) {
+    ubyte[] read(ubyte *buffer, size_t size)
+    {
+        version (Windows)
+        {
             uint len = cast(uint)size;
             err = ReadFile(handle, buffer, len, &len, null) == FALSE;
             if (err) return null;
             eof = len < size;
             return buffer[0..len];
-        } else version (Posix) {
+        }
+        else version (Posix)
+        {
             ssize_t len = .read(handle, buffer, size);
             if ((err = len < 0) == true) return null;
             eof = len < size;
@@ -198,34 +227,47 @@ struct OSFile {
         }
     }
     
-    size_t write(ubyte[] data) {
+    size_t write(ubyte[] data)
+    {
         return write(data.ptr, data.length);
     }
     
-    size_t write(ubyte *data, size_t size) {
-        version (Windows) {
+    size_t write(ubyte *data, size_t size)
+    {
+        version (Windows)
+        {
             uint len = cast(uint)size;
             err = WriteFile(handle, data, len, &len, null) == FALSE;
             return len; // 0 on error anyway
-        } else version (Posix) {
+        }
+        else version (Posix)
+        {
             ssize_t len = .write(handle, data, size);
             err = len < 0;
             return err ? 0 : len;
         }
     }
     
-    void flush() {
-        version (Windows) {
+    void flush()
+    {
+        version (Windows)
+        {
             FlushFileBuffers(handle);
-        } else version (Posix) {
+        }
+        else version (Posix)
+        {
             .fsync(handle);
         }
     }
     
-    void close() {
-        version (Windows) {
+    void close()
+    {
+        version (Windows)
+        {
             CloseHandle(handle);
-        } else version (Posix) {
+        }
+        else version (Posix)
+        {
             .close(handle);
         }
     }
