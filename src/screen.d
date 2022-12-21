@@ -29,20 +29,20 @@ import std.typecons : scoped;
 //      Probably useful for dump app.
 
 private struct NumberFormatter {
-	string name;	/// Short offset name
-	char fmtchar;	/// Format character for printf-like functions
-	ubyte size;	/// Size for formatted byte (excluding space)
-	size_t function(char*,long) offset;	/// Function to format offset
-	size_t function(char*,ubyte) data;	/// Function to format data
+    string name;    /// Short offset name
+    char fmtchar;    /// Format character for printf-like functions
+    ubyte size;    /// Size for formatted byte (excluding space)
+    size_t function(char*,long) offset;    /// Function to format offset
+    size_t function(char*,ubyte) data;    /// Function to format data
 }
 
 //TODO: Replace with OffsetFormatter and BinaryFormatter structures
 //      XXXFormatter.select()
 
 private immutable NumberFormatter[3] formatters = [
-	{ "hex", 'x', 2, &format11x, &format02x },
-	{ "dec", 'u', 3, &format11d, &format03d },
-	{ "oct", 'o', 3, &format11o, &format03o },
+    { "hex", 'x', 2, &format11x, &format02x },
+    { "dec", 'u', 3, &format11d, &format03d },
+    { "oct", 'o', 3, &format11o, &format03o },
 ];
 
 /// Last known terminal size.
@@ -55,51 +55,51 @@ __gshared NumberFormatter offsetFormatter = formatters[0];
 __gshared NumberFormatter binaryFormatter = formatters[0];
 
 int initiate() {
-	terminalInit(TermFeat.all);
-	
-	updateTermSize;
-	
-	if (termSize.height < 3)
-		return errorSet(ErrorCode.screenMinimumRows);
-	if (termSize.width < 20)
-		return errorSet(ErrorCode.screenMinimumColumns);
-	
-	terminalHideCursor;
-	
-	return 0;
+    terminalInit(TermFeat.all);
+    
+    updateTermSize;
+    
+    if (termSize.height < 3)
+        return errorSet(ErrorCode.screenMinimumRows);
+    if (termSize.width < 20)
+        return errorSet(ErrorCode.screenMinimumColumns);
+    
+    terminalHideCursor;
+    
+    return 0;
 }
 
 void updateTermSize() {
-	termSize = terminalSize;
-	maxLine = termSize.height - 2;
+    termSize = terminalSize;
+    maxLine = termSize.height - 2;
 }
 
 void onResize(void function() func) {
-	terminalOnResize(func);
+    terminalOnResize(func);
 }
 
 void setOffsetFormat(NumberType type) {
-	offsetFormatter = formatters[type];
+    offsetFormatter = formatters[type];
 }
 void setBinaryFormat(NumberType type) {
-	binaryFormatter = formatters[type];
+    binaryFormatter = formatters[type];
 }
 
 /// Update cursor position on the terminal screen
 void cursor(uint pos, uint nibble) {
-	uint y = pos / setting.columns;
-	uint x = pos % setting.columns;
-	int  d = binaryFormatter.size + 1;
-	terminalPos(13 + (x * d) + nibble, 1 + y);
+    uint y = pos / setting.columns;
+    uint x = pos % setting.columns;
+    int  d = binaryFormatter.size + 1;
+    terminalPos(13 + (x * d) + nibble, 1 + y);
 }
 
 /// Clear entire terminal screen
 void clear() {
-	terminalClear;
+    terminalClear;
 }
 
 /*void clearStatusBar() {
-	screen.cwritefAt(0,0,"%*s", termSize.width - 1, " ");
+    screen.cwritefAt(0,0,"%*s", termSize.width - 1, " ");
 }*/
 
 /// Display a formatted message at the bottom of the screen.
@@ -107,42 +107,42 @@ void clear() {
 ///   fmt = Formatting message string.
 ///   args = Arguments.
 void message(A...)(const(char)[] fmt, A args) {
-	//TODO: Consider using a scoped outbuffer + private message(outbuf)
-	import std.format : format;
-	message(format(fmt, args));
+    //TODO: Consider using a scoped outbuffer + private message(outbuf)
+    import std.format : format;
+    message(format(fmt, args));
 }
 /// Display a message at the bottom of the screen.
 /// Params: str = Message.
 void message(const(char)[] str) {
-	terminalPos(0, termSize.height - 1);
-	cwritef("%-*s", termSize.width - 1, str);
+    terminalPos(0, termSize.height - 1);
+    cwritef("%-*s", termSize.width - 1, str);
 }
 
 string prompt(string prefix, string include) {
-	import std.stdio : readln;
-	import std.string : chomp;
-	
-	scope (exit) {
-		cursorOffset;
-		renderOffset;
-	}
-	
-	clearOffsetBar;
-	
-	terminalPos(0, 0);
-	
-	cwrite(prefix);
-	if (include) cwrite(include);
-	
-	terminalShowCursor;
-	terminalPauseInput;
-	
-	string line = include ~ chomp(readln());
-	
-	terminalHideCursor;
-	terminalResumeInput;
-	
-	return line;
+    import std.stdio : readln;
+    import std.string : chomp;
+    
+    scope (exit) {
+        cursorOffset;
+        renderOffset;
+    }
+    
+    clearOffsetBar;
+    
+    terminalPos(0, 0);
+    
+    cwrite(prefix);
+    if (include) cwrite(include);
+    
+    terminalShowCursor;
+    terminalPauseInput;
+    
+    string line = include ~ chomp(readln());
+    
+    terminalHideCursor;
+    terminalResumeInput;
+    
+    return line;
 }
 
 //
@@ -155,187 +155,187 @@ private immutable string hexMap = "0123456789abcdef";
 
 private
 size_t format02x(char *buffer, ubyte v) {
-	buffer[1] = hexMap[v & 15];
-	buffer[0] = hexMap[v >> 4];
-	return 2;
+    buffer[1] = hexMap[v & 15];
+    buffer[0] = hexMap[v >> 4];
+    return 2;
 }
 @system unittest {
-	char[2] c = void;
-	format02x(c.ptr, 0x01);
-	assert(c[] == "01", c);
-	format02x(c.ptr, 0x20);
-	assert(c[] == "20", c);
-	format02x(c.ptr, 0xff);
-	assert(c[] == "ff", c);
+    char[2] c = void;
+    format02x(c.ptr, 0x01);
+    assert(c[] == "01", c);
+    format02x(c.ptr, 0x20);
+    assert(c[] == "20", c);
+    format02x(c.ptr, 0xff);
+    assert(c[] == "ff", c);
 }
 private
 size_t format11x(char *buffer, long v) {
-	size_t pos;
-	bool pad = true;
-	for (int shift = 60; shift >= 0; shift -= 4) {
-		const ubyte b = (v >> shift) & 15;
-		if (b == 0) {
-			if (pad && shift >= 44) {
-				continue; // cut
-			} else if (pad && shift >= 4) {
-				buffer[pos++] = pad ? ' ' : '0';
-				continue; // pad
-			}
-		} else pad = false;
-		buffer[pos++] = hexMap[b];
-	}
-	return pos;
+    size_t pos;
+    bool pad = true;
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        const ubyte b = (v >> shift) & 15;
+        if (b == 0) {
+            if (pad && shift >= 44) {
+                continue; // cut
+            } else if (pad && shift >= 4) {
+                buffer[pos++] = pad ? ' ' : '0';
+                continue; // pad
+            }
+        } else pad = false;
+        buffer[pos++] = hexMap[b];
+    }
+    return pos;
 }
 /// 
 @system unittest {
-	char[32] b = void;
-	char *p = b.ptr;
-	assert(b[0..format11x(p, 0)]                  ==      "          0");
-	assert(b[0..format11x(p, 1)]                  ==      "          1");
-	assert(b[0..format11x(p, 0x10)]               ==      "         10");
-	assert(b[0..format11x(p, 0x100)]              ==      "        100");
-	assert(b[0..format11x(p, 0x1000)]             ==      "       1000");
-	assert(b[0..format11x(p, 0x10000)]            ==      "      10000");
-	assert(b[0..format11x(p, 0x100000)]           ==      "     100000");
-	assert(b[0..format11x(p, 0x1000000)]          ==      "    1000000");
-	assert(b[0..format11x(p, 0x10000000)]         ==      "   10000000");
-	assert(b[0..format11x(p, 0x100000000)]        ==      "  100000000");
-	assert(b[0..format11x(p, 0x1000000000)]       ==      " 1000000000");
-	assert(b[0..format11x(p, 0x10000000000)]      ==      "10000000000");
-	assert(b[0..format11x(p, 0x100000000000)]     ==     "100000000000");
-	assert(b[0..format11x(p, 0x1000000000000)]    ==    "1000000000000");
-	assert(b[0..format11x(p, ubyte.max)]          ==      "         ff");
-	assert(b[0..format11x(p, ushort.max)]         ==      "       ffff");
-	assert(b[0..format11x(p, uint.max)]           ==      "   ffffffff");
-	assert(b[0..format11x(p, ulong.max)]          == "ffffffffffffffff");
-	assert(b[0..format11x(p, 0x1010)]             ==      "       1010");
-	assert(b[0..format11x(p, 0x10101010)]         ==      "   10101010");
-	assert(b[0..format11x(p, 0x1010101010101010)] == "1010101010101010");
+    char[32] b = void;
+    char *p = b.ptr;
+    assert(b[0..format11x(p, 0)]                  ==      "          0");
+    assert(b[0..format11x(p, 1)]                  ==      "          1");
+    assert(b[0..format11x(p, 0x10)]               ==      "         10");
+    assert(b[0..format11x(p, 0x100)]              ==      "        100");
+    assert(b[0..format11x(p, 0x1000)]             ==      "       1000");
+    assert(b[0..format11x(p, 0x10000)]            ==      "      10000");
+    assert(b[0..format11x(p, 0x100000)]           ==      "     100000");
+    assert(b[0..format11x(p, 0x1000000)]          ==      "    1000000");
+    assert(b[0..format11x(p, 0x10000000)]         ==      "   10000000");
+    assert(b[0..format11x(p, 0x100000000)]        ==      "  100000000");
+    assert(b[0..format11x(p, 0x1000000000)]       ==      " 1000000000");
+    assert(b[0..format11x(p, 0x10000000000)]      ==      "10000000000");
+    assert(b[0..format11x(p, 0x100000000000)]     ==     "100000000000");
+    assert(b[0..format11x(p, 0x1000000000000)]    ==    "1000000000000");
+    assert(b[0..format11x(p, ubyte.max)]          ==      "         ff");
+    assert(b[0..format11x(p, ushort.max)]         ==      "       ffff");
+    assert(b[0..format11x(p, uint.max)]           ==      "   ffffffff");
+    assert(b[0..format11x(p, ulong.max)]          == "ffffffffffffffff");
+    assert(b[0..format11x(p, 0x1010)]             ==      "       1010");
+    assert(b[0..format11x(p, 0x10101010)]         ==      "   10101010");
+    assert(b[0..format11x(p, 0x1010101010101010)] == "1010101010101010");
 }
 
 private immutable static string decMap = "0123456789";
 private
 size_t format03d(char *buffer, ubyte v) {
-	buffer[2] = (v % 10) + '0';
-	buffer[1] = (v / 10 % 10) + '0';
-	buffer[0] = (v / 100 % 10) + '0';
-	return 3;
+    buffer[2] = (v % 10) + '0';
+    buffer[1] = (v / 10 % 10) + '0';
+    buffer[0] = (v / 100 % 10) + '0';
+    return 3;
 }
 @system unittest {
-	char[3] c = void;
-	format03d(c.ptr, 1);
-	assert(c[] == "001", c);
-	format03d(c.ptr, 10);
-	assert(c[] == "010", c);
-	format03d(c.ptr, 111);
-	assert(c[] == "111", c);
+    char[3] c = void;
+    format03d(c.ptr, 1);
+    assert(c[] == "001", c);
+    format03d(c.ptr, 10);
+    assert(c[] == "010", c);
+    format03d(c.ptr, 111);
+    assert(c[] == "111", c);
 }
 private
 size_t format11d(char *buffer, long v) {
-	debug import std.conv : text;
-	enum ulong I64MAX = 10_000_000_000_000_000_000UL;
-	size_t pos;
-	bool pad = true;
-	for (ulong d = I64MAX; d > 0; d /= 10) {
-		const long r = (v / d) % 10;
-		if (r == 0) {
-			if (pad && d >= 100_000_000_000) {
-				continue; // cut
-			} else if (pad && d >= 10) {
-				buffer[pos++] = pad ? ' ' : '0';
-				continue;
-			}
-		} else pad = false;
-		debug assert(r >= 0 && r < 10, "r="~r.text);
-		buffer[pos++] = decMap[r];
-	}
-	return pos;
+    debug import std.conv : text;
+    enum ulong I64MAX = 10_000_000_000_000_000_000UL;
+    size_t pos;
+    bool pad = true;
+    for (ulong d = I64MAX; d > 0; d /= 10) {
+        const long r = (v / d) % 10;
+        if (r == 0) {
+            if (pad && d >= 100_000_000_000) {
+                continue; // cut
+            } else if (pad && d >= 10) {
+                buffer[pos++] = pad ? ' ' : '0';
+                continue;
+            }
+        } else pad = false;
+        debug assert(r >= 0 && r < 10, "r="~r.text);
+        buffer[pos++] = decMap[r];
+    }
+    return pos;
 }
 /// 
 @system unittest {
-	char[32] b = void;
-	char *p = b.ptr;
-	assert(b[0..format11d(p, 0)]                 ==   "          0");
-	assert(b[0..format11d(p, 1)]                 ==   "          1");
-	assert(b[0..format11d(p, 10)]                ==   "         10");
-	assert(b[0..format11d(p, 100)]               ==   "        100");
-	assert(b[0..format11d(p, 1000)]              ==   "       1000");
-	assert(b[0..format11d(p, 10_000)]            ==   "      10000");
-	assert(b[0..format11d(p, 100_000)]           ==   "     100000");
-	assert(b[0..format11d(p, 1000_000)]          ==   "    1000000");
-	assert(b[0..format11d(p, 10_000_000)]        ==   "   10000000");
-	assert(b[0..format11d(p, 100_000_000)]       ==   "  100000000");
-	assert(b[0..format11d(p, 1000_000_000)]      ==   " 1000000000");
-	assert(b[0..format11d(p, 10_000_000_000)]    ==   "10000000000");
-	assert(b[0..format11d(p, 100_000_000_000)]   ==  "100000000000");
-	assert(b[0..format11d(p, 1000_000_000_000)]  == "1000000000000");
-	assert(b[0..format11d(p, ubyte.max)]  ==          "        255");
-	assert(b[0..format11d(p, ushort.max)] ==          "      65535");
-	assert(b[0..format11d(p, uint.max)]   ==          " 4294967295");
-	assert(b[0..format11d(p, ulong.max)]  == "18446744073709551615");
-	assert(b[0..format11d(p, 1010)]       ==          "       1010");
+    char[32] b = void;
+    char *p = b.ptr;
+    assert(b[0..format11d(p, 0)]                 ==   "          0");
+    assert(b[0..format11d(p, 1)]                 ==   "          1");
+    assert(b[0..format11d(p, 10)]                ==   "         10");
+    assert(b[0..format11d(p, 100)]               ==   "        100");
+    assert(b[0..format11d(p, 1000)]              ==   "       1000");
+    assert(b[0..format11d(p, 10_000)]            ==   "      10000");
+    assert(b[0..format11d(p, 100_000)]           ==   "     100000");
+    assert(b[0..format11d(p, 1000_000)]          ==   "    1000000");
+    assert(b[0..format11d(p, 10_000_000)]        ==   "   10000000");
+    assert(b[0..format11d(p, 100_000_000)]       ==   "  100000000");
+    assert(b[0..format11d(p, 1000_000_000)]      ==   " 1000000000");
+    assert(b[0..format11d(p, 10_000_000_000)]    ==   "10000000000");
+    assert(b[0..format11d(p, 100_000_000_000)]   ==  "100000000000");
+    assert(b[0..format11d(p, 1000_000_000_000)]  == "1000000000000");
+    assert(b[0..format11d(p, ubyte.max)]  ==          "        255");
+    assert(b[0..format11d(p, ushort.max)] ==          "      65535");
+    assert(b[0..format11d(p, uint.max)]   ==          " 4294967295");
+    assert(b[0..format11d(p, ulong.max)]  == "18446744073709551615");
+    assert(b[0..format11d(p, 1010)]       ==          "       1010");
 }
 
 private
 size_t format03o(char *buffer, ubyte v) {
-	buffer[2] = (v % 8) + '0';
-	buffer[1] = (v / 8 % 8) + '0';
-	buffer[0] = (v / 64 % 8) + '0';
-	return 3;
+    buffer[2] = (v % 8) + '0';
+    buffer[1] = (v / 8 % 8) + '0';
+    buffer[0] = (v / 64 % 8) + '0';
+    return 3;
 }
 @system unittest {
-	import std.conv : octal;
-	char[3] c = void;
-	format03o(c.ptr, 1);
-	assert(c[] == "001", c);
-	format03o(c.ptr, octal!20);
-	assert(c[] == "020", c);
-	format03o(c.ptr, octal!133);
-	assert(c[] == "133", c);
+    import std.conv : octal;
+    char[3] c = void;
+    format03o(c.ptr, 1);
+    assert(c[] == "001", c);
+    format03o(c.ptr, octal!20);
+    assert(c[] == "020", c);
+    format03o(c.ptr, octal!133);
+    assert(c[] == "133", c);
 }
 private
 size_t format11o(char *buffer, long v) {
-	size_t pos;
-	if (v >> 63) buffer[pos++] = '1'; // ulong.max coverage
-	bool pad = true;
-	for (int shift = 60; shift >= 0; shift -= 3) {
-		const ubyte b = (v >> shift) & 7;
-		if (b == 0) {
-			if (pad && shift >= 33) {
-				continue; // cut
-			} else if (pad && shift >= 3) {
-				buffer[pos++] = pad ? ' ' : '0';
-				continue;
-			}
-		} else pad = false;
-		buffer[pos++] = hexMap[b];
-	}
-	return pos;
+    size_t pos;
+    if (v >> 63) buffer[pos++] = '1'; // ulong.max coverage
+    bool pad = true;
+    for (int shift = 60; shift >= 0; shift -= 3) {
+        const ubyte b = (v >> shift) & 7;
+        if (b == 0) {
+            if (pad && shift >= 33) {
+                continue; // cut
+            } else if (pad && shift >= 3) {
+                buffer[pos++] = pad ? ' ' : '0';
+                continue;
+            }
+        } else pad = false;
+        buffer[pos++] = hexMap[b];
+    }
+    return pos;
 }
 /// 
 @system unittest {
-	import std.conv : octal;
-	char[32] b = void;
-	char *p = b.ptr;
-	assert(b[0..format11o(p, 0)]                     ==  "          0");
-	assert(b[0..format11o(p, 1)]                     ==  "          1");
-	assert(b[0..format11o(p, octal!10)]              ==  "         10");
-	assert(b[0..format11o(p, octal!20)]              ==  "         20");
-	assert(b[0..format11o(p, octal!100)]             ==  "        100");
-	assert(b[0..format11o(p, octal!1000)]            ==  "       1000");
-	assert(b[0..format11o(p, octal!10_000)]          ==  "      10000");
-	assert(b[0..format11o(p, octal!100_000)]         ==  "     100000");
-	assert(b[0..format11o(p, octal!1000_000)]        ==  "    1000000");
-	assert(b[0..format11o(p, octal!10_000_000)]      ==  "   10000000");
-	assert(b[0..format11o(p, octal!100_000_000)]     ==  "  100000000");
-	assert(b[0..format11o(p, octal!1000_000_000)]    ==  " 1000000000");
-	assert(b[0..format11o(p, octal!10_000_000_000)]  ==  "10000000000");
-	assert(b[0..format11o(p, octal!100_000_000_000)] == "100000000000");
-	assert(b[0..format11o(p, ubyte.max)]   ==            "        377");
-	assert(b[0..format11o(p, ushort.max)]  ==            "     177777");
-	assert(b[0..format11o(p, uint.max)]    ==            "37777777777");
-	assert(b[0..format11o(p, ulong.max)]   == "1777777777777777777777");
-	assert(b[0..format11o(p, octal!101_010)] ==          "     101010");
+    import std.conv : octal;
+    char[32] b = void;
+    char *p = b.ptr;
+    assert(b[0..format11o(p, 0)]                     ==  "          0");
+    assert(b[0..format11o(p, 1)]                     ==  "          1");
+    assert(b[0..format11o(p, octal!10)]              ==  "         10");
+    assert(b[0..format11o(p, octal!20)]              ==  "         20");
+    assert(b[0..format11o(p, octal!100)]             ==  "        100");
+    assert(b[0..format11o(p, octal!1000)]            ==  "       1000");
+    assert(b[0..format11o(p, octal!10_000)]          ==  "      10000");
+    assert(b[0..format11o(p, octal!100_000)]         ==  "     100000");
+    assert(b[0..format11o(p, octal!1000_000)]        ==  "    1000000");
+    assert(b[0..format11o(p, octal!10_000_000)]      ==  "   10000000");
+    assert(b[0..format11o(p, octal!100_000_000)]     ==  "  100000000");
+    assert(b[0..format11o(p, octal!1000_000_000)]    ==  " 1000000000");
+    assert(b[0..format11o(p, octal!10_000_000_000)]  ==  "10000000000");
+    assert(b[0..format11o(p, octal!100_000_000_000)] == "100000000000");
+    assert(b[0..format11o(p, ubyte.max)]   ==            "        377");
+    assert(b[0..format11o(p, ushort.max)]  ==            "     177777");
+    assert(b[0..format11o(p, uint.max)]    ==            "37777777777");
+    assert(b[0..format11o(p, ulong.max)]   == "1777777777777777777777");
+    assert(b[0..format11o(p, octal!101_010)] ==          "     101010");
 }
 
 // !SECTION
@@ -345,308 +345,308 @@ size_t format11o(char *buffer, long v) {
 //
 
 void cursorOffset() {
-	terminalPos(0, 0);
+    terminalPos(0, 0);
 }
 void cursorContent() {
-	terminalPos(0, 1);
+    terminalPos(0, 1);
 }
 void cursorStatusbar() {
-	terminalPos(0, termSize.height - 1);
+    terminalPos(0, termSize.height - 1);
 }
 
 void clearOffsetBar() {
-	screen.cwritefAt(0, 0, "%*s", termSize.width - 1, " ");
+    screen.cwritefAt(0, 0, "%*s", termSize.width - 1, " ");
 }
 /// 
 //TODO: Add "edited" or '*' to end if file edited
 void renderOffset() {
-	import std.conv : octal;
-	
-	version (Trace) {
-		StopWatch sw = StopWatch(AutoStart.yes);
-	}
-	
-	// Setup index formatting
-	int datasize = binaryFormatter.size;
-	__gshared char[4] offsetFmt = " %__";
-	offsetFmt[2] = cast(char)(datasize + '0');
-	offsetFmt[3] = formatters[setting.offsetType].fmtchar;
-	
-	auto outbuf = scoped!OutBuffer();
-	outbuf.reserve(16 + (setting.columns * datasize));
-	outbuf.write("Offset(");
-	outbuf.write(formatters[setting.offsetType].name);
-	outbuf.write(") ");
-	
-	// Add offsets
-	uint i;
-	for (; i < setting.columns; ++i)
-		outbuf.writef(offsetFmt, i);
-	// Fill rest of terminal width if in interactive mode
-	if (termSize.width) {
-		for (i = cast(uint)outbuf.offset; i < termSize.width; ++i)
-			outbuf.put(' ');
-	}
-	
-	version (Trace) {
-		Duration a = sw.peek;
-	}
-	
-	// OutBuffer.toString duplicates it, what a waste!
-	cwriteln(cast(const(char)[])outbuf.toBytes);
-	
-	version (Trace) {
-		Duration b = sw.peek;
-		trace("gen='%s µs' print='%s µs'",
-			a.total!"usecs",
-			(b - a).total!"usecs");
-	}
+    import std.conv : octal;
+    
+    version (Trace) {
+        StopWatch sw = StopWatch(AutoStart.yes);
+    }
+    
+    // Setup index formatting
+    int datasize = binaryFormatter.size;
+    __gshared char[4] offsetFmt = " %__";
+    offsetFmt[2] = cast(char)(datasize + '0');
+    offsetFmt[3] = formatters[setting.offsetType].fmtchar;
+    
+    auto outbuf = scoped!OutBuffer();
+    outbuf.reserve(16 + (setting.columns * datasize));
+    outbuf.write("Offset(");
+    outbuf.write(formatters[setting.offsetType].name);
+    outbuf.write(") ");
+    
+    // Add offsets
+    uint i;
+    for (; i < setting.columns; ++i)
+        outbuf.writef(offsetFmt, i);
+    // Fill rest of terminal width if in interactive mode
+    if (termSize.width) {
+        for (i = cast(uint)outbuf.offset; i < termSize.width; ++i)
+            outbuf.put(' ');
+    }
+    
+    version (Trace) {
+        Duration a = sw.peek;
+    }
+    
+    // OutBuffer.toString duplicates it, what a waste!
+    cwriteln(cast(const(char)[])outbuf.toBytes);
+    
+    version (Trace) {
+        Duration b = sw.peek;
+        trace("gen='%s µs' print='%s µs'",
+            a.total!"usecs",
+            (b - a).total!"usecs");
+    }
 }
 
 /// 
-void renderStatusBar(const(char)[][] items ...) {	
-	version (Trace) {
-		StopWatch sw = StopWatch(AutoStart.yes);
-	}
-	
-	int w = termSize.width;
-	
-	auto outbuf = scoped!OutBuffer();
-	outbuf.reserve(w);
-	outbuf.put(' ');
-	foreach (item; items) {
-		if (outbuf.offset > 1) outbuf.put(" | ");
-		outbuf.put(item);
-		if (outbuf.offset >= w) {
-			
-		}
-	}
-	// Fill rest by space
-	outbuf.data[outbuf.offset..w] = ' ';
-	outbuf.offset = w; // used in .toBytes
-	
-	version (Trace) {
-		Duration a = sw.peek;
-	}
-	
-	cwrite(cast(const(char)[])outbuf.toBytes);
-	
-	version (Trace) {
-		sw.stop;
-		Duration b = sw.peek;
-		trace("gen='%s µs' print='%s µs'",
-			a.total!"usecs",
-			(b - a).total!"usecs");
-	}
+void renderStatusBar(const(char)[][] items ...) {    
+    version (Trace) {
+        StopWatch sw = StopWatch(AutoStart.yes);
+    }
+    
+    int w = termSize.width;
+    
+    auto outbuf = scoped!OutBuffer();
+    outbuf.reserve(w);
+    outbuf.put(' ');
+    foreach (item; items) {
+        if (outbuf.offset > 1) outbuf.put(" | ");
+        outbuf.put(item);
+        if (outbuf.offset >= w) {
+            
+        }
+    }
+    // Fill rest by space
+    outbuf.data[outbuf.offset..w] = ' ';
+    outbuf.offset = w; // used in .toBytes
+    
+    version (Trace) {
+        Duration a = sw.peek;
+    }
+    
+    cwrite(cast(const(char)[])outbuf.toBytes);
+    
+    version (Trace) {
+        sw.stop;
+        Duration b = sw.peek;
+        trace("gen='%s µs' print='%s µs'",
+            a.total!"usecs",
+            (b - a).total!"usecs");
+    }
 }
 
 private
 const(char)[] renderOffset(ulong pos) {
-	__gshared char[1024] buffer = void;
-	size_t indexData = offsetFormatter.offset(buffer.ptr, pos);
-	return buffer[0..indexData];
+    __gshared char[1024] buffer = void;
+    size_t indexData = offsetFormatter.offset(buffer.ptr, pos);
+    return buffer[0..indexData];
 }
 private
 const(char)[] renderData(ubyte data) {
-	__gshared char[1024] buffer = void;
-	size_t indexData = binaryFormatter.data(buffer.ptr, data);
-	return buffer[0..indexData];
+    __gshared char[1024] buffer = void;
+    size_t indexData = binaryFormatter.data(buffer.ptr, data);
+    return buffer[0..indexData];
 }
 private
 const(char)[] renderText(ubyte data) {
-	__gshared char[1] a;
-	const(char)[] r = transcoder.transform(data);
-	if (r)
-		return r;
-	a[0] = setting.defaultChar;
-	return a;
+    __gshared char[1] a;
+    const(char)[] r = transcoder.transform(data);
+    if (r)
+        return r;
+    a[0] = setting.defaultChar;
+    return a;
 }
 
 //int renderContentCursorLine(long position, ubyte[] data, uint cursor)
 
 int renderContentCursor(long position, ubyte[] data, uint cursor) {
-	
-	uint crow = cursor / setting.columns;
-	uint ccol = cursor % setting.columns;
-	
-	version (Trace) {
-		trace("P=%u D=%u R=%u C=%u",
-			position, data.length, crow, ccol);
-		StopWatch sw = StopWatch(AutoStart.yes);
-	}
-	
-	int lines;
-	foreach (chunk; chunks(data, setting.columns)) {
-		if (lines == crow) {
-			cwrite(renderOffset(position));
-			cwrite("  ");
-			uint i;
-			foreach (g; chunk) {
-				if (i++ == ccol) {
-					terminalInvertColor;
-					cwrite(renderData(g));
-					terminalResetColor;
-				} else {
-					cwrite(renderData(g));
-				}
-				cwrite(" ");
-			}
-			cwrite(" ");
-			i = 0;
-			foreach (g; chunk) {
-				if (i++ == ccol) {
-					terminalHighlight;
-					cwrite(renderText(g));
-					terminalResetColor;
-				} else {
-					cwrite(renderText(g));
-				}
-			}
-			cwrite('\n');
-		} else {
-			auto buffer = scoped!OutBuffer();
-			
-			buffer.put(renderOffset(position));
-			buffer.put("  ");
-			foreach (g; chunk) {
-				buffer.put(renderData(g));
-				buffer.put(' ');
-			}
-			buffer.put(" ");
-			foreach (g; chunk) {
-				buffer.put(renderText(g));
-			}
-			cwriteln(cast(const(char)[])buffer.toBytes);
-		}
-		
-		position += setting.columns;
-		if (++lines == maxLine) break;
-	}
-	
-	version (Trace) {
-		sw.stop;
-		trace("time='%s µs'", sw.peek.total!"usecs");
-	}
-	
-	return lines;
+    
+    uint crow = cursor / setting.columns;
+    uint ccol = cursor % setting.columns;
+    
+    version (Trace) {
+        trace("P=%u D=%u R=%u C=%u",
+            position, data.length, crow, ccol);
+        StopWatch sw = StopWatch(AutoStart.yes);
+    }
+    
+    int lines;
+    foreach (chunk; chunks(data, setting.columns)) {
+        if (lines == crow) {
+            cwrite(renderOffset(position));
+            cwrite("  ");
+            uint i;
+            foreach (g; chunk) {
+                if (i++ == ccol) {
+                    terminalInvertColor;
+                    cwrite(renderData(g));
+                    terminalResetColor;
+                } else {
+                    cwrite(renderData(g));
+                }
+                cwrite(" ");
+            }
+            cwrite(" ");
+            i = 0;
+            foreach (g; chunk) {
+                if (i++ == ccol) {
+                    terminalHighlight;
+                    cwrite(renderText(g));
+                    terminalResetColor;
+                } else {
+                    cwrite(renderText(g));
+                }
+            }
+            cwrite('\n');
+        } else {
+            auto buffer = scoped!OutBuffer();
+            
+            buffer.put(renderOffset(position));
+            buffer.put("  ");
+            foreach (g; chunk) {
+                buffer.put(renderData(g));
+                buffer.put(' ');
+            }
+            buffer.put(" ");
+            foreach (g; chunk) {
+                buffer.put(renderText(g));
+            }
+            cwriteln(cast(const(char)[])buffer.toBytes);
+        }
+        
+        position += setting.columns;
+        if (++lines == maxLine) break;
+    }
+    
+    version (Trace) {
+        sw.stop;
+        trace("time='%s µs'", sw.peek.total!"usecs");
+    }
+    
+    return lines;
 }
 
 /// Update display from buffer.
 /// Params:
-/// 	position = Base position.
-/// 	data = Data chunk.
+///     position = Base position.
+///     data = Data chunk.
 /// Returns: Numbers of row written.
 uint renderContent(long position, ubyte[] data) {
-	version (Trace) {
-		trace("position=%u data.len=%u", position, data.length);
-		StopWatch sw = StopWatch(AutoStart.yes);
-	}
-	
-	// print lines in bulk (for entirety of view buffer)
-	uint lines;
-	foreach (chunk; chunks(data, setting.columns)) {
-		cwriteln(renderRow(chunk, position));
-		position += setting.columns;
-		if (++lines == maxLine) break;
-	}
-	
-	version (Trace) {
-		sw.stop;
-		trace("time='%s µs'", sw.peek.total!"usecs");
-	}
-	
-	return lines;
+    version (Trace) {
+        trace("position=%u data.len=%u", position, data.length);
+        StopWatch sw = StopWatch(AutoStart.yes);
+    }
+    
+    // print lines in bulk (for entirety of view buffer)
+    uint lines;
+    foreach (chunk; chunks(data, setting.columns)) {
+        cwriteln(renderRow(chunk, position));
+        position += setting.columns;
+        if (++lines == maxLine) break;
+    }
+    
+    version (Trace) {
+        sw.stop;
+        trace("time='%s µs'", sw.peek.total!"usecs");
+    }
+    
+    return lines;
 }
 void renderEmpty(uint rows) {
-	debug assert(termSize.rows);
-	debug assert(termSize.columns);
-	
-	uint lines = maxLine - rows;
-	
-	version (Trace) {
-		trace("lines=%u rows=%u cols=%u", lines, termSize.rows, termSize.columns);
-		StopWatch sw = StopWatch(AutoStart.yes);
-	}
-	
-	char *p = cast(char*)malloc(termSize.columns);
-	assert(p);
-	int w = termSize.columns;
-	memset(p, ' ', w);
-	
-	//TODO: Output to scoped OutBuffer
-	for (int i; i < lines; ++i)
-		cwriteln(p, w);
-	
-	free(p);
-	
-	version (Trace) {
-		sw.stop;
-		trace("time='%s µs'", sw.peek.total!"usecs");
-	}
+    debug assert(termSize.rows);
+    debug assert(termSize.columns);
+    
+    uint lines = maxLine - rows;
+    
+    version (Trace) {
+        trace("lines=%u rows=%u cols=%u", lines, termSize.rows, termSize.columns);
+        StopWatch sw = StopWatch(AutoStart.yes);
+    }
+    
+    char *p = cast(char*)malloc(termSize.columns);
+    assert(p);
+    int w = termSize.columns;
+    memset(p, ' ', w);
+    
+    //TODO: Output to scoped OutBuffer
+    for (int i; i < lines; ++i)
+        cwriteln(p, w);
+    
+    free(p);
+    
+    version (Trace) {
+        sw.stop;
+        trace("time='%s µs'", sw.peek.total!"usecs");
+    }
 }
 
 //TODO: bool insertPosition?
 //TODO: bool insertData?
 //TODO: bool insertText?
 private char[] renderRow(ubyte[] chunk, long pos) {
-	//TODO: Consider realloc on terminal width
-	//      In screen.initiate
-	enum BUFFER_SIZE = 2048;
-	__gshared char[BUFFER_SIZE] buffer;
-	__gshared char *bufferptr = buffer.ptr;
-	
-	// Insert OFFSET
-	size_t indexData = offsetFormatter.offset(bufferptr, pos);
-	bufferptr[indexData++] = ' '; // index: OFFSET + space
-	
-	const uint dataLen = (setting.columns * (binaryFormatter.size + 1)); /// data row character count
-	size_t indexChar = indexData + dataLen; // Position for character column
-	
-	*(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
-	indexChar += 2; // indexChar: indexData + dataLen + spacer
-	
-	// Format DATA and CHAR
-	// NOTE: Smaller loops could fit in cache...
-	//       And would separate data/text logic
-	foreach (data; chunk) {
-		//TODO: Maybe binary data formatter should include space
-		// Data translation
-		bufferptr[indexData++] = ' ';
-		indexData += binaryFormatter.data(bufferptr + indexData, data);
-		// Character translation
-		immutable(char)[] units = transcoder.transform(data);
-		if (units.length) { // Has utf-8 codepoints
-			foreach (codeunit; units)
-				bufferptr[indexChar++] = codeunit;
-		} else // Invalid character, insert default character
-			bufferptr[indexChar++] = setting.defaultChar;
-	}
-	
-	size_t end = indexChar;
-	
-	// data length < minimum row requirement = in-fill data and text columns
-	if (chunk.length < setting.columns) {
-		// In-fill characters: left = Columns - ChunkLength
-		size_t leftchar = (setting.columns - chunk.length); // Bytes left
-		memset(bufferptr + indexChar, ' ', leftchar);
-		// In-fill binary data: left = CharactersLeft * (DataSize + 1)
-		size_t leftdata = leftchar * (binaryFormatter.size + 1);
-		memset(bufferptr + indexData, ' ', leftdata);
-		
-		end += leftchar;
-	}
-	
-	return buffer[0..end];
+    //TODO: Consider realloc on terminal width
+    //      In screen.initiate
+    enum BUFFER_SIZE = 2048;
+    __gshared char[BUFFER_SIZE] buffer;
+    __gshared char *bufferptr = buffer.ptr;
+    
+    // Insert OFFSET
+    size_t indexData = offsetFormatter.offset(bufferptr, pos);
+    bufferptr[indexData++] = ' '; // index: OFFSET + space
+    
+    const uint dataLen = (setting.columns * (binaryFormatter.size + 1)); /// data row character count
+    size_t indexChar = indexData + dataLen; // Position for character column
+    
+    *(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
+    indexChar += 2; // indexChar: indexData + dataLen + spacer
+    
+    // Format DATA and CHAR
+    // NOTE: Smaller loops could fit in cache...
+    //       And would separate data/text logic
+    foreach (data; chunk) {
+        //TODO: Maybe binary data formatter should include space
+        // Data translation
+        bufferptr[indexData++] = ' ';
+        indexData += binaryFormatter.data(bufferptr + indexData, data);
+        // Character translation
+        immutable(char)[] units = transcoder.transform(data);
+        if (units.length) { // Has utf-8 codepoints
+            foreach (codeunit; units)
+                bufferptr[indexChar++] = codeunit;
+        } else // Invalid character, insert default character
+            bufferptr[indexChar++] = setting.defaultChar;
+    }
+    
+    size_t end = indexChar;
+    
+    // data length < minimum row requirement = in-fill data and text columns
+    if (chunk.length < setting.columns) {
+        // In-fill characters: left = Columns - ChunkLength
+        size_t leftchar = (setting.columns - chunk.length); // Bytes left
+        memset(bufferptr + indexChar, ' ', leftchar);
+        // In-fill binary data: left = CharactersLeft * (DataSize + 1)
+        size_t leftdata = leftchar * (binaryFormatter.size + 1);
+        memset(bufferptr + indexData, ' ', leftdata);
+        
+        end += leftchar;
+    }
+    
+    return buffer[0..end];
 }
 
 //TODO: More renderRow unittests
 //TODO: Maybe split rendering components?
 unittest {
-	//	 Offset(hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-	assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0) ==
-		"          0  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
-	assert(renderRow([ 0 ], 0x10) ==
-		"         10  00                                               .               ");
+    //     Offset(hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+    assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0) ==
+        "          0  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
+    assert(renderRow([ 0 ], 0x10) ==
+        "         10  00                                               .               ");
 }
 
 // !SECTION
@@ -654,44 +654,44 @@ unittest {
 // SECTION Console Write functions
 
 size_t cwrite(char c) {
-	return terminalOutput(&c, 1);
+    return terminalOutput(&c, 1);
 }
 size_t cwrite(const(char)[] _str) {
-	return terminalOutput(_str.ptr, _str.length);
+    return terminalOutput(_str.ptr, _str.length);
 }
 size_t cwriteln(char *_str, size_t size) {
-	return terminalOutput(_str, size);
+    return terminalOutput(_str, size);
 }
 size_t cwriteln(const(char)[] _str) {
-	return cwrite(_str) + cwrite('\n');
+    return cwrite(_str) + cwrite('\n');
 }
 size_t cwritef(A...)(const(char)[] fmt, A args) {
-	import std.format : sformat;
-	char[256] buf = void;
-	return cwrite(sformat(buf, fmt, args));
+    import std.format : sformat;
+    char[256] buf = void;
+    return cwrite(sformat(buf, fmt, args));
 }
 size_t cwritefln(A...)(const(char)[] fmt, A args) {
-	return cwritef(fmt, args) + cwrite('\n');
+    return cwritef(fmt, args) + cwrite('\n');
 }
 size_t cwriteAt(int x, int y, char c) {
-	terminalPos(x, y);
-	return cwrite(c);
+    terminalPos(x, y);
+    return cwrite(c);
 }
 size_t cwriteAt(int x, int y, const(char)[] str) {
-	terminalPos(x, y);
-	return cwrite(str);
+    terminalPos(x, y);
+    return cwrite(str);
 }
 size_t cwritelnAt(int x, int y, const(char)[] str) {
-	terminalPos(x, y);
-	return cwriteln(str);
+    terminalPos(x, y);
+    return cwriteln(str);
 }
 size_t cwritefAt(A...)(int x, int y, const(char)[] fmt, A args) {
-	terminalPos(x, y);
-	return cwritef(fmt, args);
+    terminalPos(x, y);
+    return cwritef(fmt, args);
 }
 size_t cwriteflnAt(A...)(int x, int y, const(char)[] fmt, A args) {
-	terminalPos(x, y);
-	return cwritefln(fmt, args);
+    terminalPos(x, y);
+    return cwritefln(fmt, args);
 }
 
 // !SECTION

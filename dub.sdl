@@ -10,13 +10,13 @@ preBuildCommands "ldmd2 -run setup.d version" platform="ldc"
 preBuildCommands "gdmd -run setup.d version" platform="gdc"
 
 configuration "default" {
-	targetType "executable"
-	mainSourceFile "src/main.d"
+    targetType "executable"
+    mainSourceFile "src/main.d"
 }
 configuration "trace" {
-	targetType "executable"
-	versions "Trace"
-	mainSourceFile "src/main.d"
+    targetType "executable"
+    versions "Trace"
+    mainSourceFile "src/main.d"
 }
 
 #
@@ -24,8 +24,8 @@ configuration "trace" {
 #
 
 buildType "debugv" {
-	dflags "-vgc" "-vtls" platform="dmd"
-	dflags "--vgc" "--vtls" platform="ldc"
+    dflags "-vgc" "-vtls" platform="dmd"
+    dflags "--vgc" "--vtls" platform="ldc"
 }
 
 
@@ -34,7 +34,7 @@ buildType "debugv" {
 #
 
 buildType "input" {
-	versions "TestInput"
-	buildOptions "unittests"
-	sourceFiles "tests/input.d"
+    versions "TestInput"
+    buildOptions "unittests"
+    sourceFiles "tests/input.d"
 }
