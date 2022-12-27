@@ -105,7 +105,8 @@ struct Edit {
     // or ubyte[]?
 }
 
-private union Source {
+private union Source
+{
     OSFile       osfile;
     OSMmFile     mmfile;
     File         stream;
@@ -131,14 +132,14 @@ __gshared EditMode editMode;    /// Current editing mode
 
 string editModeString(EditMode mode = editMode)
 {
-    final switch (mode) with (EditMode)
-{
-    case overwrite:    return "ov";
+    final switch (mode) with (EditMode) {
+    case overwrite: return "ov";
     case insert:    return "in";
-    case readOnly:    return "rd";
-    case view:    return "vw";
+    case readOnly:  return "rd";
+    case view:      return "vw";
     }
 }
+deprecated
 bool editModeReadOnly(EditMode mode)
 {
     return mode >= EditMode.readOnly;
@@ -157,8 +158,7 @@ __gshared ubyte[] viewBuffer;    /// ?
 
 bool eof()
 {
-    final switch (fileMode)
-{
+    final switch (fileMode) {
     case FileMode.file:    return source.osfile.eof;
     case FileMode.mmfile:    return source.mmfile.eof;
     case FileMode.stream:    return source.stream.eof;
@@ -168,8 +168,7 @@ bool eof()
 
 bool err()
 {
-    final switch (fileMode)
-{
+    final switch (fileMode) {
     case FileMode.file:    return source.osfile.err;
     case FileMode.mmfile:    return source.mmfile.err;
     case FileMode.stream:    return source.stream.error;
@@ -188,7 +187,7 @@ int openFile(string path)
 {
     version (Trace) trace("path='%s'", path);
     
-    if (source.osfile.open(path, editModeReadOnly(editMode)))
+    if (source.osfile.open(path, OFlags.read | OFlags.exists))
         return errorSetOs;
     
     fileMode = FileMode.file;
@@ -201,10 +200,12 @@ int openMmfile(string path)
 {
     version (Trace) trace("path='%s'", path);
     
-    try {
-        source.mmfile = new OSMmFile(path, editModeReadOnly(editMode));
-    } catch (Exception ex)
-{
+    try
+    {
+        source.mmfile = new OSMmFile(path, MMFlags.read);
+    }
+    catch (Exception ex)
+    {
         return errorSet(ex);
     }
     
@@ -243,8 +244,7 @@ void setBuffer(size_t size)
 {
     readSize = size;
     
-    switch (fileMode) with (FileMode)
-{
+    switch (fileMode) with (FileMode) {
     case file, stream:
         readBuffer = new ubyte[size];
         return;
@@ -262,9 +262,8 @@ long seek(long pos)
 {
     version (Trace) trace("mode=%s", fileMode);
     position = pos;
-    final switch (fileMode) with (FileMode)
-{
-    case file:    return source.osfile.seek(Seek.start, pos);
+    final switch (fileMode) with (FileMode) {
+    case file:      return source.osfile.seek(Seek.start, pos);
     case mmfile:    return source.mmfile.seek(pos);
     case memory:    return source.memory.seek(pos);
     case stream:
@@ -276,9 +275,8 @@ long seek(long pos)
 long tell()
 {
     version (Trace) trace("mode=%s", fileMode);
-    final switch (fileMode) with (FileMode)
-{
-    case file:    return source.osfile.tell;
+    final switch (fileMode) with (FileMode) {
+    case file:      return source.osfile.tell;
     case mmfile:    return source.mmfile.tell;
     case stream:    return source.stream.tell;
     case memory:    return source.memory.tell;
@@ -294,8 +292,7 @@ long tell()
 ubyte[] read()
 {
     version (Trace) trace("mode=%s", fileMode);
-    final switch (fileMode) with (FileMode)
-{
+    final switch (fileMode) with (FileMode) {
     case file:    return source.osfile.read(readBuffer);
     case mmfile:    return source.mmfile.read(readSize);
     case stream:    return source.stream.rawRead(readBuffer);
@@ -305,8 +302,7 @@ ubyte[] read()
 ubyte[] read(ubyte[] buffer)
 {
     version (Trace) trace("mode=%s", fileMode);
-    final switch (fileMode) with (FileMode)
-{
+    final switch (fileMode) with (FileMode) {
     case file:    return source.osfile.read(buffer);
     case mmfile:    return source.mmfile.read(buffer.length);
     case stream:    return source.stream.rawRead(buffer);
@@ -433,7 +429,7 @@ void cursorBound()
     bool nok = cursorTell > fsize;
     
     if (nok)
-{
+    {
         int l = cast(int)(cursorTell - fsize);
         cursor.position -= l;
         return;
@@ -461,21 +457,21 @@ bool cursorAbsEnd()
 }
 /// Move cursor at the start of the row.
 /// Returns: True if the view moved.
-bool cursorHome()
-{ // put cursor at the start of row
+bool cursorHome() // put cursor at the start of row
+{
     cursor.position = cursor.position - (cursor.position % setting.columns);
     cursor.nibble = 0;
     return false;
 }
 /// Move cursor at the end of the row.
 /// Returns: True if the view moved.
-bool cursorEnd()
-{ // put cursor at the end of the row
+bool cursorEnd() // put cursor at the end of the row
+{
     cursor.position =
         (cursor.position - (cursor.position % setting.columns))
         + setting.columns - 1;
     if (cursorTell > fileSize)
-{
+    {
         uint rem = cast(uint)(fileSize % setting.columns);
         cursor.position = (cursor.position + setting.columns - rem);
     }
@@ -487,7 +483,7 @@ bool cursorEnd()
 bool cursorLeft()
 {
     if (cursor.position == 0)
-{
+    {
         if (position == 0)
             return false;
         cursorEnd;
@@ -506,7 +502,7 @@ bool cursorRight()
         return false;
     
     if (cursor.position == readSize - 1)
-{
+    {
         cursorHome;
         return viewDown;
     }
@@ -520,7 +516,7 @@ bool cursorRight()
 bool cursorUp()
 {
     if (cursor.position < setting.columns)
-{
+    {
         return viewUp;
     }
     
@@ -550,7 +546,7 @@ bool cursorDown()
         return viewDown;
     
     if (acpos + setting.columns > fsize)
-{
+    {
         uint rem = cast(uint)(fsize % setting.columns);
         cursor.position = cast(uint)(readSize - setting.columns + rem);
         //cursor.position = cast(uint)((fsize + cursor.position) - fsize);
@@ -595,10 +591,9 @@ void cursorGoto(long m)
 
 long refreshFileSize()
 {
-    final switch (fileMode) with (FileMode)
-{
-    case file:    fileSize = source.osfile.size;    break;
-    case mmfile:    fileSize = source.mmfile.length;    break;
+    final switch (fileMode) with (FileMode) {
+    case file:      fileSize = source.osfile.size;    break;
+    case mmfile:    fileSize = source.mmfile.length;  break;
     case memory:    fileSize = source.memory.size;    break;
     case stream:    fileSize = source.stream.size;    break;
     }
@@ -634,7 +629,7 @@ int slurp(long skip = 0, long length = 0)
     FILE *_file = source.stream.getFP;
     
     if (skip)
-{
+    {
         do {
             size_t bsize = cast(size_t)min(READ_SIZE, skip);
             skip -= fread(b, 1, bsize, _file);

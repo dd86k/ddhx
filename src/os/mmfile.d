@@ -8,18 +8,28 @@ module os.mmfile;
 import std.stdio : File;
 import std.mmfile : MmFile;
 
+enum MMFlags
+{
+    exists  = 1,        /// File must exist.
+    read    = 1 << 1,   /// Read access.
+    write   = 1 << 2,   /// Write access.
+}
+
 // temp
-public class OSMmFile : MmFile {
+public class OSMmFile : MmFile
+{
     private void *address;
-    this(string path, bool readOnly)
+    
+    this(string path, int flags)
     {
         super(path,
-            readOnly ?
-                MmFile.Mode.read :
-                MmFile.Mode.readWriteNew,
+            flags & MMFlags.read ? MmFile.Mode.read :
+                flags & MMFlags.exists ?
+                    MmFile.Mode.readWrite : MmFile.Mode.readWriteNew,
             0,
             address);
     }
+    
     bool eof, err;
     private long position;
     long seek(long pos) // only do seek_set for now

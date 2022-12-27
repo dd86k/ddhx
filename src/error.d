@@ -58,7 +58,9 @@ private struct last_t {
 private __gshared last_t last;
 __gshared int errorcode; /// Last error code.
 
-private
+/// Get system error message from an error code.
+/// Params: code = System error code.
+/// Returns: Error message.
 const(char)[] systemMessage(int code)
 {
     import std.string : fromStringz;
@@ -87,16 +89,13 @@ const(char)[] systemMessage(int code)
             0,
             null);
         
-        if (strerror)
-        {
-            if (strerror[r - 1] == '\n') --r;
-            if (strerror[r - 1] == '\r') --r;
-            string msg = strerror[0..r].idup;
-            LocalFree(strerror);
-            return msg;
-        }
+        assert(strerror, "FormatMessageA failed");
         
-        return "systemMessage failed";
+        if (strerror[r - 1] == '\n') --r;
+        if (strerror[r - 1] == '\r') --r;
+        string msg = strerror[0..r].idup;
+        LocalFree(strerror);
+        return msg;
     } else {
         import core.stdc.string : strerror;
         

@@ -1,20 +1,32 @@
 module reverser;
 
+import std.stdio;
 import std.string : toStringz;
 import core.stdc.stdio : FILE, fopen, fwrite, ferror, perror;
 import editor;
+import os.file;
+import error;
 
 int start(string outpath)
 {
+    // editor: hex input
+    // outfile: binary output
     enum BUFSZ = 4096;
     ubyte[BUFSZ] data = void;
     
-    outfile = fopen(outpath.toStringz, "wb");
+    OSFile binfd = void;
+    if (binfd.open(outpath, OFlags.write))
+    {
+        stderr.writefln("error: %s", systemMessage(binfd.syscode()));
+        return 2;
+    }
+    
+    /*outfile = fopen(outpath.toStringz, "wb");
     if (ferror(outfile))
     {
         perror("fopen");
         return 2;
-    }
+    }*/
     
 L_READ:
     ubyte[] r = editor.read(data);
@@ -28,21 +40,21 @@ L_READ:
     {
         if (b >= '0' && b <= '9')
         {
-            outnibble(b - 0x30);
+            outnibble(binfd, b - 0x30);
         }
         else if (b >= 'a' && b <= 'f')
         {
-            outnibble(b - 0x57);
+            outnibble(binfd, b - 0x57);
         }
         else if (b >= 'A' && b <= 'F')
         {
-            outnibble(b - 0x37);
+            outnibble(binfd, b - 0x37);
         }
     }
     
     if (editor.eof)
     {
-        outfinish;
+        outfinish(binfd);
         return 0;
     }
     
@@ -51,11 +63,10 @@ L_READ:
 
 private:
 
-__gshared FILE *outfile;
 __gshared bool  low;
 __gshared ubyte data;
 
-void outnibble(int nibble)
+void outnibble(ref OSFile file, int nibble)
 {
     if (low == false)
     {
@@ -66,12 +77,12 @@ void outnibble(int nibble)
     
     low = false;
     ubyte b = cast(ubyte)(data | nibble);
-    fwrite(&b, 1, 1, outfile);
+    file.write(&b, 1);
 }
 
-void outfinish()
+void outfinish(ref OSFile file)
 {
     if (low == false) return;
     
-    fwrite(&data, 1, 1, outfile);
+    file.write(&data, 1);
 }

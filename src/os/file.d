@@ -15,6 +15,7 @@ version (Windows)
         DWORD, HANDLE, LARGE_INTEGER, FALSE, TRUE,
         GENERIC_ALL, GENERIC_READ, GENERIC_WRITE;
     import core.sys.windows.winbase :
+        GetLastError,
         CreateFileA, CreateFileW,
         SetFilePointerEx, GetFileSizeEx,
         ReadFile, ReadFileEx,
@@ -28,6 +29,8 @@ version (Windows)
     private alias SEEK_SET = FILE_BEGIN;
     private alias SEEK_CUR = FILE_CURRENT;
     private alias SEEK_END = FILE_END;
+    
+    private enum OFLAG_OPENONLY = OPEN_EXISTING;
 }
 else version (Posix)
 {
@@ -78,10 +81,20 @@ import std.string : toStringz;
 import std.utf : toUTF16z;
 
 /// File seek origin.
-enum Seek {
+enum Seek
+{
     start    = SEEK_SET,    /// Seek since start of file.
     current    = SEEK_CUR,    /// Seek since current position in file.
     end    = SEEK_END    /// Seek since end of file.
+}
+
+/// Open file flags
+enum OFlags
+{
+    exists  = 1,        /// File must exist.
+    read    = 1 << 1,   /// Read access.
+    write   = 1 << 2,   /// Write access.
+    share   = 1 << 5,   /// [TODO] Share file with read access to other programs.
 }
 
 //TODO: Set file size (to extend or truncate file, allocate size)
@@ -100,33 +113,50 @@ struct OSFile {
     {
         err = false;
     }
+    int syscode()
+    {
+        version (Windows)
+            return GetLastError();
+        else
+            return errno;
+    }
     
     //TODO: Share file.
     //      By default, at least on Windows, files aren't shared. Enabling
     //      sharing would allow refreshing view (manually) when a program
     //      writes to file.
-    bool open(string path, bool readOnly)
+    bool open(string path, int flags = OFlags.read | OFlags.write)
     {
         version (Windows)
         {
+            uint dwAccess;
+            uint dwCreation;
+            
+            if (flags & OFlags.exists)  dwCreation |= OPEN_EXISTING;
+            else                        dwCreation |= OPEN_ALWAYS;
+            if (flags & OFlags.read)    dwAccess |= GENERIC_READ;
+            if (flags & OFlags.write)   dwAccess |= GENERIC_WRITE;
+            
             // NOTE: toUTF16z/tempCStringW
             //       Phobos internally uses tempCStringW from std.internal
             //       but I doubt it's meant for us to use so...
             //       Legacy baggage?
             handle = CreateFileW(
-                path.toUTF16z,    // lpFileName
-                readOnly ?    // dwDesiredAccess
-                    GENERIC_READ :
-                    GENERIC_READ | GENERIC_WRITE,
-                0,    // dwShareMode
-                null,    // lpSecurityAttributes
-                OPEN_EXISTING,    // dwCreationDisposition
-                0,    // dwFlagsAndAttributes
-                null,    // hTemplateFile
+                path.toUTF16z,  // lpFileName
+                dwAccess,       // dwDesiredAccess
+                0,              // dwShareMode
+                null,           // lpSecurityAttributes
+                dwCreation,     // dwCreationDisposition
+                0,              // dwFlagsAndAttributes
+                null,           // hTemplateFile
             );
             return err = handle == INVALID_HANDLE_VALUE;
-        } else version (Posix)
-{
+        }
+        else version (Posix)
+        {
+            int oflags;
+            if (flags & OFlags.exists) oflags |= O_EXCL;
+            //O_CREAT|O_EXCL
             handle = .open(path.toStringz, readOnly ? O_RDONLY : O_RDWR);
             return err = handle == -1;
         }
