@@ -94,6 +94,7 @@ enum OFlags
     exists  = 1,        /// File must exist.
     read    = 1 << 1,   /// Read access.
     write   = 1 << 2,   /// Write access.
+    readWrite = read | write,   /// Read and write access.
     share   = 1 << 5,   /// [TODO] Share file with read access to other programs.
 }
 
@@ -125,7 +126,7 @@ struct OSFile {
     //      By default, at least on Windows, files aren't shared. Enabling
     //      sharing would allow refreshing view (manually) when a program
     //      writes to file.
-    bool open(string path, int flags = OFlags.read | OFlags.write)
+    bool open(string path, int flags = OFlags.readWrite)
     {
         version (Windows)
         {
@@ -155,9 +156,14 @@ struct OSFile {
         else version (Posix)
         {
             int oflags;
-            if (flags & OFlags.exists) oflags |= O_EXCL;
-            //O_CREAT|O_EXCL
-            handle = .open(path.toStringz, readOnly ? O_RDONLY : O_RDWR);
+            if (!(flags & OFlags.exists)) oflags |= O_CREAT;
+            if ((flags & OFlags.readWrite) == OFlags.readWrite)
+                oflags |= O_RDWR;
+            else if (flags & OFlags.write)
+                oflags |= O_WRONLY;
+            else if (flags & OFlags.read)
+                oflags |= O_RDONLY;
+            handle = .open(path.toStringz, oflags);
             return err = handle == -1;
         }
     }
