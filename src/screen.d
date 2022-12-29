@@ -10,8 +10,9 @@ import os.terminal, os.file;
 import core.stdc.string : memset;
 import core.stdc.stdlib : malloc, free;
 import std.outbuffer : OutBuffer;
-import std.typecons : scoped;
 
+//TODO: Consider renaming module to render
+//      And rename all functions to remove "render" prefix
 //TODO: Data viewer groups
 //      hex: h8, h16, h32, h64
 //      signed decimal: i8, i16, i32, i64
@@ -28,7 +29,14 @@ import std.typecons : scoped;
 //      or be able to specify/toggle seperate regardless of column length.
 //      Probably useful for dump app.
 
-private struct NumberFormatter {
+private
+{
+    /// Length of offset space taken on screen
+    enum OFFSET_SPACE = 11; // Not currently a setting, but should be
+}
+
+private struct NumberFormatter
+{
     string name;    /// Short offset name
     char fmtchar;    /// Format character for printf-like functions
     ubyte size;    /// Size for formatted byte (excluding space)
@@ -88,15 +96,6 @@ void setOffsetFormat(NumberType type)
 void setBinaryFormat(NumberType type)
 {
     binaryFormatter = formatters[type];
-}
-
-/// Update cursor position on the terminal screen
-void cursor(uint pos, uint nibble)
-{
-    uint y = pos / setting.columns;
-    uint x = pos % setting.columns;
-    int  d = binaryFormatter.size + 1;
-    terminalPos(13 + (x * d) + nibble, 1 + y);
 }
 
 /// Clear entire terminal screen
@@ -411,7 +410,7 @@ void renderOffset()
     offsetFmt[2] = cast(char)(datasize + '0');
     offsetFmt[3] = formatters[setting.offsetType].fmtchar;
     
-    auto outbuf = scoped!OutBuffer();
+    scope outbuf = new OutBuffer();
     outbuf.reserve(16 + (setting.columns * datasize));
     outbuf.write("Offset(");
     outbuf.write(formatters[setting.offsetType].name);
@@ -454,22 +453,30 @@ void renderStatusBar(const(char)[][] items ...)
     }
     
     int w = termSize.width;
+    bool done;
     
-    auto outbuf = scoped!OutBuffer();
+    scope outbuf = new OutBuffer();
     outbuf.reserve(w);
     outbuf.put(' ');
     foreach (item; items)
     {
         if (outbuf.offset > 1) outbuf.put(" | ");
-        outbuf.put(item);
-        if (outbuf.offset >= w)
+        if (outbuf.offset + item.length >= w)
         {
-            
+            size_t r = outbuf.offset + item.length - w;
+            outbuf.put(item[0..r]);
+            done = true;
+            break;
         }
+        outbuf.put(item);
     }
-    // Fill rest by space
-    outbuf.data[outbuf.offset..w] = ' ';
-    outbuf.offset = w; // used in .toBytes
+    
+    if (done == false)
+    {
+        // Fill rest by space
+        outbuf.data[outbuf.offset..w] = ' ';
+        outbuf.offset = w; // used in .toBytes
+    }
     
     version (Trace)
     {
@@ -488,38 +495,28 @@ void renderStatusBar(const(char)[][] items ...)
     }
 }
 
-private
-const(char)[] renderOffset(ulong pos)
-{
-    __gshared char[1024] buffer = void;
-    size_t indexData = offsetFormatter.offset(buffer.ptr, pos);
-    return buffer[0..indexData];
-}
-private
-const(char)[] renderData(ubyte data)
-{
-    __gshared char[1024] buffer = void;
-    size_t indexData = binaryFormatter.data(buffer.ptr, data);
-    return buffer[0..indexData];
-}
-private
-const(char)[] renderText(ubyte data)
-{
-    __gshared char[1] a;
-    const(char)[] r = transcoder.transform(data);
-    if (r)
-        return r;
-    a[0] = setting.defaultChar;
-    return a;
-}
+//int outputLine(long base, ubyte[] data, int row, int cursor = -1)
 
-//int renderContentCursorLine(long position, ubyte[] data, uint cursor)
-
-int renderContentCursor(long position, ubyte[] data, uint cursor)
+/// Render multiple lines on screen with optional cursor.
+/// Params:
+///     base = Offset base.
+///     data = data to render.
+///     cursor = Position of cursor.
+/// Returns: Number of rows printed. Negative numbers indicate error.
+int output(long base, ubyte[] data, int cursor = -1)
 {
+    uint crow = void, ccol = void;
     
-    uint crow = cursor / setting.columns;
-    uint ccol = cursor % setting.columns;
+    if (data.length == 0)
+        return 0;
+    
+    if (cursor < 0)
+        crow = ccol = -1;
+    else
+    {
+        crow = cursor / setting.columns;
+        ccol = cursor % setting.columns;
+    }
     
     version (Trace)
     {
@@ -528,65 +525,66 @@ int renderContentCursor(long position, ubyte[] data, uint cursor)
         StopWatch sw = StopWatch(AutoStart.yes);
     }
     
+    size_t buffersz = // minimum anyway
+        OFFSET_SPACE + 2 + // offset + spacer
+        ((binaryFormatter.size + 1) * setting.columns) + // binary + spacer * cols
+        (1 + (setting.columns * 3)); // spacer + text (utf-8)
+    
+    char *buffer = cast(char*)malloc(buffersz);
+    if (buffer == null) return -1;
+    
     int lines;
     foreach (chunk; chunks(data, setting.columns))
     {
-        if (lines == crow)
-        {
-            cwrite(renderOffset(position));
-            cwrite("  ");
-            uint i;
-            foreach (g; chunk)
-            {
-                if (i++ == ccol)
-                {
-                    terminalInvertColor;
-                    cwrite(renderData(g));
-                    terminalResetColor;
-                }
-                else
-                {
-                    cwrite(renderData(g));
-                }
-                cwrite(" ");
-            }
-            cwrite(" ");
-            i = 0;
-            foreach (g; chunk)
-            {
-                if (i++ == ccol)
-                {
-                    terminalHighlight;
-                    cwrite(renderText(g));
-                    terminalResetColor;
-                }
-                else
-                {
-                    cwrite(renderText(g));
-                }
-            }
-            cwrite('\n');
-        } else {
-            auto buffer = scoped!OutBuffer();
-            
-            buffer.put(renderOffset(position));
-            buffer.put("  ");
-            foreach (g; chunk)
-            {
-                buffer.put(renderData(g));
-                buffer.put(' ');
-            }
-            buffer.put(" ");
-            foreach (g; chunk)
-            {
-                buffer.put(renderText(g));
-            }
-            cwriteln(cast(const(char)[])buffer.toBytes);
-        }
+        const bool cur_row = lines == crow;
         
-        position += setting.columns;
-        if (++lines == maxLine) break;
+        Row row = makerow(buffer, buffersz, chunk, base, ccol);
+        
+        if (cur_row)
+        {
+            version (Trace) trace("row.length=%u cbi=%u cbl=%u cti=%u ctl=%u bl=%u tl=%u",
+                row.result.length,
+                row.cursorBinaryIndex,
+                row.cursorBinaryLength,
+                row.cursorTextIndex,
+                row.cursorTextLength,
+                row.binaryLength,
+                row.textLength);
+            
+            // between binary and text cursors
+            size_t distance = row.cursorTextIndex -
+                row.cursorBinaryIndex -
+                row.cursorBinaryLength;
+            
+            char *p = buffer;
+            // offset + pre-cursor binary
+            p += cwrite(p, row.cursorBinaryIndex);
+            // binary cursor
+            terminalInvertColor;
+            p += cwrite(p, row.cursorBinaryLength);
+            terminalResetColor;
+            // post-cursor binary + pre-cursor text (minus spacer)
+            p += cwrite(p, distance);
+            // text cursor
+            terminalHighlight;
+            p += cwrite(p, row.cursorTextLength);
+            terminalResetColor;
+            // post-cursor text
+            size_t rem = row.result.length - (p - buffer);
+            p += cwrite(p, rem);
+            
+            version (Trace) trace("d=%u r=%u l=%u", distance, rem, p - buffer);
+        }
+        else
+            with (row) cwrite(result.ptr, result.length);
+        
+        cwrite('\n');
+        
+        ++lines;
+        base += setting.columns;
     }
+    
+    free(buffer);
     
     version (Trace)
     {
@@ -597,36 +595,6 @@ int renderContentCursor(long position, ubyte[] data, uint cursor)
     return lines;
 }
 
-/// Update display from buffer.
-/// Params:
-///     position = Base position.
-///     data = Data chunk.
-/// Returns: Numbers of row written.
-uint renderContent(long position, ubyte[] data)
-{
-    version (Trace)
-    {
-        trace("position=%u data.len=%u", position, data.length);
-        StopWatch sw = StopWatch(AutoStart.yes);
-    }
-    
-    // print lines in bulk (for entirety of view buffer)
-    uint lines;
-    foreach (chunk; chunks(data, setting.columns))
-    {
-        cwriteln(renderRow(chunk, position));
-        position += setting.columns;
-        if (++lines == maxLine) break;
-    }
-    
-    version (Trace)
-    {
-        sw.stop;
-        trace("time='%s µs'", sw.peek.total!"usecs");
-    }
-    
-    return lines;
-}
 void renderEmpty(uint rows)
 {
     debug assert(termSize.rows);
@@ -641,13 +609,13 @@ void renderEmpty(uint rows)
     }
     
     char *p = cast(char*)malloc(termSize.columns);
-    assert(p);
+    assert(p); //TODO: Soft asserts
     int w = termSize.columns;
     memset(p, ' ', w);
     
     //TODO: Output to scoped OutBuffer
     for (int i; i < lines; ++i)
-        cwriteln(p, w);
+        cwrite(p, w);
     
     free(p);
     
@@ -658,45 +626,73 @@ void renderEmpty(uint rows)
     }
 }
 
-//TODO: bool insertPosition?
-//TODO: bool insertData?
-//TODO: bool insertText?
-private char[] renderRow(ubyte[] chunk, long pos)
+private
+struct Row
 {
-    //TODO: Consider realloc on terminal width
-    //      In screen.initiate
-    enum BUFFER_SIZE = 2048;
-    __gshared char[BUFFER_SIZE] buffer;
-    __gshared char *bufferptr = buffer.ptr;
+    char[] result;
+    
+    size_t cursorBinaryIndex;
+    size_t cursorBinaryLength;
+    size_t cursorTextIndex;
+    size_t cursorTextLength;
+    
+    size_t binaryLength;
+    size_t textLength;
+}
+
+private
+Row makerow(char *buffer, size_t bufferlen,
+    ubyte[] chunk, long pos,
+    int cursor_col)
+{
+    Row row = void;
     
     // Insert OFFSET
-    size_t indexData = offsetFormatter.offset(bufferptr, pos);
-    bufferptr[indexData++] = ' '; // index: OFFSET + space
+    size_t indexData = offsetFormatter.offset(buffer, pos);
+    buffer[indexData++] = ' '; // index: OFFSET + space
     
     const uint dataLen = (setting.columns * (binaryFormatter.size + 1)); /// data row character count
     size_t indexChar = indexData + dataLen; // Position for character column
     
-    *(cast(ushort*)(bufferptr + indexChar)) = 0x2020; // DATA-CHAR spacer
+    *(cast(ushort*)(buffer + indexChar)) = 0x2020; // DATA-CHAR spacer
     indexChar += 2; // indexChar: indexData + dataLen + spacer
     
     // Format DATA and CHAR
     // NOTE: Smaller loops could fit in cache...
     //       And would separate data/text logic
+    size_t bi0 = indexData, ti0 = indexChar;
+    int currentCol;
     foreach (data; chunk)
     {
-        //TODO: Maybe binary data formatter should include space
+        const bool curhit = currentCol == cursor_col; // cursor hit column
+        //TODO: Maybe binary data formatter should include space?
         // Data translation
-        bufferptr[indexData++] = ' ';
-        indexData += binaryFormatter.data(bufferptr + indexData, data);
+        buffer[indexData++] = ' ';
+        if (curhit)
+        {
+            row.cursorBinaryIndex  = indexData;
+            row.cursorBinaryLength = binaryFormatter.size;
+        }
+        indexData += binaryFormatter.data(buffer + indexData, data);
         // Character translation
         immutable(char)[] units = transcoder.transform(data);
+        if (curhit)
+        {
+            row.cursorTextIndex = indexChar;
+            row.cursorTextLength = units.length ? units.length : 1;
+        }
         if (units.length) // Has utf-8 codepoints
         {
             foreach (codeunit; units)
-                bufferptr[indexChar++] = codeunit;
+                buffer[indexChar++] = codeunit;
         } else // Invalid character, insert default character
-            bufferptr[indexChar++] = setting.defaultChar;
+            buffer[indexChar++] = setting.defaultChar;
+        
+        ++currentCol;
     }
+    
+    row.binaryLength = dataLen - bi0;
+    row.textLength   = indexChar - ti0;
     
     size_t end = indexChar;
     
@@ -705,25 +701,19 @@ private char[] renderRow(ubyte[] chunk, long pos)
     {
         // In-fill characters: left = Columns - ChunkLength
         size_t leftchar = (setting.columns - chunk.length); // Bytes left
-        memset(bufferptr + indexChar, ' ', leftchar);
+        memset(buffer + indexChar, ' ', leftchar);
+        row.textLength += leftchar;
         // In-fill binary data: left = CharactersLeft * (DataSize + 1)
         size_t leftdata = leftchar * (binaryFormatter.size + 1);
-        memset(bufferptr + indexData, ' ', leftdata);
+        memset(buffer + indexData, ' ', leftdata);
+        row.binaryLength += leftdata;
         
         end += leftchar;
     }
     
-    return buffer[0..end];
-}
-
-//TODO: More renderRow unittests
-//TODO: Maybe split rendering components?
-unittest {
-    //     Offset(hex)   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-    assert(renderRow([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf ], 0) ==
-        "          0  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f  ................");
-    assert(renderRow([ 0 ], 0x10) ==
-        "         10  00                                               .               ");
+    row.result = buffer[0..end];
+    
+    return row;
 }
 
 // !SECTION
@@ -738,7 +728,7 @@ size_t cwrite(const(char)[] _str)
 {
     return terminalOutput(_str.ptr, _str.length);
 }
-size_t cwriteln(char *_str, size_t size)
+size_t cwrite(char *_str, size_t size)
 {
     return terminalOutput(_str, size);
 }

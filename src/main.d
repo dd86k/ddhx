@@ -33,22 +33,22 @@ SECRET";
 // CLI command options
 
 immutable string OPT_COLUMNS    = "c|"~COMMAND_COLUMNS;
-immutable string OPT_INSERT    = COMMAND_INSERT;
-immutable string OPT_OVERWRITE    = COMMAND_OVERWRITE;
-immutable string OPT_READONLY    = "R|"~COMMAND_READONLY;
-immutable string OPT_VIEW    = COMMAND_VIEW;
-immutable string OPT_SI    = COMMAND_SI;
-immutable string OPT_IEC    = COMMAND_IEC;
-immutable string OPT_OFFSET    = "o|"~COMMAND_OFFSET;
-immutable string OPT_DATA    = "d|"~COMMAND_DATA;
-immutable string OPT_FILLER    = "F|"~COMMAND_FILLER;
+immutable string OPT_INSERT     = COMMAND_INSERT;
+immutable string OPT_OVERWRITE  = COMMAND_OVERWRITE;
+immutable string OPT_READONLY   = "R|"~COMMAND_READONLY;
+immutable string OPT_VIEW       = COMMAND_VIEW;
+immutable string OPT_SI         = COMMAND_SI;
+immutable string OPT_IEC        = COMMAND_IEC;
+immutable string OPT_OFFSET     = "o|"~COMMAND_OFFSET;
+immutable string OPT_DATA       = "d|"~COMMAND_DATA;
+immutable string OPT_FILLER     = "F|"~COMMAND_FILLER;
 immutable string OPT_CHARSET    = "C|"~COMMAND_CHARSET;
 
 // CLI common options
 
 immutable string OPT_VERSION    = "version";
-immutable string OPT_VER    = "ver";
-immutable string OPT_SECRET    = "assistant";
+immutable string OPT_VER        = "ver";
+immutable string OPT_SECRET     = "assistant";
 
 bool askingHelp(string v) { return v == "help"; }
 
@@ -142,26 +142,27 @@ int main(string[] args)
     string cliSeek, cliLength, cliRC, cliReverse;
     GetoptResult res = void;
     try {
+        //TODO: Change &cliOption to {}
         res = args.getopt(config.caseSensitive,
-        OPT_COLUMNS,     "Set column size ('a'=automatic, default=16)", &cliOption,
+        OPT_COLUMNS,     "Set column size (automatic='a', default=16)", &cliOption,
         OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
-        OPT_DATA,        "Set data mode (decimal, hex, or octal)", &cliOption,
+        OPT_DATA,        "Set binary mode (decimal, hex, or octal)", &cliOption,
         OPT_FILLER,      "Set non-printable default character (default='.')", &cliOption,
         OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
         OPT_INSERT,      "Open file in insert editing mode", &cliOption,
         OPT_OVERWRITE,   "Open file in overwrite editing mode", &cliOption,
         OPT_READONLY,    "Open file in read-only editing mode", &cliOption,
         OPT_VIEW,        "Open file in view editing mode", &cliOption,
-        OPT_SI,          "Use SI suffixes instead of IEC", &setting.si,
+        OPT_SI,          "Use SI binary suffixes instead of IEC", &setting.si,
         "m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
         "f|file",        "Force opening file as regular", &cliFile,
         "stdin",         "Open stdin instead of file", &cliStdin,
         "s|seek",        "Seek at position", &cliSeek,
-        "D|dump",        "Non-interactive dump", &cliDump,
+        "D|dump",        "Dump file non-interactive onto screen", &cliDump,
         "l|length",      "Dump: Length of data to read", &cliLength,
-        "I|norc",        "Ignore user configuration files, use defaults", &cliNoRC,
+        "I|norc",        "Use detaults and ignore user configuration files", &cliNoRC,
         "rc",            "Use supplied RC file", &cliRC,
-        "r|reverse",     "Reverse operation: Turn hex into a binary file", &cliReverse,
+        "r|reverse",     "Reverse operation: From hex, output binary to this file", &cliReverse,
         OPT_VERSION,     "Print the version screen and exit", &page,
         OPT_VER,         "Print only the version and exit", &page,
         OPT_SECRET,      "", &page

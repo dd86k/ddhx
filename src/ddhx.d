@@ -444,12 +444,17 @@ void updateOffset()
 
 void updateContent()
 {
-    screen.cursorContent; // Set pos
-    //const int rows = screen.renderContent(editor.position, readdata);
-    const int rows = screen.renderContentCursor(
-        editor.position,
-        readdata,
+    screen.cursorContent; // Set pos for rendering
+    const int rows = screen.output(
+        editor.position, readdata,
         editor.cursor.position);
+    
+    if (rows < 0)
+    {
+        message("Something bad happened");
+        return;
+    }
+    
     screen.renderEmpty(rows);
 }
 

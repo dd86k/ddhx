@@ -10,9 +10,9 @@ import std.encoding : codeUnits, CodeUnits;
 
 /// Character set.
 enum CharacterSet : ubyte {
-    ascii,    /// 7-bit US-ASCII
-    cp437,    /// IBM PC CP-437
-    ebcdic,    /// IBM EBCDIC Code Page 37
+    ascii,  /// 7-bit US-ASCII
+    cp437,  /// IBM PC CP-437
+    ebcdic, /// IBM EBCDIC Code Page 37
     mac,    /// Mac OS Roman (Windows 10000)
 //    t61,    /// ITU T.61
 //    gsm,    /// GSM 03.38
@@ -48,9 +48,9 @@ private struct Transcoder {
 private immutable(char)[] emptychar = []; 
 
 private immutable Transcoder[4] transcoders = [
-    { "ascii",    &transcodeASCII },
-    { "cp437",    &transcodeCP437 },
-    { "ebcdic",    &transcodeEBCDIC },
+    { "ascii",  &transcodeASCII },
+    { "cp437",  &transcodeCP437 },
+    { "ebcdic", &transcodeEBCDIC },
     { "mac",    &transcodeMac },
 ];
 

@@ -1,8 +1,6 @@
 module reverser;
 
 import std.stdio;
-import std.string : toStringz;
-import core.stdc.stdio : FILE, fopen, fwrite, ferror, perror;
 import editor;
 import os.file;
 import error;
@@ -20,13 +18,6 @@ int start(string outpath)
         stderr.writefln("error: %s", systemMessage(binfd.syscode()));
         return 2;
     }
-    
-    /*outfile = fopen(outpath.toStringz, "wb");
-    if (ferror(outfile))
-    {
-        perror("fopen");
-        return 2;
-    }*/
     
 L_READ:
     ubyte[] r = editor.read(data);
