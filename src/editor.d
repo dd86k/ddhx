@@ -139,11 +139,6 @@ string editModeString(EditMode mode = editMode)
     case view:      return "vw";
     }
 }
-deprecated
-bool editModeReadOnly(EditMode mode)
-{
-    return mode >= EditMode.readOnly;
-}
 
 private struct cursor_t {
     uint position;    /// Screen cursor byte position

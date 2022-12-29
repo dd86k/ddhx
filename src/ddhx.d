@@ -677,17 +677,6 @@ void printFileInfo()
         editor.fileName);
 }
 
-/// Exit the interactive ddhx session.
-/// Params: code = Exit code.
-deprecated("Use exit or panic")
-void exit(int code)
-{
-    import core.stdc.stdlib : exit;
-    version (Trace) trace("code=%u", code);
-    exit(code);
-}
-
-
 void exit()
 {
     import core.stdc.stdlib : exit;
