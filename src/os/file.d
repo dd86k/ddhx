@@ -83,9 +83,9 @@ import std.utf : toUTF16z;
 /// File seek origin.
 enum Seek
 {
-    start    = SEEK_SET,    /// Seek since start of file.
-    current    = SEEK_CUR,    /// Seek since current position in file.
-    end    = SEEK_END    /// Seek since end of file.
+    start   = SEEK_SET, /// Seek since start of file.
+    current = SEEK_CUR, /// Seek since current position in file.
+    end     = SEEK_END, /// Seek since end of file.
 }
 
 /// Open file flags
@@ -102,7 +102,8 @@ enum OFlags
 //    useful when writing all changes to file
 //    Win32: Seek + SetEndOfFile
 //    others: ftruncate
-struct OSFile {
+struct OSFile
+{
     private OSHANDLE handle;
     bool eof, err;
     
@@ -130,11 +131,9 @@ struct OSFile {
     {
         version (Windows)
         {
-            uint dwAccess;
-            uint dwCreation;
+            uint dwCreation = flags & OFlags.exists ? OPEN_EXISTING : OPEN_ALWAYS;
             
-            if (flags & OFlags.exists)  dwCreation |= OPEN_EXISTING;
-            else                        dwCreation |= OPEN_ALWAYS;
+            uint dwAccess;
             if (flags & OFlags.read)    dwAccess |= GENERIC_READ;
             if (flags & OFlags.write)   dwAccess |= GENERIC_WRITE;
             
@@ -156,7 +155,7 @@ struct OSFile {
         else version (Posix)
         {
             int oflags;
-            if (!(flags & OFlags.exists)) oflags |= O_CREAT;
+            if ((flags & OFlags.exists) == 0) oflags |= O_CREAT;
             if ((flags & OFlags.readWrite) == OFlags.readWrite)
                 oflags |= O_RDWR;
             else if (flags & OFlags.write)

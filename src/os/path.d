@@ -37,7 +37,13 @@ string getHomeFolder()
 {
     version (Windows)
     {
-        // 1. SHGetFolderPath
+        // 1. %USERPROFILE%
+        if ("USERPROFILE" in environment)
+            return environment["USERPROFILE"];
+        // 2. %HOMEDRIVE% and %HOMEPATH%
+        if ("HOMEDRIVE" in environment && "HOMEPATH" in environment)
+            return environment["HOMEDRIVE"] ~ environment["HOMEPATH"];
+        // 3. SHGetFolderPath
         wchar *buffer = cast(wchar*)malloc(1024);
         if (SHGetFolderPathW(null, CSIDL_PROFILE, null, 0, buffer) == S_OK)
         {
@@ -47,12 +53,6 @@ string getHomeFolder()
             return path;
         }
         free(buffer);
-        // 2. %USERPROFILE%
-        if ("USERPROFILE" in environment)
-            return environment["USERPROFILE"];
-        // 3. %HOMEDRIVE% and %HOMEPATH%
-        if ("HOMEDRIVE" in environment && "HOMEPATH" in environment)
-            return environment["HOMEDRIVE"] ~ environment["HOMEPATH"];
     }
     else version (Posix)
     {
@@ -77,16 +77,19 @@ string getHomeFolder()
 
 /// Get the path to the current user data folder.
 /// This does not verify if the path exists.
-/// Windows: Typically C:\\Users\\%USERNAME%\\AppData\\Roaming
+/// Windows: Typically C:\\Users\\%USERNAME%\\AppData\\Local
 /// Posix: Typically /home/$USERNAME/.config
 /// Returns: Path or null on failure.
-string getUserDataFolder()
+string getUserConfigFolder()
 {
     version (Windows)
     {
-        // 1. SHGetFolderPath
+        // 1. %LOCALAPPDATA%
+        if ("LOCALAPPDATA" in environment)
+            return environment["LOCALAPPDATA"];
+        // 2. SHGetFolderPath
         wchar *buffer = cast(wchar*)malloc(1024);
-        if (SHGetFolderPathW(null, CSIDL_APPDATA, null, 0, buffer) == S_OK)
+        if (SHGetFolderPathW(null, CSIDL_LOCAL_APPDATA, null, 0, buffer) == S_OK)
         {
             string path;
             transcode(buffer[0..wcslen(buffer)], path);
@@ -94,15 +97,11 @@ string getUserDataFolder()
             return path;
         }
         free(buffer);
-        // 2. %APPDATA%
-        //    Is is the exact same with CSIDL_APPDATA but anything can go wrong.
-        if ("APPDATA" in environment)
-            return environment["APPDATA"];
     }
     else version (Posix)
     {
-        if ("XDG_CONFIG_HOME" in environment)
-            return environment["XDG_CONFIG_HOME"];
+        if (const(string) *xdg_config_home = "XDG_CONFIG_HOME" in environment)
+            return *xdg_config_home;
     }
     
     // Fallback
@@ -148,7 +147,7 @@ string buildUserFile(string filename)
 /// Returns: Path or null on failure.
 string buildUserAppFile(string appname, string filename)
 {
-    string base = getUserDataFolder;
+    string base = getUserConfigFolder;
     
     if (base is null)
         return null;

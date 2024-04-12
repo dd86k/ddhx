@@ -1,10 +1,13 @@
+/// Utilities to handle arguments.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module utils.args;
-
 
 /// Separate buffer into arguments (akin to argv).
 /// Params: buffer = String buffer.
 /// Returns: Argv-like array.
-string[] arguments(string buffer)
+string[] arguments(const(char)[] buffer)
 {
     import std.string : strip;
     import std.ascii : isControl, isWhite;
@@ -38,7 +41,7 @@ string[] arguments(string buffer)
                     break;
             }
             
-            results ~= buffer[start..(index++)];
+            results ~= cast(string)buffer[start..(index++)];
             break;
         default:
             for (start = index, ++index; index < buflen; ++index)
@@ -48,15 +51,14 @@ string[] arguments(string buffer)
                     break;
             }
             
-            results ~= buffer[start..index];
+            results ~= cast(string)buffer[start..index];
         }
     }
     
     return results;
 }
-
-/// 
-@system unittest {
+@system unittest
+{
     //TODO: Test embedded string quotes
     assert(arguments("") == []);
     assert(arguments("\n") == []);
@@ -74,4 +76,6 @@ string[] arguments(string buffer)
     assert(arguments(`a "b c" d`) == [ "a", "b c", "d" ]);
     assert(arguments(`/type 'yes string'`) == [ "/type", "yes string" ]);
     assert(arguments(`/type "yes string"`) == [ "/type", "yes string" ]);
+    assert(arguments(`A           B`) == [ "A", "B" ]);
+    //assert(arguments(`tab\tmoment`) == [ "tab", "moment" ]);
 }

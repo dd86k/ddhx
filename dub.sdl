@@ -1,13 +1,8 @@
 name "ddhx"
 description "Hexadecimal file viewer"
 authors "dd86k"
-copyright "Copyright © 2017-2022 dd86k"
+copyright "Copyright © 2017-2024 dd86k"
 license "MIT"
-
-# NOTE: Somehow, the dmd package in the Alpine repo does not contain rdmd.
-preBuildCommands "rdmd setup.d version" platform="dmd"
-preBuildCommands "ldmd2 -run setup.d version" platform="ldc"
-preBuildCommands "gdmd -run setup.d version" platform="gdc"
 
 configuration "default" {
     targetType "executable"

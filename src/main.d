@@ -1,241 +1,198 @@
 /// Command-line interface.
 ///
-/// Some of these functions are private for linter reasons
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module main;
 
+import std.compiler : version_major, version_minor;
 import std.stdio, std.mmfile, std.format, std.getopt;
+import std.conv : text;
 import core.stdc.stdlib : exit;
-import ddhx, editor, dump, reverser;
+import ddhx, dumper;
+import utils.strings;
+import display : Format, selectFormat;
+import transcoder : CharacterSet;
+import logger;
 
-//TODO: --only=n
-//             text: only display translated text
-//             data: only display hex data
-//TODO: --memory
-//      read all into memory
-//      current seeing no need for this
+private: // Shuts up the linter
 
-private:
+/// Copyright string
+immutable string DDHX_COPYRIGHT = "Copyright (c) 2017-2024 dd86k <dd@dax.moe>";
+/// App version
+immutable string DDHX_VERSION = "0.5.0";
+/// Version line
+immutable string DDHX_ABOUT = "ddhx "~DDHX_VERSION~" (built: "~__TIMESTAMP__~")";
 
 immutable string SECRET = q"SECRET
-        +---------------------------------+
-  __    | Heard you need help editing     |
- /  \   | data, can I help you with that? |
- -  -   |   [ Yes ] [ No ] [ Go away ]    |
- O  O   +-. .-----------------------------+
+        +----------------------------+
+  __    | Heard you need help.       |
+ /  \   | Can I help you with that?  |
+ _  _   | [ Yes ] [ No ] [ Go away ] |
+ O  O   +-. .------------------------+
  || |/    |/
  | V |
   \_/
 SECRET";
 
-// CLI command options
+static immutable string COMPILER_VERSION =
+    format("%d.%03d", version_major, version_minor);
+static immutable string PAGE_VERSION = 
+    DDHX_ABOUT~"\n"~
+    DDHX_COPYRIGHT~"\n"~
+    "License: MIT <https://mit-license.org/>\n"~
+    "Homepage: <https://git.dd86k.space/dd86k/ddhx>\n"~
+    "Compiler: "~__VENDOR__~" "~COMPILER_VERSION;
 
-immutable string OPT_COLUMNS    = "c|"~COMMAND_COLUMNS;
-immutable string OPT_INSERT     = COMMAND_INSERT;
-immutable string OPT_OVERWRITE  = COMMAND_OVERWRITE;
-immutable string OPT_READONLY   = "R|"~COMMAND_READONLY;
-immutable string OPT_VIEW       = COMMAND_VIEW;
-immutable string OPT_SI         = COMMAND_SI;
-immutable string OPT_IEC        = COMMAND_IEC;
-immutable string OPT_OFFSET     = "o|"~COMMAND_OFFSET;
-immutable string OPT_DATA       = "d|"~COMMAND_DATA;
-immutable string OPT_FILLER     = "F|"~COMMAND_FILLER;
-immutable string OPT_CHARSET    = "C|"~COMMAND_CHARSET;
-
-// CLI common options
-
-immutable string OPT_VERSION    = "version";
-immutable string OPT_VER        = "ver";
-immutable string OPT_SECRET     = "assistant";
-
-bool askingHelp(string v) { return v == "help"; }
-
-void cliList(string opt)
+void cliPage(string key)
 {
-    writeln("Available values for ",opt,":");
-    import std.traits : EnumMembers;
-    switch (opt) {
-    case OPT_OFFSET, OPT_DATA:
-        foreach (m; EnumMembers!NumberType)
-            writeln("\t=", m);
-        break;
-    case OPT_CHARSET:
-        foreach (m; EnumMembers!CharacterSet)
-            writeln("\t=", m);
-        break;
-    default:
+    final switch (key) {
+    case "ver":         key = DDHX_VERSION; break;
+    case "version":     key = PAGE_VERSION; break;
+    case "assistant":   key = SECRET; break;
     }
+    writeln(key);
     exit(0);
 }
 
-void cliOption(string opt, string val)
+string argstdin(string filename)
 {
-    final switch (opt) {
-    case OPT_INSERT:
-        editor.editMode = EditMode.insert;
-        return;
-    case OPT_OVERWRITE:
-        editor.editMode = EditMode.overwrite;
-        return;
-    case OPT_READONLY:
-        editor.editMode = EditMode.readOnly;
-        return;
-    case OPT_VIEW:
-        editor.editMode = EditMode.view;
-        return;
-    case OPT_COLUMNS:
-        if (settingsColumns(val))
-            break;
-        return;
-    case OPT_OFFSET:
-        if (askingHelp(val))
-            cliList(opt);
-        if (settingsOffset(val))
-            break;
-        return;
-    case OPT_DATA:
-        if (askingHelp(val))
-            cliList(opt);
-        if (settingsData(val))
-            break;
-        return;
-    case OPT_FILLER:
-        if (settingsFiller(val))
-            break;
-        return;
-    case OPT_CHARSET:
-        if (askingHelp(val))
-            cliList(opt);
-        if (settingsCharset(val))
-            break;
-        return;
-    }
-    errorPrint(1, "Invalid value for %s: %s", opt, val);
-    exit(1);
+    return filename == "-" ? null : filename;
+}
+long lparse(string v)
+{
+    if (v[0] != '+')
+        throw new Exception(text("Missing '+' prefix to argument: ", v));
+    
+    return cparse(v[1..$]);
 }
 
-void page(string opt)
-{
-    import std.compiler : version_major, version_minor;
-    static immutable string COMPILER_VERSION = format("%d.%03d", version_major, version_minor);
-    static immutable string VERSTR = 
-        DDHX_ABOUT~"\n"~
-        DDHX_COPYRIGHT~"\n"~
-        "License: MIT <https://mit-license.org/>\n"~
-        "Homepage: <https://git.dd86k.space/dd86k/ddhx>\n"~
-        "Compiler: "~__VENDOR__~" "~COMPILER_VERSION;
-    final switch (opt) {
-    case OPT_VERSION: opt = VERSTR; break;
-    case OPT_VER:     opt = DDHX_VERSION; break;
-    case OPT_SECRET:  opt = SECRET; break;
-    }
-    writeln(opt);
-    exit(0);
-}
+debug enum TRACE = true;
+else  enum TRACE = false;
 
 int main(string[] args)
 {
-    bool cliMmfile, cliFile, cliDump, cliStdin;
-    bool cliNoRC;
-    string cliSeek, cliLength, cliRC, cliReverse;
+    bool otrace = TRACE;
+    bool odump;
+    bool oreadonly;
+    int ofmtdata = Format.hex;
+    int ofmtaddr = Format.hex;
+    int ocolumns = 16;
+    int ocharset = CharacterSet.ascii;
+    long oskip;
+    long olength;
+    
     GetoptResult res = void;
-    try {
-        //TODO: Change &cliOption to {}
+    try
+    {
         res = args.getopt(config.caseSensitive,
-        OPT_COLUMNS,     "Set column size (automatic='a', default=16)", &cliOption,
-        OPT_OFFSET,      "Set offset mode (decimal, hex, or octal)", &cliOption,
-        OPT_DATA,        "Set binary mode (decimal, hex, or octal)", &cliOption,
-        OPT_FILLER,      "Set non-printable default character (default='.')", &cliOption,
-        OPT_CHARSET,     "Set character translation (default=ascii)", &cliOption,
-        OPT_INSERT,      "Open file in insert editing mode", &cliOption,
-        OPT_OVERWRITE,   "Open file in overwrite editing mode", &cliOption,
-        OPT_READONLY,    "Open file in read-only editing mode", &cliOption,
-        OPT_VIEW,        "Open file in view editing mode", &cliOption,
-        OPT_SI,          "Use SI binary suffixes instead of IEC", &setting.si,
-        "m|mmfile",      "Open file as mmfile (memory-mapped)", &cliMmfile,
-        "f|file",        "Force opening file as regular", &cliFile,
-        "stdin",         "Open stdin instead of file", &cliStdin,
-        "s|seek",        "Seek at position", &cliSeek,
-        "D|dump",        "Dump file non-interactive onto screen", &cliDump,
-        "l|length",      "Dump: Length of data to read", &cliLength,
-        "I|norc",        "Use detaults and ignore user configuration files", &cliNoRC,
-        "rc",            "Use supplied RC file", &cliRC,
-        "r|reverse",     "Reverse operation: From hex, output binary to this file", &cliReverse,
-        OPT_VERSION,     "Print the version screen and exit", &page,
-        OPT_VER,         "Print only the version and exit", &page,
-        OPT_SECRET,      "", &page
+        "assistant",    "", &cliPage,
+        // Editor option
+        "c|columns",    "Set column length (default=16, auto=0)", &ocolumns,
+        "o|offset",     "Set offset mode ('hex', 'dec', or 'oct')",
+            (string _, string fmt) {
+                ofmtaddr = selectFormat(fmt);
+            },
+        "data",         "Set data mode ('hex', 'dec', or 'oct')",
+            (string _, string fmt) {
+                ofmtdata = selectFormat(fmt);
+            },
+        //"filler",       "Set non-printable default character (default='.')", &cliOption,
+        "C|charset",    "Set character translation (default=ascii)",
+            (string _, string charset) {
+                switch (charset) with (CharacterSet)
+                {
+                case "cp437":   ocharset = cp437; break;
+                case "ebcdic":  ocharset = ebcdic; break;
+                case "mac":     ocharset = mac; break;
+                case "ascii":   ocharset = ascii; break;
+                default:
+                    throw new Exception(text("Invalid charset: ", charset));
+                }
+            },
+        "r|readonly",   "Open file in read-only editing mode", &oreadonly,
+        // Editor input mode
+        // Application options
+        "dump",         "Dump file non-interactively", &odump,
+        "s|seek",       "Seek at position",
+            (string _, string len) { oskip = cparse(len); },
+        "l|length",     "Maximum amount of data to read",
+            (string _, string len) { olength = cparse(len); },
+        //"I|norc",       "Use defaults and ignore user configuration files", &cliNoRC,
+        //"rc",           "Use supplied RC file", &cliRC,
+        // Pages
+        "version",      "Print the version screen and exit", &cliPage,
+        "ver",          "Print only the version and exit", &cliPage,
+        "trace",        "Enable tracing. Used in debugging", &otrace,
         );
     }
     catch (Exception ex)
     {
-        return errorPrint(1, ex.msg);
+        stderr.writeln("error: ", ex.msg);
+        return 1;
     }
     
     if (res.helpWanted)
     {
         // Replace default help line
         res.options[$-1].help = "Print this help screen and exit";
-        writeln("ddhx - Interactive hexadecimal file viewer\n"~
-            "  Usage: ddhx [OPTIONS] [FILE|--stdin]\n"~
+        
+        writeln("ddhx - Hex editor\n"~
+            "USAGE\n"~
+            "  ddhx [OPTIONS] [+POSITION] [+LENGTH] [FILE|-]\n"~
+            "  ddhx {-h|--help|--version|--ver]\n"~
             "\n"~
             "OPTIONS");
-        foreach (opt; res.options) with (opt)
+        foreach (opt; res.options[1..$]) with (opt)
         {
-            if (help == "") continue;
             if (optShort)
-                writefln("%s, %-14s %s", optShort, optLong, help);
+                write(' ', optShort, ',');
             else
-                writefln("    %-14s %s", optLong, help);
+                write("    ");
+            writefln(" %-14s  %s", optLong, help);
         }
+        
         return 0;
     }
     
-    version (Trace)
-        traceInit(DDHX_ABOUT);
-    
-    long skip, length;
-    
-    // Convert skip value
-    if (cliSeek)
+    // Positional arguments
+    string filename = void;
+    try switch (args.length)
     {
-        version (Trace) trace("seek=%s", cliSeek);
-        
-        if (convertToVal(skip, cliSeek))
-            return errorPrint();
-        
-        if (skip < 0)
-            return errorPrint(1, "Skip value must be positive");
+    case 1: // Missing filename, implicit stdin
+        filename = null;
+        break;
+    case 2: // Has filename or -
+        filename = argstdin(args[1]);
+        break;
+    case 3: // Has position and filename
+        oskip = lparse(args[1]);
+        filename = argstdin(args[2]);
+        break;
+    case 4: // Has position, length, and filename
+        oskip = lparse(args[1]);
+        olength = lparse(args[2]);
+        filename = argstdin(args[3]);
+        break;
+    default:
+        throw new Exception("Too many arguments");
+    }
+    catch (Exception ex)
+    {
+        stderr.writeln("error: ", ex.msg);
+        return 2;
     }
     
-    // Open file or stream
-    //TODO: Open MemoryStream
-    if ((args.length <= 1 || cliStdin) && editor.openStream(stdin))
-        return errorPrint;
-    else if (cliFile ? false : cliMmfile && editor.openMmfile(args[1]))
-        return errorPrint;
-    else if (args.length > 1 && editor.openFile(args[1]))
-        return errorPrint;
-    
-    // Parse settings
-    if (cliNoRC == false && loadSettings(cliRC))
-        return errorPrint;
+    if (otrace) traceInit();
+    trace("version=%s args=%u", DDHX_VERSION, args.length);
     
     // App: dump
-    if (cliDump)
+    if (odump)
     {
-        if (cliLength && convertToVal(length, cliLength))
-            return errorPrint;
-        return dump.start(skip, length);
-    }
-    
-    // App: reverse
-    if (cliReverse)
-    {
-        return reverser.start(cliReverse);
+        //TODO: If args.length < 2 -> open stream
+        return dump(filename, ocolumns, oskip, olength, ocharset);
     }
     
     // App: interactive
-    return ddhx.start(skip);
+    return ddhx_start(filename, oreadonly, oskip, olength, ocolumns, ocharset);
 }

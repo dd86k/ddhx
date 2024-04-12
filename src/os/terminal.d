@@ -7,44 +7,43 @@ module os.terminal;
 //TODO: readline
 //      automatically pause input, stdio.readln, resume input
 //TODO: Switch key input depending on $TERM
-//      xterm, xterm-color, xterm-256color, linux, vt100
-//TODO: Invert color support
+//      xterm (xterm, xterm-color, xterm-256color), linux, vt100
+//TODO: BetterC coverage (using D_BetterC version)
 
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
 //       https://man7.org/linux/man-pages/man3/tcsetattr.3.html
 //       https://man7.org/linux/man-pages/man4/console_codes.4.html
 
-///
-private extern (C) int putchar(int);
-
 private import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
-version (TestInput) private import std.stdio : printf;
 private import core.stdc.stdlib : system, atexit;
+version (unittest)
+{
+    private import core.stdc.stdio : printf;
+    private extern (C) int putchar(int);
+}
 
 version (Windows)
 {
-    //TODO: To reduce output binary, import only modules necessary
-    private import core.sys.windows.windows;
-    private import std.windows.syserror : WindowsException;
-    private enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
-    private enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
-    private enum DEFAULT_COLOR =
-        FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
+    import core.sys.windows.winbase;
+    import core.sys.windows.wincon;
+    import core.sys.windows.windef; // HANDLE, USHORT, DWORD
+    import std.windows.syserror : WindowsException;
     private enum CP_UTF8 = 65_001;
     private __gshared HANDLE hIn, hOut;
-    private __gshared USHORT defaultColor = DEFAULT_COLOR;
     private __gshared DWORD oldCP;
     private __gshared ushort oldAttr;
 }
 else version (Posix)
 {
-    private import core.stdc.stdio : snprintf;
-    private import core.sys.posix.sys.stat;
-    private import core.sys.posix.sys.ioctl;
-    private import core.sys.posix.unistd;
-    private import core.sys.posix.termios;
-    private import core.sys.posix.signal;
+    import core.stdc.stdio : snprintf;
+    import core.sys.posix.sys.stat;
+    import core.sys.posix.sys.ioctl;
+    import core.sys.posix.unistd;
+    import core.sys.posix.termios;
+    import core.sys.posix.signal;
+    import core.sys.posix.unistd : write, STDOUT_FILENO;
+    import core.sys.posix.sys.types : ssize_t;
     
     private enum NULL_SIGACTION = cast(sigaction_t*)0;
     private enum SIGWINCH = 28;
@@ -107,67 +106,67 @@ else version (Posix)
         int value;
     }
     immutable KeyInfo[] keyInputsVTE = [
-        // text        Key value
-        { "\033[A",    Key.UpArrow },
-        { "\033[1;2A",    Key.UpArrow | Mod.shift },
-        { "\033[1;3A",    Key.UpArrow | Mod.alt },
-        { "\033[1;5A",    Key.UpArrow | Mod.ctrl },
-        { "\033[A:4A",    Key.UpArrow | Mod.shift | Mod.alt },
-        { "\033[B",    Key.DownArrow },
-        { "\033[1;2B",    Key.DownArrow | Mod.shift },
-        { "\033[1;3B",    Key.DownArrow | Mod.alt },
-        { "\033[1;5B",    Key.DownArrow | Mod.ctrl },
-        { "\033[A:4B",    Key.DownArrow | Mod.shift | Mod.alt },
-        { "\033[C",    Key.RightArrow },
-        { "\033[1;2C",    Key.RightArrow | Mod.shift },
-        { "\033[1;3C",    Key.RightArrow | Mod.alt },
-        { "\033[1;5C",    Key.RightArrow | Mod.ctrl },
-        { "\033[A:4C",    Key.RightArrow | Mod.shift | Mod.alt },
-        { "\033[D",    Key.LeftArrow },
-        { "\033[1;2D",    Key.LeftArrow | Mod.shift },
-        { "\033[1;3D",    Key.LeftArrow | Mod.alt },
-        { "\033[1;5D",    Key.LeftArrow | Mod.ctrl },
-        { "\033[A:4D",    Key.LeftArrow | Mod.shift | Mod.alt },
+        // text         Key value
+        { "\033[A",     Key.UpArrow },
+        { "\033[1;2A",  Key.UpArrow | Mod.shift },
+        { "\033[1;3A",  Key.UpArrow | Mod.alt },
+        { "\033[1;5A",  Key.UpArrow | Mod.ctrl },
+        { "\033[A:4A",  Key.UpArrow | Mod.shift | Mod.alt },
+        { "\033[B",     Key.DownArrow },
+        { "\033[1;2B",  Key.DownArrow | Mod.shift },
+        { "\033[1;3B",  Key.DownArrow | Mod.alt },
+        { "\033[1;5B",  Key.DownArrow | Mod.ctrl },
+        { "\033[A:4B",  Key.DownArrow | Mod.shift | Mod.alt },
+        { "\033[C",     Key.RightArrow },
+        { "\033[1;2C",  Key.RightArrow | Mod.shift },
+        { "\033[1;3C",  Key.RightArrow | Mod.alt },
+        { "\033[1;5C",  Key.RightArrow | Mod.ctrl },
+        { "\033[A:4C",  Key.RightArrow | Mod.shift | Mod.alt },
+        { "\033[D",     Key.LeftArrow },
+        { "\033[1;2D",  Key.LeftArrow | Mod.shift },
+        { "\033[1;3D",  Key.LeftArrow | Mod.alt },
+        { "\033[1;5D",  Key.LeftArrow | Mod.ctrl },
+        { "\033[A:4D",  Key.LeftArrow | Mod.shift | Mod.alt },
         { "\033[2~",    Key.Insert },
-        { "\033[2;3~",    Key.Insert | Mod.alt },
+        { "\033[2;3~",  Key.Insert | Mod.alt },
         { "\033[3~",    Key.Delete },
-        { "\033[3;5~",    Key.Delete | Mod.ctrl },
-        { "\033[H",    Key.Home },
-        { "\033[1;3H",    Key.Home | Mod.alt },
-        { "\033[1;5H",    Key.Home | Mod.ctrl },
-        { "\033[F",    Key.End },
-        { "\033[1;3F",    Key.End | Mod.alt },
-        { "\033[1;5F",    Key.End | Mod.ctrl },
+        { "\033[3;5~",  Key.Delete | Mod.ctrl },
+        { "\033[H",     Key.Home },
+        { "\033[1;3H",  Key.Home | Mod.alt },
+        { "\033[1;5H",  Key.Home | Mod.ctrl },
+        { "\033[F",     Key.End },
+        { "\033[1;3F",  Key.End | Mod.alt },
+        { "\033[1;5F",  Key.End | Mod.ctrl },
         { "\033[5~",    Key.PageUp },
-        { "\033[5;5~",    Key.PageUp | Mod.ctrl },
+        { "\033[5;5~",  Key.PageUp | Mod.ctrl },
         { "\033[6~",    Key.PageDown },
-        { "\033[6;5~",    Key.PageDown | Mod.ctrl },
-        { "\033OP",    Key.F1 },
-        { "\033[1;2P",    Key.F1 | Mod.shift, },
-        { "\033[1;3R",    Key.F1 | Mod.alt, },
-        { "\033[1;5P",    Key.F1 | Mod.ctrl, },
-        { "\033OQ",    Key.F2 },
-        { "\033[1;2Q",    Key.F2 | Mod.shift },
-        { "\033OR",    Key.F3 },
-        { "\033[1;2R",    Key.F3 | Mod.shift },
-        { "\033OS",    Key.F4 },
-        { "\033[1;2S",    Key.F4 | Mod.shift },
-        { "\033[15~",    Key.F5 },
-        { "\033[15;2~",    Key.F5 | Mod.shift },
-        { "\033[17~",    Key.F6 },
-        { "\033[17;2~",    Key.F6 | Mod.shift },
-        { "\033[18~",    Key.F7 },
-        { "\033[18;2~",    Key.F7 | Mod.shift },
-        { "\033[19~",    Key.F8 },
-        { "\033[19;2~",    Key.F8 | Mod.shift },
-        { "\033[20~",    Key.F9 },
-        { "\033[20;2~",    Key.F9 | Mod.shift },
-        { "\033[21~",    Key.F10 },
-        { "\033[21;2~",    Key.F10 | Mod.shift },
-        { "\033[23~",    Key.F11 },
-        { "\033[23;2~",    Key.F11 | Mod.shift},
-        { "\033[24~",    Key.F12 },
-        { "\033[24;2~",    Key.F12 | Mod.shift },
+        { "\033[6;5~",  Key.PageDown | Mod.ctrl },
+        { "\033OP",     Key.F1 },
+        { "\033[1;2P",  Key.F1 | Mod.shift, },
+        { "\033[1;3R",  Key.F1 | Mod.alt, },
+        { "\033[1;5P",  Key.F1 | Mod.ctrl, },
+        { "\033OQ",     Key.F2 },
+        { "\033[1;2Q",  Key.F2 | Mod.shift },
+        { "\033OR",     Key.F3 },
+        { "\033[1;2R",  Key.F3 | Mod.shift },
+        { "\033OS",     Key.F4 },
+        { "\033[1;2S",  Key.F4 | Mod.shift },
+        { "\033[15~",   Key.F5 },
+        { "\033[15;2~", Key.F5 | Mod.shift },
+        { "\033[17~",   Key.F6 },
+        { "\033[17;2~", Key.F6 | Mod.shift },
+        { "\033[18~",   Key.F7 },
+        { "\033[18;2~", Key.F7 | Mod.shift },
+        { "\033[19~",   Key.F8 },
+        { "\033[19;2~", Key.F8 | Mod.shift },
+        { "\033[20~",   Key.F9 },
+        { "\033[20;2~", Key.F9 | Mod.shift },
+        { "\033[21~",   Key.F10 },
+        { "\033[21;2~", Key.F10 | Mod.shift },
+        { "\033[23~",   Key.F11 },
+        { "\033[23;2~", Key.F11 | Mod.shift},
+        { "\033[24~",   Key.F12 },
+        { "\033[24;2~", Key.F12 | Mod.shift },
     ];
     
     private __gshared termios old_ios, new_ios;
@@ -177,23 +176,24 @@ else version (Posix)
 //TODO: captureCtrlC: Block CTRL+C
 enum TermFeat : ushort {
     /// Initiate only the basic.
-    none    = 0,
+    none        = 0,
     /// Initiate the input system.
     inputSys    = 1,
     /// Initiate the alternative screen buffer.
-    altScreen    = 1 << 1,
+    altScreen   = 1 << 1,
     /// Initiate everything.
-    all    = 0xffff,
+    all         = 0xffff,
 }
 
-private __gshared TermFeat current_features;
+private __gshared int current_features;
 
 /// Initiate terminal.
 /// Params: features = Feature bits to initiate.
 /// Throws: (Windows) WindowsException on OS exception
-void terminalInit(TermFeat features)
+void terminalInit(int features)
 {
     current_features = features;
+    
     version (Windows)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi = void;
@@ -252,7 +252,9 @@ void terminalInit(TermFeat features)
             
             if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
                 throw new WindowsException(GetLastError);
-        } else {
+        }
+        else
+        {
             hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         }
         
@@ -322,21 +324,21 @@ void terminalInit(TermFeat features)
 private extern (C)
 void terminalQuit()
 {
-    terminalRestore;
+    terminalRestore();
 }
 
 /// Restore CP and other settings
 void terminalRestore()
 {
     version (Windows)
-{
+    {
         SetConsoleOutputCP(oldCP); // unconditionally
     }
     else version (Posix)
     {
         // restore main screen buffer
         if (current_features & TermFeat.altScreen)
-            terminalOutput2("\033[?1049l");
+            terminalOut("\033[?1049l");
         terminalShowCursor;
     }
     if (current_features & TermFeat.inputSys)
@@ -393,14 +395,15 @@ void terminalClear()
             FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/)
         {
             terminalPos(0, 0);
-        } else // If that fails, run cls.
+        }
+        else // If that fails, run cls.
             system("cls");
     }
     else version (Posix)
     {
         // \033c is a Reset
         // \033[2J is "Erase whole display"
-        terminalOutput2("\033[2J");
+        terminalOut("\033[2J");
     } else static assert(0, "Clear: Not implemented");
 }
 
@@ -413,8 +416,8 @@ TerminalSize terminalSize()
     {
         CONSOLE_SCREEN_BUFFER_INFO c = void;
         GetConsoleScreenBufferInfo(hOut, &c);
-        size.height = c.srWindow.Bottom - c.srWindow.Top + 1;
-        size.width  = c.srWindow.Right - c.srWindow.Left + 1;
+        size.rows    = c.srWindow.Bottom - c.srWindow.Top + 1;
+        size.columns = c.srWindow.Right - c.srWindow.Left + 1;
     }
     else version (Posix)
     {
@@ -424,8 +427,8 @@ TerminalSize terminalSize()
         //      Reply: ESC [ 8 ; ROWS ; COLUMNS t
         winsize ws = void;
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
-        size.height = ws.ws_row;
-        size.width  = ws.ws_col;
+        size.rows    = ws.ws_row;
+        size.columns = ws.ws_col;
     } else static assert(0, "terminalSize: Not implemented");
     return size;
 }
@@ -449,7 +452,7 @@ void terminalPos(int x, int y)
         char[16] b = void;
         int r = snprintf(b.ptr, 16, "\033[%d;%dH", ++y, ++x);
         assert(r > 0);
-        terminalOutput(b.ptr, r);
+        terminalOut(b.ptr, r);
     }
 }
 
@@ -465,7 +468,7 @@ void terminalHideCursor()
     }
     else version (Posix)
     {
-        terminalOutput2("\033[?25l");
+        terminalOut("\033[?25l");
     }
 }
 /// Show the terminal cursor.
@@ -480,7 +483,7 @@ void terminalShowCursor()
     }
     else version (Posix)
     {
-        terminalOutput2("\033[?25h");
+        terminalOut("\033[?25h");
     }
 }
 
@@ -492,7 +495,7 @@ void terminalHighlight()
     }
     else version (Posix)
     {
-        terminalOutput2("\033[41m");
+        terminalOut("\033[41m");
     }
 }
 /// Invert color.
@@ -504,7 +507,7 @@ void terminalInvertColor()
     }
     else version (Posix)
     {
-        terminalOutput2("\033[7m");
+        terminalOut("\033[7m");
     }
 }
 /// Underline.
@@ -517,7 +520,7 @@ void terminalUnderline()
     }
     else version (Posix)
     {
-        terminalOutput2("\033[4m");
+        terminalOut("\033[4m");
     }
 }
 /// Reset color.
@@ -529,13 +532,13 @@ void terminalResetColor()
     }
     else version (Posix)
     {
-        terminalOutput2("\033[0m");
+        terminalWrite("\033[0m");
     }
 }
 
-size_t terminalOutput2(const(void)[] data)
+size_t terminalWrite(const(void)[] data)
 {
-    return terminalOutput(data.ptr, data.length);
+    return terminalWrite(data.ptr, data.length);
 }
 
 /// Directly write to output.
@@ -543,49 +546,56 @@ size_t terminalOutput2(const(void)[] data)
 ///     data = Character data.
 ///     size = Amount in bytes.
 /// Returns: Number of bytes written.
-size_t terminalOutput(const(void) *data, size_t size)
+size_t terminalWrite(const(void) *data, size_t size)
 {
     version (Windows)
     {
-        import core.sys.windows.winbase : STD_OUTPUT_HANDLE,
-            WriteFile, GetStdHandle;
         uint r = void;
         assert(WriteFile(hOut, data, cast(uint)size, &r, null));
         return r;
     }
     else version (Posix)
     {
-        import core.sys.posix.unistd : write, STDOUT_FILENO;
-        import core.sys.posix.sys.types : ssize_t;
         ssize_t r = write(STDOUT_FILENO, data, size);
         assert(r >= 0);
         return r;
     }
 }
 
-/// Read an input event. This function is blocking.
-/// Params:
-///   event = TerminalInfo struct
-/// Throws: (Windows) WindowsException on OS error
-void terminalInput(ref TerminalInput event)
+// Commented until terminalRead() improves
+/*template CTRL(int c) { enum CTRL = c & 0x1f; }
+unittest
 {
+    assert(CTRL!('a') == 0xa);
+}*/
+
+/// Read an input event. This function is blocking.
+/// Throws: (Windows) WindowsException on OS error.
+/// Returns: Terminal input.
+TermInput terminalRead()
+{
+    TermInput event;
+    
     version (Windows)
     {
+        enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
+        enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
+
         INPUT_RECORD ir = void;
         DWORD num = void;
-L_READ:
+Lread:
         if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
             throw new WindowsException(GetLastError);
         
         if (num == 0)
-            goto L_READ;
+            goto Lread;
         
         switch (ir.EventType) {
         case KEY_EVENT:
             if (ir.KeyEvent.bKeyDown == FALSE)
-                goto L_READ;
+                goto Lread;
             
-            version (TestInput)
+            version (unittest)
             {
                 printf(
                 "KeyEvent: AsciiChar=%d wVirtualKeyCode=%d dwControlKeyState=%x\n",
@@ -599,7 +609,7 @@ L_READ:
             
             // Filter out single modifier key events
             switch (keycode) {
-            case 16, 17, 18: goto L_READ; // shift,ctrl,alt
+            case 16, 17, 18: goto Lread; // shift,ctrl,alt
             default:
             }
             
@@ -610,7 +620,7 @@ L_READ:
             if (ascii >= 'a' && ascii <= 'z')
             {
                 event.key = ascii - 32;
-                return;
+                return event;
             }
             else if (ascii >= 0x20 && ascii < 0x7f)
             {
@@ -621,7 +631,7 @@ L_READ:
                 if (ascii >= 'A' && ascii <= 'Z')
                     event.key = Mod.shift;
                 
-                return;
+                return event;
             }
             
             event.key = keycode;
@@ -629,7 +639,7 @@ L_READ:
             if (state & ALT_PRESSED) event.key |= Mod.alt;
             if (state & CTRL_PRESSED) event.key |= Mod.ctrl;
             if (state & SHIFT_PRESSED) event.key |= Mod.shift;
-            return;
+            return event;
         /*case MOUSE_EVENT:
             if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED)
             {
@@ -640,8 +650,8 @@ L_READ:
         case WINDOW_BUFFER_SIZE_EVENT:
             if (terminalOnResizeEvent)
                 terminalOnResizeEvent();
-            goto L_READ;
-        default: goto L_READ;
+            goto Lread;
+        default: goto Lread;
         }
     }
     else version (Posix)
@@ -684,31 +694,33 @@ L_READ:
         
         enum BLEN = 8;
         char[BLEN] b = void;
-    L_READ:
+    Lread:
         ssize_t r = read(STDIN_FILENO, b.ptr, BLEN);
         
         event.type = InputType.keyDown; // Assuming for now
         event.key  = 0; // clear as safety measure
         
         switch (r) {
-        case -1: assert(0, "read(2) failed");
+        case -1:
+            assert(0, "read(2) failed");
+            goto Lread;
         case 0: // How even
-            version (TestInput) printf("stdin: empty\n");
-            goto L_READ;
+            version (unittest) printf("stdin: empty\n");
+            goto Lread;
         case 1:
             char c = b[0];
-            version (TestInput) printf("stdin: \\0%o (%d)\n", c, c);
+            version (unittest) printf("stdin: \\0%o (%d)\n", c, c);
             // Filtering here adjusts the value only if necessary.
             switch (c) {
             case 0: // Ctrl+Space
                 event.key = Key.Spacebar | Mod.ctrl;
-                return;
+                return event;
             case 13:
                 event.key = Key.Enter;
-                return;
+                return event;
             case 8, 127: // ^H
                 event.key = Key.Backspace;
-                return;
+                return event;
             default:
             }
             if (c >= 'a' && c <= 'z')
@@ -723,7 +735,7 @@ L_READ:
         default:
         }
         
-        version (TestInput)
+        version (unittest)
         {
             printf("stdin:");
             for (size_t i; i < r; ++i)
@@ -750,31 +762,60 @@ L_READ:
             if (r != ki.text.length) continue;
             if (inputString != ki.text) continue;
             event.key  = ki.value;
-            return;
+            return event;
         }
         
         // Matched to nothing
-        goto L_READ;
+        goto Lread;
     } // version posix
 }
 
+
 /// Terminal input type.
-enum InputType {
+enum InputType
+{
     keyDown,
     keyUp,
     mouseDown,
     mouseUp,
 }
 
+//TODO: Redo input encoding
+//      15: 0 key value (ascii or special key)
+//      23:16 flags
+//            0000 0000
+//            |||| ||+-- Alt
+//            |||| |+--- Ctrl
+//            |||+------ Special key
+//      31:24 input type
+//              0 keydown
+//              1 mousedown
+//            128 keyup
+//            129 mouseup
+
+/*private enum specialbit = 1 << 20;
+enum Special
+{
+    rightArrow  = 1 | specialbit,
+    leftArrow   = 2 | specialbit,
+    upArrow     = 3 | specialbit,
+    Arrow       = 4 | specialbit,
+    
+    
+}*/
+
 /// Key modifier
-enum Mod {
-    ctrl  = 1 << 16,
-    shift = 1 << 17,
-    alt   = 1 << 18,
+enum Mod
+{
+    ctrl  = 1 << 24,
+    shift = 1 << 25,
+    alt   = 1 << 26,
 }
+
 /// Key codes map.
 //TODO: Consider mapping these to os/ascii-specific
-enum Key {
+enum Key
+{
     Undefined = 0,
     Backspace = 8,
     Tab = 9,
@@ -925,10 +966,13 @@ enum Key {
 }
 
 /// Terminal input structure
-struct TerminalInput {
-    union {
+struct TermInput
+{
+    union
+    {
         int key; /// Keyboard input with possible Mod flags.
-        struct {
+        struct
+        {
             ushort mouseX; /// Mouse column coord
             ushort mouseY; /// Mouse row coord
         }
@@ -937,15 +981,10 @@ struct TerminalInput {
 }
 
 /// Terminal size structure
-struct TerminalSize {
-    union {
-        /// Terminal width in character columns
-        int width;
-        int columns; /// Ditto
-    }
-    union {
-        /// Terminal height in character rows
-        int height;
-        int rows; /// Ditto
-    }
+struct TerminalSize
+{
+    /// Terminal width in character columns
+    int columns;
+    /// Terminal height in character rows
+    int rows;
 }

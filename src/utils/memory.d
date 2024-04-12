@@ -1,10 +1,15 @@
+/// Memory utilities.
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module utils.memory;
 
 import std.stdio : File;
 import std.container.array;
 
 //TODO: Use OutBuffer or Array!ubyte when writing changes?
-struct MemoryStream {
+struct MemoryStream
+{
     private ubyte[] buffer;
     private long position;
     
@@ -19,16 +24,12 @@ struct MemoryStream {
         err = false;
     }
     
-    // read file into memory
-    /*void open(string path)
-    {
-    }*/
-    void open(ubyte[] data)
+    void copy(ubyte[] data)
     {
         buffer = new ubyte[data.length];
         buffer[0..$] = data[0..$];
     }
-    void open(File stream)
+    void copy(File stream)
     {
         buffer = buffer.init;
         //TODO: use OutBuffer+reserve (if possible to get filesize)
@@ -36,7 +37,6 @@ struct MemoryStream {
         {
             buffer ~= a;
         }
-        
     }
     
     long seek(long pos)

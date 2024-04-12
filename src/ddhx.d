@@ -1,696 +1,429 @@
-/// Main application.
+/// Main module, handling core TUI operations.
+/// 
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-//TODO: When searching strings, maybe convert it to current charset?
+import std.stdio;
+import core.stdc.stdlib : exit;
+import os.terminal : Key, Mod;
+import editor;
+import display;
+import transcoder : CharacterSet;
+import logger;
 
-import gitinfo;
-import os.terminal;
-public import
-    editor,
-    searcher,
-    encoding,
-    error,
-    converter,
-    settings,
-    screen,
-    utils.args,
-    utils.format,
-    utils.memory;
+//TODO: On terminal resize, set UHEADER
 
-/// Copyright string
-enum DDHX_COPYRIGHT = "Copyright (c) 2017-2022 dd86k <dd@dax.moe>";
-private enum DESCRIPTION = GIT_DESCRIPTION[1..$];
-/// App version
-debug enum DDHX_VERSION = DESCRIPTION~"+debug";
-else  enum DDHX_VERSION = DESCRIPTION; /// Ditto
-/// Version line
-enum DDHX_ABOUT = "ddhx "~DDHX_VERSION~" (built: "~__TIMESTAMP__~")";
-
-/// Number type to render either for offset or data
-//TODO: NumberType -> OffsetType
-enum NumberType : ubyte {
-    hexadecimal,
-    decimal,
-    octal
-}
-//TODO: enum DataType { hex8, ... } etc.
-
-//TODO: Seprate start functions into their own modules
-
-/// Interactive application.
-/// Params: skip = Seek to file/data position.
-/// Returns: Error code.
-int start(long skip = 0)
+private enum
 {
+    // Update the cursor position
+    UCURSOR     = 1,
+    // Update the current view
+    UVIEW       = 1 << 1,
+    // Update the header
+    UHEADER     = 1 << 2,
+    // Editing in progress
+    UEDIT       = 1 << 3,
+    
+    // Clear the current message
+    UMESSAGE    = 1 << 8,
+    
+    UINIT       = 0xff,
+}
+
+private __gshared
+{
+    Editor file;
+    
+    // Current file index (document selector)
+    //int currenfile;
+    
+    /// Total length of the file or data buffer, in bytes
+    long filesize;
+    /// Position of the view, in bytes
+    long viewpos;
+    /// Size of the view, in bytes
+    int viewsize;
+    
+    /// Number of columns desired, one per data group
+    int columns;
+    /// Address padding, in digits
+    int addrpad = 11;
+    
+    /// The type of format to use for rendering offsets
+    int offsetmode;
+    /// The type of format to use for rendering data
+    int datamode;
+    /// The size of one data item, in bytes
+    int groupsize;
+    /// The type of character set to use for rendering text
+    int charset;
+    
+    /// Number of digits per byte, in digits or nibbles
+    int digits;
+    
+    /// Position of the cursor in the file, in bytes
+    long curpos;
+    /// Position of the cursor editing a group of bytes, in digits
+    int editpos; // e.g., hex=nibble, dec=digit, etc.
+    /// 
+    int editmode;
+    /// 
+    enum EDITBFSZ = 8;
+    /// Value of edit input, as a digit
+    char[EDITBFSZ] editbuffer;
+    
+    /// System status, used in updating certains portions of the screen
+    int status;
+}
+
+int ddhx_start(string path, bool readonly,
+    long skip, long length,
+    int cols, int ucharset)
+{
+    //TODO: Stream support
+    //      With length, build up a buffer
+    if (path == null)
+    {
+        stderr.writeln("todo: Stdin");
+        return 2;
+    }
+    
+    // Open file
+    if (file.open(path, true, readonly))
+    {
+        stderr.writeln("error: Could not open file");
+        return 3;
+    }
+    
+    // 
     if (skip)
     {
-        //TODO: negative should be starting from end of file (if not stdin)
-        //      stdin: use seek
-        if (skip < 0)
-            return errorPrint(1, "Skip value must be positive");
-        
-        if (editor.fileMode == FileMode.stream)
-        {
-            version (Trace) trace("slurp skip=%u", skip);
-            if (editor.slurp(skip, 0))
-                return errorPrint;
-        }
-        else if (skip)
-        {
-            version (Trace) trace("seek skip=%u", skip);
-            editor.seek(skip);
-            if (editor.err)
-                return errorPrint;
-        }
+        viewpos = curpos = skip;
     }
     
-    if (editor.fileMode == FileMode.stream)
+    charset = ucharset;
+    
+    filesize = file.size();
+    
+    // Init display in TUI mode
+    disp_init(true);
+    
+    // Set number of columns, or automatically get column count
+    // from terminal.
+    columns = cols ? cols : disp_hint_cols();
+    
+    // Get "view" buffer size, in bytes
+    viewsize = disp_hint_view(columns);
+    
+    // Allocate buffer according to desired cols
+    trace("viewsize=%d", viewsize);
+    file.setbuffer( viewsize );
+    
+    // Initially render everything
+    status = UINIT;
+    
+Lread:
+    cast(void)update();
+    int key = disp_readkey();
+    
+    switch (key)
     {
-        editor.slurp(skip);
-    }
+    // Navigation keys
+    case Key.LeftArrow:     move_left();        break;
+    case Key.RightArrow:    move_right();       break;
+    case Key.DownArrow:     move_down();        break;
+    case Key.UpArrow:       move_up();          break;
+    case Key.PageDown:      move_pg_down();     break;
+    case Key.PageUp:        move_pg_up();       break;
+    case Key.Home:          move_ln_start();    break;
+    case Key.End:           move_ln_end();      break;
+    case Key.Home|Mod.ctrl: move_abs_start();   break;
+    case Key.End |Mod.ctrl: move_abs_end();     break;
     
-    if (screen.initiate)
-        panic;
-    
-    screen.onResize(&eventResize);
-    
-    refresh;
-    
-    inputLoop;
-    return 0;
-}
-
-private:
-
-//TODO: rename to "readbuffer"? or "screenData"?
-//      screen.setData(...)?
-__gshared ubyte[] readdata;
-
-void inputLoop()
-{
-    version (Trace) trace("loop");
-    TerminalInput event;
-    
-L_INPUT:
-    terminalInput(event);
-    version (Trace) trace("type=%d", event.type);
-    
-    switch (event.type) with (InputType) {
-    case keyDown:    goto L_KEYDOWN;
-    default:    goto L_INPUT; // unknown
-    }
-    
-    //
-    // Keyboard
-    //
-    
-L_KEYDOWN:
-    version (Trace) trace("key=%d", event.key);
-    
-    switch (event.key) with (Key) with (Mod) {
-    
-    // Navigation
-    
-    //TODO: ctrl+(up|down) = move view only
-    //TODO: ctrl+(left|right) = move to next word
-    
-    case UpArrow, K:    moveRowUp; break;
-    case DownArrow, J:  moveRowDown; break;
-    case LeftArrow, H:  moveLeft; break;
-    case RightArrow, L: moveRight; break;
-    case PageUp:        movePageUp; break;
-    case PageDown:      movePageDown; break;
-    case Home:          moveAlignStart; break;
-    case Home | ctrl:   moveAbsStart; break;
-    case End:           moveAlignEnd; break;
-    case End | ctrl:    moveAbsEnd; break;
-    
-    // Actions/Shortcuts
-    
-    case '/':
-        menu(null, "/");
+    // Search
+    case Key.W | Mod.ctrl:
         break;
-    case '?':
-        menu(null, "?");
+    
+    // Reset screen
+    case Key.R | Mod.ctrl:
+        columns = disp_hint_cols();
+        viewsize = disp_hint_view(columns);
+        file.setbuffer( viewsize );
+        status = UINIT;
         break;
-    case N:
-        next;
+    
+    // 
+    case Key.Q | Mod.ctrl:
+        quit();
         break;
-    case Escape, Enter, ':':
-        menu;
-        break;
-    case G:
-        menu("g ");
-        break;
-    case I:
-        printFileInfo;
-        break;
-    case R, F5:
-        refresh;
-        break;
-    case A:
-        settingsColumns("a");
-        refresh;
-        break;
-    case Q: exit; break;
+    
     default:
+        // Edit mode
+        /*if (_editkey(datamode, key))
+        {
+            //TODO: When group size filled, add to edit history
+            trace("EDIT key=%c", cast(char)key);
+            editbuffer[editpos++] = cast(ubyte)key;
+            status |= UEDIT;
+            
+            if (editpos >= digits) {
+                //TODO: add byte+address to edits
+                editpos = 0;
+                _move_rel(1);
+            }
+            goto Lread;
+        }*/
     }
-    goto L_INPUT;
+    goto Lread;
 }
 
-void eventResize()
+string prompt(string text)
 {
-    screen.updateTermSize();
-    refresh; // temp
+    throw new Exception("Not implemented");
 }
 
-//TODO: revamp menu system
-//      char mode: character mode (':', '/', '?')
-//      string command: command shortcut (e.g., 'g' + ' ' default)
-void menu(string prefix = ":", string prepend = null)
+private
+int _editkey(int type, int key)
 {
-    import std.stdio : readln;
-    import std.string : chomp, strip;
-    
-    // clear bar and command prepend
-    screen.clearOffsetBar;
-    
-    string line = screen.prompt(prefix, prepend);
-    
-    scope (exit)
+    switch (type) with (Format)
     {
-        editor.cursorBound;
-        updateCursor;
-    }
-    
-    if (line.length == 0)
-        return;
-    
-    if (command(line))
-        screen.message(errorMessage());
-}
-
-int command(string line)
-{
-    return command(arguments(line));
-}
-
-int command(string[] argv)
-{
-    const size_t argc = argv.length;
-    if (argc == 0) return 0;
-    
-    version (Trace) trace("argv=%(%s %)", argv);
-    
-    string command = argv[0];
-    
-    switch (command[0]) { // shortcuts
-    case '/': // Search
-        if (command.length < 2)
-            return errorSet(ErrorCode.missingType);
-        if (argc < 2)
-            return errorSet(ErrorCode.missingNeedle);
-        
-        return ddhx.lookup(command[1..$], argv[1], true, true);
-    case '?': // Search backwards
-        if (command.length < 2)
-            return errorSet(ErrorCode.missingType);
-        if (argc < 2)
-            return errorSet(ErrorCode.missingNeedle);
-        
-        return ddhx.lookup(command[1..$], argv[1], false, true);
+    case hex:
+        return (key <= '0' && key <= '9') ||
+            (key <= 'A' && key <= 'F') ||
+            (key <= 'a' && key <= 'f');
+    case dec:
+        return key <= '0' && key <= '9';
+    case oct:
+        return key <= '0' && key <= '7';
     default:
+        throw new Exception(__FUNCTION__);
     }
-    
-    switch (argv[0]) { // regular commands
-    case "g", "goto":
-        if (argc < 2)
-            return errorSet(ErrorCode.missingValue);
-        
-        switch (argv[1]) {
-        case "e", "end":
-            moveAbsEnd;
-            break;
-        case "h", "home":
-            moveAbsStart;
-            break;
-        default:
-            seek(argv[1]);
-        }
-        return 0;
-    case "skip":
-        ubyte byte_ = void;
-        if (argc <= 1)
-        {
-            byte_ = readdata[editor.cursor.position];
-        } else {
-            if (argv[1] == "zero")
-                byte_ = 0;
-            else if (convertToVal(byte_, argv[1]))
-                return error.errorcode;
-        }
-        return skip(byte_);
-    case "i", "info":
-        printFileInfo;
-        return 0;
-    case "refresh":
-        refresh;
-        return 0;
-    case "q", "quit":
-        exit;
-        return 0;
-    case "about":
-        enum C = "Written by dd86k. " ~ DDHX_COPYRIGHT;
-        screen.message(C);
-        return 0;
-    case "version":
-        screen.message(DDHX_ABOUT);
-        return 0;
-    case "reset":
-        resetSettings();
-        render;
-        return 0;
-    case "set":
-        if (argc < 2)
-            return errorSet(ErrorCode.missingOption);
-        
-        int e = settings.set(argv[1..$]);
-        if (e == 0) refresh;
-        return e;
+}
+private
+int _editval(int type, int key)
+{
+    switch (type) with (Format)
+    {
+    case hex:
+        if (key <= '0' && key <= '9')
+            return key - '0';
+        if (key <= 'A' && key <= 'F')
+            return key - 'A' + 0x10;
+        if (key <= 'a' && key <= 'f')
+            return key - 'a' + 0x10;
+        goto default;
+    case dec:
+        if (key <= '0' && key <= '9')
+            return key - '0';
+        goto default;
+    case oct:
+        if (key <= '0' && key <= '7')
+            return key - '0';
+        goto default;
     default:
-        return errorSet(ErrorCode.invalidCommand);
+        throw new Exception(__FUNCTION__);
     }
 }
 
-// for more elaborate user inputs (commands invoke this)
-// prompt="save as"
-// "save as: " + user input
-/*private
-string input(string prompt, string include)
+// Move the cursor relative to its position within the file
+private
+void _move_rel(long pos)
 {
-    terminalPos(0, 0);
-    screen.cwriteAt(0, 0, prompt, ": ", include);
-    return readln;
-}*/
-
-//TODO: When screen doesn't move: Only render lines affected
-
-/// Move the cursor to the start of the data
-void moveAbsStart()
-{
-    if (editor.cursorAbsStart)
-        readRender;
-    else
-        render;
-    updateCursor;
-}
-/// Move the cursor to the end of the data
-void moveAbsEnd()
-{
-    if (editor.cursorAbsEnd)
-        readRender;
-    else
-        render;
-    updateCursor;
-}
-/// Align cursor to start of row
-void moveAlignStart()
-{
-    editor.cursorHome;
-    render;
-    updateCursor;
-}
-/// Align cursor to end of row
-void moveAlignEnd()
-{
-    editor.cursorEnd;
-    render;
-    updateCursor;
-}
-/// Move cursor to one data group to the left (backwards)
-void moveLeft()
-{
-    if (editor.cursorLeft)
-        readRender;
-    else
-        render;
-    updateCursor;
-}
-/// Move cursor to one data group to the right (forwards)
-void moveRight()
-{
-    if (editor.cursorRight)
-        readRender;
-    else
-        render;
-    updateCursor;
-}
-/// Move cursor to one row size up (backwards)
-void moveRowUp()
-{
-    if (editor.cursorUp)
-        readRender;
-    else
-        render;
-    updateCursor;
-}
-/// Move cursor to one row size down (forwards)
-void moveRowDown()
-{
-    if (editor.cursorDown)
-        readRender;
-    else
-        render;
-    updateCursor;
-}
-/// Move cursor to one page size up (backwards)
-void movePageUp()
-{
-    if (editor.cursorPageUp)
-        readRender;
-    else
-        render;
-    updateCursor;
-}
-/// Move view to one page size down (forwards)
-void movePageDown()
-{
-    if (editor.cursorPageDown)
-        readRender;
-    updateStatus;
-    updateCursor;
-}
-
-/// Initiate screen buffer
-void initiate()
-{
-    screen.updateTermSize;
-    
-    long fsz = editor.fileSize; /// data size
-    int ssize = (screen.termSize.height - 2) * setting.columns; /// screen size
-    uint nsize = ssize >= fsz ? cast(uint)fsz : ssize;
-    
-    version (Trace) trace("fsz=%u ssz=%u nsize=%u", fsz, ssize, nsize);
-    
-    editor.setBuffer(nsize);
-}
-
-// read at current position
-void read()
-{
-    editor.seek(editor.position);
-    if (editor.err) panic;
-    
-    version (Trace) trace("editor.position=%u", editor.position);
-    
-    readdata = editor.read();
-    if (editor.err) panic;
-    
-    version (Trace) trace("readdata.length=%u", readdata.length);
-}
-
-//TODO: Consider render with multiple parameters to select what to render
-
-/// Render screen (all elements)
-void renderAll()
-{
-    version (Trace) trace;
-    
-    updateOffset;
-    updateContent;
-    updateStatus;
-}
-void render()
-{
-    version (Trace) trace;
-    
-    updateContent;
-    updateStatus;
-}
-void readRender()
-{
-    read;
-    render;
-}
-
-void updateOffset()
-{
-    screen.cursorOffset;
-    screen.renderOffset;
-}
-
-void updateContent()
-{
-    screen.cursorContent; // Set pos for rendering
-    const int rows = screen.output(
-        editor.position, readdata,
-        editor.cursor.position);
-    
-    if (rows < 0)
-    {
-        message("Something bad happened");
+    if (pos == 0)
         return;
-    }
     
-    screen.renderEmpty(rows);
-}
-
-void updateStatus()
-{
-    import std.format : format;
+    long old = curpos;
+    curpos += pos;
     
-    long pos = editor.cursorTell;
-    char[12] offset = void;
-    size_t l = screen.offsetFormatter.offset(offset.ptr, pos);
+    if (pos > 0 && curpos >= filesize)
+        curpos = filesize;
+    else if (pos < 0 && curpos < 0)
+        curpos = 0;
     
-    screen.cursorStatusbar;
-    screen.renderStatusBar(
-        editor.editModeString,
-        screen.binaryFormatter.name,
-        transcoder.name,
-        formatBin(editor.readSize, setting.si),
-        offset[0..l],
-        format("%f%%",
-            ((cast(double)pos) / editor.fileSize) * 100));
-}
-
-void updateCursor()
-{
-    version (Trace)
-        with (editor.cursor)
-            trace("pos=%u n=%u", position, nibble);
-    
-    //with (editor.cursor)
-    //    screen.cursor(position, nibble);
-}
-
-/// Refresh the entire screen by:
-/// 1. Clearing the terminal
-/// 2. Automatically resizing the view buffer
-/// 3. Re-seeking to the current position (failsafe)
-/// 4. Read buffer
-/// 5. Render
-void refresh()
-{
-    version (Trace) trace;
-    
-    screen.clear;
-    initiate;
-    read;
-    updateOffset;
-    render;
-    updateCursor;
-}
-
-/// Seek to position in data, reads view's worth, and display that.
-/// Ignores bounds checking for performance reasons.
-/// Sets CurrentPosition.
-/// Params: pos = New position
-void seek(long pos)
-{
-    version (Trace) trace("pos=%d", pos);
-    
-    if (editor.readSize >= editor.fileSize)
-    {
-        screen.message("Navigation disabled, file too small");
+    if (old == curpos)
         return;
-    }
     
-    //TODO: cursorTo
-    editor.seek(pos);
-    readRender;
+    status |= UCURSOR;
+    _adjust_viewpos();
 }
-
-/// Parses the string as a long and navigates to the file location.
-/// Includes offset checking (+/- notation).
-/// Params: str = String as a number
-void seek(string str)
+// Move the cursor to an absolute file position
+private
+void _move_abs(long pos)
 {
-    version (Trace) trace("str=%s", str);
-    
-    const char seekmode = str[0];
-    if (seekmode == '+' || seekmode == '-') // relative input.position
-    {
-        str = str[1..$];
-    }
-    long newPos = void;
-    if (convertToVal(newPos, str))
-    {
-        screen.message("Could not parse number");
+    long old = curpos;
+    curpos = pos;
+
+    if (curpos >= filesize)
+        curpos = filesize;
+    else if (curpos < 0)
+        curpos = 0;
+
+    if (old == curpos)
         return;
-    }
-    switch (seekmode) {
-    case '+': // Relative, add
-        safeSeek(editor.position + newPos);
-        break;
-    case '-': // Relative, substract
-        safeSeek(editor.position - newPos);
-        break;
-    default: // Absolute
-        if (newPos < 0)
+    
+    status |= UCURSOR;
+    _adjust_viewpos();
+}
+// Adjust the view positon
+void _adjust_viewpos()
+{
+    //TODO: Adjust view position algorithmically
+    
+    // Cursor is ahead the view
+    if (curpos >= viewpos + viewsize)
+    {
+        while (curpos >= viewpos + viewsize)
         {
-            screen.message("Range underflow: %d (0x%x)", newPos, newPos);
+            viewpos += columns;
+            if (viewpos >= filesize - viewsize)
+                break;
         }
-        else if (newPos >= editor.fileSize - editor.readSize)
+        status |= UVIEW;
+    }
+    // Cursor is behind the view
+    else if (curpos < viewpos)
+    {
+        while (curpos < viewpos)
         {
-            screen.message("Range overflow: %d (0x%x)", newPos, newPos);
+            viewpos -= columns;
+            if (viewpos <= 0)
+                break;
         }
-        else
-        {
-            seek(newPos);
-        }
+        status |= UVIEW;
     }
 }
 
-/// Goes to the specified position in the file.
-/// Checks bounds and calls Goto.
-/// Params: pos = New position
-void safeSeek(long pos)
+void move_left()
 {
-    version (Trace) trace("pos=%s", pos);
+    if (curpos == 0)
+        return;
     
-    long fsize = editor.fileSize;
+    _move_rel(-1);
+}
+void move_right()
+{
+    if (curpos == filesize)
+        return;
     
-    if (pos + editor.readSize >= fsize)
-        pos = fsize - editor.readSize;
-    else if (pos < 0)
-        pos = 0;
+    _move_rel(1);
+}
+void move_up()
+{
+    if (curpos == 0)
+        return;
     
-    editor.cursorGoto(pos);
+    _move_rel(-columns);
+}
+void move_down()
+{
+    if (curpos == filesize)
+        return;
+    
+    _move_rel(columns);
+}
+void move_pg_up()
+{
+    if (curpos == 0)
+        return;
+    
+    _move_rel(-viewsize);
+}
+void move_pg_down()
+{
+    if (curpos == filesize)
+        return;
+    
+    _move_rel(viewsize);
+}
+void move_ln_start()
+{
+    _move_rel(-curpos % columns);
+}
+void move_ln_end()
+{
+    _move_rel((columns - (curpos % columns)) - 1);
+}
+void move_abs_start()
+{
+    _move_abs(0);
+}
+void move_abs_end()
+{
+    _move_abs(filesize);
 }
 
-enum LAST_BUFFER_SIZE = 128;
-__gshared ubyte[LAST_BUFFER_SIZE] lastItem;
-__gshared size_t lastSize;
-__gshared string lastType;
-__gshared bool lastForward;
-__gshared bool lastAvailable;
-
-/// Search last item.
-/// Returns: Error code if set.
-//TODO: I don't think the return code is ever used...
-int next()
+// Update all elements on screen depending on status
+// status global indicates what needs to be updated
+void update()
 {
-    if (lastAvailable == false)
+    // Update header
+    if (status & UHEADER)
+        disp_header(columns);
+    
+    // Update the screen
+    if (status & UVIEW)
+        update_view();
+    
+    // Update status
+    update_status();
+    
+    // Update cursor position
+    // NOTE: Should always be updated due to frequent movement
+    //       That includes messages, cursor naviation, menu invokes, etc.
+    int curdiff = cast(int)(curpos - viewpos);
+    trace("cur=%d", curdiff);
+    update_edit(curdiff, columns, addrpad);
+    
+    status = 0;
+}
+
+void update_view()
+{
+    file.seek(viewpos);
+    ubyte[] data = file.read();
+    trace("addr=%u data.length=%u", viewpos, data.length);
+    disp_update(viewpos, data, columns,
+        Format.hex, Format.hex, '.',
+        charset,
+        11,
+        1);
+}
+
+// relative cursor position
+void update_edit(int curpos, int columns, int addrpadd)
+{
+    enum hexsize = 3;
+    int row = 1 + (curpos / columns);
+    int col = (addrpadd + 2 + ((curpos % columns) * hexsize));
+    disp_cursor(row, col);
+    
+    // Editing in progress
+    /*if (editbuf && editsz)
     {
-        return errorSet(ErrorCode.noLastItem);
-    }
-    
-    long pos = void;
-    int e = searchData(pos, lastItem.ptr, lastSize, lastForward);
-    
-    if (e)
-    {
-        screen.message("Not found");
-        return e;
-    }
-    
-    safeSeek(pos);
-    //TODO: Format position found with current offset type
-    screen.message("Found at 0x%x", pos);
-    return 0;
+        disp_write(editbuf, editsz);
+    }*/
 }
 
-// Search data
-int lookup(string type, string data, bool forward, bool save)
+void update_status()
 {
-    void *p = void;
-    size_t len = void;
-    if (convertToRaw(p, len, data, type))
-        return error.errorcode;
-    
-    if (save)
-    {
-        import core.stdc.string : memcpy;
-        lastType = type;
-        lastSize = len;
-        lastForward = forward;
-        //TODO: Check length against LAST_BUFFER_SIZE
-        memcpy(lastItem.ptr, p, len);
-        lastAvailable = true;
-    }
-    
-    screen.message("Searching for %s...", type);
-    
-    long pos = void;
-    int e = searchData(pos, p, len, forward);
-    
-    if (e)
-    {
-        screen.message("Not found");
-        return e;
-    }
-    
-    safeSeek(pos);
-    //TODO: Format position found with current offset type
-    screen.message("Found at 0x%x", pos);
-    return 0;
+    //TODO: Could limit write length by terminal width?
+    //TODO: check number of edits
+    enum STATBFSZ = 2 * 1024;
+    char[STATBFSZ] statbuf = void;
+    int statlen = snprintf(statbuf.ptr, STATBFSZ, "%s | %s", "test".ptr, "test2".ptr);
+    disp_message(statbuf.ptr, statlen);
 }
 
-int skip(ubyte data)
+void message(const(char)[] msg)
 {
-    screen.message("Skipping all 0x%x...", data);
-    
-    long pos = void;
-    const int e = searchSkip(data, pos);
-    
-    if (e)
-    {
-        screen.message("End of file reached");
-        return e;
-    }
-    
-    safeSeek(pos);
-    //TODO: Format position found with current offset type
-    screen.message("Found at 0x%x", pos);
-    return 0;
+    disp_message(msg.ptr, msg.length);
+    status |= UMESSAGE;
 }
 
-/// Print file information
-void printFileInfo()
+void quit()
 {
-    screen.message("%11s  %s",
-        formatBin(editor.fileSize, setting.si),
-        editor.fileName);
-}
-
-void exit()
-{
-    import core.stdc.stdlib : exit;
-    version (Trace) trace();
+    trace("quit");
     exit(0);
-}
-
-void panic()
-{
-    import std.stdio : stderr;
-    import core.stdc.stdlib : exit;
-    version (Trace) trace("code=%u", errorcode);
-    
-    stderr.writeln("error: (", errorcode, ") ", errorMessage(errorcode));
-    
-    exit(errorcode);
 }
