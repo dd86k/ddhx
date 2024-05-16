@@ -2,7 +2,28 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module formatter;
+module ddhx.formatter;
+
+import std.conv : text;
+
+enum Format
+{
+    hex,
+    dec,
+    oct,
+}
+
+int selectFormat(string fmt)
+{
+    switch (fmt) with (Format)
+    {
+    case "hex": return hex;
+    case "dec": return dec;
+    case "oct": return oct;
+    default:
+        throw new Exception(text("Invalid format: ", fmt));
+    }
+}
 
 //TODO: format function for int
 

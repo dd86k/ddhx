@@ -4,9 +4,10 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module transcoder;
+module ddhx.transcoder;
 
 import std.encoding : codeUnits, CodeUnits;
+import std.conv : text;
 
 /// Character set.
 enum CharacterSet
@@ -19,16 +20,27 @@ enum CharacterSet
     //gsm,    /// GSM 03.38
 }
 
+int selectCharacterSet(string charset)
+{
+    switch (charset) with (CharacterSet)
+    {
+    case "ascii":   return ascii;
+    case "cp437":   return cp437;
+    case "ebcdic":  return ebcdic;
+    case "mac":     return mac;
+    default:        throw new Exception(text("Invalid charset: ", charset));
+    }
+}
+
 string charsetName(int charset)
 {
     switch (charset) with (CharacterSet)
     {
     case ascii:     return "ascii";
     case cp437:     return "cp437";
-    case ebcdic:    return "ascii";
-    case mac:       return "ascii";
-    default:
-        assert(false);
+    case ebcdic:    return "ebcdic";
+    case mac:       return "mac";
+    default:        assert(false);
     }
 }
 
@@ -40,8 +52,7 @@ string charsetFullname(int charset)
     case cp437:     return "IBM PC Code Page 437";
     case ebcdic:    return "IBM EBCDIC Code Page 37";
     case mac:       return "Mac OS Roman (Windows 10000)";
-    default:
-        assert(false);
+    default:        assert(false);
     }
 }
 

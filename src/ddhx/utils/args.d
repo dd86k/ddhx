@@ -2,7 +2,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module utils.args;
+module ddhx.utils.args;
 
 /// Separate buffer into arguments (akin to argv).
 /// Params: buffer = String buffer.

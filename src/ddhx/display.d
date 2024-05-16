@@ -2,35 +2,16 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module display;
+module ddhx.display;
 
 import std.range : chunks;
 import std.conv : text;
 import core.stdc.string : memset, memcpy;
-import os.terminal;
-import formatter;
-import transcoder;
-import utils.math;
-import logger;
-
-enum Format
-{
-    hex,
-    dec,
-    oct,
-}
-
-int selectFormat(string fmt)
-{
-    switch (fmt) with (Format)
-    {
-    case "hex": return hex;
-    case "dec": return dec;
-    case "oct": return oct;
-    default:
-        throw new Exception(text("Invalid format: ", fmt));
-    }
-}
+import ddhx.os.terminal;
+import ddhx.formatter;
+import ddhx.transcoder;
+import ddhx.utils.math;
+import ddhx.logger;
 
 //TODO: cache rendered (data) lines
 //      dedicated char buffers
@@ -166,6 +147,8 @@ void disp_message(const(char)* msg, size_t len)
     terminalWrite(msg, min(len, w.columns));
 }
 
+//TODO: Consider rendering all lines
+//      And then let editor edit the lines before printing
 // NOTE: Settings could be passed through a structure
 /// 
 void disp_update(ulong base, ubyte[] data,

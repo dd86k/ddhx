@@ -2,7 +2,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module utils.math;
+module ddhx.utils.math;
 
 T min(T)(T a, T b) pure @safe
 {

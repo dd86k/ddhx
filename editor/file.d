@@ -2,15 +2,15 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor;
+module editor.file;
 
 private import std.stdio : File;
-private import os.file : OSFile, OFlags, Seek;
+private import ddhx.os.file : OSFile, OFlags, Seek;
 private import std.container.slist;
 private import std.stdio : File;
 private import std.path : baseName;
 private import core.stdc.stdio : FILE;
-private import utils.memory;
+private import ddhx.utils.memory;
 private import std.array : uninitializedArray;
 private import core.stdc.stdlib : malloc, calloc, free;
 private import core.stdc.string : memcmp;
@@ -42,11 +42,12 @@ struct Edit
     long position;	/// Absolute offset of edit
     int offset;     /// Offset to byte group in digits
     int value;	/// Payload
+    int size;   // size of payload (in bytes?)
     // or ubyte[8]?
 }
 
 /// 
-struct Editor
+struct FileEditor
 {
     private enum DEFAULT_BUFSZ = 4096;
     
@@ -70,6 +71,7 @@ struct Editor
         const(char)[] name = "ov";
     }
     Edits edits;
+    
     bool insert;
     bool readonly;
     

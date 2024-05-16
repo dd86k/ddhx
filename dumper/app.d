@@ -2,21 +2,21 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module dumper;
+module dumper.app;
 
 import std.stdio;
 import std.file;
 import core.stdc.stdlib : malloc;
-import display;
-import transcoder;
-import utils.math;
+import ddhx.common;
+import ddhx.transcoder;
+import ddhx.utils.math;
+import ddhx.os.terminal;
+import ddhx.display;
 
 private enum CHUNKSIZE = 1024 * 1024;
 
 // NOTE: if path is null, then stdin is used
-int dump(string path, int columns,
-    long skip, long length,
-    int charset)
+int dump(string path)
 {
     scope buffer = new ubyte[CHUNKSIZE];
     
@@ -26,33 +26,28 @@ int dump(string path, int columns,
     {
         file = File(path, "rb");
         
-        if (skip) file.seek(skip);
+        if (_opos) file.seek(_opos);
     }
     else
     {
         file = stdin;
         
         // Read blocks until length
-        if (skip)
+        if (_opos)
         {
         Lskip:
-            size_t rdsz = min(skip, CHUNKSIZE);
+            size_t rdsz = min(_opos, CHUNKSIZE);
             if (file.rawRead(buffer[0..rdsz]).length == CHUNKSIZE)
                 goto Lskip;
         }
     }
     
-    if (columns == 0)
-        columns = 16;
-    
     disp_init(false);
-    
-    disp_header(columns);
-    
+    disp_header(_ocolumns);
     ulong address;
     foreach (chunk; file.byChunk(CHUNKSIZE))
     {
-        disp_update(address, chunk, columns);
+        disp_update(address, chunk, _ocolumns);
         
         address += chunk.length;
     }

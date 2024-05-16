@@ -2,13 +2,13 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module utils.strings;
+module ddhx.utils.strings;
 
 import core.stdc.stdio : sscanf;
 import core.stdc.string : memcpy;
 import std.string : toStringz;
 import std.conv : text;
-import utils.math;
+import ddhx.utils.math;
 
 private enum : double
 {

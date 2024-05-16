@@ -3,19 +3,26 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx;
+module editor.app;
 
 import std.stdio;
 import core.stdc.stdlib : exit;
-import os.terminal : Key, Mod;
-import editor;
-import display;
-import transcoder : CharacterSet;
-import logger;
+import editor.file;
+import ddhx.display;
+import ddhx.transcoder : CharacterSet;
+import ddhx.formatter : Format;
+import ddhx.logger;
+import ddhx.os.terminal : Key, Mod;
+import ddhx.common;
 
-//TODO: On terminal resize, set UHEADER
+// NOTE: Glossary
+//       Cursor
+//         Visible on-screen cursor, positioned on a per-byte and additionall
+//         per-digit basis.
+//       View
+//         Position and length of the "view" of the view buffer within file or memory buffer.
 
-private enum
+private enum // Update flags
 {
     // Update the cursor position
     UCURSOR     = 1,
@@ -29,61 +36,40 @@ private enum
     // Clear the current message
     UMESSAGE    = 1 << 8,
     
-    UINIT       = 0xff,
+    //
+    URESET = UCURSOR | UVIEW | UHEADER,
 }
 
 private __gshared
 {
-    Editor file;
+    FileEditor _efile;
     
-    // Current file index (document selector)
-    //int currenfile;
+    long _efilesize;
     
-    /// Total length of the file or data buffer, in bytes
-    long filesize;
     /// Position of the view, in bytes
-    long viewpos;
+    long _eviewpos;
     /// Size of the view, in bytes
-    int viewsize;
-    
-    /// Number of columns desired, one per data group
-    int columns;
-    /// Address padding, in digits
-    int addrpad = 11;
-    
-    /// The type of format to use for rendering offsets
-    int offsetmode;
-    /// The type of format to use for rendering data
-    int datamode;
-    /// The size of one data item, in bytes
-    int groupsize;
-    /// The type of character set to use for rendering text
-    int charset;
-    
-    /// Number of digits per byte, in digits or nibbles
-    int digits;
+    int _eviewsize;
     
     /// Position of the cursor in the file, in bytes
-    long curpos;
+    long _ecurpos;
     /// Position of the cursor editing a group of bytes, in digits
-    int editpos; // e.g., hex=nibble, dec=digit, etc.
-    /// 
-    int editmode;
+    int _edgtpos; // e.g., hex=nibble, dec=digit, etc.
+    /// Cursor edit mode (insert, overwrite, etc.)
+    int _emode;
     /// 
     enum EDITBFSZ = 8;
     /// Value of edit input, as a digit
-    char[EDITBFSZ] editbuffer;
+    char[EDITBFSZ] _ebuffer;
     
     /// System status, used in updating certains portions of the screen
-    int status;
+    int _estatus;
 }
 
-int ddhx_start(string path, bool readonly,
-    long skip, long length,
-    int cols, int ucharset)
+int start(string path)
 {
     //TODO: Stream support
-    //      With length, build up a buffer
+    //      With length, build up a memory buffer
     if (path == null)
     {
         stderr.writeln("todo: Stdin");
@@ -91,38 +77,33 @@ int ddhx_start(string path, bool readonly,
     }
     
     // Open file
-    if (file.open(path, true, readonly))
+    if (_efile.open(path, true, _oreadonly))
     {
         stderr.writeln("error: Could not open file");
         return 3;
     }
     
-    // 
-    if (skip)
-    {
-        viewpos = curpos = skip;
-    }
-    
-    charset = ucharset;
-    
-    filesize = file.size();
+    _efilesize = _efile.size();
     
     // Init display in TUI mode
     disp_init(true);
     
     // Set number of columns, or automatically get column count
     // from terminal.
-    columns = cols ? cols : disp_hint_cols();
+    _ocolumns = _ocolumns ? _ocolumns : disp_hint_cols();
+    //TODO: Check column size
+    /*if (columns < 0) {
+    }*/
     
     // Get "view" buffer size, in bytes
-    viewsize = disp_hint_view(columns);
+    _eviewsize = disp_hint_view(_ocolumns);
     
     // Allocate buffer according to desired cols
-    trace("viewsize=%d", viewsize);
-    file.setbuffer( viewsize );
+    trace("viewsize=%d", _eviewsize);
+    _efile.setbuffer( _eviewsize );
     
-    // Initially render everything
-    status = UINIT;
+    // Initially render these things
+    _estatus = URESET;
     
 Lread:
     cast(void)update();
@@ -148,33 +129,37 @@ Lread:
     
     // Reset screen
     case Key.R | Mod.ctrl:
-        columns = disp_hint_cols();
-        viewsize = disp_hint_view(columns);
-        file.setbuffer( viewsize );
-        status = UINIT;
+        //TODO: Need to remember if cols was set to 0
+        _ocolumns = disp_hint_cols();
+        _eviewsize = disp_hint_view(_ocolumns);
+        _efile.setbuffer( _eviewsize );
+        _estatus = URESET;
         break;
     
     // 
-    case Key.Q | Mod.ctrl:
+    case Key.Q:
         quit();
         break;
     
     default:
         // Edit mode
-        /*if (_editkey(datamode, key))
+        if (_editkey(_odatafmt, key))
         {
+            // 1. Check if key can be inserted into group
+            // 2. 
+            
             //TODO: When group size filled, add to edit history
             trace("EDIT key=%c", cast(char)key);
-            editbuffer[editpos++] = cast(ubyte)key;
-            status |= UEDIT;
+            _ebuffer[_edgtpos++] = cast(ubyte)key;
+            _estatus |= UEDIT;
             
-            if (editpos >= digits) {
+            /*if (_edgtpos >= _odigits) {
                 //TODO: add byte+address to edits
                 editpos = 0;
                 _move_rel(1);
-            }
+            }*/
             goto Lread;
-        }*/
+        }
     }
     goto Lread;
 }
@@ -190,16 +175,14 @@ int _editkey(int type, int key)
     switch (type) with (Format)
     {
     case hex:
-        return (key <= '0' && key <= '9') ||
-            (key <= 'A' && key <= 'F') ||
-            (key <= 'a' && key <= 'f');
-    case dec:
-        return key <= '0' && key <= '9';
-    case oct:
-        return key <= '0' && key <= '7';
+        return (key >= '0' && key <= '9') ||
+            (key >= 'A' && key <= 'F') ||
+            (key >= 'a' && key <= 'f');
+    case dec:   return key >= '0' && key <= '9';
+    case oct:   return key >= '0' && key <= '7';
     default:
-        throw new Exception(__FUNCTION__);
     }
+    return 0;
 }
 private
 int _editval(int type, int key)
@@ -207,19 +190,19 @@ int _editval(int type, int key)
     switch (type) with (Format)
     {
     case hex:
-        if (key <= '0' && key <= '9')
+        if (key >= '0' && key <= '9')
             return key - '0';
-        if (key <= 'A' && key <= 'F')
+        if (key >= 'A' && key <= 'F')
             return key - 'A' + 0x10;
-        if (key <= 'a' && key <= 'f')
+        if (key >= 'a' && key <= 'f')
             return key - 'a' + 0x10;
         goto default;
     case dec:
-        if (key <= '0' && key <= '9')
+        if (key >= '0' && key <= '9')
             return key - '0';
         goto default;
     case oct:
-        if (key <= '0' && key <= '7')
+        if (key >= '0' && key <= '7')
             return key - '0';
         goto default;
     default:
@@ -229,41 +212,38 @@ int _editval(int type, int key)
 
 // Move the cursor relative to its position within the file
 private
-void _move_rel(long pos)
+void moverel(long pos)
 {
     if (pos == 0)
         return;
     
-    long old = curpos;
-    curpos += pos;
+    long tmp = _ecurpos + pos;
+    if (pos > 0 && tmp >= _efilesize)
+        tmp = _efilesize;
+    else if (pos < 0 && tmp < 0)
+        tmp = 0;
     
-    if (pos > 0 && curpos >= filesize)
-        curpos = filesize;
-    else if (pos < 0 && curpos < 0)
-        curpos = 0;
-    
-    if (old == curpos)
+    if (tmp == _ecurpos)
         return;
     
-    status |= UCURSOR;
+    _ecurpos = tmp;
+    _estatus |= UCURSOR;
     _adjust_viewpos();
 }
 // Move the cursor to an absolute file position
 private
-void _move_abs(long pos)
+void moveabs(long pos)
 {
-    long old = curpos;
-    curpos = pos;
+    if (pos >= _efilesize)
+        pos = _efilesize;
+    else if (pos < 0)
+        pos = 0;
 
-    if (curpos >= filesize)
-        curpos = filesize;
-    else if (curpos < 0)
-        curpos = 0;
-
-    if (old == curpos)
+    if (pos == _ecurpos)
         return;
     
-    status |= UCURSOR;
+    _ecurpos = pos;
+    _estatus |= UCURSOR;
     _adjust_viewpos();
 }
 // Adjust the view positon
@@ -272,86 +252,86 @@ void _adjust_viewpos()
     //TODO: Adjust view position algorithmically
     
     // Cursor is ahead the view
-    if (curpos >= viewpos + viewsize)
+    if (_ecurpos >= _eviewpos + _eviewsize)
     {
-        while (curpos >= viewpos + viewsize)
+        while (_ecurpos >= _eviewpos + _eviewsize)
         {
-            viewpos += columns;
-            if (viewpos >= filesize - viewsize)
+            _eviewpos += _ocolumns;
+            if (_eviewpos >= _efilesize - _eviewsize)
                 break;
         }
-        status |= UVIEW;
+        _estatus |= UVIEW;
     }
     // Cursor is behind the view
-    else if (curpos < viewpos)
+    else if (_ecurpos < _eviewpos)
     {
-        while (curpos < viewpos)
+        while (_ecurpos < _eviewpos)
         {
-            viewpos -= columns;
-            if (viewpos <= 0)
+            _eviewpos -= _ocolumns;
+            if (_eviewpos <= 0)
                 break;
         }
-        status |= UVIEW;
+        _estatus |= UVIEW;
     }
 }
 
 void move_left()
 {
-    if (curpos == 0)
+    if (_ecurpos == 0)
         return;
     
-    _move_rel(-1);
+    moverel(-1);
 }
 void move_right()
 {
-    if (curpos == filesize)
+    if (_ecurpos == _efilesize)
         return;
     
-    _move_rel(1);
+    moverel(1);
 }
 void move_up()
 {
-    if (curpos == 0)
+    if (_ecurpos == 0)
         return;
     
-    _move_rel(-columns);
+    moverel(-_ocolumns);
 }
 void move_down()
 {
-    if (curpos == filesize)
+    if (_ecurpos == _efilesize)
         return;
     
-    _move_rel(columns);
+    moverel(_ocolumns);
 }
 void move_pg_up()
 {
-    if (curpos == 0)
+    if (_ecurpos == 0)
         return;
     
-    _move_rel(-viewsize);
+    moverel(-_eviewsize);
 }
 void move_pg_down()
 {
-    if (curpos == filesize)
+    if (_ecurpos == _efilesize)
         return;
     
-    _move_rel(viewsize);
+    moverel(_eviewsize);
 }
 void move_ln_start()
 {
-    _move_rel(-curpos % columns);
+    moverel(-_ecurpos % _ocolumns);
 }
 void move_ln_end()
 {
-    _move_rel((columns - (curpos % columns)) - 1);
+    moverel((_ocolumns - (_ecurpos % _ocolumns)) - 1);
 }
 void move_abs_start()
 {
-    _move_abs(0);
+    moveabs(0);
 }
 void move_abs_end()
 {
-    _move_abs(filesize);
+    moveabs(_efilesize);
 }
 
 // Update all elements on screen depending on status
@@ -359,11 +339,13 @@ void move_abs_end()
 void update()
 {
     // Update header
-    if (status & UHEADER)
-        disp_header(columns);
+    if (_estatus & UHEADER)
+        disp_header(_ocolumns);
+
+    //TODO: Render LINES into BUFFER and let editor redo its pass
     
     // Update the screen
-    if (status & UVIEW)
+    if (_estatus & UVIEW)
         update_view();
     
     // Update status
@@ -372,22 +354,22 @@ void update()
     // Update cursor position
     // NOTE: Should always be updated due to frequent movement
     //       That includes messages, cursor naviation, menu invokes, etc.
-    int curdiff = cast(int)(curpos - viewpos);
+    int curdiff = cast(int)(_ecurpos - _eviewpos);
     trace("cur=%d", curdiff);
-    update_edit(curdiff, columns, addrpad);
+    update_edit(curdiff, _ocolumns, _oaddrpad);
     
-    status = 0;
+    _estatus = 0;
 }
 
 void update_view()
 {
-    file.seek(viewpos);
-    ubyte[] data = file.read();
-    trace("addr=%u data.length=%u", viewpos, data.length);
-    disp_update(viewpos, data, columns,
+    _efile.seek(_eviewpos);
+    ubyte[] data = _efile.read();
+    trace("addr=%u data.length=%u", _eviewpos, data.length);
+    disp_update(_eviewpos, data, _ocolumns,
         Format.hex, Format.hex, '.',
-        charset,
-        11,
+        _ocharset,
+        _oaddrpad,
         1);
 }
 
@@ -419,11 +401,12 @@ void update_status()
 void message(const(char)[] msg)
 {
     disp_message(msg.ptr, msg.length);
-    status |= UMESSAGE;
+    _estatus |= UMESSAGE;
 }
 
 void quit()
 {
+    //TODO: Ask confirmation
     trace("quit");
     exit(0);
 }

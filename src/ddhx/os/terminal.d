@@ -2,7 +2,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module os.terminal;
+module ddhx.os.terminal;
 
 //TODO: readline
 //      automatically pause input, stdio.readln, resume input
