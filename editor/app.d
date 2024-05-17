@@ -98,39 +98,7 @@ int start(string path)
     // Init display in TUI mode
     disp_init(true);
     
-    disp_size(_etrows, _etcols);
-    if (_etrows < 4 || _etcols < 20)
-    {
-        stderr.writeln("error: Terminal too small");
-        return 4;
-    }
-    trace("term.rows=%d term.cols=%d", _etrows, _etcols);
-    
-    // Set number of columns, or automatically get column count
-    // from terminal.
-    _ocolumns = _ocolumns ? _ocolumns : disp_hint_columns();
-    trace("hintcols=%d", _ocolumns);
-    //TODO: Check column size
-    /*if (columns < 0) {
-    }*/
-    
-    // Get "view" buffer size, in bytes
-    _eviewsize = disp_hint_viewsize(_ocolumns);
-    
-    // Create buffer
-    dispbuffer = disp_create(_etrows - 2, _ocolumns, 0);
-    if (dispbuffer == null)
-    {
-        stderr.writeln("error: Unknown error creating display");
-        return 5;
-    }
-    
-    // Allocate buffer according to desired cols
-    trace("viewsize=%d", _eviewsize);
-    _efile.setbuffer( _eviewsize );
-    
-    // Initially render these things
-    _estatus = URESET;
+    setupscreen();
     
 Lread:
     cast(void)update();
@@ -156,11 +124,7 @@ Lread:
     
     // Reset screen
     case Key.R | Mod.ctrl:
-        //TODO: Need to remember if cols was set to 0
-        _ocolumns = disp_hint_columns();
-        _eviewsize = disp_hint_viewsize(_ocolumns);
-        _efile.setbuffer( _eviewsize );
-        _estatus = URESET;
+        setupscreen();
         break;
     
     // Quit
@@ -189,6 +153,54 @@ Lread:
         }
     }
     goto Lread;
+}
+
+void setupscreen()
+{
+    disp_size(_etrows, _etcols);
+    if (_etrows < 4 || _etcols < 20)
+    {
+        stderr.writeln("error: Terminal too small");
+        exit(4);
+    }
+    trace("term.rows=%d term.cols=%d", _etrows, _etcols);
+    
+    // Set number of columns, or automatically get column count
+    // from terminal.
+    _ocolumns = _ocolumns > 0 ? _ocolumns : optimalcols();
+    trace("hintcols=%d", _ocolumns);
+    
+    // Get "view" buffer size, in bytes
+    _eviewsize = optimalvwsz(_ocolumns);
+    
+    // Create buffer
+    dispbuffer = disp_create(_etrows - 2, _ocolumns, 0);
+    if (dispbuffer == null)
+    {
+        stderr.writeln("error: Unknown error creating display");
+        exit(5);
+    }
+    
+    // Allocate buffer according to desired cols
+    trace("viewsize=%d", _eviewsize);
+    _efile.setbuffer( _eviewsize );
+    
+    // Initially render these things
+    _estatus = URESET;
+}
+
+// Get optimal column count for current terminal size
+int optimalcols()
+{
+    int esize = disp_elem_msize(_odatafmt);
+    return (_etcols - _oaddrpad) / (esize + 1); // 16 was address size?
+}
+
+// Get optimal view size for the view buffer
+int optimalvwsz(int cols)
+{
+    int esize = disp_elem_msize(_odatafmt);
+    return ((_etcols - cols) / (esize + 1)) * (_etrows - 2);
 }
 
 string prompt(string text)

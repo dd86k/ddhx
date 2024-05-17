@@ -52,29 +52,11 @@ struct BUFFER
     LINE* lines;
 }
 
-/*struct DISPLAY
-{
-    
-}*/
-
-enum
-{
-    TUIMODE = 0x1,
-}
-
-private __gshared
-{
-    /// Capabilities
-    int caps; //TODO: deprecated
-}
-
 void disp_init(bool tui)
 {
-    caps |= tui;
     terminalInit(tui ? TermFeat.altScreen | TermFeat.inputSys : 0);
 }
 
-//TODO: If cols=0, make it automatic? (from disp_hint_columns)
 BUFFER* disp_create(int rows, int cols, int flags)
 {
     trace("rows=%d cols=%d flags=%x", rows, cols, flags);
@@ -137,35 +119,18 @@ Lread:
     return i.key;
 }
 
-// Given n columns, hint the optimal buffer size for the "view".
-// If 0, calculated automatically
-//TODO: Move to editor
-int disp_hint_columns()
+// Get maximum element size in characters
+int disp_elem_msize(int fmt) // note: plus space
 {
-    enum hexsize = 2;
-    enum decsize = 3;
-    enum octsize = 3;
-    TerminalSize w = terminalSize();
-    return (w.columns - /*gofflen*/ 16) / (hexsize + 2);
-}
-//TODO: Move to editor
-int disp_hint_viewsize(int cols)
-{
-    enum hexsize = 2;
-    enum decsize = 3;
-    enum octsize = 3;
-    TerminalSize w = terminalSize();
-    // 16 - for text section?
-    return ((w.columns - cols /* 16 */) / (hexsize + 2)) * (w.rows - 2);
+    switch (fmt) with (Format) {
+    case hex: return 3; // " ff"
+    case dec: return 4; // " 255"
+    case oct: return 4; // " 377"
+    default: assert(false, "Invalid fmt");
+    }
 }
 
-
-void disp_enable_cursor()
-{
-    
-}
-
-void disp_disable_cursor()
+void disp_cursor_enable(bool enabled)
 {
     
 }

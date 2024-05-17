@@ -91,7 +91,7 @@ void cliOptColumn(string v)
     
 }
 
-void commonopts(string[] args)
+string[] commonopts(string[] args)
 {
     GetoptResult res = void;
     try
@@ -162,4 +162,6 @@ void commonopts(string[] args)
     
     if (_otrace) traceInit();
     trace("version=%s args=%u", DDHX_VERSION, args.length);
+    
+    return args;
 }

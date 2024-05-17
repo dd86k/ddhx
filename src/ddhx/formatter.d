@@ -15,8 +15,7 @@ enum Format
 
 int selectFormat(string fmt)
 {
-    switch (fmt) with (Format)
-    {
+    switch (fmt) with (Format) {
     case "hex": return hex;
     case "dec": return dec;
     case "oct": return oct;
