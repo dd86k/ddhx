@@ -57,7 +57,7 @@ int _ocolumns = 16;
 /// Character set
 int _ocharset = CharacterSet.ascii;
 /// 
-int _ofillchar = '.';
+char _ofillchar = '.';
 /// Skip/seek position
 long _opos;
 /// Total length to read
@@ -93,9 +93,6 @@ void cliOptColumn(string v)
 
 void commonopts(string[] args)
 {
-    if (_otrace) traceInit();
-    trace("version=%s args=%u", DDHX_VERSION, args.length);
-    
     GetoptResult res = void;
     try
     {
@@ -162,4 +159,7 @@ void commonopts(string[] args)
         }
         exit(0);
     }
+    
+    if (_otrace) traceInit();
+    trace("version=%s args=%u", DDHX_VERSION, args.length);
 }

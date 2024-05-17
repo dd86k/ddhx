@@ -44,6 +44,11 @@ private __gshared
 {
     FileEditor _efile;
     
+    BUFFER *dispbuffer;
+    
+    int _etrows;
+    int _etcols;
+    
     long _efilesize;
     
     /// Position of the view, in bytes
@@ -68,10 +73,13 @@ private __gshared
 
 int start(string path)
 {
+    trace("ddhx starting");
+    
     //TODO: Stream support
     //      With length, build up a memory buffer
     if (path == null)
     {
+        trace("todo: Stdin");
         stderr.writeln("todo: Stdin");
         return 2;
     }
@@ -79,24 +87,43 @@ int start(string path)
     // Open file
     if (_efile.open(path, true, _oreadonly))
     {
+        trace("error: Could not open file");
         stderr.writeln("error: Could not open file");
         return 3;
     }
     
     _efilesize = _efile.size();
+    trace("filesize=%d", _efilesize);
     
     // Init display in TUI mode
     disp_init(true);
     
+    disp_size(_etrows, _etcols);
+    if (_etrows < 4 || _etcols < 20)
+    {
+        stderr.writeln("error: Terminal too small");
+        return 4;
+    }
+    trace("term.rows=%d term.cols=%d", _etrows, _etcols);
+    
     // Set number of columns, or automatically get column count
     // from terminal.
-    _ocolumns = _ocolumns ? _ocolumns : disp_hint_cols();
+    _ocolumns = _ocolumns ? _ocolumns : disp_hint_columns();
+    trace("hintcols=%d", _ocolumns);
     //TODO: Check column size
     /*if (columns < 0) {
     }*/
     
     // Get "view" buffer size, in bytes
-    _eviewsize = disp_hint_view(_ocolumns);
+    _eviewsize = disp_hint_viewsize(_ocolumns);
+    
+    // Create buffer
+    dispbuffer = disp_create(_etrows - 2, _ocolumns, 0);
+    if (dispbuffer == null)
+    {
+        stderr.writeln("error: Unknown error creating display");
+        return 5;
+    }
     
     // Allocate buffer according to desired cols
     trace("viewsize=%d", _eviewsize);
@@ -130,13 +157,13 @@ Lread:
     // Reset screen
     case Key.R | Mod.ctrl:
         //TODO: Need to remember if cols was set to 0
-        _ocolumns = disp_hint_cols();
-        _eviewsize = disp_hint_view(_ocolumns);
+        _ocolumns = disp_hint_columns();
+        _eviewsize = disp_hint_viewsize(_ocolumns);
         _efile.setbuffer( _eviewsize );
         _estatus = URESET;
         break;
     
-    // 
+    // Quit
     case Key.Q:
         quit();
         break;
@@ -169,6 +196,8 @@ string prompt(string text)
     throw new Exception("Not implemented");
 }
 
+//TODO: Merge _editkey and _editval
+//      Could return a struct
 private
 int _editkey(int type, int key)
 {
@@ -340,9 +369,7 @@ void update()
 {
     // Update header
     if (_estatus & UHEADER)
-        disp_header(_ocolumns);
-
-    //TODO: Render LINES into BUFFER and let editor redo its pass
+        update_header();
     
     // Update the screen
     if (_estatus & UVIEW)
@@ -351,14 +378,20 @@ void update()
     // Update status
     update_status();
     
-    // Update cursor position
+    // Update cursor position back into view (data) section
     // NOTE: Should always be updated due to frequent movement
     //       That includes messages, cursor naviation, menu invokes, etc.
     int curdiff = cast(int)(_ecurpos - _eviewpos);
     trace("cur=%d", curdiff);
-    update_edit(curdiff, _ocolumns, _oaddrpad);
+    update_cursor(curdiff, _ocolumns, _oaddrpad);
     
     _estatus = 0;
+}
+
+void update_header()
+{
+    disp_cursor(0, 0);
+    disp_header(_ocolumns);
 }
 
 void update_view()
@@ -366,15 +399,21 @@ void update_view()
     _efile.seek(_eviewpos);
     ubyte[] data = _efile.read();
     trace("addr=%u data.length=%u", _eviewpos, data.length);
-    disp_update(_eviewpos, data, _ocolumns,
-        Format.hex, Format.hex, '.',
-        _ocharset,
-        _oaddrpad,
-        1);
+    
+    disp_render_buffer(dispbuffer, _eviewpos, data,
+        _ocolumns, Format.hex, Format.hex, _ofillchar,
+        _ocharset, _oaddrpad, 1);
+    
+    //TODO: Editor applies previous edits in BUFFER
+    //TODO: Editor applies current edit in BUFFER
+    
+    disp_cursor(1, 0);
+    disp_print_buffer(dispbuffer);
 }
 
 // relative cursor position
-void update_edit(int curpos, int columns, int addrpadd)
+//TODO: Should be: byte pos + digit pos
+void update_cursor(int curpos, int columns, int addrpadd)
 {
     enum hexsize = 3;
     int row = 1 + (curpos / columns);

@@ -36,11 +36,11 @@ size_t format8hex(char *buffer, ubyte v)
 @system unittest
 {
     char[2] c = void;
-    format02x(c.ptr, 0x01);
+    format8hex(c.ptr, 0x01);
     assert(c[] == "01", c);
-    format02x(c.ptr, 0x20);
+    format8hex(c.ptr, 0x20);
     assert(c[] == "20", c);
-    format02x(c.ptr, 0xff);
+    format8hex(c.ptr, 0xff);
     assert(c[] == "ff", c);
 }
 
@@ -100,74 +100,6 @@ private:
 
 immutable string hexMap = "0123456789abcdef";
 
-size_t format02x(char *buffer, ubyte v)
-{
-    buffer[1] = hexMap[v & 15];
-    buffer[0] = hexMap[v >> 4];
-    return 2;
-}
-@system unittest
-{
-    char[2] c = void;
-    format02x(c.ptr, 0x01);
-    assert(c[] == "01", c);
-    format02x(c.ptr, 0x20);
-    assert(c[] == "20", c);
-    format02x(c.ptr, 0xff);
-    assert(c[] == "ff", c);
-}
-
-size_t format11x(char *buffer, long v)
-{
-    size_t pos;
-    bool pad = true;
-    for (int shift = 60; shift >= 0; shift -= 4)
-    {
-        const ubyte b = (v >> shift) & 15;
-        if (b == 0)
-        {
-            if (pad && shift >= 44)
-            {
-                continue; // cut
-            }
-            else if (pad && shift >= 4)
-            {
-                buffer[pos++] = pad ? ' ' : '0';
-                continue; // pad
-            }
-        } else pad = false;
-        buffer[pos++] = hexMap[b];
-    }
-    return pos;
-}
-/// 
-@system unittest
-{
-    char[32] b = void;
-    char *p = b.ptr;
-    assert(b[0..format11x(p, 0)]                  ==      "          0");
-    assert(b[0..format11x(p, 1)]                  ==      "          1");
-    assert(b[0..format11x(p, 0x10)]               ==      "         10");
-    assert(b[0..format11x(p, 0x100)]              ==      "        100");
-    assert(b[0..format11x(p, 0x1000)]             ==      "       1000");
-    assert(b[0..format11x(p, 0x10000)]            ==      "      10000");
-    assert(b[0..format11x(p, 0x100000)]           ==      "     100000");
-    assert(b[0..format11x(p, 0x1000000)]          ==      "    1000000");
-    assert(b[0..format11x(p, 0x10000000)]         ==      "   10000000");
-    assert(b[0..format11x(p, 0x100000000)]        ==      "  100000000");
-    assert(b[0..format11x(p, 0x1000000000)]       ==      " 1000000000");
-    assert(b[0..format11x(p, 0x10000000000)]      ==      "10000000000");
-    assert(b[0..format11x(p, 0x100000000000)]     ==     "100000000000");
-    assert(b[0..format11x(p, 0x1000000000000)]    ==    "1000000000000");
-    assert(b[0..format11x(p, ubyte.max)]          ==      "         ff");
-    assert(b[0..format11x(p, ushort.max)]         ==      "       ffff");
-    assert(b[0..format11x(p, uint.max)]           ==      "   ffffffff");
-    assert(b[0..format11x(p, ulong.max)]          == "ffffffffffffffff");
-    assert(b[0..format11x(p, 0x1010)]             ==      "       1010");
-    assert(b[0..format11x(p, 0x10101010)]         ==      "   10101010");
-    assert(b[0..format11x(p, 0x1010101010101010)] == "1010101010101010");
-}
-
 immutable static string decMap = "0123456789";
 size_t format03d(char *buffer, ubyte v)
 {
@@ -209,7 +141,7 @@ size_t format11d(char *buffer, long v)
             }
         } else pad = false;
         debug assert(r >= 0 && r < 10, "r="~r.text);
-        buffer[pos++] = decMap[r];
+        buffer[pos++] = r + '0';
     }
     return pos;
 }
@@ -361,7 +293,7 @@ int output(long base, ubyte[] data, int cursor = -1)
         
         if (cur_row)
         {
-            version (Trace) trace(
+            trace(
                 "row.length=%u cbi=%u cbl=%u cti=%u ctl=%u bl=%u tl=%u",
                 row.result.length,
                 row.cursorBinaryIndex,
@@ -393,7 +325,7 @@ int output(long base, ubyte[] data, int cursor = -1)
             size_t rem = row.result.length - (p - buffer);
             p += cwrite(p, rem);
             
-            version (Trace) trace("d=%u r=%u l=%u", distance, rem, p - buffer);
+            trace("d=%u r=%u l=%u", distance, rem, p - buffer);
         }
         else
             cwrite(row.result.ptr, row.result.length);

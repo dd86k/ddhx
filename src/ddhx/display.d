@@ -7,6 +7,7 @@ module ddhx.display;
 import std.range : chunks;
 import std.conv : text;
 import core.stdc.string : memset, memcpy;
+import core.stdc.stdlib : malloc, free;
 import ddhx.os.terminal;
 import ddhx.formatter;
 import ddhx.transcoder;
@@ -16,7 +17,47 @@ import ddhx.logger;
 //TODO: cache rendered (data) lines
 //      dedicated char buffers
 
-private enum
+// Display allocates buffer and returns it
+// 
+
+//TODO: ELEMENT
+//      union { long _; char[8] data; }
+//      int digits;
+
+struct LINE
+{
+    long base;
+    
+    int baselen;
+    char[24] basestr;
+    
+    int datalen;    /// Number of characters printed for data section
+    char *data;
+    
+    int textlen;    /// Number of characters printed for text section
+    char *text;
+}
+
+struct BUFFER
+{
+    int flags;
+    
+    int rows;       /// Initial requested row count
+    int columns;    /// Initial requested column count
+    
+    int datacap;    /// Data buffer size (capacity)
+    int textcap;    /// Text buffer size (capacity)
+    
+    int lncount;    /// Number of lines rendered (obviously not over rows count)
+    LINE* lines;
+}
+
+/*struct DISPLAY
+{
+    
+}*/
+
+enum
 {
     TUIMODE = 0x1,
 }
@@ -24,13 +65,68 @@ private enum
 private __gshared
 {
     /// Capabilities
-    int caps;
+    int caps; //TODO: deprecated
 }
 
 void disp_init(bool tui)
 {
     caps |= tui;
     terminalInit(tui ? TermFeat.altScreen | TermFeat.inputSys : 0);
+}
+
+//TODO: If cols=0, make it automatic? (from disp_hint_columns)
+BUFFER* disp_create(int rows, int cols, int flags)
+{
+    trace("rows=%d cols=%d flags=%x", rows, cols, flags);
+    
+    // Assuming max oct 377 + 1 space for one LINE of formatted data
+    int databfsz = cols * 4;
+    // Assuming max 3 bytes per UTF-8 character, no emoji support, for one LINE of text data
+    int textbfsz = cols * 3;
+    //
+    int linesz = cast(int)LINE.sizeof + databfsz + textbfsz;
+    // 
+    int totalsz = cast(int)BUFFER.sizeof + (rows * linesz);
+    
+    trace("dsz=%d tsz=%d lsz=%d total=%d", databfsz, textbfsz, linesz, totalsz);
+    
+    BUFFER* buffer = cast(BUFFER*)malloc(totalsz);
+    if (buffer == null)
+        return buffer;
+    
+    // Layout:
+    //   BUFFER struct
+    //   LINE... structures
+    //   Data and text... buffers per-LINE
+    
+    buffer.flags = flags;
+    buffer.rows = rows;
+    buffer.columns = cols;
+    buffer.datacap = databfsz;
+    buffer.textcap = textbfsz;
+    buffer.lines = cast(LINE*)(cast(void*)buffer + BUFFER.sizeof);
+    char* bp = cast(char*)buffer + BUFFER.sizeof + (cast(int)LINE.sizeof * rows);
+    for (int i; i < rows; ++i)
+    {
+        LINE *line = &buffer.lines[i];
+        line.base = 0;
+        line.datalen = line.textlen = 0;
+        line.data = bp;
+        line.text = bp + databfsz;
+        bp += databfsz + textbfsz;
+    }
+    
+    return buffer;
+}
+
+void disp_set_datafmt(int datafmt)
+{
+}
+void disp_set_addrfmt(int addrfmt)
+{
+}
+void disp_set_character(int charset)
+{
 }
 
 int disp_readkey()
@@ -43,7 +139,8 @@ Lread:
 
 // Given n columns, hint the optimal buffer size for the "view".
 // If 0, calculated automatically
-int disp_hint_cols()
+//TODO: Move to editor
+int disp_hint_columns()
 {
     enum hexsize = 2;
     enum decsize = 3;
@@ -51,17 +148,17 @@ int disp_hint_cols()
     TerminalSize w = terminalSize();
     return (w.columns - /*gofflen*/ 16) / (hexsize + 2);
 }
-int disp_hint_view(int cols)
+//TODO: Move to editor
+int disp_hint_viewsize(int cols)
 {
-    TerminalSize w = terminalSize();
-    
     enum hexsize = 2;
     enum decsize = 3;
     enum octsize = 3;
-    
+    TerminalSize w = terminalSize();
     // 16 - for text section?
     return ((w.columns - cols /* 16 */) / (hexsize + 2)) * (w.rows - 2);
 }
+
 
 void disp_enable_cursor()
 {
@@ -81,19 +178,17 @@ void disp_write(char* stuff, size_t sz)
 {
     terminalWrite(stuff, sz);
 }
+void disp_size(ref int rows, ref int cols)
+{
+    TerminalSize ts = terminalSize();
+    rows = ts.rows;
+    cols = ts.columns;
+}
 
 /// 
 void disp_header(int columns,
     int addrfmt = Format.hex)
 {
-    //int max = int.max;
-    
-    if (caps & TUIMODE)
-    {
-        //max = terminalSize().columns;
-        disp_cursor(0, 0);
-    }
-    
     enum BUFSZ = 2048;
     __gshared char[BUFSZ] buffer;
     
@@ -147,24 +242,19 @@ void disp_message(const(char)* msg, size_t len)
     terminalWrite(msg, min(len, w.columns));
 }
 
-//TODO: Consider rendering all lines
-//      And then let editor edit the lines before printing
-// NOTE: Settings could be passed through a structure
-/// 
-void disp_update(ulong base, ubyte[] data,
-    int columns,
-    int datafmt = Format.hex, int addrfmt = Format.hex,
-    char defaultchar = '.', int textfmt = CharacterSet.ascii,
-    int addrpadd = 11, int groupsize = 1)
+LINE* disp_find_line(long pos)
 {
-    assert(columns > 0);
-    
-    enum BUFFERSZ = 1024 * 1024;
-    __gshared char[BUFFERSZ] buffer;
-    // Buffer size
-    size_t bufsz = BUFFERSZ;
-    // Buffer index
-    size_t bi = void;
+    return null;
+}
+
+void disp_render_line(LINE *line,
+    long base, ubyte[] data,
+    int columns,
+    int datafmt, int addrfmt,
+    char defaultchar, int textfmt,
+    int addrpad, int groupsize)
+{
+    //TODO: Move function pointers up to BUFFER
     
     // Prepare data formatting functions
     int elemsz = void; // Size of one data element, in characters, plus space
@@ -201,84 +291,111 @@ void disp_update(ulong base, ubyte[] data,
     }
     
     // Prepare transcoder
-    string function(ubyte) transcode = void;
-    switch (textfmt) with (CharacterSet)
-    {
-    case ascii:
-        transcode = &transcodeASCII;
-        break;
-    case cp437:
-        transcode = &transcodeCP437;
-        break;
-    case ebcdic:
-        transcode = &transcodeEBCDIC;
-        break;
-    case mac:
-        transcode = &transcodeMac;
-        break;
-    default:
-        assert(false, "Invalid character set");
-    }
-    
-    // Starting position of text column
-    size_t cstart = addrpadd + 1 + (elemsz * columns) + 2;
-    
-    if (caps & TUIMODE) disp_cursor(1, 0);
+    string function(ubyte) transcode = getTranscoder(textfmt);
 
-    foreach (chunk; chunks(data, columns))
+    line.base = base;
+    line.baselen = cast(int)formataddr(line.basestr.ptr, base);
+    
+    // Insert data and text bytes
+    int di, ci, cnt;
+    foreach (u8; data)
     {
-        // Format address, update address, add space
-        bi = formataddr(buffer.ptr, base);
-        base += columns;
-        buffer[bi++] = ' ';
+        ++cnt; // Number of bytes processed
         
-        // Insert data and text bytes
-        size_t ci = cstart;
-        foreach (b, u8; chunk)
+        // Format data element into data buffer
+        line.data[di++] = ' ';
+        di += formatdata(&line.data[di], u8);
+        
+        // Transcode character and insert it into text buffer
+        immutable(char)[] units = transcode(u8);
+        if (units.length == 0) // No utf-8 codepoints, insert default char
         {
-            buffer[bi++] = ' ';
-            bi += formatdata(&buffer.ptr[bi], u8);
-            
-            // Transcode and insert it into buffer
-            immutable(char)[] units = transcode(u8);
-            if (units.length == 0) // No utf-8 codepoints, insert default char
-            {
-                buffer[ci++] = defaultchar;
-                continue;
-            }
-            foreach (codeunit; units)
-                buffer[ci++] = codeunit;
+            line.text[ci++] = defaultchar;
+            continue;
         }
-        
-        // If row isn't entirely filled by column requirement
-        // NOTE: Text is filled as well to damage the display in TUI mode
-        if (chunk.length < columns)
-        {
-            size_t rem = columns - chunk.length; // remaining bytes
-            
-            // Fill empty data space
-            size_t sz = rem * elemsz;
-            memset(&buffer.ptr[bi], ' ', sz); bi += sz;
-            
-            // Fill empty text space
-            memset(&buffer.ptr[cstart + chunk.length], ' ', rem);
-        }
-        
-        // Add spaces between data and text columns
-        buffer[bi++] = ' ';
-        buffer[bi++] = ' ';
-        
-        // Add length of text column and terminate with newline
-        bi += ci - cstart;  // text index - text start = text size in bytes
-        buffer[bi++] = '\n';
-        
-        trace("out=%d", bi);
-        if (chunk.length < columns)
-            trace("buffer=%(-%02x%)", cast(ubyte[])buffer[0..bi]);
-        
-        terminalWrite(buffer.ptr, bi);
+        foreach (codeunit; units)
+            line.text[ci++] = codeunit;
     }
+    
+    // If row is incomplete, in-fill with spaces
+    if (cnt < columns)
+    {
+        // Remaining length in bytes
+        int rem = columns - cnt;
+        
+        // Fill empty data space and adjust data index
+        int datsz = rem * elemsz;
+        memset(line.data + di, ' ', datsz); di += datsz;
+        
+        // Fill empty text space and adjust text index
+        memset(line.text + ci, ' ', rem); ci += rem;
+    }
+    
+    line.datalen = di;
+    line.textlen = ci;
 }
 
-private:
+void disp_render_buffer(BUFFER *buffer,
+    long base, ubyte[] data,
+    int columns,
+    int datafmt, int addrfmt,
+    char defaultchar, int textfmt,
+    int addrpad, int groupsize)
+{
+    assert(buffer);
+    assert(columns > 0);
+    assert(datafmt >= 0);
+    assert(addrfmt >= 0);
+    assert(defaultchar);
+    assert(textfmt >= 0);
+    assert(addrpad > 0);
+    assert(groupsize > 0);
+    
+    //TODO: Check columns vs. buffer's?
+    
+    // Render lines
+    int lncnt;
+    size_t lnidx;
+    foreach (chunk; chunks(data, columns))
+    {
+        if (lnidx >= buffer.rows)
+        {
+            trace("Line index exceeded buffer row capacity (%d v. %d)", lnidx, buffer.rows);
+            break;
+        }
+        
+        LINE *line = &buffer.lines[lnidx++];
+        
+        disp_render_line(line, base, chunk,
+            columns, datafmt, addrfmt,
+            defaultchar, textfmt,
+            addrpad, groupsize);
+        
+        base += columns;
+        ++lncnt;
+    }
+    buffer.lncount = lncnt;
+}
 
+void disp_print_buffer(BUFFER *buffer)
+{
+    assert(buffer, "Buffer pointer null");
+    
+    for (int l; l < buffer.lncount; ++l)
+        disp_print_line(&buffer.lines[l]);
+}
+
+void disp_print_line(LINE *line)
+{
+    assert(line, "Line pointer null");
+    
+    static immutable string space = "  ";
+    static immutable string newln = "\n";
+    
+    terminalWrite(line.basestr.ptr, line.baselen);
+    terminalWrite(space.ptr, space.length - 1);
+    terminalWrite(line.data, line.datalen);
+    terminalWrite(space.ptr, space.length);
+    terminalWrite(line.text, line.textlen);
+    terminalWrite(newln.ptr, newln.length);
+}

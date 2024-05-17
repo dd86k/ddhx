@@ -19,12 +19,12 @@ void traceInit()
     sw.start();
 }
 
-void trace(A...)(string fmt, A args)
+void trace(string func = __FUNCTION__, A...)(string fmt, A args)
 {
     if (tracing == false)
         return;
     
     double ms = sw.peek().total!"msecs"() / 1_000.0;
-    tracefile.writef("[%08.3f] ", ms);
+    tracefile.writef("[%08.3f] %s: ", ms, func);
     tracefile.writefln(fmt, args);
 }

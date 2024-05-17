@@ -13,7 +13,7 @@ import ddhx.utils.math;
 import ddhx.os.terminal;
 import ddhx.display;
 
-private enum CHUNKSIZE = 1024 * 1024;
+private enum CHUNKSIZE = 16 * 1024;
 
 // NOTE: if path is null, then stdin is used
 int dump(string path)
@@ -43,11 +43,22 @@ int dump(string path)
     }
     
     disp_init(false);
+    
+    BUFFER *dispbuf = disp_create(CHUNKSIZE / _ocolumns, _ocolumns, 0);
+    if (dispbuf == null)
+    {
+        stderr.writeln("error: Unknown error creating display");
+        return 10;
+    }
+    
     disp_header(_ocolumns);
-    ulong address;
+    long address;
     foreach (chunk; file.byChunk(CHUNKSIZE))
     {
-        disp_update(address, chunk, _ocolumns);
+        //disp_update(address, chunk, _ocolumns);
+        disp_render_buffer(dispbuf, address, chunk, _ocolumns,
+            _odatafmt, _oaddrfmt, _ofillchar, _ocharset, _oaddrpad, 1);
+        disp_print_buffer(dispbuf);
         
         address += chunk.length;
     }

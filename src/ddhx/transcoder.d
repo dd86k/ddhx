@@ -56,6 +56,17 @@ string charsetFullname(int charset)
     }
 }
 
+string function(ubyte) getTranscoder(int charset)
+{
+    switch (charset) with (CharacterSet) {
+    case ascii:     return &transcodeASCII;
+    case cp437:     return &transcodeCP437;
+    case ebcdic:    return &transcodeEBCDIC;
+    case mac:       return &transcodeMac;
+    default:        assert(false);
+    }
+}
+
 //TODO: Consider registering encoders to EncodingScheme
 //      to transcode to other charsets other than UTF-8
 //TODO: Translation function could return something specific if it needs another byte

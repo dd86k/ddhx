@@ -4,16 +4,17 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module editor.file;
 
-private import std.stdio : File;
-private import ddhx.os.file : OSFile, OFlags, Seek;
-private import std.container.slist;
-private import std.stdio : File;
-private import std.path : baseName;
-private import core.stdc.stdio : FILE;
-private import ddhx.utils.memory;
-private import std.array : uninitializedArray;
-private import core.stdc.stdlib : malloc, calloc, free;
-private import core.stdc.string : memcmp;
+import std.stdio : File;
+import ddhx.os.file : OSFile, OFlags, Seek;
+import std.container.slist;
+import std.stdio : File;
+import std.path : baseName;
+import core.stdc.stdio : FILE;
+import ddhx.utils.memory;
+import std.array : uninitializedArray;
+import core.stdc.stdlib : malloc, calloc, free;
+import core.stdc.string : memcmp;
+import ddhx.logger;
 
 /// Editor I/O mode.
 enum IoMode : ushort
@@ -128,7 +129,7 @@ struct FileEditor
     
     void setbuffer(size_t newsize)
     {
-        version (Trace) trace("newsize=%u", newsize);
+        trace("newsize=%u", newsize);
         
         // If there is an exisiting size, must have been allocated before
         if (rdbufsz) free(rdbuf);
@@ -170,18 +171,9 @@ struct FileEditor
         return ndpos;
     }
     
-    void removeEdit(long editpos)
+    Edit[] listEdits(long start, long end)
     {
-        if (readonly)
-            return;
-        
-    }
-    
-    void removeLastEdit()
-    {
-        if (readonly)
-            return;
-        
+        throw new Exception("Not implemented");
     }
     
     /+void editMode(EditMode emode)
@@ -206,7 +198,7 @@ struct FileEditor
     
     bool seek(long pos, Seek seek = Seek.start)
     {
-        version (Trace) trace("mode=%s", fileMode);
+        //trace("mode=%s", fileMode);
         position = pos;
         /*final switch (input.mode) with (FileMode) {
         case file:
@@ -229,7 +221,7 @@ struct FileEditor
     
     long tell()
     {
-        version (Trace) trace("mode=%s", fileMode);
+        //trace("mode=%s", fileMode);
         /*final switch (input.mode) with (FileMode) {
         case file:      return io.osfile.tell;
         case mmfile:    return io.mmfile.tell;
@@ -246,7 +238,7 @@ struct FileEditor
     
     ubyte[] read()
     {
-        version (Trace) trace("mode=%s", fileMode);
+        //trace("mode=%s", fileMode);
         /*final switch (input.mode) with (FileMode) {
         case file:   return buffer.output = io.osfile.read(buffer.input);
         case mmfile: return buffer.output = io.mmfile.read(buffer.size);
@@ -281,7 +273,7 @@ struct FileEditor
         
         enum READ_SIZE = 4096;
         
-        version (Trace) trace("skip=%u length=%u", skip, length);
+        trace("skip=%u length=%u", skip, length);
         
         // Skiping
         
@@ -321,11 +313,11 @@ struct FileEditor
             length -= len;
         } while (length > 0);
         
-        version (Trace) trace("outbuf.offset=%u", outbuf.offset);
+        trace("outbuf.offset=%u", outbuf.offset);
         
         io.memory.copy(outbuf.toBytes);
         
-        version (Trace) trace("io.memory.size=%u", io.memory.size);
+        trace("io.memory.size=%u", io.memory.size);
         
         input.mode = FileMode.memory;
     }+/
