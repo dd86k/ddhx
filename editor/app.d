@@ -17,10 +17,10 @@ import ddhx.common;
 
 // NOTE: Glossary
 //       Cursor
-//         Visible on-screen cursor, positioned on a per-byte and additionall
-//         per-digit basis.
+//         Visible on-screen cursor, positioned on a per-byte and additionally
+//         per-digit basis when editing.
 //       View
-//         Position and length of the "view" of the view buffer within file or memory buffer.
+//         The "camera" that follows the cursor.
 
 private enum // Update flags
 {
@@ -49,7 +49,8 @@ private __gshared
     int _etrows;
     int _etcols;
     
-    long _efilesize;
+    /// Last read count in bytes, for limiting the cursor offsets
+    size_t _elrdsz;
     
     /// Position of the view, in bytes
     long _eviewpos;
@@ -92,8 +93,8 @@ int start(string path)
         return 3;
     }
     
-    _efilesize = _efile.size();
-    trace("filesize=%d", _efilesize);
+    //_efilesize = _efile.size();
+    //trace("filesize=%d", _efilesize);
     
     // Init display in TUI mode
     disp_init(true);
@@ -259,9 +260,9 @@ void moverel(long pos)
         return;
     
     long tmp = _ecurpos + pos;
-    if (pos > 0 && tmp >= _efilesize)
+    /*if (pos > 0 && tmp >= _efilesize)
         tmp = _efilesize;
-    else if (pos < 0 && tmp < 0)
+    else*/if (pos < 0 && tmp < 0)
         tmp = 0;
     
     if (tmp == _ecurpos)
@@ -275,9 +276,9 @@ void moverel(long pos)
 private
 void moveabs(long pos)
 {
-    if (pos >= _efilesize)
+    /*if (pos >= _efilesize)
         pos = _efilesize;
-    else if (pos < 0)
+    else*/if (pos < 0)
         pos = 0;
 
     if (pos == _ecurpos)
@@ -287,7 +288,7 @@ void moveabs(long pos)
     _estatus |= UCURSOR;
     _adjust_viewpos();
 }
-// Adjust the view positon
+// Adjust the view positon to the cursor
 void _adjust_viewpos()
 {
     //TODO: Adjust view position algorithmically
@@ -298,8 +299,8 @@ void _adjust_viewpos()
         while (_ecurpos >= _eviewpos + _eviewsize)
         {
             _eviewpos += _ocolumns;
-            if (_eviewpos >= _efilesize - _eviewsize)
-                break;
+            //if (_eviewpos >= _efilesize - _eviewsize)
+            //    break;
         }
         _estatus |= UVIEW;
     }
@@ -325,8 +326,8 @@ void move_left()
 }
 void move_right()
 {
-    if (_ecurpos == _efilesize)
-        return;
+    //if (_ecurpos == _efilesize)
+    //    return;
     
     moverel(1);
 }
@@ -339,8 +340,8 @@ void move_up()
 }
 void move_down()
 {
-    if (_ecurpos == _efilesize)
-        return;
+    //if (_ecurpos == _efilesize)
+    //    return;
     
     moverel(_ocolumns);
 }
@@ -353,8 +354,8 @@ void move_pg_up()
 }
 void move_pg_down()
 {
-    if (_ecurpos == _efilesize)
-        return;
+    //if (_ecurpos == _efilesize)
+    //    return;
     
     moverel(_eviewsize);
 }
@@ -372,7 +373,8 @@ void move_abs_start()
 }
 void move_abs_end()
 {
-    moveabs(_efilesize);
+    long fsize = _efile.size();
+    moveabs(fsize);
 }
 
 // Update all elements on screen depending on status
@@ -387,16 +389,15 @@ void update()
     if (_estatus & UVIEW)
         update_view();
     
-    // Update status
+    // Update statusbar
     update_status();
     
-    // Update cursor position back into view (data) section
+    // Update cursor
     // NOTE: Should always be updated due to frequent movement
     //       That includes messages, cursor naviation, menu invokes, etc.
-    int curdiff = cast(int)(_ecurpos - _eviewpos);
-    trace("cur=%d", curdiff);
-    update_cursor(curdiff, _ocolumns, _oaddrpad);
+    update_cursor();
     
+    // Clear all
     _estatus = 0;
 }
 
@@ -406,11 +407,28 @@ void update_header()
     disp_header(_ocolumns);
 }
 
+// Adjust camera offset
 void update_view()
 {
-    _efile.seek(_eviewpos);
+    static long oldpos;
+    
+    // Seek to camera position and read
+    bool seekerr = _efile.seek(_eviewpos);
     ubyte[] data = _efile.read();
-    trace("addr=%u data.length=%u", _eviewpos, data.length);
+    trace("_eviewpos=%d seekerr=%d addr=%u data.length=%u",
+        _eviewpos, seekerr, _eviewpos, data.length);
+    
+    // If unsuccessful, reset & ignore
+    if (data.length == 0)
+    {
+        _efile.seek(oldpos);
+        _eviewpos = oldpos;
+        return;
+    }
+    
+    // Success
+    oldpos = _eviewpos;
+    _elrdsz = data.length;
     
     disp_render_buffer(dispbuffer, _eviewpos, data,
         _ocolumns, Format.hex, Format.hex, _ofillchar,
@@ -423,13 +441,23 @@ void update_view()
     disp_print_buffer(dispbuffer);
 }
 
-// relative cursor position
-//TODO: Should be: byte pos + digit pos
-void update_cursor(int curpos, int columns, int addrpadd)
+// Adjust cursor position if outside bounds
+void update_cursor()
 {
-    enum hexsize = 3;
-    int row = 1 + (curpos / columns);
-    int col = (addrpadd + 2 + ((curpos % columns) * hexsize));
+    // If absolute cursor position is further than view pos + last read length
+    long avail = _eviewpos + _elrdsz;
+    if (_ecurpos > avail)
+        _ecurpos = avail;
+    
+    trace("_eviewpos=%d _ecurpos=%d _elrdsz=%d", _eviewpos, _ecurpos, _elrdsz);
+    
+    // Cursor position in camera
+    long curview = _ecurpos - _eviewpos;
+    
+    // Get 2D coords
+    enum hexsize = 3; // elemsize + padding
+    int row = 1 + (cast(int)curview / _ocolumns);
+    int col = (_oaddrpad + 2 + ((cast(int)curview % _ocolumns) * hexsize));
     disp_cursor(row, col);
     
     // Editing in progress
@@ -441,7 +469,6 @@ void update_cursor(int curpos, int columns, int addrpadd)
 
 void update_status()
 {
-    //TODO: Could limit write length by terminal width?
     //TODO: check number of edits
     enum STATBFSZ = 2 * 1024;
     char[STATBFSZ] statbuf = void;

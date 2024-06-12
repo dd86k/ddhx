@@ -91,6 +91,7 @@ void cliOptColumn(string v)
     
 }
 
+//TODO: --process - Memory edit by PID
 string[] commonopts(string[] args)
 {
     GetoptResult res = void;
@@ -129,7 +130,7 @@ string[] commonopts(string[] args)
         // Pages
         "version",      "Print the version screen and exit", &cliPage,
         "ver",          "Print only the version and exit", &cliPage,
-        "trace",        "Enable tracing. Used in debugging", &_otrace,
+        "trace",        "Enable tracing log file", &_otrace,
         );
     }
     catch (Exception ex)

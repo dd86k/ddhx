@@ -181,13 +181,13 @@ struct OSFile
             // NOTE: Darwin has set off_t as long
             //       and doesn't have lseek64
             pos = lseek(handle, pos, origin);
-            err = pos == -1;
+            err = pos < 0;
             return pos;
         }
         else version (Posix) // Should cover glibc and musl
         {
             pos = lseek64(handle, pos, origin);
-            err = pos == -1;
+            err = pos < 0;
             return pos;
         }
     }
