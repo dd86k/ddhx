@@ -4,8 +4,10 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx.formatter;
 
+import core.stdc.string : memset;
 import std.conv : text;
 
+// TODO: Add hex upper?
 enum Format
 {
     hex,
@@ -24,440 +26,133 @@ int selectFormat(string fmt)
     }
 }
 
-//TODO: format function for int
-
-size_t format8hex(char *buffer, ubyte v)
+enum
 {
-    buffer[1] = hexMap[v & 15];
-    buffer[0] = hexMap[v >> 4];
-    return 2;
-}
-@system unittest
-{
-    char[2] c = void;
-    format8hex(c.ptr, 0x01);
-    assert(c[] == "01", c);
-    format8hex(c.ptr, 0x20);
-    assert(c[] == "20", c);
-    format8hex(c.ptr, 0xff);
-    assert(c[] == "ff", c);
+    // NOTE: lowest byte is format type
+    F_ZEROPAD = 0x100,
+    // Add "0x", "0", or nothing to format
+    //F_PREPEND = 0x200,
 }
 
-size_t format64hex(char *buffer, ulong v)
+int getdigit16lsb(ref long value)
 {
-    size_t pos;
-    bool pad = true;
-    for (int shift = 60; shift >= 0; shift -= 4)
-    {
-        const ubyte b = (v >> shift) & 15;
-        if (b == 0)
-        {
-            if (pad && shift >= 44)
-            {
-                continue; // cut
-            }
-            else if (pad && shift >= 4)
-            {
-                buffer[pos++] = pad ? ' ' : '0';
-                continue; // pad
-            }
-        }
-        else // Padding no longer acceptable
-            pad = false;
-        buffer[pos++] = hexMap[b];
-    }
-    return pos;
+    int ret = value & 0xf;
+    value >>= 4;
+    return ret;
 }
-@system unittest
+unittest
 {
-    char[32] b = void;
-    char *p = b.ptr;
-    assert(b[0..format64hex(p, 0)]                  ==      "          0");
-    assert(b[0..format64hex(p, 1)]                  ==      "          1");
-    assert(b[0..format64hex(p, 0x10)]               ==      "         10");
-    assert(b[0..format64hex(p, 0x100)]              ==      "        100");
-    assert(b[0..format64hex(p, 0x1000)]             ==      "       1000");
-    assert(b[0..format64hex(p, 0x10000)]            ==      "      10000");
-    assert(b[0..format64hex(p, 0x100000)]           ==      "     100000");
-    assert(b[0..format64hex(p, 0x1000000)]          ==      "    1000000");
-    assert(b[0..format64hex(p, 0x10000000)]         ==      "   10000000");
-    assert(b[0..format64hex(p, 0x100000000)]        ==      "  100000000");
-    assert(b[0..format64hex(p, 0x1000000000)]       ==      " 1000000000");
-    assert(b[0..format64hex(p, 0x10000000000)]      ==      "10000000000");
-    assert(b[0..format64hex(p, 0x100000000000)]     ==     "100000000000");
-    assert(b[0..format64hex(p, 0x1000000000000)]    ==    "1000000000000");
-    assert(b[0..format64hex(p, ubyte.max)]          ==      "         ff");
-    assert(b[0..format64hex(p, ushort.max)]         ==      "       ffff");
-    assert(b[0..format64hex(p, uint.max)]           ==      "   ffffffff");
-    assert(b[0..format64hex(p, ulong.max)]          == "ffffffffffffffff");
-    assert(b[0..format64hex(p, 0x1010)]             ==      "       1010");
-    assert(b[0..format64hex(p, 0x10101010)]         ==      "   10101010");
-    assert(b[0..format64hex(p, 0x1010101010101010)] == "1010101010101010");
+    long test = 0x1234_5678_90ab_cdef;
+    assert(getdigit16lsb(test) == 0xf);
+    assert(getdigit16lsb(test) == 0xe);
+    assert(getdigit16lsb(test) == 0xd);
+    assert(getdigit16lsb(test) == 0xc);
+    assert(getdigit16lsb(test) == 0xb);
+    assert(getdigit16lsb(test) == 0xa);
+    assert(getdigit16lsb(test) == 0);
+    assert(getdigit16lsb(test) == 9);
+    assert(getdigit16lsb(test) == 8);
+    assert(getdigit16lsb(test) == 7);
+    assert(getdigit16lsb(test) == 6);
+    assert(getdigit16lsb(test) == 5);
+    assert(getdigit16lsb(test) == 4);
+    assert(getdigit16lsb(test) == 3);
+    assert(getdigit16lsb(test) == 2);
+    assert(getdigit16lsb(test) == 1);
 }
 
-private:
-
-immutable string hexMap = "0123456789abcdef";
-
-immutable static string decMap = "0123456789";
-size_t format03d(char *buffer, ubyte v)
-{
-    buffer[2] = (v % 10) + '0';
-    buffer[1] = (v / 10 % 10) + '0';
-    buffer[0] = (v / 100 % 10) + '0';
-    return 3;
-}
-@system unittest
-{
-    char[3] c = void;
-    format03d(c.ptr, 1);
-    assert(c[] == "001", c);
-    format03d(c.ptr, 10);
-    assert(c[] == "010", c);
-    format03d(c.ptr, 111);
-    assert(c[] == "111", c);
-}
-
-size_t format11d(char *buffer, long v)
-{
-    debug import std.conv : text;
-    enum ulong I64MAX = 10_000_000_000_000_000_000UL;
-    size_t pos;
-    bool pad = true;
-    for (ulong d = I64MAX; d > 0; d /= 10)
-    {
-        const long r = (v / d) % 10;
-        if (r == 0)
-        {
-            if (pad && d >= 100_000_000_000)
-            {
-                continue; // cut
-            }
-            else if (pad && d >= 10)
-            {
-                buffer[pos++] = pad ? ' ' : '0';
-                continue;
-            }
-        } else pad = false;
-        debug assert(r >= 0 && r < 10, "r="~r.text);
-        buffer[pos++] = r + '0';
-    }
-    return pos;
-}
-/// 
-@system unittest
-{
-    char[32] b = void;
-    char *p = b.ptr;
-    assert(b[0..format11d(p, 0)]                 ==   "          0");
-    assert(b[0..format11d(p, 1)]                 ==   "          1");
-    assert(b[0..format11d(p, 10)]                ==   "         10");
-    assert(b[0..format11d(p, 100)]               ==   "        100");
-    assert(b[0..format11d(p, 1000)]              ==   "       1000");
-    assert(b[0..format11d(p, 10_000)]            ==   "      10000");
-    assert(b[0..format11d(p, 100_000)]           ==   "     100000");
-    assert(b[0..format11d(p, 1000_000)]          ==   "    1000000");
-    assert(b[0..format11d(p, 10_000_000)]        ==   "   10000000");
-    assert(b[0..format11d(p, 100_000_000)]       ==   "  100000000");
-    assert(b[0..format11d(p, 1000_000_000)]      ==   " 1000000000");
-    assert(b[0..format11d(p, 10_000_000_000)]    ==   "10000000000");
-    assert(b[0..format11d(p, 100_000_000_000)]   ==  "100000000000");
-    assert(b[0..format11d(p, 1000_000_000_000)]  == "1000000000000");
-    assert(b[0..format11d(p, ubyte.max)]  ==          "        255");
-    assert(b[0..format11d(p, ushort.max)] ==          "      65535");
-    assert(b[0..format11d(p, uint.max)]   ==          " 4294967295");
-    assert(b[0..format11d(p, ulong.max)]  == "18446744073709551615");
-    assert(b[0..format11d(p, 1010)]       ==          "       1010");
-}
-
-size_t format03o(char *buffer, ubyte v)
-{
-    buffer[2] = (v % 8) + '0';
-    buffer[1] = (v / 8 % 8) + '0';
-    buffer[0] = (v / 64 % 8) + '0';
-    return 3;
-}
-@system unittest
-{
-    import std.conv : octal;
-    char[3] c = void;
-    format03o(c.ptr, 1);
-    assert(c[] == "001", c);
-    format03o(c.ptr, octal!20);
-    assert(c[] == "020", c);
-    format03o(c.ptr, octal!133);
-    assert(c[] == "133", c);
-}
-
-size_t format11o(char *buffer, long v)
-{
-    size_t pos;
-    if (v >> 63) buffer[pos++] = '1'; // ulong.max coverage
-    bool pad = true;
-    for (int shift = 60; shift >= 0; shift -= 3)
-    {
-        const ubyte b = (v >> shift) & 7;
-        if (b == 0)
-        {
-            if (pad && shift >= 33)
-            {
-                continue; // cut
-            }
-            else if (pad && shift >= 3)
-            {
-                buffer[pos++] = pad ? ' ' : '0';
-                continue;
-            }
-        } else pad = false;
-        buffer[pos++] = hexMap[b];
-    }
-    return pos;
-}
-/// 
-@system unittest
-{
-    import std.conv : octal;
-    char[32] b = void;
-    char *p = b.ptr;
-    assert(b[0..format11o(p, 0)]                     ==  "          0");
-    assert(b[0..format11o(p, 1)]                     ==  "          1");
-    assert(b[0..format11o(p, octal!10)]              ==  "         10");
-    assert(b[0..format11o(p, octal!20)]              ==  "         20");
-    assert(b[0..format11o(p, octal!100)]             ==  "        100");
-    assert(b[0..format11o(p, octal!1000)]            ==  "       1000");
-    assert(b[0..format11o(p, octal!10_000)]          ==  "      10000");
-    assert(b[0..format11o(p, octal!100_000)]         ==  "     100000");
-    assert(b[0..format11o(p, octal!1000_000)]        ==  "    1000000");
-    assert(b[0..format11o(p, octal!10_000_000)]      ==  "   10000000");
-    assert(b[0..format11o(p, octal!100_000_000)]     ==  "  100000000");
-    assert(b[0..format11o(p, octal!1000_000_000)]    ==  " 1000000000");
-    assert(b[0..format11o(p, octal!10_000_000_000)]  ==  "10000000000");
-    assert(b[0..format11o(p, octal!100_000_000_000)] == "100000000000");
-    assert(b[0..format11o(p, ubyte.max)]   ==            "        377");
-    assert(b[0..format11o(p, ushort.max)]  ==            "     177777");
-    assert(b[0..format11o(p, uint.max)]    ==            "37777777777");
-    assert(b[0..format11o(p, ulong.max)]   == "1777777777777777777777");
-    assert(b[0..format11o(p, octal!101_010)] ==          "     101010");
-}
-
-// !SECTION
-
-version (none):
-
-//int outputLine(long base, ubyte[] data, int row, int cursor = -1)
-
-//TODO: Add int param for data at cursor (placeholder)
-/// Render multiple lines on screen with optional cursor.
-/// Params:
-///     base = Offset base.
-///     data = data to render.
-///     cursor = Position of cursor.
-/// Returns: Number of rows printed. Negative numbers indicate error.
-int output(long base, ubyte[] data, int cursor = -1)
-{
-    int crow = void, ccol = void;
-    
-    if (data.length == 0)
-        return 0;
-    
-    if (cursor < 0)
-        crow = ccol = -1;
-    else
-    {
-        crow = cursor / setting.columns;
-        ccol = cursor % setting.columns;
-    }
-    
-    version (Trace)
-    {
-        trace("base=%u D=%u crow=%d ccol=%d",
-            base, data.length, crow, ccol);
-        StopWatch sw = StopWatch(AutoStart.yes);
-    }
-    
-    size_t buffersz = // minimum anyway
-        OFFSET_SPACE + 2 + // offset + spacer
-        ((binaryFormatter.size + 1) * setting.columns) + // binary + spacer * cols
-        (1 + (setting.columns * 3)); // spacer + text (utf-8)
-    
-    char *buffer = cast(char*)malloc(buffersz);
-    if (buffer == null) return -1;
-    
-    int lines;
-    foreach (chunk; chunks(data, setting.columns))
-    {
-        const bool cur_row = lines == crow;
-        
-        Row row = makerow(buffer, buffersz, chunk, base, ccol);
-        
-        if (cur_row)
-        {
-            trace(
-                "row.length=%u cbi=%u cbl=%u cti=%u ctl=%u bl=%u tl=%u",
-                row.result.length,
-                row.cursorBinaryIndex,
-                row.cursorBinaryLength,
-                row.cursorTextIndex,
-                row.cursorTextLength,
-                row.binaryLength,
-                row.textLength);
-            
-            // between binary and text cursors
-            size_t distance = row.cursorTextIndex -
-                row.cursorBinaryIndex -
-                row.cursorBinaryLength;
-            
-            char *p = buffer;
-            // offset + pre-cursor binary
-            p += cwrite(p, row.cursorBinaryIndex);
-            // binary cursor
-            terminalInvertColor;
-            p += cwrite(p, row.cursorBinaryLength);
-            terminalResetColor;
-            // post-cursor binary + pre-cursor text (minus spacer)
-            p += cwrite(p, distance);
-            // text cursor
-            terminalHighlight;
-            p += cwrite(p, row.cursorTextLength);
-            terminalResetColor;
-            // post-cursor text
-            size_t rem = row.result.length - (p - buffer);
-            p += cwrite(p, rem);
-            
-            trace("d=%u r=%u l=%u", distance, rem, p - buffer);
-        }
-        else
-            cwrite(row.result.ptr, row.result.length);
-        
-        cwrite('\n');
-        
-        ++lines;
-        base += setting.columns;
-    }
-    
-    free(buffer);
-    
-    version (Trace)
-    {
-        sw.stop;
-        trace("time='%s µs'", sw.peek.total!"usecs");
-    }
-    
-    return lines;
-}
-
-//TODO: Consider moving to this ddhx
-void renderEmpty(uint rows, int w)
-{
-    version (Trace)
-    {
-        trace("lines=%u rows=%u cols=%u", lines, rows, w);
-        StopWatch sw = StopWatch(AutoStart.yes);
-    }
-    
-    char *p = cast(char*)malloc(w);
-    assert(p); //TODO: Soft asserts
-    memset(p, ' ', w);
-    
-    //TODO: Output to scoped OutBuffer
-    for (int i; i < rows; ++i)
-        cwrite(p, w);
-    
-    free(p);
-    
-    version (Trace)
-    {
-        sw.stop;
-        trace("time='%s µs'", sw.peek.total!"usecs");
-    }
-}
+private immutable char[16] hexmap = "0123456789abcdef";
 
 private
-struct Row
+char formatdigit16(int digit) { return hexmap[digit]; }
+unittest
 {
-    char[] result;
-    
-    size_t cursorBinaryIndex;
-    size_t cursorBinaryLength;
-    size_t cursorTextIndex;
-    size_t cursorTextLength;
-    
-    size_t binaryLength;
-    size_t textLength;
+    assert(formatdigit16(0) == '0');
+    assert(formatdigit16(1) == '1');
+    assert(formatdigit16(2) == '2');
+    assert(formatdigit16(3) == '3');
+    assert(formatdigit16(4) == '4');
+    assert(formatdigit16(5) == '5');
+    assert(formatdigit16(6) == '6');
+    assert(formatdigit16(7) == '7');
+    assert(formatdigit16(8) == '8');
+    assert(formatdigit16(9) == '9');
+    assert(formatdigit16(0xa) == 'a');
+    assert(formatdigit16(0xb) == 'b');
+    assert(formatdigit16(0xc) == 'c');
+    assert(formatdigit16(0xd) == 'd');
+    assert(formatdigit16(0xe) == 'e');
+    assert(formatdigit16(0xf) == 'f');
 }
 
-private
-Row makerow(char *buffer, size_t bufferlen,
-    ubyte[] chunk, long pos,
-    int cursor_col)
+// Input : 0x123 with 11 padding (size=char count, e.g., the num of characters to fulfill)
+// Output: "        123"
+size_t formatval(char *buffer, size_t buffersize, int width, long value, int options)
 {
-    Row row = void;
+    assert(buffer);
+    assert(buffersize);
+    assert(width);
+    assert(width <= buffersize);
     
-    // Insert OFFSET
-    size_t indexData = offsetFormatter.offset(buffer, pos);
-    buffer[indexData++] = ' '; // index: OFFSET + space
-    
-    const uint dataLen = (setting.columns * (binaryFormatter.size + 1)); /// data row character count
-    size_t indexChar = indexData + dataLen; // Position for character column
-    
-    *(cast(ushort*)(buffer + indexChar)) = 0x2020; // DATA-CHAR spacer
-    indexChar += 2; // indexChar: indexData + dataLen + spacer
-    
-    // Format DATA and CHAR
-    // NOTE: Smaller loops could fit in cache...
-    //       And would separate data/text logic
-    size_t bi0 = indexData, ti0 = indexChar;
-    int currentCol;
-    foreach (data; chunk)
-    {
-        const bool curhit = currentCol == cursor_col; // cursor hit column
-        //TODO: Maybe binary data formatter should include space?
-        // Data translation
-        buffer[indexData++] = ' ';
-        if (curhit)
-        {
-            row.cursorBinaryIndex  = indexData;
-            row.cursorBinaryLength = binaryFormatter.size;
-        }
-        indexData += binaryFormatter.data(buffer + indexData, data);
-        // Character translation
-        immutable(char)[] units = transcoder.transform(data);
-        if (curhit)
-        {
-            row.cursorTextIndex = indexChar;
-            row.cursorTextLength = units.length ? units.length : 1;
-        }
-        if (units.length) // Has utf-8 codepoints
-        {
-            foreach (codeunit; units)
-                buffer[indexChar++] = codeunit;
-        } else // Invalid character, insert default character
-            buffer[indexChar++] = setting.defaultChar;
-        
-        ++currentCol;
+    // Setup
+    int format = options & 0xf;
+    int function(ref long) getdigit = void;
+    char function(int) formatdigit = void;
+    final switch (format) with (Format) {
+    case hex:
+        getdigit = &getdigit16lsb;
+        formatdigit = &formatdigit16;
+        break;
+    case dec:
+    case oct: assert(0, "implement");
     }
     
-    row.binaryLength = dataLen - bi0;
-    row.textLength   = indexChar - ti0;
+    // Example:  0x0000_0000_0000_1200 with a width of 10 characters
+    // Expected:           "      1200" or
+    //                     "0000001200"
+    // 1. While formatting, record position of last non-zero 'digit' (one-based)
+    //    0x0000_0000_0000_1200
+    //                     ^
+    //                     i=4
+    // 2. Substract width with position
+    //    width(10) - i(4) = 6 Number of padding chars
+    // 3. Fill padding with the number of characters from string[0]
     
-    size_t end = indexChar;
-    
-    // data length < minimum row requirement = in-fill data and text columns
-    if (chunk.length < setting.columns)
+    int b; // Position of highest non-zero digit
+    int i; // Number of characters written
+    for (; i < width; ++i)
     {
-        // In-fill characters: left = Columns - ChunkLength
-        size_t leftchar = (setting.columns - chunk.length); // Bytes left
-        memset(buffer + indexChar, ' ', leftchar);
-        row.textLength += leftchar;
-        // In-fill binary data: left = CharactersLeft * (DataSize + 1)
-        size_t leftdata = leftchar * (binaryFormatter.size + 1);
-        memset(buffer + indexData, ' ', leftdata);
-        row.binaryLength += leftdata;
-        
-        end += leftchar;
+        int digit = getdigit(value);
+        buffer[width - i - 1] = formatdigit16(digit);
+        if (digit) b = i; // Save position
     }
     
-    row.result = buffer[0..end];
+    // If we want space padding and more than one characters written
+    if ((options & F_ZEROPAD) == 0 && i > 1)
+        memset(buffer, ' ', width - (b + 1));
     
-    return row;
+    return width;
+}
+unittest
+{
+    char[16] b;
+    
+    void testformat(string result, int size, long value, int options)
+    {
+        char[] t = b[0..formatval(b.ptr, 16, size, value, options)];
+        //import std.stdio : writeln, stderr;
+        //writeln(`test: "`, result, `", result: "`, t, `"`);
+        if (t != result)
+            assert(false);
+    }
+    
+    testformat("0",  1, 0,        Format.hex);
+    testformat("00", 2, 0,        Format.hex | F_ZEROPAD);
+    testformat(" 0", 2, 0,        Format.hex);
+    testformat("dd", 2, 0xdd,     Format.hex);
+    testformat("c0ffee", 6, 0xc0ffee, Format.hex);
+    testformat("  c0ffee", 8, 0xc0ffee, Format.hex);
+    testformat("00c0ffee", 8, 0xc0ffee, Format.hex | F_ZEROPAD);
+    testformat("        123", 11, 0x123, Format.hex);
+    testformat("00000000123", 11, 0x123, Format.hex | F_ZEROPAD);
 }

@@ -159,19 +159,23 @@ void disp_header(int columns,
     
     static immutable string prefix = "Offset(";
     
+    int elemsize = void;
     string soff = void;
-    size_t function(char*, ubyte) format;
+    //size_t function(char*, ubyte) format;
     switch (addrfmt) with (Format)
     {
     case hex:
+        elemsize = 2;
         soff = "hex";
-        format = &format8hex;
+        //format = &format8hex;
         break;
     case dec:
+        elemsize = 3;
         soff = "dec";
         //format = &;
         break;
     case oct:
+        elemsize = 3;
         soff = "oct";
         //format = &;
         break;
@@ -189,7 +193,8 @@ void disp_header(int columns,
     for (int col; col < columns; ++col)
     {
         buffer[i++] = ' ';
-        i += format(&buffer.ptr[i], cast(ubyte)col);
+        //i += format(&buffer.ptr[i], cast(ubyte)col);
+        i += formatval(buffer.ptr + i, 24, elemsize, col, addrfmt);
     }
     
     buffer[i++] = '\n';
@@ -219,28 +224,27 @@ void disp_render_line(LINE *line,
     char defaultchar, int textfmt,
     int addrpad, int groupsize)
 {
-    //TODO: Move function pointers up to BUFFER
-    
     // Prepare data formatting functions
     int elemsz = void; // Size of one data element, in characters, plus space
-    size_t function(char*, ubyte) formatdata; // Byte formatter
+    //size_t function(char*, ubyte) formatdata; // Byte formatter
     switch (datafmt) with (Format)
     {
     case hex:
-        formatdata = &format8hex;
-        elemsz = 3;
+        //formatdata = &format8hex;
+        elemsz = 2;
         break;
     case dec:
-        elemsz = 4;
+        elemsz = 3;
         break;
     case oct:
-        elemsz = 4;
+        elemsz = 3;
         break;
     default:
         assert(false, "Invalid data format");
     }
     
     // Prepare address formatting functions
+    /*
     size_t function(char*, ulong) formataddr;
     switch (addrfmt) with (Format)
     {
@@ -254,12 +258,14 @@ void disp_render_line(LINE *line,
     default:
         assert(false, "Invalid address format");
     }
+    */
     
     // Prepare transcoder
     string function(ubyte) transcode = getTranscoder(textfmt);
 
     line.base = base;
-    line.baselen = cast(int)formataddr(line.basestr.ptr, base);
+    //line.baselen = cast(int)formataddr(line.basestr.ptr, base);
+    line.baselen = cast(int)formatval(line.basestr.ptr, 24, addrpad, base, addrfmt);
     
     // Insert data and text bytes
     int di, ci, cnt;
@@ -269,7 +275,9 @@ void disp_render_line(LINE *line,
         
         // Format data element into data buffer
         line.data[di++] = ' ';
-        di += formatdata(&line.data[di], u8);
+        //di += formatdata(&line.data[di], u8);
+        //TODO: Fix buffer length
+        di += formatval(line.data + di, 24, elemsz, u8, textfmt | F_ZEROPAD);
         
         // Transcode character and insert it into text buffer
         immutable(char)[] units = transcode(u8);
@@ -289,7 +297,7 @@ void disp_render_line(LINE *line,
         int rem = columns - cnt;
         
         // Fill empty data space and adjust data index
-        int datsz = rem * elemsz;
+        int datsz = rem * (elemsz + 1);
         memset(line.data + di, ' ', datsz); di += datsz;
         
         // Fill empty text space and adjust text index
