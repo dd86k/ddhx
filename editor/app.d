@@ -9,8 +9,8 @@ import std.stdio;
 import core.stdc.stdlib : exit;
 import editor.file;
 import ddhx.display;
-import ddhx.transcoder : CharacterSet;
-import ddhx.formatter : Format;
+import ddhx.transcoder;
+import ddhx.formatter;
 import ddhx.logger;
 import ddhx.os.terminal : Key, Mod;
 import ddhx.common;
@@ -472,7 +472,13 @@ void update_status()
     //TODO: check number of edits
     enum STATBFSZ = 2 * 1024;
     char[STATBFSZ] statbuf = void;
-    int statlen = snprintf(statbuf.ptr, STATBFSZ, "%s | %s", "test".ptr, "test2".ptr);
+    
+    FormatInfo finfo = formatterName(_odatafmt);
+    string charset = charsetName(_ocharset);
+    
+    int statlen = snprintf(statbuf.ptr, STATBFSZ, "%.*s | %.*s",
+        cast(int)finfo.name.length, finfo.name.ptr,
+        cast(int)charset.length, charset.ptr);
     disp_message(statbuf.ptr, statlen);
 }
 

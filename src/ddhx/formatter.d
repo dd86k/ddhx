@@ -15,14 +15,31 @@ enum Format
     oct,
 }
 
-int selectFormat(string fmt)
+int selectFormat(string format)
 {
-    switch (fmt) with (Format) {
+    switch (format) with (Format) {
     case "hex": return hex;
     case "dec": return dec;
     case "oct": return oct;
     default:
-        throw new Exception(text("Invalid format: ", fmt));
+        throw new Exception(text("Invalid format: ", format));
+    }
+}
+
+struct FormatInfo
+{
+    string name;
+    int size1;
+}
+
+FormatInfo formatterName(int format)
+{
+    switch (format) with (Format) {
+    case hex: return FormatInfo("hex", 2);
+    case dec: return FormatInfo("dec", 3);
+    case oct: return FormatInfo("oct", 3);
+    default:
+        throw new Exception(text("Invalid format: ", format));
     }
 }
 

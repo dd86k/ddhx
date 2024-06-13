@@ -159,32 +159,10 @@ void disp_header(int columns,
     
     static immutable string prefix = "Offset(";
     
-    int elemsize = void;
-    string soff = void;
-    //size_t function(char*, ubyte) format;
-    switch (addrfmt) with (Format)
-    {
-    case hex:
-        elemsize = 2;
-        soff = "hex";
-        //format = &format8hex;
-        break;
-    case dec:
-        elemsize = 3;
-        soff = "dec";
-        //format = &;
-        break;
-    case oct:
-        elemsize = 3;
-        soff = "oct";
-        //format = &;
-        break;
-    default:
-        assert(false);
-    }
+    FormatInfo finfo = formatterName(addrfmt);
     
     memcpy(buffer.ptr, prefix.ptr, prefix.length);
-    memcpy(buffer.ptr + prefix.length, soff.ptr, soff.length);
+    memcpy(buffer.ptr + prefix.length, finfo.name.ptr, finfo.name.length);
     
     size_t i = prefix.length + 3;
     buffer[i++] = ')';
@@ -194,7 +172,7 @@ void disp_header(int columns,
     {
         buffer[i++] = ' ';
         //i += format(&buffer.ptr[i], cast(ubyte)col);
-        i += formatval(buffer.ptr + i, 24, elemsize, col, addrfmt);
+        i += formatval(buffer.ptr + i, 24, finfo.size1, col, addrfmt);
     }
     
     buffer[i++] = '\n';
