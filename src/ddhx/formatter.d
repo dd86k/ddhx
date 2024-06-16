@@ -32,7 +32,7 @@ struct FormatInfo
     int size1;
 }
 
-FormatInfo formatterName(int format)
+FormatInfo formatInfo(int format)
 {
     switch (format) with (Format) {
     case hex: return FormatInfo("hex", 2);

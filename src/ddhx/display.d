@@ -59,8 +59,6 @@ void disp_init(bool tui)
 
 BUFFER* disp_create(int rows, int cols, int flags)
 {
-    trace("rows=%d cols=%d flags=%x", rows, cols, flags);
-    
     // Assuming max oct 377 + 1 space for one LINE of formatted data
     int databfsz = cols * 4;
     // Assuming max 3 bytes per UTF-8 character, no emoji support, for one LINE of text data
@@ -70,7 +68,7 @@ BUFFER* disp_create(int rows, int cols, int flags)
     // 
     int totalsz = cast(int)BUFFER.sizeof + (rows * linesz);
     
-    trace("dsz=%d tsz=%d lsz=%d total=%d", databfsz, textbfsz, linesz, totalsz);
+    trace("rows=%d cols=%d flags=%x dsz=%d tsz=%d lsz=%d total=%d", rows, cols, flags, databfsz, textbfsz, linesz, totalsz);
     
     BUFFER* buffer = cast(BUFFER*)malloc(totalsz);
     if (buffer == null)
@@ -119,17 +117,6 @@ Lread:
     return i.key;
 }
 
-// Get maximum element size in characters
-int disp_elem_msize(int fmt) // note: plus space
-{
-    switch (fmt) with (Format) {
-    case hex: return 3; // " ff"
-    case dec: return 4; // " 255"
-    case oct: return 4; // " 377"
-    default: assert(false, "Invalid fmt");
-    }
-}
-
 void disp_cursor_enable(bool enabled)
 {
     
@@ -143,7 +130,7 @@ void disp_write(char* stuff, size_t sz)
 {
     terminalWrite(stuff, sz);
 }
-void disp_size(ref int rows, ref int cols)
+void disp_size(ref int cols, ref int rows)
 {
     TerminalSize ts = terminalSize();
     rows = ts.rows;
@@ -159,7 +146,7 @@ void disp_header(int columns,
     
     static immutable string prefix = "Offset(";
     
-    FormatInfo finfo = formatterName(addrfmt);
+    FormatInfo finfo = formatInfo(addrfmt);
     
     memcpy(buffer.ptr, prefix.ptr, prefix.length);
     memcpy(buffer.ptr + prefix.length, finfo.name.ptr, finfo.name.length);
@@ -171,7 +158,6 @@ void disp_header(int columns,
     for (int col; col < columns; ++col)
     {
         buffer[i++] = ' ';
-        //i += format(&buffer.ptr[i], cast(ubyte)col);
         i += formatval(buffer.ptr + i, 24, finfo.size1, col, addrfmt);
     }
     
@@ -199,47 +185,15 @@ void disp_render_line(LINE *line,
     long base, ubyte[] data,
     int columns,
     int datafmt, int addrfmt,
-    char defaultchar, int textfmt,
+    char defaultchar, int encoding,
     int addrpad, int groupsize)
 {
     // Prepare data formatting functions
-    int elemsz = void; // Size of one data element, in characters, plus space
-    //size_t function(char*, ubyte) formatdata; // Byte formatter
-    switch (datafmt) with (Format)
-    {
-    case hex:
-        //formatdata = &format8hex;
-        elemsz = 2;
-        break;
-    case dec:
-        elemsz = 3;
-        break;
-    case oct:
-        elemsz = 3;
-        break;
-    default:
-        assert(false, "Invalid data format");
-    }
-    
-    // Prepare address formatting functions
-    /*
-    size_t function(char*, ulong) formataddr;
-    switch (addrfmt) with (Format)
-    {
-    case hex:
-        formataddr = &format64hex;
-        break;
-    case dec:
-        break;
-    case oct:
-        break;
-    default:
-        assert(false, "Invalid address format");
-    }
-    */
+    FormatInfo info = formatInfo(datafmt);
+    int elemsz = info.size1;
     
     // Prepare transcoder
-    string function(ubyte) transcode = getTranscoder(textfmt);
+    string function(ubyte) transcode = getTranscoder(encoding);
 
     line.base = base;
     //line.baselen = cast(int)formataddr(line.basestr.ptr, base);
@@ -253,9 +207,8 @@ void disp_render_line(LINE *line,
         
         // Format data element into data buffer
         line.data[di++] = ' ';
-        //di += formatdata(&line.data[di], u8);
         //TODO: Fix buffer length
-        di += formatval(line.data + di, 24, elemsz, u8, textfmt | F_ZEROPAD);
+        di += formatval(line.data + di, 24, elemsz, u8, datafmt | F_ZEROPAD);
         
         // Transcode character and insert it into text buffer
         immutable(char)[] units = transcode(u8);
@@ -311,7 +264,7 @@ void disp_render_buffer(BUFFER *buffer,
     {
         if (lnidx >= buffer.rows)
         {
-            trace("Line index exceeded buffer row capacity (%d v. %d)", lnidx, buffer.rows);
+            trace("Line index exceeded buffer row capacity (%d rows configured)", buffer.rows);
             break;
         }
         

@@ -11,19 +11,8 @@ module ddhx.os.file;
 
 version (Windows)
 {
-    import core.sys.windows.winnt :
-        DWORD, HANDLE, LARGE_INTEGER, FALSE, TRUE,
-        GENERIC_ALL, GENERIC_READ, GENERIC_WRITE;
-    import core.sys.windows.winbase :
-        GetLastError,
-        CreateFileA, CreateFileW,
-        SetFilePointerEx, GetFileSizeEx,
-        ReadFile, ReadFileEx,
-        WriteFile,
-        FlushFileBuffers,
-        CloseHandle,
-        OPEN_ALWAYS, OPEN_EXISTING, INVALID_HANDLE_VALUE,
-        FILE_BEGIN, FILE_CURRENT, FILE_END;
+    import core.sys.windows.winnt;
+    import core.sys.windows.winbase;
     
     private alias OSHANDLE = HANDLE;
     private alias SEEK_SET = FILE_BEGIN;
@@ -70,7 +59,9 @@ else version (Posix)
     private extern (C) int ioctl(int,long,...);
     
     private alias OSHANDLE = int;
-} else {
+}
+else
+{
     static assert(0, "Implement file I/O");
 }
 
@@ -105,29 +96,12 @@ enum OFlags
 struct OSFile
 {
     private OSHANDLE handle;
-    bool eof, err;
-    
-    void cleareof()
-    {
-        eof = false;
-    }
-    void clearerr()
-    {
-        err = false;
-    }
-    int syscode()
-    {
-        version (Windows)
-            return GetLastError();
-        else
-            return errno;
-    }
-    
+
     //TODO: Share file.
     //      By default, at least on Windows, files aren't shared. Enabling
     //      sharing would allow refreshing view (manually) when a program
     //      writes to file.
-    bool open(string path, int flags = OFlags.readWrite)
+    int open(string path, int flags = OFlags.readWrite)
     {
         version (Windows)
         {
@@ -150,7 +124,7 @@ struct OSFile
                 0,              // dwFlagsAndAttributes
                 null,           // hTemplateFile
             );
-            return err = handle == INVALID_HANDLE_VALUE;
+            return handle == INVALID_HANDLE_VALUE ? GetLastError : 0;
         }
         else version (Posix)
         {
@@ -163,32 +137,28 @@ struct OSFile
             else if (flags & OFlags.read)
                 oflags |= O_RDONLY;
             handle = .open(path.toStringz, oflags);
-            return err = handle == -1;
+            return handle < 0 ? errno : 0;
         }
     }
     
-    long seek(Seek origin, long pos)
+    int seek(Seek origin, long pos)
     {
         version (Windows)
         {
             LARGE_INTEGER i = void;
             i.QuadPart = pos;
-            err = SetFilePointerEx(handle, i, &i, origin) == FALSE;
-            return i.QuadPart;
+            int r = SetFilePointerEx(handle, i, &i, origin);
+            return r == FALSE ? GetLastError : 0;
         }
         else version (OSX)
         {
             // NOTE: Darwin has set off_t as long
             //       and doesn't have lseek64
-            pos = lseek(handle, pos, origin);
-            err = pos < 0;
-            return pos;
+            return lseek(handle, pos, origin) < 0 ? errno : 0;
         }
         else version (Posix) // Should cover glibc and musl
         {
-            pos = lseek64(handle, pos, origin);
-            err = pos < 0;
-            return pos;
+            return lseek64(handle, pos, origin) < 0 ? errno : 0;
         }
     }
     
@@ -215,11 +185,11 @@ struct OSFile
         version (Windows)
         {
             LARGE_INTEGER li = void;
-            err = GetFileSizeEx(handle, &li) == 0;
-            return err ? -1 : li.QuadPart;
+            return GetFileSizeEx(handle, &li) ? li.QuadPart : -1;
         }
         else version (Posix)
         {
+            // TODO: macOS
             stat_t stats = void;
             if (fstat(handle, &stats) == -1)
                 return -1;
@@ -248,16 +218,15 @@ struct OSFile
         version (Windows)
         {
             uint len = cast(uint)size;
-            err = ReadFile(handle, buffer, len, &len, null) == FALSE;
-            if (err) return null;
-            eof = len < size;
+            if (ReadFile(handle, buffer, len, &len, null) == FALSE)
+                return null;
             return buffer[0..len];
         }
         else version (Posix)
         {
             ssize_t len = .read(handle, buffer, size);
-            if ((err = len < 0) == true) return null;
-            eof = len < size;
+            if (len < 0)
+                return null;
             return buffer[0..len];
         }
     }
@@ -272,14 +241,15 @@ struct OSFile
         version (Windows)
         {
             uint len = cast(uint)size;
-            err = WriteFile(handle, data, len, &len, null) == FALSE;
+            if (WriteFile(handle, data, len, &len, null) == FALSE)
+                return 0;
             return len; // 0 on error anyway
         }
         else version (Posix)
         {
             ssize_t len = .write(handle, data, size);
             err = len < 0;
-            return err ? 0 : len;
+            return len < 0 ? 0 : len;
         }
     }
     

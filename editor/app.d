@@ -6,8 +6,11 @@
 module editor.app;
 
 import std.stdio;
-import core.stdc.stdlib : exit;
-import editor.file;
+import std.string;
+import core.stdc.stdlib;
+import core.stdc.string;
+import core.stdc.errno;
+import ddhx.document;
 import ddhx.display;
 import ddhx.transcoder;
 import ddhx.formatter;
@@ -19,8 +22,9 @@ import ddhx.common;
 //       Cursor
 //         Visible on-screen cursor, positioned on a per-byte and additionally
 //         per-digit basis when editing.
-//       View
-//         The "camera" that follows the cursor.
+//       View/Camera
+//         The "camera" that follows the cursor. Contains a read buffer that
+//         the document is read from, and is used for rendering.
 
 private enum // Update flags
 {
@@ -33,29 +37,30 @@ private enum // Update flags
     // Editing in progress
     UEDIT       = 1 << 3,
     
-    // Clear the current message
+    // Message was sent, clear later
     UMESSAGE    = 1 << 8,
     
     //
     URESET = UCURSOR | UVIEW | UHEADER,
 }
 
+//TODO: EditorConfig?
+
 private __gshared
 {
-    FileEditor _efile;
+    Document document;
     
     BUFFER *dispbuffer;
-    
-    int _etrows;
-    int _etcols;
     
     /// Last read count in bytes, for limiting the cursor offsets
     size_t _elrdsz;
     
-    /// Position of the view, in bytes
+    /// Camera buffer
+    void *_eviewbuffer;
+    /// Camera buffer size
+    size_t _eviewsize;
+    /// Position of the camera, in bytes
     long _eviewpos;
-    /// Size of the view, in bytes
-    int _eviewsize;
     
     /// Position of the cursor in the file, in bytes
     long _ecurpos;
@@ -72,29 +77,9 @@ private __gshared
     int _estatus;
 }
 
-int start(string path)
+void startEditor(Document doc)
 {
-    trace("ddhx starting");
-    
-    //TODO: Stream support
-    //      With length, build up a memory buffer
-    if (path == null)
-    {
-        trace("todo: Stdin");
-        stderr.writeln("todo: Stdin");
-        return 2;
-    }
-    
-    // Open file
-    if (_efile.open(path, true, _oreadonly))
-    {
-        trace("error: Could not open file");
-        stderr.writeln("error: Could not open file");
-        return 3;
-    }
-    
-    //_efilesize = _efile.size();
-    //trace("filesize=%d", _efilesize);
+    document = doc;
     
     // Init display in TUI mode
     disp_init(true);
@@ -105,8 +90,7 @@ Lread:
     cast(void)update();
     int key = disp_readkey();
     
-    switch (key)
-    {
+    switch (key) {
     // Navigation keys
     case Key.LeftArrow:     move_left();        break;
     case Key.RightArrow:    move_right();       break;
@@ -156,54 +140,68 @@ Lread:
     goto Lread;
 }
 
+// Setup screen and buffers
 void setupscreen()
 {
-    disp_size(_etrows, _etcols);
-    if (_etrows < 4 || _etcols < 20)
+    int tcols = void, trows = void;
+    disp_size(tcols, trows);
+    trace("tcols=%d trows=%d", tcols, trows);
+    if (tcols < 20 || trows < 4)
     {
-        stderr.writeln("error: Terminal too small");
+        stderr.writeln("error: Terminal too small, needs 20x4");
         exit(4);
     }
-    trace("term.rows=%d term.cols=%d", _etrows, _etcols);
     
     // Set number of columns, or automatically get column count
     // from terminal.
-    _ocolumns = _ocolumns > 0 ? _ocolumns : optimalcols();
+    _ocolumns = _ocolumns > 0 ? _ocolumns : optimalElemsPerRow(tcols, _oaddrpad);
     trace("hintcols=%d", _ocolumns);
     
     // Get "view" buffer size, in bytes
-    _eviewsize = optimalvwsz(_ocolumns);
+    _eviewsize = optimalCamSize(_ocolumns, tcols, trows, _odatafmt);
+    trace("readsize=%u", _eviewsize);
     
-    // Create buffer
-    dispbuffer = disp_create(_etrows - 2, _ocolumns, 0);
+    // Create display buffer
+    dispbuffer = disp_create(trows - 2, _ocolumns, 0);
     if (dispbuffer == null)
     {
         stderr.writeln("error: Unknown error creating display");
         exit(5);
     }
+    trace("disprows=%d dispcols=%d", dispbuffer.rows, dispbuffer.columns);
     
-    // Allocate buffer according to desired cols
-    trace("viewsize=%d", _eviewsize);
-    _efile.setbuffer( _eviewsize );
+    // Allocate read buffer
+    _eviewbuffer = malloc(_eviewsize);
+    if (_eviewbuffer == null)
+    {
+        stderr.writeln("error: ", fromStringz(strerror(errno)));
+        exit(6);
+    }
     
     // Initially render these things
     _estatus = URESET;
 }
 
-// Get optimal column count for current terminal size
-int optimalcols()
+// Given desired bytes/elements per row (ucols) and terminal size,
+// get optimal size for the view buffer
+int optimalCamSize(int ucols, int tcols, int trows, int datafmt)
 {
-    int esize = disp_elem_msize(_odatafmt);
-    return (_etcols - _oaddrpad) / (esize + 1); // 16 was address size?
+    return ucols * (trows - 2);
+}
+unittest
+{
+    assert(optimalCamSize(16, 80, 24, Format.hex) == 352);
 }
 
-// Get optimal view size for the view buffer
-int optimalvwsz(int cols)
+// Given number of terminal columns and the padding of the address field,
+// get the optimal number of elements (bytes for now) per row to fit on screen
+int optimalElemsPerRow(int tcols, int addrpad)
 {
-    int esize = disp_elem_msize(_odatafmt);
-    return ((_etcols - cols) / (esize + 1)) * (_etrows - 2);
+    FormatInfo info = formatInfo(_odatafmt);
+    return (tcols - addrpad) / (info.size1 + 1); // +space
 }
 
+// Invoke command prompt
 string prompt(string text)
 {
     throw new Exception("Not implemented");
@@ -260,9 +258,7 @@ void moverel(long pos)
         return;
     
     long tmp = _ecurpos + pos;
-    /*if (pos > 0 && tmp >= _efilesize)
-        tmp = _efilesize;
-    else*/if (pos < 0 && tmp < 0)
+    if (pos < 0 && tmp < 0)
         tmp = 0;
     
     if (tmp == _ecurpos)
@@ -272,13 +268,12 @@ void moverel(long pos)
     _estatus |= UCURSOR;
     _adjust_viewpos();
 }
+
 // Move the cursor to an absolute file position
 private
 void moveabs(long pos)
 {
-    /*if (pos >= _efilesize)
-        pos = _efilesize;
-    else*/if (pos < 0)
+    if (pos < 0)
         pos = 0;
 
     if (pos == _ecurpos)
@@ -288,7 +283,8 @@ void moveabs(long pos)
     _estatus |= UCURSOR;
     _adjust_viewpos();
 }
-// Adjust the view positon to the cursor
+
+// Adjust the camera positon to the cursor
 void _adjust_viewpos()
 {
     //TODO: Adjust view position algorithmically
@@ -299,8 +295,6 @@ void _adjust_viewpos()
         while (_ecurpos >= _eviewpos + _eviewsize)
         {
             _eviewpos += _ocolumns;
-            //if (_eviewpos >= _efilesize - _eviewsize)
-            //    break;
         }
         _estatus |= UVIEW;
     }
@@ -326,9 +320,6 @@ void move_left()
 }
 void move_right()
 {
-    //if (_ecurpos == _efilesize)
-    //    return;
-    
     moverel(1);
 }
 void move_up()
@@ -340,9 +331,6 @@ void move_up()
 }
 void move_down()
 {
-    //if (_ecurpos == _efilesize)
-    //    return;
-    
     moverel(_ocolumns);
 }
 void move_pg_up()
@@ -354,9 +342,6 @@ void move_pg_up()
 }
 void move_pg_down()
 {
-    //if (_ecurpos == _efilesize)
-    //    return;
-    
     moverel(_eviewsize);
 }
 void move_ln_start()
@@ -373,8 +358,10 @@ void move_abs_start()
 }
 void move_abs_end()
 {
-    long fsize = _efile.size();
-    moveabs(fsize);
+    long size = document.size();
+    if (size < 0)
+        message("Don't know end of document");
+    moveabs(size);
 }
 
 // Update all elements on screen depending on status
@@ -389,8 +376,9 @@ void update()
     if (_estatus & UVIEW)
         update_view();
     
-    // Update statusbar
-    update_status();
+    // Update statusbar if no messages
+    if ((_estatus & UMESSAGE) == 0)
+        update_status();
     
     // Update cursor
     // NOTE: Should always be updated due to frequent movement
@@ -413,22 +401,20 @@ void update_view()
     static long oldpos;
     
     // Seek to camera position and read
-    bool seekerr = _efile.seek(_eviewpos);
-    ubyte[] data = _efile.read();
-    trace("_eviewpos=%d seekerr=%d addr=%u data.length=%u",
-        _eviewpos, seekerr, _eviewpos, data.length);
+    ubyte[] data = document.readAt(_eviewpos, _eviewbuffer, _eviewsize);
+    trace("_eviewpos=%d addr=%u data.length=%u _eviewbuffer=%s _eviewsize=%u",
+        _eviewpos, _eviewpos, data.length, _eviewbuffer, _eviewsize);
     
     // If unsuccessful, reset & ignore
-    if (data.length == 0)
+    if (data == null || data.length == 0)
     {
-        _efile.seek(oldpos);
         _eviewpos = oldpos;
         return;
     }
     
     // Success
-    oldpos = _eviewpos;
     _elrdsz = data.length;
+    oldpos = _eviewpos;
     
     disp_render_buffer(dispbuffer, _eviewpos, data,
         _ocolumns, Format.hex, Format.hex, _ofillchar,
@@ -449,15 +435,15 @@ void update_cursor()
     if (_ecurpos > avail)
         _ecurpos = avail;
     
-    trace("_eviewpos=%d _ecurpos=%d _elrdsz=%d", _eviewpos, _ecurpos, _elrdsz);
     
     // Cursor position in camera
     long curview = _ecurpos - _eviewpos;
     
     // Get 2D coords
-    enum hexsize = 3; // elemsize + padding
+    int elemsz = formatInfo(_odatafmt).size1 + 1;
     int row = 1 + (cast(int)curview / _ocolumns);
-    int col = (_oaddrpad + 2 + ((cast(int)curview % _ocolumns) * hexsize));
+    int col = (_oaddrpad + 2 + ((cast(int)curview % _ocolumns) * elemsz));
+    trace("_eviewpos=%d _ecurpos=%d _elrdsz=%d row=%d col=%d", _eviewpos, _ecurpos, _elrdsz, row, col);
     disp_cursor(row, col);
     
     // Editing in progress
@@ -473,7 +459,7 @@ void update_status()
     enum STATBFSZ = 2 * 1024;
     char[STATBFSZ] statbuf = void;
     
-    FormatInfo finfo = formatterName(_odatafmt);
+    FormatInfo finfo = formatInfo(_odatafmt);
     string charset = charsetName(_ocharset);
     
     int statlen = snprintf(statbuf.ptr, STATBFSZ, "%.*s | %.*s",

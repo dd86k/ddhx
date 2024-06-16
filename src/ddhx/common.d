@@ -40,6 +40,8 @@ static immutable string PAGE_VERSION =
     "Homepage: <https://git.dd86k.space/dd86k/ddhx>\n"~
     "Compiler: "~__VENDOR__~" "~COMPILER_VERSION;
 
+//TODO: Config struct
+
 /// 
 bool _otrace = TRACE;
 /// Read-only buffer
