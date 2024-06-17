@@ -7,6 +7,7 @@ module ddhx.document;
 
 import ddhx.os.file;
 import ddhx.os.error;
+import std.file;
 
 private enum DocType
 {
@@ -26,11 +27,15 @@ struct Document
     
     void openFile(string path, bool readOnly)
     {
+        if (isDir(path))
+            throw new Exception("Is a directory");
         int e = file.open(path, readOnly ? OFlags.read : OFlags.readWrite);
         if (e)
             throw new Exception(messageFromCode(e));
         doctype = DocType.disk;
     }
+    
+    //
     
     //void openProcess(int pid, bool readOnly)
     

@@ -13,6 +13,7 @@ version (Windows)
 {
     import core.sys.windows.winnt;
     import core.sys.windows.winbase;
+    import std.utf : toUTF16z;
     
     private alias OSHANDLE = HANDLE;
     private alias SEEK_SET = FILE_BEGIN;
@@ -29,6 +30,7 @@ else version (Posix)
     import core.sys.posix.fcntl;
     import core.stdc.errno;
     import core.stdc.stdio : SEEK_SET, SEEK_CUR, SEEK_END;
+    import std.string : toStringz;
     
     // BLKGETSIZE64 missing from dmd 2.098.1 and ldc 1.24.0
     // ldc 1.24 missing core.sys.linux.fs
@@ -56,7 +58,12 @@ else version (Posix)
     private enum BLKGETSIZE64 = cast(int)_IOR!(0x12,114,size_t.sizeof);
     private alias BLOCKSIZE = BLKGETSIZE64;
     
-    private extern (C) int ioctl(int,long,...);
+    version (Android)
+        alias off_t = int;
+    else
+        alias off_t = long;
+    
+    private extern (C) int ioctl(int,off_t,...);
     
     private alias OSHANDLE = int;
 }
@@ -67,9 +74,6 @@ else
 
 //TODO: FileType GetType(string)
 //      Pipe, device, etc.
-
-import std.string : toStringz;
-import std.utf : toUTF16z;
 
 /// File seek origin.
 enum Seek
@@ -147,8 +151,8 @@ struct OSFile
         {
             LARGE_INTEGER i = void;
             i.QuadPart = pos;
-            int r = SetFilePointerEx(handle, i, &i, origin);
-            return r == FALSE ? GetLastError : 0;
+            return SetFilePointerEx(handle, i, &i, origin) == FALSE ?
+                GetLastError() : 0;
         }
         else version (OSX)
         {

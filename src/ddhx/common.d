@@ -93,7 +93,8 @@ void cliOptColumn(string v)
     
 }
 
-//TODO: --process - Memory edit by PID
+// TODO: Do not follow symlink
+// TODO: --process - Memory edit by PID
 string[] commonopts(string[] args)
 {
     GetoptResult res = void;

@@ -13,14 +13,14 @@ version (Windows)
 else
 {
     import core.stdc.string;
+    import std.string;
 }
-
-import std.string;
 
 string messageFromCode(int code)
 {
 version (Windows)
 {
+    // TODO: Get console codepage
     enum BUFSZ = 1024;
     __gshared char[BUFSZ] buffer;
     uint len = FormatMessageA(
