@@ -16,6 +16,23 @@ private enum DocType
     process,
 }
 
+// For any type of opening
+enum DocOpenFlags
+{
+    readonly = 1,
+    create = 2,
+}
+
+/*
+private enum FileStatus
+{
+    /// Document doesn't exist, and on save, it will be created
+    newfile = 1 << 8,
+    // Document is read-only
+    //readonly = 1 << 9,
+}
+*/
+
 struct Document
 {
     private union
@@ -23,25 +40,36 @@ struct Document
         OSFile file;
     }
     
-    private int doctype;
+    private int status;
     
-    void openFile(string path, bool readOnly)
+    void openFile(string path, int flags)
     {
         if (isDir(path))
             throw new Exception("Is a directory");
-        int e = file.open(path, readOnly ? OFlags.read : OFlags.readWrite);
+        
+        status = DocType.disk;
+        
+        // 
+        if (exists(path) == false)
+        {
+            if (flags & DocOpenFlags.readonly)
+                throw new Exception("Cannot create new read-only document");
+            
+            // Create empty file
+            
+            return;
+        }
+        
+        int e = file.open(path, flags & DocOpenFlags.readonly ? OFlags.read : OFlags.readWrite);
         if (e)
             throw new Exception(messageFromCode(e));
-        doctype = DocType.disk;
     }
     
-    //
-    
-    //void openProcess(int pid, bool readOnly)
+    //void openProcess(int pid, int flags)
     
     ubyte[] read(void *buffer, size_t size)
     {
-        switch (doctype) with (DocType) {
+        switch (cast(ubyte)status) with (DocType) {
         case disk:
             return file.read(cast(ubyte*)buffer, size);
         default:
@@ -51,7 +79,7 @@ struct Document
     
     ubyte[] readAt(long location, void *buffer, size_t size)
     {
-        switch (doctype) with (DocType) {
+        switch (cast(ubyte)status) with (DocType) {
         case disk:
             file.seek(Seek.start, location);
             return file.read(cast(ubyte*)buffer, size);
@@ -60,9 +88,11 @@ struct Document
         }
     }
     
+    //TODO: WriteAt
+    
     long size()
     {
-        switch (doctype) with (DocType) {
+        switch (cast(ubyte)status) with (DocType) {
         case disk:
             return file.size();
         case process:

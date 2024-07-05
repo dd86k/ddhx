@@ -17,6 +17,7 @@ import ddhx.formatter;
 import ddhx.logger;
 import ddhx.os.terminal : Key, Mod;
 import ddhx.common;
+import stack;
 
 // NOTE: Glossary
 //       Cursor
@@ -25,6 +26,13 @@ import ddhx.common;
 //       View/Camera
 //         The "camera" that follows the cursor. Contains a read buffer that
 //         the document is read from, and is used for rendering.
+
+private enum MIN_TERM_SIZE_WIDTH  = 40;
+private enum MIN_TERM_SIZE_HEIGHT = 4;
+
+// TODO: Column spacer
+//       e.g., Add extra space
+// TODO: Bring back virtual cursor, inverted colors
 
 private enum // Update flags
 {
@@ -42,6 +50,22 @@ private enum // Update flags
     
     //
     URESET = UCURSOR | UVIEW | UHEADER,
+}
+
+enum WriteMode
+{
+    readOnly,
+    insert,
+    overwrite
+}
+
+/// Represents a single edit
+struct Edit
+{
+    long position;	/// Absolute offset of edit
+    long digitpos;  /// Position of digit/nibble
+    long value;     /// Value of digit/nibble
+    WriteMode mode; /// Edit mode used (insert, overwrite, etc.)
 }
 
 //TODO: EditorConfig?
@@ -67,13 +91,11 @@ private __gshared
     /// Position of the cursor editing a group of bytes, in digits
     int _edgtpos; // e.g., hex=nibble, dec=digit, etc.
     /// Cursor edit mode (insert, overwrite, etc.)
-    int _emode;
-    /// 
-    enum EDITBFSZ = 8;
-    /// Value of edit input, as a digit
-    char[EDITBFSZ] _ebuffer;
+    WriteMode _emode;
     
-    /// System status, used in updating certains portions of the screen
+    Stack!Edit _ehistory;
+    
+    /// Editor status, used in updating certains portions of the screen
     int _estatus;
 }
 
@@ -90,6 +112,8 @@ Lread:
     cast(void)update();
     int key = disp_readkey();
     
+    // TODO: Consider dictionary to map keys to actions
+    //       Useful for user shortcuts
     switch (key) {
     // Navigation keys
     case Key.LeftArrow:     move_left();        break;
@@ -103,9 +127,24 @@ Lread:
     case Key.Home|Mod.ctrl: move_abs_start();   break;
     case Key.End |Mod.ctrl: move_abs_end();     break;
     
-    // Search
-    case Key.W | Mod.ctrl:
+    // Insert
+    case Key.Insert:
+        final switch (_emode) {
+        case WriteMode.readOnly: // Can't switch from read-only to write
+            goto Lread;
+        case WriteMode.insert:
+            _emode = WriteMode.overwrite;
+            goto Lread;
+        case WriteMode.overwrite:
+            _emode = WriteMode.insert;
+            goto Lread;
+        }
+    
+    // TODO: Search
+    /*
+    case Key.F | Mod.ctrl:
         break;
+    */
     
     // Reset screen
     case Key.R | Mod.ctrl:
@@ -118,23 +157,33 @@ Lread:
         break;
     
     default:
-        // Edit mode
-        if (_editkey(_odatafmt, key))
+        //TODO: Check which column are being edited (data or text)
+        version (none)
         {
-            // 1. Check if key can be inserted into group
-            // 2. 
-            
-            //TODO: When group size filled, add to edit history
-            trace("EDIT key=%c", cast(char)key);
-            _ebuffer[_edgtpos++] = cast(ubyte)key;
-            _estatus |= UEDIT;
-            
-            /*if (_edgtpos >= _odigits) {
-                //TODO: add byte+address to edits
-                editpos = 0;
-                _move_rel(1);
-            }*/
+        // Edit mode: Data
+        int digit = keydata(_odatafmt, key);
+        if (digit < 0) // Not a digit for mode
+            break;
+        
+        if (_emode == WriteMode.readOnly)
+        {
+            message("Can't edit. Read-only.");
             goto Lread;
+        }
+        
+        trace("EDIT key=%d digit=%d pos=%d dgtpost=%d mode=%d",
+            key, digit, _ecurpos, _edgtpos, _emode);
+        
+        _ehistory.push(Edit(_ecurpos, _edgtpos++, digit, _emode));
+        
+        // Check if digit position overflows the maximum element size.
+        FormatInfo fmtinfo = formatInfo(_odatafmt);
+        if (_edgtpos >= fmtinfo.size1)
+        {
+            _edgtpos = 0;
+            move_right();
+            return;
+        }
         }
     }
     goto Lread;
@@ -207,47 +256,67 @@ string prompt(string text)
     throw new Exception("Not implemented");
 }
 
-//TODO: Merge _editkey and _editval
-//      Could return a struct
+// Given the data type (hex, dec, oct) return the value
+// of the keychar to a digit/nibble.
+//
+// For example, 'a' will return 0xa, and 'r' will return -1, an error.
 private
-int _editkey(int type, int key)
+int keydata(int type, int keychar) @safe
 {
     switch (type) with (Format)
     {
     case hex:
-        return (key >= '0' && key <= '9') ||
-            (key >= 'A' && key <= 'F') ||
-            (key >= 'a' && key <= 'f');
-    case dec:   return key >= '0' && key <= '9';
-    case oct:   return key >= '0' && key <= '7';
-    default:
-    }
-    return 0;
-}
-private
-int _editval(int type, int key)
-{
-    switch (type) with (Format)
-    {
-    case hex:
-        if (key >= '0' && key <= '9')
-            return key - '0';
-        if (key >= 'A' && key <= 'F')
-            return key - 'A' + 0x10;
-        if (key >= 'a' && key <= 'f')
-            return key - 'a' + 0x10;
-        goto default;
+        if (keychar >= '0' && keychar <= '9')
+            return keychar - '0';
+        if (keychar >= 'A' && keychar <= 'F')
+            return (keychar - 'A') + 10;
+        if (keychar >= 'a' && keychar <= 'f')
+            return (keychar - 'a') + 10;
+        break;
     case dec:
-        if (key >= '0' && key <= '9')
-            return key - '0';
-        goto default;
-    case oct:
-        if (key >= '0' && key <= '7')
-            return key - '0';
-        goto default;
+        if (keychar >= '0' && keychar <= '9')
+            return keychar - '0';
+        break;
+    case oct:  
+        if (keychar >= '0' && keychar <= '7')
+            return keychar - '0';
+        break;
     default:
-        throw new Exception(__FUNCTION__);
     }
+    return -1;
+}
+@safe unittest
+{
+    assert(keydata(Format.hex, 'a') == 0xa);
+    assert(keydata(Format.hex, 'b') == 0xb);
+    assert(keydata(Format.hex, 'A') == 0xa);
+    assert(keydata(Format.hex, 'B') == 0xb);
+    assert(keydata(Format.hex, '0') == 0);
+    assert(keydata(Format.hex, '3') == 3);
+    assert(keydata(Format.hex, '9') == 9);
+    assert(keydata(Format.hex, 'j') < 0);
+    
+    assert(keydata(Format.dec, '0') == 0);
+    assert(keydata(Format.dec, '1') == 1);
+    assert(keydata(Format.dec, '9') == 9);
+    assert(keydata(Format.dec, 't') < 0);
+    assert(keydata(Format.dec, 'a') < 0);
+    assert(keydata(Format.dec, 'A') < 0);
+    
+    assert(keydata(Format.oct, '0') == 0);
+    assert(keydata(Format.oct, '1') == 1);
+    assert(keydata(Format.oct, '7') == 7);
+    assert(keydata(Format.oct, '9') < 0);
+    assert(keydata(Format.oct, 'a') < 0);
+    assert(keydata(Format.oct, 'L') < 0);
+}
+
+// Transforms a text character value into the value of the desired characterset.
+// So an ASCII 'a' (97) gets translated to 'a' (129) EBCDIC value.
+private
+int keytext(int dstset, int srcset, int keychar)
+{
+    throw new Exception("TODO");
 }
 
 // Move the cursor relative to its position within the file
@@ -412,16 +481,15 @@ void update_view()
         return;
     }
     
-    // Success
+    // Success, render data buffer
     _elrdsz = data.length;
     oldpos = _eviewpos;
-    
     disp_render_buffer(dispbuffer, _eviewpos, data,
         _ocolumns, Format.hex, Format.hex, _ofillchar,
         _ocharset, _oaddrpad, 1);
     
     //TODO: Editor applies previous edits in BUFFER
-    //TODO: Editor applies current edit in BUFFER
+    
     
     disp_cursor(1, 0);
     disp_print_buffer(dispbuffer);
@@ -435,7 +503,6 @@ void update_cursor()
     if (_ecurpos > avail)
         _ecurpos = avail;
     
-    
     // Cursor position in camera
     long curview = _ecurpos - _eviewpos;
     
@@ -445,26 +512,26 @@ void update_cursor()
     int col = (_oaddrpad + 2 + ((cast(int)curview % _ocolumns) * elemsz));
     trace("_eviewpos=%d _ecurpos=%d _elrdsz=%d row=%d col=%d", _eviewpos, _ecurpos, _elrdsz, row, col);
     disp_cursor(row, col);
-    
-    // Editing in progress
-    /*if (editbuf && editsz)
-    {
-        disp_write(editbuf, editsz);
-    }*/
 }
 
 void update_status()
 {
-    //TODO: check number of edits
+    static immutable string[] editmodes = [
+        "readonly", "insert", "overwrite"
+    ];
+    
     enum STATBFSZ = 2 * 1024;
     char[STATBFSZ] statbuf = void;
     
     FormatInfo finfo = formatInfo(_odatafmt);
     string charset = charsetName(_ocharset);
+    string editmode = editmodes[_emode];
     
-    int statlen = snprintf(statbuf.ptr, STATBFSZ, "%.*s | %.*s",
+    int statlen = snprintf(statbuf.ptr, STATBFSZ, "%.*s | %.*s | %.*s",
+        cast(int)editmode.length, editmode.ptr,
         cast(int)finfo.name.length, finfo.name.ptr,
-        cast(int)charset.length, charset.ptr);
+        cast(int)charset.length, charset.ptr,
+    );
     disp_message(statbuf.ptr, statlen);
 }
 

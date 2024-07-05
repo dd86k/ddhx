@@ -1,4 +1,5 @@
-/// Handles complex terminal operations.
+/// Handle display operations using the terminal functions.
+///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
@@ -14,15 +15,7 @@ import ddhx.transcoder;
 import ddhx.utils.math;
 import ddhx.logger;
 
-//TODO: cache rendered (data) lines
-//      dedicated char buffers
-
-// Display allocates buffer and returns it
-// 
-
-//TODO: ELEMENT
-//      union { long _; char[8] data; }
-//      int digits;
+// TODO: Move element/data formatting elsewhere
 
 struct LINE
 {
