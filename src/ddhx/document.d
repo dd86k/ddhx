@@ -7,6 +7,7 @@ module ddhx.document;
 
 import ddhx.os.file;
 import ddhx.os.error;
+import ddhx.logger;
 import std.file;
 
 private enum DocType
@@ -49,6 +50,7 @@ struct Document
         
         status = DocType.disk;
         
+        /*
         // 
         if (exists(path) == false)
         {
@@ -59,6 +61,7 @@ struct Document
             
             return;
         }
+        */
         
         int e = file.open(path, flags & DocOpenFlags.readonly ? OFlags.read : OFlags.readWrite);
         if (e)
@@ -79,9 +82,11 @@ struct Document
     
     ubyte[] readAt(long location, void *buffer, size_t size)
     {
+        trace("loc=%d buffer=%s size=%d", location, buffer, size);
         switch (cast(ubyte)status) with (DocType) {
         case disk:
-            file.seek(Seek.start, location);
+            if (file.seek(Seek.start, location))
+                return null;
             return file.read(cast(ubyte*)buffer, size);
         default:
             throw new Exception("Not implemented: "~__FUNCTION__);

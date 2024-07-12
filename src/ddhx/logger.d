@@ -7,9 +7,23 @@ module ddhx.logger;
 import std.stdio;
 import std.datetime.stopwatch;
 
-private __gshared File tracefile;
-private __gshared StopWatch sw;
-private __gshared bool tracing;
+private __gshared
+{
+    StopWatch sw;
+    File tracefile;
+    bool tracing;
+}
+
+// Auto-init logger to stdout for tests
+version (unittest)
+{
+    static this()
+    {
+        tracing = true;
+        tracefile = stdout;
+        sw.start();
+    }
+}
 
 void traceInit()
 {

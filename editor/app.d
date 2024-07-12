@@ -1,4 +1,4 @@
-/// Main module, handling core TUI operations.
+/// Editor application.
 /// 
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
@@ -27,12 +27,22 @@ import stack;
 //         The "camera" that follows the cursor. Contains a read buffer that
 //         the document is read from, and is used for rendering.
 
+// NOTE: Edition must be strictly per-byte
+
+// TODO: Navigation modes
+//       Normal: element sized
+//       Digit/nibble: 1-digit sized
+//       Text: 1-char sized
+// TODO: Upgrade defaultchar to multi-byte
+
 private enum MIN_TERM_SIZE_WIDTH  = 40;
 private enum MIN_TERM_SIZE_HEIGHT = 4;
 
 // TODO: Column spacer
 //       e.g., Add extra space
 // TODO: Bring back virtual cursor, inverted colors
+// TODO: Change "Offset(hex)" to "Offset:hex" and change address padding from 11 to 10
+// TODO: Gray out zeros option
 
 private enum // Update flags
 {
@@ -68,8 +78,6 @@ struct Edit
     WriteMode mode; /// Edit mode used (insert, overwrite, etc.)
 }
 
-//TODO: EditorConfig?
-
 private __gshared
 {
     Document document;
@@ -92,6 +100,12 @@ private __gshared
     int _edgtpos; // e.g., hex=nibble, dec=digit, etc.
     /// Cursor edit mode (insert, overwrite, etc.)
     WriteMode _emode;
+    
+    /// Effective number of elements per row.
+    int _erealcols;
+    
+    /// Size, in bytes, of each element
+    int _egroupsize;
     
     Stack!Edit _ehistory;
     
@@ -157,19 +171,25 @@ Lread:
         break;
     
     default:
-        //TODO: Check which column are being edited (data or text)
+        // TODO: Check which column are being edited (data or text)
         version (none)
         {
+        // Can't edit while in this write mode
+        if (_emode == WriteMode.readOnly)
+        {
+            message("Can't edit, read-only.");
+            goto Lread;
+        }
+        
         // Edit mode: Data
         int digit = keydata(_odatafmt, key);
         if (digit < 0) // Not a digit for mode
             break;
         
-        if (_emode == WriteMode.readOnly)
-        {
-            message("Can't edit. Read-only.");
-            goto Lread;
-        }
+        // TODO: Transform value into byte positions+mask only
+        //       e.g., functions that convert it back
+        //             3rd digit with decimal data -> 0x12c
+        //             and vice versa
         
         trace("EDIT key=%d digit=%d pos=%d dgtpost=%d mode=%d",
             key, digit, _ecurpos, _edgtpos, _emode);
@@ -192,62 +212,60 @@ Lread:
 // Setup screen and buffers
 void setupscreen()
 {
+    // NOTE: At this point, the terminal is setup
+    
     int tcols = void, trows = void;
     disp_size(tcols, trows);
     trace("tcols=%d trows=%d", tcols, trows);
-    if (tcols < 20 || trows < 4)
+    if (tcols < MIN_TERM_SIZE_WIDTH || trows < MIN_TERM_SIZE_HEIGHT)
     {
-        stderr.writeln("error: Terminal too small, needs 20x4");
+        trace("error: Terminal too small, need %dx%d",
+            MIN_TERM_SIZE_WIDTH, MIN_TERM_SIZE_HEIGHT);
+        stderr.writefln("error: Terminal too small, need %dx%d",
+            MIN_TERM_SIZE_WIDTH, MIN_TERM_SIZE_HEIGHT);
         exit(4);
     }
     
-    // Set number of columns, or automatically get column count
-    // from terminal.
-    _ocolumns = _ocolumns > 0 ? _ocolumns : optimalElemsPerRow(tcols, _oaddrpad);
-    trace("hintcols=%d", _ocolumns);
+    FormatInfo fmtinfo = formatInfo(_odatafmt);
     
-    // Get "view" buffer size, in bytes
-    _eviewsize = optimalCamSize(_ocolumns, tcols, trows, _odatafmt);
-    trace("readsize=%u", _eviewsize);
+    RECOMMENDATION rec = disp_recommend_values(_ocolumns, _oaddrpad, fmtinfo.size1);
+    trace("%s", rec);
+    // If _ocolumns=0 then this is always a no-op
+    // More of a check with specified amount of columns
+    if (rec.columns < _ocolumns)
+    {
+        trace("error: Terminal can't hold %d elements per row", rec.columns);
+        stderr.writefln("error: Terminal can't hold %d elements per row", rec.columns);
+        exit(6);
+    }
+    
+    _erealcols = rec.columns;
+    _eviewsize = rec.viewsize;
     
     // Create display buffer
-    dispbuffer = disp_create(trows - 2, _ocolumns, 0);
+    dispbuffer = disp_configure(dispbuffer, rec.viewsize,
+        _odatafmt, _ogrpsize,
+        _oaddrfmt, _oaddrpad,
+        _ofillchar, _ocharset);
     if (dispbuffer == null)
     {
+        trace("error: Unknown error creating display");
         stderr.writeln("error: Unknown error creating display");
         exit(5);
     }
-    trace("disprows=%d dispcols=%d", dispbuffer.rows, dispbuffer.columns);
     
     // Allocate read buffer
+    assert(_eviewsize);
     _eviewbuffer = malloc(_eviewsize);
     if (_eviewbuffer == null)
     {
+        trace("error: %s", fromStringz(strerror(errno)));
         stderr.writeln("error: ", fromStringz(strerror(errno)));
         exit(6);
     }
     
     // Initially render these things
     _estatus = URESET;
-}
-
-// Given desired bytes/elements per row (ucols) and terminal size,
-// get optimal size for the view buffer
-int optimalCamSize(int ucols, int tcols, int trows, int datafmt)
-{
-    return ucols * (trows - 2);
-}
-unittest
-{
-    assert(optimalCamSize(16, 80, 24, Format.hex) == 352);
-}
-
-// Given number of terminal columns and the padding of the address field,
-// get the optimal number of elements (bytes for now) per row to fit on screen
-int optimalElemsPerRow(int tcols, int addrpad)
-{
-    FormatInfo info = formatInfo(_odatafmt);
-    return (tcols - addrpad) / (info.size1 + 1); // +space
 }
 
 // Invoke command prompt
@@ -312,7 +330,7 @@ int keydata(int type, int keychar) @safe
 }
 
 // Transforms a text character value into the value of the desired characterset.
-// So an ASCII 'a' (97) gets translated to 'a' (129) EBCDIC value.
+// For example, ASCII 'b' (98) source translates to 'b' (130) EBCDIC destination value.
 private
 int keytext(int dstset, int srcset, int keychar)
 {
@@ -363,7 +381,7 @@ void _adjust_viewpos()
     {
         while (_ecurpos >= _eviewpos + _eviewsize)
         {
-            _eviewpos += _ocolumns;
+            _eviewpos += _erealcols;
         }
         _estatus |= UVIEW;
     }
@@ -372,7 +390,7 @@ void _adjust_viewpos()
     {
         while (_ecurpos < _eviewpos)
         {
-            _eviewpos -= _ocolumns;
+            _eviewpos -= _erealcols;
             if (_eviewpos <= 0)
                 break;
         }
@@ -396,11 +414,11 @@ void move_up()
     if (_ecurpos == 0)
         return;
     
-    moverel(-_ocolumns);
+    moverel(-_erealcols);
 }
 void move_down()
 {
-    moverel(_ocolumns);
+    moverel(_erealcols);
 }
 void move_pg_up()
 {
@@ -415,11 +433,11 @@ void move_pg_down()
 }
 void move_ln_start()
 {
-    moverel(-_ecurpos % _ocolumns);
+    moverel(-_ecurpos % _erealcols);
 }
 void move_ln_end()
 {
-    moverel((_ocolumns - (_ecurpos % _ocolumns)) - 1);
+    moverel((_erealcols - (_ecurpos % _erealcols)) - 1);
 }
 void move_abs_start()
 {
@@ -461,7 +479,7 @@ void update()
 void update_header()
 {
     disp_cursor(0, 0);
-    disp_header(_ocolumns);
+    disp_header(_erealcols);
 }
 
 // Adjust camera offset
@@ -470,29 +488,46 @@ void update_view()
     static long oldpos;
     
     // Seek to camera position and read
-    ubyte[] data = document.readAt(_eviewpos, _eviewbuffer, _eviewsize);
-    trace("_eviewpos=%d addr=%u data.length=%u _eviewbuffer=%s _eviewsize=%u",
-        _eviewpos, _eviewpos, data.length, _eviewbuffer, _eviewsize);
+    ubyte[] viewdata = document.readAt(_eviewpos, _eviewbuffer, _eviewsize);
+    trace("_eviewpos=%d addr=%u viewdata.length=%u _eviewbuffer=%s _eviewsize=%u",
+        _eviewpos, _eviewpos, viewdata.length, _eviewbuffer, _eviewsize);
     
     // If unsuccessful, reset & ignore
-    if (data == null || data.length == 0)
+    if (viewdata == null || viewdata.length == 0)
     {
         _eviewpos = oldpos;
         return;
     }
     
     // Success, render data buffer
-    _elrdsz = data.length;
+    _elrdsz = viewdata.length;
     oldpos = _eviewpos;
-    disp_render_buffer(dispbuffer, _eviewpos, data,
-        _ocolumns, Format.hex, Format.hex, _ofillchar,
-        _ocharset, _oaddrpad, 1);
     
-    //TODO: Editor applies previous edits in BUFFER
+    // TODO: Find a way to print address even if no data read
+    // TODO: Editor applies previous edits in BUFFER
     
+    disp_render_elements(dispbuffer, viewdata);
+    
+    /*
+    // Select edits to apply
+    long memmin = _eviewpos;
+    long memmax = _eviewpos + _eviewsize;
+    Edit[] edits = _ehistory.getAll();
+    foreach (ref Edit edit; edits)
+    {
+        // This edit's position is lower than the viewport? Skip
+        if (edit.position < memmin)
+            continue;
+        // This edit's position is higher than the viewport? Skip
+        if (edit.position > memmax)
+            continue;
+        
+        // 
+    }
+    */
     
     disp_cursor(1, 0);
-    disp_print_buffer(dispbuffer);
+    disp_print_all(dispbuffer, _eviewpos, _erealcols);
 }
 
 // Adjust cursor position if outside bounds
@@ -508,8 +543,8 @@ void update_cursor()
     
     // Get 2D coords
     int elemsz = formatInfo(_odatafmt).size1 + 1;
-    int row = 1 + (cast(int)curview / _ocolumns);
-    int col = (_oaddrpad + 2 + ((cast(int)curview % _ocolumns) * elemsz));
+    int row = 1 + (cast(int)curview / _erealcols);
+    int col = (_oaddrpad + 2 + ((cast(int)curview % _erealcols) * elemsz));
     trace("_eviewpos=%d _ecurpos=%d _elrdsz=%d row=%d col=%d", _eviewpos, _ecurpos, _elrdsz, row, col);
     disp_cursor(row, col);
 }
