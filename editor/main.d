@@ -3,10 +3,10 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor.main;
+module main;
 
 import std.stdio, std.getopt;
-import editor.app;
+import editor;
 import ddhx.common;
 import ddhx.logger;
 import ddhx.document;
@@ -28,9 +28,13 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
+// TODO: Re-unite dumper/editor
 int main(string[] args)
 {
     int openflags;
+    long oseek;
+    long olength;
+    bool oreadonly;
     GetoptResult res = void;
     try
     {
@@ -40,33 +44,27 @@ int main(string[] args)
             exit(0);
         },
         // Editor option
-        "c|columns",    "Set column length (default=16, auto=0)", &_ocolumns,
+        "c|columns",    "Set column length (default=16, auto=0)", &options.view_columns,
         "o|offset",     "Set offset mode ('hex', 'dec', or 'oct')",
             (string _, string fmt) {
-                _oaddrfmt = selectFormat(fmt);
+                options.address_format = selectFormat(fmt);
             },
         "data",         "Set data mode ('hex', 'dec', or 'oct')",
             (string _, string fmt) {
-                _odatafmt = selectFormat(fmt);
+                options.data_format = selectFormat(fmt);
             },
         //"filler",       "Set non-printable default character (default='.')", &cliOption,
         "C|charset",    "Set character translation (default=ascii)",
             (string _, string charset) {
-                _ocharset = selectCharacterSet(charset);
+                options.character_set = selectCharacterSet(charset);
             },
-        "r|readonly",   "Open file in read-only editing mode", () {
-            openflags |= DocOpenFlags.readonly;
-        },
+        "r|readonly",   "Open file in read-only editing mode", &oreadonly,
         // Editor input mode
         // Application options
         "s|seek",       "Seek at position",
-            (string _, string len) {
-                _opos = cparse(len);
-            },
+            (string _, string len) { oseek = cparse(len); },
         "l|length",     "Maximum amount of data to read",
-            (string _, string len) {
-                _olength = cparse(len);
-            },
+            (string _, string len) { olength = cparse(len); },
         //"I|norc",       "Use defaults and ignore user configuration files", &cliNoRC,
         //"rc",           "Use supplied RC file", &cliRC,
         // Pages
@@ -79,7 +77,7 @@ int main(string[] args)
             writeln(DDHX_VERSION);
             exit(0);
         },
-        "trace",        "Enable tracing log file", &_otrace,
+        "trace",        "Enable tracing log file", &options.trace,
         );
     }
     catch (Exception ex)
@@ -110,28 +108,12 @@ int main(string[] args)
         exit(0);
     }
     
-    if (_otrace) traceInit();
+    if (options.trace) traceInit();
     trace("version=%s args=%u", DDHX_VERSION, args.length);
     
     // If file not mentioned, app will assume stdin
     string filename = args.length > 1 ? args[1] : null;
     trace("filename=%s openflags=%x", filename, openflags);
     
-    // TODO: Support streams (for editor, that's slurping all of stdin)
-    if (filename == null)
-    {
-        stderr.writeln("error: Filename required. No current support for streams.");
-        return 0;
-    }
-    
-    Document doc;
-    try doc.openFile(filename, openflags);
-    catch (Exception ex)
-    {
-        stderr.writeln("error: ", ex.msg);
-        return 1;
-    }
-    
-    startEditor(doc);
-    return 0;
+    return startEditor(filename, oreadonly);
 }

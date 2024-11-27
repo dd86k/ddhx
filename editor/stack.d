@@ -55,7 +55,7 @@ struct Stack(T)
 }
 unittest
 {
-    Stack!int addresses;
+    Stack!size_t addresses;
     
     assert(addresses.dirty() == false);
     

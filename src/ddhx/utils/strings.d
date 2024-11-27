@@ -121,6 +121,7 @@ long cparse(string arg) @trusted
     import std.conv : octal;
     assert(cparse("0") == 0);
     assert(cparse("1") == 1);
+    assert(cparse("-1") == -1);
     assert(cparse("10") == 10);
     assert(cparse("20") == 20);
     assert(cparse("0x1") == 0x1);

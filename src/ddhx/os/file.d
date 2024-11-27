@@ -217,14 +217,14 @@ struct OSFile
         return read(buffer.ptr, buffer.length);
     }
     
-    ubyte[] read(ubyte *buffer, size_t size)
+    ubyte[] read(void *buffer, size_t size)
     {
         version (Windows)
         {
             uint len = cast(uint)size;
             if (ReadFile(handle, buffer, len, &len, null) == FALSE)
                 return null;
-            return buffer[0..len];
+            return (cast(ubyte*)buffer)[0..len];
         }
         else version (Posix)
         {

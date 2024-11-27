@@ -20,7 +20,17 @@ enum CharacterSet
     //gsm,    /// GSM 03.38
 }
 
-int selectCharacterSet(string charset)
+immutable(char)[] transcode(ubyte data, CharacterSet set)
+{
+    final switch (set) with (CharacterSet) {
+    case ascii:  return transcodeASCII(data);
+    case cp437:  return transcodeCP437(data);
+    case ebcdic: return transcodeEBCDIC(data);
+    case mac:    return transcodeMac(data);
+    }
+}
+
+CharacterSet selectCharacterSet(string charset)
 {
     switch (charset) with (CharacterSet)
     {

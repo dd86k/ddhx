@@ -33,12 +33,12 @@ void traceInit()
     sw.start();
 }
 
-void trace(string func = __FUNCTION__, A...)(string fmt, A args)
+void trace(string func = __FUNCTION__, int line = __LINE__, A...)(string fmt, A args)
 {
     if (tracing == false)
         return;
     
     double ms = sw.peek().total!"msecs"() / 1_000.0;
-    tracefile.writef("[%08.3f] %s: ", ms, func);
+    tracefile.writef("[%08.3f] <%s:%d> ", ms, func, line);
     tracefile.writefln(fmt, args);
 }

@@ -15,7 +15,7 @@ enum Format
     oct,
 }
 
-int selectFormat(string format)
+Format selectFormat(string format)
 {
     switch (format) with (Format) {
     case "hex": return hex;
@@ -29,10 +29,10 @@ int selectFormat(string format)
 struct FormatInfo
 {
     string name;
-    int size1;
+    int size1; /// Size of one element in characters
 }
 
-FormatInfo formatInfo(int format)
+FormatInfo formatInfo(Format format)
 {
     switch (format) with (Format) {
     case hex: return FormatInfo("hex", 2);
@@ -46,9 +46,9 @@ FormatInfo formatInfo(int format)
 enum
 {
     // NOTE: lowest byte is format type
-    F_ZEROPAD = 0x100,
+    F_ZEROPAD = 1 << 8,
     // Add "0x", "0", or nothing to format
-    //F_PREPEND = 0x200,
+    //F_PREPEND = 1 << 9,
 }
 
 int getdigit16lsb(ref long value)
@@ -140,7 +140,7 @@ size_t formatval(char *buffer, size_t buffersize, int width, long value, int opt
     for (; i < width; ++i)
     {
         int digit = getdigit(value);
-        buffer[width - i - 1] = formatdigit16(digit);
+        buffer[width - i - 1] = formatdigit(digit);
         if (digit) b = i; // Save position
     }
     

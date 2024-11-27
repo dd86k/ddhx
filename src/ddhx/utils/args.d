@@ -4,6 +4,9 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx.utils.args;
 
+import ddhx.utils.strings : cparse;
+//import core.stdc.ctype : isprint
+
 /// Separate buffer into arguments (akin to argv).
 /// Params: buffer = String buffer.
 /// Returns: Argv-like array.
@@ -78,4 +81,35 @@ string[] arguments(const(char)[] buffer)
     assert(arguments(`/type "yes string"`) == [ "/type", "yes string" ]);
     assert(arguments(`A           B`) == [ "A", "B" ]);
     //assert(arguments(`tab\tmoment`) == [ "tab", "moment" ]);
+}
+
+struct Position
+{
+    ulong position;
+    char op;
+}
+
+Position parsePosition(string text)
+{
+    switch (text[0]) {
+    case '-':   return Position(-cparse(text[1..$]), '-');
+    case '+':   return Position(cparse(text[1..$]), '+');
+    default:    return Position(cparse(text), 0);
+    }
+}
+unittest
+{
+    Position abs = parsePosition("0x1234");
+    assert(abs.op == 0);
+    assert(abs.position == 0x1234);
+    
+    Position revm = parsePosition("-1234");
+    assert(revm.op == '-');
+    assert(revm.position == -1234);
+    
+    import std.conv : octal;
+    
+    Position reva = parsePosition("+0123");
+    assert(reva.op == '+');
+    assert(reva.position == octal!"123");
 }

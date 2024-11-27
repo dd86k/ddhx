@@ -394,7 +394,7 @@ void terminalClear()
             /*||
             FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/)
         {
-            terminalPos(0, 0);
+            terminalCursor(0, 0);
         }
         else // If that fails, run cls.
             system("cls");
@@ -438,7 +438,7 @@ TerminalSize terminalSize()
 /// Params:
 ///   x = X position (horizontal)
 ///   y = Y position (vertical)
-void terminalPos(int x, int y)
+void terminalCursor(int x, int y)
 {
     version (Windows) // 0-based
     {
