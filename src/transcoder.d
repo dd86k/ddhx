@@ -1,10 +1,12 @@
 /// Transcoder module.
+///
+/// Used to transcode data to UTF-8 characters.
 /// 
-/// Translates single-byte characters into utf-8 strings.
+/// Translates single-byte characters into UTF-8 strings.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.transcoder;
+module transcoder;
 
 import std.encoding : codeUnits, CodeUnits;
 import std.conv : text;
@@ -20,6 +22,30 @@ enum CharacterSet
     //gsm,    /// GSM 03.38
 }
 
+private immutable
+{
+    string ID_ASCII  = "ascii";
+    string ID_CP437  = "cp437";
+    string ID_EBCDIC = "ebcdic";
+    string ID_MAC    = "mac";
+    
+    string NAME_ASCII  = "ASCII";
+    string NAME_CP437  = "IBM PC Code Page 437";
+    string NAME_EBCDIC = "IBM EBCDIC Code Page 37";
+    string NAME_MAC    = "Mac OS Roman (Windows 10000)";
+}
+
+CharacterSet selectCharacterSet(string id)
+{
+    switch (id) with (CharacterSet)
+    {
+    case ID_ASCII:  return ascii;
+    case ID_CP437:  return cp437;
+    case ID_EBCDIC: return ebcdic;
+    case ID_MAC:    return mac;
+    default:        throw new Exception(text("Invalid charset: ", id));
+    }
+}
 immutable(char)[] transcode(ubyte data, CharacterSet set)
 {
     final switch (set) with (CharacterSet) {
@@ -29,78 +55,53 @@ immutable(char)[] transcode(ubyte data, CharacterSet set)
     case mac:    return transcodeMac(data);
     }
 }
-
-CharacterSet selectCharacterSet(string charset)
+string charsetID(CharacterSet charset)
 {
-    switch (charset) with (CharacterSet)
-    {
-    case "ascii":   return ascii;
-    case "cp437":   return cp437;
-    case "ebcdic":  return ebcdic;
-    case "mac":     return mac;
+    switch (charset) with (CharacterSet) {
+    case ascii:     return ID_ASCII;
+    case cp437:     return ID_CP437;
+    case ebcdic:    return ID_EBCDIC;
+    case mac:       return ID_MAC;
+    default:        throw new Exception(text("Invalid charset: ", charset));
+    }
+}
+string charsetName(int charset)
+{
+    switch (charset) with (CharacterSet) {
+    case ascii:     return NAME_ASCII;
+    case cp437:     return NAME_CP437;
+    case ebcdic:    return NAME_EBCDIC;
+    case mac:       return NAME_MAC;
     default:        throw new Exception(text("Invalid charset: ", charset));
     }
 }
 
-string charsetName(int charset)
-{
-    switch (charset) with (CharacterSet)
-    {
-    case ascii:     return "ascii";
-    case cp437:     return "cp437";
-    case ebcdic:    return "ebcdic";
-    case mac:       return "mac";
-    default:        assert(false);
-    }
-}
+private:
 
-string charsetFullname(int charset)
-{
-    switch (charset) with (CharacterSet)
-    {
-    case ascii:     return "ASCII";
-    case cp437:     return "IBM PC Code Page 437";
-    case ebcdic:    return "IBM EBCDIC Code Page 37";
-    case mac:       return "Mac OS Roman (Windows 10000)";
-    default:        assert(false);
-    }
-}
+// TODO: Consider registering encoders to EncodingScheme
+//       to transcode to other charsets other than UTF-8
+// TODO: Translation function could return something specific if it needs another byte
+//       With static param, internally cleared when successful
+// TODO: Other single-byte character sets
+//       - ISO/IEC 8859-1 "iso8859-1"
+//         https://en.wikipedia.org/wiki/ISO/IEC_8859-1
+//       - Windows-1251 "win1251"
+//         https://en.wikipedia.org/wiki/Windows-1251
+//       - Windows-1252 "win1252"
+//         https://en.wikipedia.org/wiki/Windows-1252
+//       - Windows-932 "win932"
+//         https://en.wikipedia.org/wiki/Code_page_932_(Microsoft_Windows)
+//       - ITU T.61 "t61" (technically multibyte)
+//         Also called Code page 1036, CP1036, or IBM 01036.
+//         https://en.wikipedia.org/wiki/ITU_T.61
+//         NOTE: T.51 specifies how accents are used.
+//               0xc0..0xcf are accent prefixes.
+//       - GSM 03.38 "gsm" (technically multibyte)
+//         https://www.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT
 
-string function(ubyte) getTranscoder(int charset)
-{
-    switch (charset) with (CharacterSet) {
-    case ascii:     return &transcodeASCII;
-    case cp437:     return &transcodeCP437;
-    case ebcdic:    return &transcodeEBCDIC;
-    case mac:       return &transcodeMac;
-    default:        assert(false);
-    }
-}
-
-//TODO: Consider registering encoders to EncodingScheme
-//      to transcode to other charsets other than UTF-8
-//TODO: Translation function could return something specific if it needs another byte
-//      With static param, internally cleared when successful
-//TODO: Other single-byte character sets
-//      - ISO/IEC 8859-1 "iso8859-1"
-//        https://en.wikipedia.org/wiki/ISO/IEC_8859-1
-//      - Windows-1251 "win1251"
-//        https://en.wikipedia.org/wiki/Windows-1251
-//      - Windows-1252 "win1252"
-//        https://en.wikipedia.org/wiki/Windows-1252
-//      - Windows-932 "win932"
-//        https://en.wikipedia.org/wiki/Code_page_932_(Microsoft_Windows)
-//      - ITU T.61 "t61" (technically multibyte)
-//        Also called Code page 1036, CP1036, or IBM 01036.
-//        https://en.wikipedia.org/wiki/ITU_T.61
-//        NOTE: T.51 specifies how accents are used.
-//              0xc0..0xcf are accent prefixes.
-//      - GSM 03.38 "gsm" (technically multibyte)
-//        https://www.unicode.org/Public/MAPPINGS/ETSI/GSM0338.TXT
-
-private alias U  = char[];
-private template C(dchar c) { enum C = cast(immutable)codeUnits!char(c).s; }
-private immutable immutable(char)[] emptychar;
+alias U  = char[];
+template C(dchar c) { enum C = cast(immutable)codeUnits!char(c).s; }
+immutable immutable(char)[] emptychar;
 
 immutable(char)[] transcodeASCII(ubyte data) @trusted
 {

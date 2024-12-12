@@ -1,15 +1,16 @@
-/// Utilities to handle arguments.
+/// Utilities.
+/// 
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.utils.args;
+module utils;
 
-import ddhx.utils.strings : cparse;
-//import core.stdc.ctype : isprint
-
-/// Separate buffer into arguments (akin to argv).
-/// Params: buffer = String buffer.
-/// Returns: Argv-like array.
+/// Split arguments while accounting for quotes.
+///
+/// Uses the GC to append to the new array.
+/// Params: text = Shell-like input.
+/// Returns: Arguments.
+/// Throws: Does not explicitly throw any exceptions.
 string[] arguments(const(char)[] buffer)
 {
     import std.string : strip;
@@ -83,33 +84,33 @@ string[] arguments(const(char)[] buffer)
     //assert(arguments(`tab\tmoment`) == [ "tab", "moment" ]);
 }
 
-struct Position
+long cparse(string arg) @trusted
 {
-    ulong position;
-    char op;
+    import core.stdc.stdio : sscanf;
+    import std.string : toStringz;
+    import std.conv : text;
+    long r = void;
+    if (sscanf(arg.toStringz, "%lli", &r) != 1)
+        throw new Exception(text("Could not parse: ", arg));
+    return r;
 }
-
-Position parsePosition(string text)
+@safe unittest
 {
-    switch (text[0]) {
-    case '-':   return Position(-cparse(text[1..$]), '-');
-    case '+':   return Position(cparse(text[1..$]), '+');
-    default:    return Position(cparse(text), 0);
-    }
-}
-unittest
-{
-    Position abs = parsePosition("0x1234");
-    assert(abs.op == 0);
-    assert(abs.position == 0x1234);
-    
-    Position revm = parsePosition("-1234");
-    assert(revm.op == '-');
-    assert(revm.position == -1234);
-    
     import std.conv : octal;
-    
-    Position reva = parsePosition("+0123");
-    assert(reva.op == '+');
-    assert(reva.position == octal!"123");
+    // decimal
+    assert(cparse("0") == 0);
+    assert(cparse("1") == 1);
+    assert(cparse("-1") == -1);
+    assert(cparse("10") == 10);
+    assert(cparse("20") == 20);
+    // hex
+    assert(cparse("0x1") == 0x1);
+    assert(cparse("0x10") == 0x10);
+    assert(cparse("0x20") == 0x20);
+    // NOTE: Signed numbers cannot be over 0x8000_0000_0000_000
+    assert(cparse("0x1bcd1234ffffaaaa") == 0x1bcd_1234_ffff_aaaa);
+    // octal
+    assert(cparse("01") == 1);
+    assert(cparse("010") == octal!"010");
+    assert(cparse("020") == octal!"020");
 }

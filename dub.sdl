@@ -4,20 +4,6 @@ authors "dd86k"
 copyright "Copyright © 2017-2024 dd86k"
 license "MIT"
 
-configuration "editor" {
-    targetType "executable"
-    mainSourceFile "editor/main.d"
-    sourcePaths "editor"
-    importPaths "editor"
-}
-configuration "dumper" {
-    targetType "executable"
-    targetName "ddhxdump"
-    mainSourceFile "dumper/main.d"
-    sourcePaths "dumper"
-    importPaths "dumper"
-}
-
 #
 # Debug builds
 #
@@ -34,8 +20,14 @@ buildType "trace" {
 # Tests
 #
 
+# TODO: Change to configuration
 buildType "input" {
     versions "TestInput"
     buildOptions "unittests"
     sourceFiles "tests/input.d"
+}
+buildType "color" {
+    versions "TestColor"
+    buildOptions "unittests"
+    sourceFiles "tests/color.d"
 }

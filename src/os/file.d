@@ -7,7 +7,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.os.file;
+module os.file;
 
 version (Windows)
 {
@@ -52,18 +52,18 @@ else version (Posix)
     //TODO: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
     //      I don't know why, so I'm casting it to int to let it compile.
     //      Fix later.
-    private enum _IOR(int type,int nr,size_t size) =
-        cast(int)_IOC!(_IOC_READ,type,nr,size);
-    
+    private enum _IOR(int type,int nr,size_t size) = cast(int)_IOC!(_IOC_READ,type,nr,size);
     private enum BLKGETSIZE64 = cast(int)_IOR!(0x12,114,size_t.sizeof);
     private alias BLOCKSIZE = BLKGETSIZE64;
     
-    version (Android)
-        alias off_t = int;
-    else
-        alias off_t = long;
+    import core.stdc.config : c_ulong;
     
-    private extern (C) int ioctl(int,off_t,...);
+    version (CRuntime_Bionic)
+        private extern (C) int ioctl(int, int, ...);
+    else version (CRuntime_Musl)
+        private extern (C) int ioctl(int, int, ...);
+    else // glibc, BSDs
+        private extern (C) int ioctl(int, c_ulong, ...);
     
     private alias OSHANDLE = int;
 }
@@ -71,6 +71,8 @@ else
 {
     static assert(0, "Implement file I/O");
 }
+
+import os.error : OSException;
 
 //TODO: FileType GetType(string)
 //      Pipe, device, etc.
@@ -90,22 +92,22 @@ enum OFlags
     read    = 1 << 1,   /// Read access.
     write   = 1 << 2,   /// Write access.
     readWrite = read | write,   /// Read and write access.
-    share   = 1 << 5,   /// [TODO] Share file with read access to other programs.
+    share   = 1 << 5,   /// TODO: Share file with read access to other programs.
 }
 
-//TODO: Set file size (to extend or truncate file, allocate size)
-//    useful when writing all changes to file
-//    Win32: Seek + SetEndOfFile
-//    others: ftruncate
+// TODO: Set file size (to extend or truncate file, allocate size)
+//       useful when writing all changes to file
+//       Win32: Seek + SetEndOfFile
+//       others: ftruncate
 struct OSFile
 {
     private OSHANDLE handle;
 
-    //TODO: Share file.
-    //      By default, at least on Windows, files aren't shared. Enabling
-    //      sharing would allow refreshing view (manually) when a program
-    //      writes to file.
-    int open(string path, int flags = OFlags.readWrite)
+    // TODO: Share file.
+    //       By default, at least on Windows, files aren't shared. Enabling
+    //       sharing would allow refreshing view (manually) when a program
+    //       writes to file.
+    void open(string path, int flags = OFlags.readWrite)
     {
         version (Windows)
         {
@@ -128,7 +130,8 @@ struct OSFile
                 0,              // dwFlagsAndAttributes
                 null,           // hTemplateFile
             );
-            return handle == INVALID_HANDLE_VALUE ? GetLastError : 0;
+            if (handle == INVALID_HANDLE_VALUE)
+                throw new OSException(GetLastError());
         }
         else version (Posix)
         {
@@ -141,28 +144,30 @@ struct OSFile
             else if (flags & OFlags.read)
                 oflags |= O_RDONLY;
             handle = .open(path.toStringz, oflags);
-            return handle < 0 ? errno : 0;
+            if (handle < 0)
+                throw new OSException(errno);
         }
     }
     
-    int seek(Seek origin, long pos)
+    void seek(Seek origin, long pos)
     {
         version (Windows)
         {
             LARGE_INTEGER i = void;
             i.QuadPart = pos;
-            return SetFilePointerEx(handle, i, &i, origin) == FALSE ?
-                GetLastError() : 0;
+            if (SetFilePointerEx(handle, i, &i, origin) == FALSE)
+                throw new OSException(GetLastError());
         }
         else version (OSX)
         {
-            // NOTE: Darwin has set off_t as long
-            //       and doesn't have lseek64
-            return lseek(handle, pos, origin) < 0 ? errno : 0;
+            // NOTE: Darwin has set off_t as c_long and doesn't have lseek64
+            if (lseek(handle, pos, origin) < 0)
+                throw new OSException(errno);
         }
         else version (Posix) // Should cover glibc and musl
         {
-            return lseek64(handle, pos, origin) < 0 ? errno : 0;
+            if (lseek64(handle, pos, origin) < 0)
+                throw new OSException(errno);
         }
     }
     
@@ -189,25 +194,32 @@ struct OSFile
         version (Windows)
         {
             LARGE_INTEGER li = void;
-            return GetFileSizeEx(handle, &li) ? li.QuadPart : -1;
+            if (GetFileSizeEx(handle, &li) == FALSE)
+                throw new OSException(GetLastError());
+            return li.QuadPart;
         }
         else version (Posix)
         {
-            // TODO: macOS
+            // TODO: macOS support
             stat_t stats = void;
             if (fstat(handle, &stats) == -1)
                 return -1;
-            // NOTE: fstat(2) sets st_size to 0 on block devices
-            switch (stats.st_mode & S_IFMT) {
+            
+            int typ = stats.st_mode & S_IFMT;
+            switch (typ) {
             case S_IFREG: // File
             case S_IFLNK: // Link
                 return stats.st_size;
             case S_IFBLK: // Block devices (like a disk)
-                //TODO: BSD variants
+                // fstat(2) sets st_size to 0 on block devices
+                // TODO: BSD support
                 long s = void;
-                return ioctl(handle, BLOCKSIZE, &s) == -1 ? -1 : s;
+                if (ioctl(handle, BLOCKSIZE, &s) < 0)
+                    throw new OSException(errno);
+                return s;
             default:
-                return -1;
+                import std.conv : text;
+                throw new Exception(text("Unsupported file type: ", typ));
             }
         }
     }
@@ -223,15 +235,15 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (ReadFile(handle, buffer, len, &len, null) == FALSE)
-                return null;
+                throw new OSException(GetLastError());
             return (cast(ubyte*)buffer)[0..len];
         }
         else version (Posix)
         {
             ssize_t len = .read(handle, buffer, size);
             if (len < 0)
-                return null;
-            return buffer[0..len];
+                throw new OSException(errno);
+            return (cast(ubyte*)buffer)[0..len];
         }
     }
     
@@ -246,14 +258,15 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (WriteFile(handle, data, len, &len, null) == FALSE)
-                return 0;
+                throw new OSException(GetLastError());
             return len; // 0 on error anyway
         }
         else version (Posix)
         {
             ssize_t len = .write(handle, data, size);
-            err = len < 0;
-            return len < 0 ? 0 : len;
+            if (len < 0)
+                throw new OSException(errno);
+            return len;
         }
     }
     
@@ -274,10 +287,14 @@ struct OSFile
         version (Windows)
         {
             CloseHandle(handle);
+            
+            handle = INVALID_HANDLE_VALUE;
         }
         else version (Posix)
         {
             .close(handle);
+            
+            handle = 0;
         }
     }
 }

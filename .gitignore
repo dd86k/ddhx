@@ -6,7 +6,6 @@ dub.selections.json
 ddhx-test-library
 ddhx-test-default
 /ddhx
-ddhx.log
 __test__*__
 *.o
 *.obj
@@ -25,6 +24,7 @@ __test__*__
 # Project
 src/gitinfo.d
 .ddhxrc
+*.log
 
 # Personal
 perso/

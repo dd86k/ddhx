@@ -1,8 +1,9 @@
 /// OS path utilities.
+///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.os.path;
+module os.path;
 
 version (Windows)
 {
@@ -49,7 +50,7 @@ string getHomeFolder()
         {
             string path;
             transcode(buffer[0..wcslen(buffer)], path);
-            free(buffer); // since transcode allocated
+            free(buffer); // since transcode allocates
             return path;
         }
         free(buffer);
@@ -100,8 +101,8 @@ string getUserConfigFolder()
     }
     else version (Posix)
     {
-        if (const(string) *xdg_config_home = "XDG_CONFIG_HOME" in environment)
-            return *xdg_config_home;
+        if ("XDG_CONFIG_HOME" in environment)
+            return environment["XDG_CONFIG_HOME"];
     }
     
     // Fallback

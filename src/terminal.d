@@ -1,14 +1,17 @@
 /// Terminal/console handling.
+///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.os.terminal;
+module terminal;
 
-//TODO: readline
-//      automatically pause input, stdio.readln, resume input
-//TODO: Switch key input depending on $TERM
-//      xterm (xterm, xterm-color, xterm-256color), linux, vt100
-//TODO: BetterC coverage (using D_BetterC version)
+// TODO: terminalReadline(int limit = 0)
+//       automatically pause/resume input
+//       limit=0 -> OS/host stdin default
+// TODO: Switch capabilities depending on $TERM
+//       "xterm", "xterm-color", "xterm-256color",
+//       "linux", "vt100", "vt220", "wsvt25" (netbsd10), etc.
+//       Or $COLORTERM ("truecolor", etc.)
 
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
@@ -37,6 +40,7 @@ version (Windows)
 else version (Posix)
 {
     import core.stdc.stdio : snprintf;
+    import core.stdc.errno;
     import core.sys.posix.sys.stat;
     import core.sys.posix.sys.ioctl;
     import core.sys.posix.unistd;
@@ -51,7 +55,7 @@ else version (Posix)
     // Bionic depends on the Linux system it's compiled on.
     // But Glibc and Musl have the same settings, so does Bionic.
     // ...And uClibc, at least on Linux.
-    // D are missing the following bindings.
+    // D are missing the bindings for these runtimes.
     version (CRuntime_Musl)
         version = IncludeTermiosLinux;
     version (CRuntime_Bionic)
@@ -66,18 +70,18 @@ else version (Posix)
         private alias uint tcflag_t;
         private alias uint speed_t;
         private alias char cc_t;
+        private enum NCCS       = 32;
         private enum TCSANOW    = 0;
-        private enum NCCS    = 32;
-        private enum ICANON    = 2;
-        private enum ECHO    = 10;
-        private enum BRKINT    = 2;
-        private enum INPCK    = 20;
-        private enum ISTRIP    = 40;
-        private enum ICRNL    = 400;
-        private enum IXON    = 2000;
-        private enum IEXTEN    = 100000;
-        private enum CS8    = 60;
-        private enum TCSAFLUSH    = 2;
+        private enum TCSAFLUSH  = 2;
+        private enum ICANON     = 2;
+        private enum ECHO       = 10;
+        private enum BRKINT     = 2;
+        private enum INPCK      = 20;
+        private enum ISTRIP     = 40;
+        private enum ICRNL      = 400;
+        private enum IXON       = 2000;
+        private enum IEXTEN     = 100000;
+        private enum CS8        = 60;
         private struct termios {
             tcflag_t c_iflag;
             tcflag_t c_oflag;
@@ -101,10 +105,12 @@ else version (Posix)
         private extern (C) int ioctl(int fd, ulong request, ...);
     }
     
+    private
     struct KeyInfo {
         string text;
         int value;
     }
+    private
     immutable KeyInfo[] keyInputsVTE = [
         // text         Key value
         { "\033[A",     Key.UpArrow },
@@ -173,8 +179,7 @@ else version (Posix)
 }
 
 /// Flags for terminalInit.
-//TODO: captureCtrlC: Block CTRL+C
-enum TermFeat : ushort {
+enum TermFeat {
     /// Initiate only the basic.
     none        = 0,
     /// Initiate the input system.
@@ -190,7 +195,7 @@ private __gshared int current_features;
 /// Initiate terminal.
 /// Params: features = Feature bits to initiate.
 /// Throws: (Windows) WindowsException on OS exception
-void terminalInit(int features)
+void terminalInit(int features = 0)
 {
     current_features = features;
     
@@ -224,14 +229,14 @@ void terminalInit(int features)
             
             hOut = GetStdHandle(STD_OUTPUT_HANDLE);
             if (hIn == INVALID_HANDLE_VALUE)
-                throw new WindowsException(GetLastError);
+                throw new WindowsException(GetLastError());
             
             if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
-                throw new WindowsException(GetLastError);
+                throw new WindowsException(GetLastError());
             
             DWORD attr = void;
             if (GetConsoleMode(hOut, &attr) == FALSE)
-                throw new WindowsException(GetLastError);
+                throw new WindowsException(GetLastError());
             
             hOut = CreateConsoleScreenBuffer(
                 GENERIC_READ | GENERIC_WRITE,    // dwDesiredAccess
@@ -241,7 +246,7 @@ void terminalInit(int features)
                 null,    // lpScreenBufferData
             );
             if (hOut == INVALID_HANDLE_VALUE)
-                throw new WindowsException(GetLastError);
+                throw new WindowsException(GetLastError());
             
             stdout.flush;
             stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
@@ -251,7 +256,7 @@ void terminalInit(int features)
             SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT);
             
             if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
-                throw new WindowsException(GetLastError);
+                throw new WindowsException(GetLastError());
         }
         else
         {
@@ -265,7 +270,7 @@ void terminalInit(int features)
         // LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
         oldCP = GetConsoleOutputCP();
         if (SetConsoleOutputCP(CP_UTF8) == FALSE)
-            throw new WindowsException(GetLastError);
+            throw new WindowsException(GetLastError());
         
         //TODO: Get active (or default) colors
         GetConsoleScreenBufferInfo(hOut, &csbi);
@@ -274,6 +279,7 @@ void terminalInit(int features)
     else version (Posix)
     {
         stdout.setvbuf(0, _IONBF);
+        
         if (features & TermFeat.inputSys)
         {
             // Should it re-open tty by default?
@@ -308,7 +314,7 @@ void terminalInit(int features)
             // maximum amount of time to wait for input,
             // 1 being 1/10 of a second (100 milliseconds)
             //new_ios.c_cc[VTIME] = 0;
-            terminalResumeInput;
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
         }
         
         if (features & TermFeat.altScreen)
@@ -316,9 +322,10 @@ void terminalInit(int features)
             // change to alternative screen buffer
             stdout.write("\033[?1049h");
         }
-    }
+    } // version (Posix)
     
-    atexit(&terminalQuit);
+    // NOTE: Does not work with exceptions
+    //atexit(&terminalQuit);
 }
 
 private extern (C)
@@ -327,7 +334,7 @@ void terminalQuit()
     terminalRestore();
 }
 
-/// Restore CP and other settings
+/// Restore older environment
 void terminalRestore()
 {
     version (Windows)
@@ -338,11 +345,15 @@ void terminalRestore()
     {
         // restore main screen buffer
         if (current_features & TermFeat.altScreen)
-            terminalOut("\033[?1049l");
-        terminalShowCursor;
+            terminalWrite("\033[?1049l");
+        
+        // show cursor
+        terminalWrite("\033[?25h");
+        
+        // restablish input ios
+        if (current_features & TermFeat.inputSys)
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
     }
-    if (current_features & TermFeat.inputSys)
-        terminalPauseInput;
 }
 
 private __gshared void function() terminalOnResizeEvent;
@@ -361,7 +372,8 @@ void terminalOnResize(void function() func)
 }
 
 version (Posix)
-private extern (C)
+extern (C)
+private
 void terminalResized(int signo, siginfo_t *info, void *content)
 {
     if (terminalOnResizeEvent)
@@ -373,7 +385,6 @@ void terminalPauseInput()
     version (Posix)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 }
-
 void terminalResumeInput()
 {
     version (Posix)
@@ -403,7 +414,7 @@ void terminalClear()
     {
         // \033c is a Reset
         // \033[2J is "Erase whole display"
-        terminalOut("\033[2J");
+        terminalWrite("\033[2J");
     } else static assert(0, "Clear: Not implemented");
 }
 
@@ -452,7 +463,7 @@ void terminalCursor(int x, int y)
         char[16] b = void;
         int r = snprintf(b.ptr, 16, "\033[%d;%dH", ++y, ++x);
         assert(r > 0);
-        terminalOut(b.ptr, r);
+        terminalWrite(b.ptr, r);
     }
 }
 
@@ -468,7 +479,7 @@ void terminalHideCursor()
     }
     else version (Posix)
     {
-        terminalOut("\033[?25l");
+        terminalWrite("\033[?25l");
     }
 }
 /// Show the terminal cursor.
@@ -483,21 +494,196 @@ void terminalShowCursor()
     }
     else version (Posix)
     {
-        terminalOut("\033[?25h");
+        terminalWrite("\033[?25h");
     }
 }
 
-void terminalHighlight()
+enum TermColor
+{
+    black,
+    blue,
+    green,
+    aqua,
+    red,
+    purple,
+    yellow,
+    gray,
+    lightgray,
+    brightblue,
+    brightgreen,
+    brightaqua,
+    brightred,
+    brightpurple,
+    brightyellow,
+    white,
+}
+
+// NOTE: For 24-bit colors, overload with terminalForeground(int r,int g,int b)
+void terminalForeground(TermColor col)
 {
     version (Windows)
     {
-        SetConsoleTextAttribute(hOut, oldAttr | BACKGROUND_RED);
+        static immutable ushort[16] FGCOLORS = [ // foreground colors
+            // TermColor.black
+            0,
+            // TermColor.blue
+            FOREGROUND_BLUE,
+            // TermColor.green
+            FOREGROUND_GREEN,
+            // TermColor.aqua
+            FOREGROUND_BLUE | FOREGROUND_GREEN,
+            // TermColor.red
+            FOREGROUND_RED,
+            // TermColor.purple
+            FOREGROUND_BLUE | FOREGROUND_RED,
+            // TermColor.yellow
+            FOREGROUND_GREEN | FOREGROUND_RED,
+            // TermColor.gray
+            FOREGROUND_INTENSITY,
+            // TermColor.lightgray
+            FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+            // TermColor.brightblue
+            FOREGROUND_INTENSITY | FOREGROUND_BLUE,
+            // TermColor.brightgreen
+            FOREGROUND_INTENSITY | FOREGROUND_GREEN,
+            // TermColor.brightaqua
+            FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN,
+            // TermColor.brightred
+            FOREGROUND_INTENSITY | FOREGROUND_RED,
+            // TermColor.brightpurple
+            FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED,
+            // TermColor.brightyellow
+            FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_GREEN,
+            // TermColor.white
+            FOREGROUND_INTENSITY | FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+        ];
+        
+        SetConsoleTextAttribute(hOut, (oldAttr & 0xf0) | FGCOLORS[col]);
     }
     else version (Posix)
     {
-        terminalOut("\033[41m");
-    }
+        static immutable string[16] FGCOLORS = [ // foreground colors
+            // TermColor.black
+            "\033[30m",
+            // TermColor.blue
+            "\033[34m",
+            // TermColor.green
+            "\033[32m",
+            // TermColor.aqua
+            "\033[36m",
+            // TermColor.red
+            "\033[31m",
+            // TermColor.purple
+            "\033[35m",
+            // TermColor.yellow
+            "\033[33m",
+            // TermColor.gray
+            "\033[90m",
+            // TermColor.lightgray
+            "\033[37m",
+            // TermColor.brightblue
+            "\033[94m",
+            // TermColor.brightgreen
+            "\033[92m",
+            // TermColor.brightaqua
+            "\033[96m",
+            // TermColor.brightred
+            "\033[91m",
+            // TermColor.brightpurple
+            "\033[95m",
+            // TermColor.brightyellow
+            "\033[93m",
+            // TermColor.white
+            "\033[97m",
+        ];
+        
+        terminalWrite(FGCOLORS[col]);
+    } // version (Posix)
 }
+
+// Apply a color for future output
+void terminalBackground(TermColor col)
+{
+    version (Windows)
+    {
+        static immutable ushort[16] FGCOLORS = [ // foreground colors
+            // TermColor.black
+            0,
+            // TermColor.blue
+            BACKGROUND_BLUE,
+            // TermColor.green
+            BACKGROUND_GREEN,
+            // TermColor.aqua
+            BACKGROUND_BLUE | BACKGROUND_GREEN,
+            // TermColor.red
+            BACKGROUND_RED,
+            // TermColor.purple
+            BACKGROUND_BLUE | BACKGROUND_RED,
+            // TermColor.yellow
+            BACKGROUND_GREEN | BACKGROUND_RED,
+            // TermColor.gray
+            BACKGROUND_INTENSITY,
+            // TermColor.lightgray
+            BACKGROUND_GREEN | BACKGROUND_RED | BACKGROUND_BLUE,
+            // TermColor.brightblue
+            BACKGROUND_INTENSITY | BACKGROUND_BLUE,
+            // TermColor.brightgreen
+            BACKGROUND_INTENSITY | BACKGROUND_GREEN,
+            // TermColor.brightaqua
+            BACKGROUND_INTENSITY | BACKGROUND_BLUE | BACKGROUND_GREEN,
+            // TermColor.brightred
+            BACKGROUND_INTENSITY | BACKGROUND_RED,
+            // TermColor.brightpurple
+            BACKGROUND_INTENSITY | BACKGROUND_BLUE | BACKGROUND_RED,
+            // TermColor.brightyellow
+            BACKGROUND_INTENSITY | BACKGROUND_RED | BACKGROUND_GREEN,
+            // TermColor.white
+            BACKGROUND_INTENSITY | BACKGROUND_GREEN | BACKGROUND_RED | BACKGROUND_BLUE,
+        ];
+        
+        SetConsoleTextAttribute(hOut, (oldAttr & 0xf) | FGCOLORS[col]);
+    }
+    else version (Posix)
+    {
+        static immutable string[16] FGCOLORS = [ // foreground colors
+            // TermColor.black
+            "\033[40m",
+            // TermColor.blue
+            "\033[44m",
+            // TermColor.green
+            "\033[42m",
+            // TermColor.aqua
+            "\033[46m",
+            // TermColor.red
+            "\033[41m",
+            // TermColor.purple
+            "\033[45m",
+            // TermColor.yellow
+            "\033[43m",
+            // TermColor.gray
+            "\033[100m",
+            // TermColor.lightgray
+            "\033[47m",
+            // TermColor.brightblue
+            "\033[104m",
+            // TermColor.brightgreen
+            "\033[102m",
+            // TermColor.brightaqua
+            "\033[106m",
+            // TermColor.brightred
+            "\033[101m",
+            // TermColor.brightpurple
+            "\033[105m",
+            // TermColor.brightyellow
+            "\033[103m",
+            // TermColor.white
+            "\033[107m",
+        ];
+        
+        terminalWrite(FGCOLORS[col]);
+    } // version (Posix)
+}
+
 /// Invert color.
 void terminalInvertColor()
 {
@@ -507,7 +693,7 @@ void terminalInvertColor()
     }
     else version (Posix)
     {
-        terminalOut("\033[7m");
+        terminalWrite("\033[7m");
     }
 }
 /// Underline.
@@ -520,7 +706,7 @@ void terminalUnderline()
     }
     else version (Posix)
     {
-        terminalOut("\033[4m");
+        terminalWrite("\033[4m");
     }
 }
 /// Reset color.
@@ -536,9 +722,25 @@ void terminalResetColor()
     }
 }
 
+
+/// Directly write to output.
+/// Params:
+///     data = Character data.
+/// Returns: Number of bytes written.
 size_t terminalWrite(const(void)[] data)
 {
     return terminalWrite(data.ptr, data.length);
+}
+/// Directly write to output.
+/// Params:
+///     data = Character data. (variadic parameter)
+/// Returns: Number of bytes written.
+size_t terminalWrite(const(void)[][] data...)
+{
+    size_t r;
+    foreach (d; data)
+        r += terminalWrite(d.ptr, d.length);
+    return r;
 }
 
 /// Directly write to output.
@@ -562,12 +764,27 @@ size_t terminalWrite(const(void) *data, size_t size)
     }
 }
 
-// Commented until terminalRead() improves
-/*template CTRL(int c) { enum CTRL = c & 0x1f; }
-unittest
+/// Type a specific character n times using an internal buffer.
+/// Params:
+///   chr = Character.
+///   amount = The amount of times to write it.
+/// Returns: amount.
+size_t terminalWriteChar(int chr, int amount)
 {
-    assert(CTRL!('a') == 0xa);
-}*/
+    import core.stdc.string : memset;
+    enum B = 32;
+    char[B] buf = void;
+    memset(buf.ptr, chr, B); // fill buf with char
+    
+    // full buffer chunks
+    for (; amount > B; amount -= B)
+        terminalWrite(buf.ptr, B);
+    
+    // leftover
+    terminalWrite(buf.ptr, amount);
+    
+    return amount;
+}
 
 /// Read an input event. This function is blocking.
 /// Throws: (Windows) WindowsException on OS error.
@@ -578,7 +795,7 @@ TermInput terminalRead()
     
     version (Windows)
     {
-        enum ALT_PRESSED =  RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
+        enum ALT_PRESSED  = RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED;
         enum CTRL_PRESSED = RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED;
 
         INPUT_RECORD ir = void;
@@ -586,7 +803,6 @@ TermInput terminalRead()
 Lread:
         if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
             throw new WindowsException(GetLastError);
-        
         if (num == 0)
             goto Lread;
         
@@ -598,10 +814,10 @@ Lread:
             version (unittest)
             {
                 printf(
-                "KeyEvent: AsciiChar=%d wVirtualKeyCode=%d dwControlKeyState=%x\n",
+                "KeyEvent: AsciiChar=%d wVirtualKeyCode=%d dwControlKeyState=0x%x\n",
                 ir.KeyEvent.AsciiChar,
                 ir.KeyEvent.wVirtualKeyCode,
-                ir.KeyEvent.dwControlKeyState,
+                ir.KeyEvent.dwControlKeyState
                 );
             }
             
@@ -634,11 +850,17 @@ Lread:
                 return event;
             }
             
+            // NOTE: Conhost by default interferes with ^Home and ^End
+            //       With the "Enable Ctrl key shortcuts", conhost (and possibly
+            //       Windows Terminal) will interfere with some Ctrl shortcuts,
+            //       like Ctrl+Home and Ctrl+End. Setting it off restores this
+            //       capability.
             event.key = keycode;
-            const DWORD state = ir.KeyEvent.dwControlKeyState;
-            if (state & ALT_PRESSED) event.key |= Mod.alt;
-            if (state & CTRL_PRESSED) event.key |= Mod.ctrl;
-            if (state & SHIFT_PRESSED) event.key |= Mod.shift;
+            with (ir.KeyEvent) {
+            if (dwControlKeyState & ALT_PRESSED)   event.key |= Mod.alt;
+            if (dwControlKeyState & CTRL_PRESSED)  event.key |= Mod.ctrl;
+            if (dwControlKeyState & SHIFT_PRESSED) event.key |= Mod.shift;
+            }
             return event;
         /*case MOUSE_EVENT:
             if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED)
@@ -647,6 +869,8 @@ Lread:
                 event.type = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
                     Mouse.ScrollDown : Mouse.ScrollUp;
             }*/
+        // NOTE: The console buffer is different than window resize
+        //       So, it's both misleading, and only updated after a new event enters
         case WINDOW_BUFFER_SIZE_EVENT:
             if (terminalOnResizeEvent)
                 terminalOnResizeEvent();
@@ -656,60 +880,49 @@ Lread:
     }
     else version (Posix)
     {
-        //TODO: Mouse reporting in Posix terminals
-        //      * X10 compatbility mode (mouse-down only)
-        //      Enable: ESC [ ? 9 h
-        //      Disable: ESC [ ? 9 l
-        //      "sends ESC [ M bxy (6 characters)"
-        //      - ESC [ M button column row (1-based)
-        //      - 0,0 click: ESC [ M   ! !
-        //        ! is 0x21, so '!' - 0x21 = 0
-        //      - end,end click: ESC [ M   q ;
-        //        q is 0x71, so 'q' - 0x21 = 0x50 (column 80)
-        //        ; is 0x3b, so ';' - 0x21 = 0x1a (row 26)
-        //      - button left:   ' '
-        //      - button right:  '"'
-        //      - button middle: '!'
-        //      * Normal tracking mode
-        //      Enable: ESC [ ? 1000 h
-        //      Disable: ESC [ ? 1000 l
-        //      b bits[1:0] 0=MB1 pressed, 1=MB2 pressed, 2=MB3 pressed, 3=release
-        //      b bits[7:2] 4=Shift (bit 3), 8=Meta (bit 4), 16=Control (bit 5)
-        //TODO: Faster scanning
-        //      So we have a few choices:
-        //      - string table (current, works alright)
-        //      - string[string]
-        //        - needs active init though
-        //      - string decoding (slower?)
-        //        [ -> escape
-        //        1;2 -> shift (optional)
-        //        B -> right arrow
-        //      - template char[8] to long
-        //        - very cursed
-        //        - screwed if there are keys more than 8 bytes
-        //        - template should do endianness
-        //      - Manually hash it
-        //        - Allows static arrays
-        //        - std.digest.murmurhash already available
+        // TODO: Mouse reporting in Posix terminals
+        //       * X10 compatbility mode (mouse-down only)
+        //       Enable: ESC [ ? 9 h
+        //       Disable: ESC [ ? 9 l
+        //       "sends ESC [ M bxy (6 characters)"
+        //       - ESC [ M button column row (1-based)
+        //       - 0,0 click: ESC [ M   ! !
+        //         ! is 0x21, so '!' - 0x21 = 0
+        //       - end,end click: ESC [ M   q ;
+        //         q is 0x71, so 'q' - 0x21 = 0x50 (column 80)
+        //         ; is 0x3b, so ';' - 0x21 = 0x1a (row 26)
+        //       - button left:   ' '
+        //       - button right:  '"'
+        //       - button middle: '!'
+        //       * Normal tracking mode
+        //       Enable: ESC [ ? 1000 h
+        //       Disable: ESC [ ? 1000 l
+        //       b bits[1:0] 0=MB1 pressed, 1=MB2 pressed, 2=MB3 pressed, 3=release
+        //       b bits[7:2] 4=Shift (bit 3), 8=Meta (bit 4), 16=Control (bit 5)
+        // TODO: Consider AA for key scanning
+        //       + Allows granular configuration depending on $TERM
         
         enum BLEN = 8;
         char[BLEN] b = void;
     Lread:
         ssize_t r = read(STDIN_FILENO, b.ptr, BLEN);
+        if (r < 0) // happens on term resize, for example (errno=4,EINTR)
+        {
+            version (unittest) printf("errno: %d\n", errno);
+            goto Lread;
+        }
         
         event.type = InputType.keyDown; // Assuming for now
         event.key  = 0; // clear as safety measure
         
         switch (r) {
-        case -1:
-            assert(0, "read(2) failed");
-            goto Lread;
         case 0: // How even
             version (unittest) printf("stdin: empty\n");
             goto Lread;
-        case 1:
+        case 1: // single character
             char c = b[0];
             version (unittest) printf("stdin: \\0%o (%d)\n", c, c);
+            
             // Filtering here adjusts the value only if necessary.
             switch (c) {
             case 0: // Ctrl+Space
@@ -721,28 +934,32 @@ Lread:
             case 8, 127: // ^H
                 event.key = Key.Backspace;
                 return event;
+            case 9: // Tab without control key
+                event.key = Key.Tab;
+                return event;
             default:
             }
+            
             if (c >= 'a' && c <= 'z')
                 event.key = cast(ushort)(c - 32);
             else if (c >= 'A' && c <= 'Z')
                 event.key = c | Mod.shift;
-            else if (c < 32)
+            else if (c < 32) // ctrl key
                 event.key = (c + 64) | Mod.ctrl;
             else
                 event.key = c;
-            return;
+            return event;
         default:
         }
         
         version (unittest)
         {
-            printf("stdin:");
+            printf("stdin: ");
             for (size_t i; i < r; ++i)
             {
                 char c = b[i];
-                if (c < 32 || c > 126)
-                    printf(" \\0%o", c);
+                if (c < 32 || c > 126) // non-printable ascii
+                    printf("\\0%o ", c);
                 else
                     putchar(b[i]);
             }
@@ -767,7 +984,7 @@ Lread:
         
         // Matched to nothing
         goto Lread;
-    } // version posix
+    } // version (Posix)
 }
 
 
@@ -780,32 +997,8 @@ enum InputType
     mouseUp,
 }
 
-//TODO: Redo input encoding
-//      15: 0 key value (ascii or special key)
-//      23:16 flags
-//            0000 0000
-//            |||| ||+-- Alt
-//            |||| |+--- Ctrl
-//            |||+------ Special key
-//      31:24 input type
-//              0 keydown
-//              1 mousedown
-//            128 keyup
-//            129 mouseup
-
-/*private enum specialbit = 1 << 20;
-enum Special
-{
-    rightArrow  = 1 | specialbit,
-    leftArrow   = 2 | specialbit,
-    upArrow     = 3 | specialbit,
-    Arrow       = 4 | specialbit,
-    
-    
-}*/
-
 /// Key modifier
-enum Mod
+enum Mod // A little more readable than e.g., CTRL!(ALT!(SHIFT!('a')))
 {
     ctrl  = 1 << 24,
     shift = 1 << 25,
@@ -813,8 +1006,7 @@ enum Mod
 }
 
 /// Key codes map.
-//TODO: Consider mapping these to os/ascii-specific
-enum Key
+enum Key // These are fine for now
 {
     Undefined = 0,
     Backspace = 8,

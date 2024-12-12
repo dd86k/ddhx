@@ -1,29 +1,36 @@
 module tests.input;
 
 import std.stdio;
-import os.terminal;
+import terminal;
 
-@system unittest {
-    enum MODS = Mod.ctrl | Mod.alt | Mod.shift;
+@system unittest
+{
     terminalInit(TermFeat.inputSys);
+    scope(exit) terminalRestore();
+    terminalOnResize(&onresize);
     
-    // Tests terminalInit if we haven't screwed with stdout
+    // This tests (Phobos') stdout
     writeln("Exit by CTRL+C");
     
-    TerminalInput input = void;
-L_READ:
-    terminalInput(input);
+Lread:
+    TermInput input = terminalRead();
     
     writef(
     "TerminalInput: type=%s key=%s",
     cast(InputType)input.type, cast(Key)(cast(short)input.key)
     );
     
-    if (input.key & Mod.ctrl) write("+ctrl");
-    if (input.key & Mod.alt) write("+alt");
+    if (input.key & Mod.ctrl)  write("+ctrl");
+    if (input.key & Mod.alt)   write("+alt");
     if (input.key & Mod.shift) write("+shift");
     
     writeln;
     
-    goto L_READ;
+    goto Lread;
+}
+
+void onresize()
+{
+    TerminalSize size = terminalSize();
+    writefln("Resized to %dx%d", size.columns, size.rows);
 }

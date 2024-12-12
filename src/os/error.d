@@ -3,17 +3,32 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.os.error;
+module os.error;
 
 version (Windows)
 {
     import core.sys.windows.winbase;
     import std.format;
+    private alias systemerr = GetLastError;
 }
 else
 {
     import core.stdc.string;
     import std.string;
+    import core.stdc.errno : errno;
+    private alias systemerr = errno;
+}
+
+class OSException : Exception
+{
+    this(int code = systemerr(),
+        string _file = __FILE__, size_t _line = __LINE__)
+    {
+        oscode = code;
+        super(messageFromCode(code), _file, _line);
+    }
+    
+    int oscode;
 }
 
 string messageFromCode(int code)
@@ -39,6 +54,6 @@ version (Windows)
 }
 else
 {
-    return fromStringz( strerror(code) );
+    return cast(string)fromStringz( strerror(code) );
 }
 }
