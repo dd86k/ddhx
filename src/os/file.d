@@ -131,7 +131,7 @@ struct OSFile
                 null,           // hTemplateFile
             );
             if (handle == INVALID_HANDLE_VALUE)
-                throw new OSException(GetLastError());
+                throw new OSException();
         }
         else version (Posix)
         {
@@ -145,7 +145,7 @@ struct OSFile
                 oflags |= O_RDONLY;
             handle = .open(path.toStringz, oflags);
             if (handle < 0)
-                throw new OSException(errno);
+                throw new OSException();
         }
     }
     
@@ -156,19 +156,19 @@ struct OSFile
             LARGE_INTEGER i = void;
             i.QuadPart = pos;
             if (SetFilePointerEx(handle, i, &i, origin) == FALSE)
-                throw new OSException(GetLastError());
+                throw new OSException();
         }
-        else version (OSX)
-        {
-            // NOTE: Darwin has set off_t as c_long and doesn't have lseek64
-            if (lseek(handle, pos, origin) < 0)
-                throw new OSException(errno);
-        }
-        else version (Posix) // Should cover glibc and musl
+        else version (linux) // Should cover glibc and musl
         {
             if (lseek64(handle, pos, origin) < 0)
-                throw new OSException(errno);
+                throw new OSException();
         }
+        else version (Posix)
+        {
+            if (lseek(handle, pos, origin) < 0)
+                throw new OSException();
+        }
+        else static assert(0, "Implement OSFile.seek");
     }
     
     long tell()
@@ -179,14 +179,15 @@ struct OSFile
             SetFilePointerEx(handle, i, &i, FILE_CURRENT);
             return i.QuadPart;
         }
-        else version (OSX)
-        {
-            return lseek(handle, 0, SEEK_CUR);
-        }
-        else version (Posix)
+        else version (linux)
         {
             return lseek64(handle, 0, SEEK_CUR);
         }
+        else version (Posix)
+        {
+            return lseek(handle, 0, SEEK_CUR);
+        }
+        else static assert(0, "Implement OSFile.tell");
     }
     
     long size()
@@ -195,15 +196,15 @@ struct OSFile
         {
             LARGE_INTEGER li = void;
             if (GetFileSizeEx(handle, &li) == FALSE)
-                throw new OSException(GetLastError());
+                throw new OSException();
             return li.QuadPart;
         }
         else version (Posix)
         {
             // TODO: macOS support
             stat_t stats = void;
-            if (fstat(handle, &stats) == -1)
-                return -1;
+            if (fstat(handle, &stats) < 0)
+                throw new OSException();
             
             int typ = stats.st_mode & S_IFMT;
             switch (typ) {
@@ -215,7 +216,7 @@ struct OSFile
                 // TODO: BSD support
                 long s = void;
                 if (ioctl(handle, BLOCKSIZE, &s) < 0)
-                    throw new OSException(errno);
+                    throw new OSException();
                 return s;
             default:
                 import std.conv : text;
@@ -235,14 +236,14 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (ReadFile(handle, buffer, len, &len, null) == FALSE)
-                throw new OSException(GetLastError());
+                throw new OSException();
             return (cast(ubyte*)buffer)[0..len];
         }
         else version (Posix)
         {
             ssize_t len = .read(handle, buffer, size);
             if (len < 0)
-                throw new OSException(errno);
+                throw new OSException();
             return (cast(ubyte*)buffer)[0..len];
         }
     }
@@ -258,14 +259,14 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (WriteFile(handle, data, len, &len, null) == FALSE)
-                throw new OSException(GetLastError());
+                throw new OSException();
             return len; // 0 on error anyway
         }
         else version (Posix)
         {
             ssize_t len = .write(handle, data, size);
             if (len < 0)
-                throw new OSException(errno);
+                throw new OSException();
             return len;
         }
     }
