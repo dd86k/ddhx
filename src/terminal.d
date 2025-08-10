@@ -9,8 +9,8 @@ module terminal;
 //       automatically pause/resume input
 //       limit=0 -> OS/host stdin default
 // TODO: Switch capabilities depending on $TERM
-//       "xterm", "xterm-color", "xterm-256color",
-//       "linux", "vt100", "vt220", "wsvt25" (netbsd10), etc.
+//       "xterm", "xterm-color", "xterm-256color", "tmux-256color",
+//       "linux", "vt100", "vt220", "wsvt25" (netbsd10), "screen", etc.
 //       Or $COLORTERM ("truecolor", etc.)
 
 // NOTE: Useful links for escape codes
@@ -35,7 +35,7 @@ version (Windows)
     private enum CP_UTF8 = 65_001;
     private __gshared HANDLE hIn, hOut;
     private __gshared DWORD oldCP;
-    private __gshared ushort oldAttr;
+    private __gshared WORD oldAttr;
 }
 else version (Posix)
 {
@@ -110,6 +110,11 @@ else version (Posix)
         string text;
         int value;
     }
+    // TODO: Support values observed on FreeBSD
+    //       Home: "\033 [1~"
+    //       End : "\033 [4~"
+    //       '#' (us: '~') : "\043" (accidently mapped to End)
+    //       '/' (us: '#') : "\057" (accidently mapped to Help)
     private
     immutable KeyInfo[] keyInputsVTE = [
         // text         Key value
@@ -263,8 +268,6 @@ void terminalInit(int features = 0)
             hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         }
         
-        stdout.setvbuf(0, _IONBF); // fixes weird cursor positions with alt buffer
-        
         // NOTE: While Windows supports UTF-16LE (1200) and UTF-32LE,
         //       it's only for "managed applications" (.NET).
         // LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
@@ -272,14 +275,12 @@ void terminalInit(int features = 0)
         if (SetConsoleOutputCP(CP_UTF8) == FALSE)
             throw new WindowsException(GetLastError());
         
-        //TODO: Get active (or default) colors
+        // Get current attributes (colors)
         GetConsoleScreenBufferInfo(hOut, &csbi);
         oldAttr = csbi.wAttributes;
     }
     else version (Posix)
     {
-        stdout.setvbuf(0, _IONBF);
-        
         if (features & TermFeat.inputSys)
         {
             // Should it re-open tty by default?
@@ -324,6 +325,9 @@ void terminalInit(int features = 0)
         }
     } // version (Posix)
     
+    // fixes weird cursor positions with alt buffer using (D) stdout
+    stdout.setvbuf(0, _IONBF);
+    
     // NOTE: Does not work with exceptions
     //atexit(&terminalQuit);
 }
@@ -358,6 +362,9 @@ void terminalRestore()
 
 private __gshared void function() terminalOnResizeEvent;
 
+// Set handler for resize events.
+// On Windows, (at least for conhost) this is only called when the buffer is
+// resized, not the window.
 void terminalOnResize(void function() func)
 {
     version (Posix)

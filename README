@@ -1,8 +1,8 @@
-                   ░       ░░░       ░░░  ░░░░  ░░  ░░░░  ░
-                   ▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒▒  ▒▒  ▒▒
-                   ▓  ▓▓▓▓  ▓▓  ▓▓▓▓  ▓▓        ▓▓▓▓    ▓▓▓
-                   █  ████  ██  ████  ██  ████  ███  ██  ██
-                   █       ███       ███  ████  ██  ████  █
+                    ░       ░░░       ░░░  ░░░░  ░░  ░░░░  ░
+                    ▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒▒  ▒▒  ▒▒
+                    ▓  ▓▓▓▓  ▓▓  ▓▓▓▓  ▓▓        ▓▓▓▓    ▓▓▓
+                    █  ████  ██  ████  ██  ████  ███  ██  ██
+                    █       ███       ███  ████  ██  ████  █
 
 +------------------------------------------------------------------------------+
         hex   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f                    
@@ -39,7 +39,7 @@ License: MIT
 Title font: Shaded Blocky (FIGlet)
 
 ********************************************************************************
-*                                   NOTICE                                     *
+*                                    NOTICE                                    *
 ********************************************************************************
 
 This software is provided with NO WARANTY as it is marked as experimental.
@@ -51,18 +51,22 @@ in attempts to have editing features, as version 0.5 will be the first
 version to feature editing.
 
 0.5 Roadmap:
+- [x] Support overwrites
+- [ ] Support insertions
+- [x] Support appends
+- [ ] Support deletions
 - [x] Save new buffer to file
 - [x] Save existing file
-- [ ] Support insertions
-- [ ] Support deletions
 - [ ] History undo/redo
 
 Future Roadmap:
 - [ ] Standard input (stdin) support to new buffer
 - [ ] Non-interactive session (--dump)
 - [ ] Command prompt
-- [ ] 'bind' command (map command to shortcut)
+- [ ] 'bind' command: map command to shortcut
 - [ ] Config file support
-- [ ] Support for d8, o8 data types in view
+- [ ] Support for other single-byte data types in view (d8, o8)
+- [ ] Support for multi-byte data types in view (d16, f32, etc.)
 - [ ] Insert characters
 - [ ] Insert zeros
+- [ ] Data selection range

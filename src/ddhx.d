@@ -129,8 +129,8 @@ void startddhx(string path, RC rc)
     _ekeys[Mod.ctrl|Key.Home] = _ecommands["cursor-sof"]        = &move_abs_start;
     _ekeys[Mod.ctrl|Key.End ] = _ecommands["cursor-eof"]        = &move_abs_end;
     _ekeys[Key.Q]           = _ecommands["quit"]                = &quit;
-    _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_writemode;
-    _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_panel;
+    _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_panel;
+    _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
     _ekeys[Mod.ctrl|Key.Z]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.Y]  = _ecommands["redo"]                = &redo;
@@ -156,6 +156,7 @@ Lread:
         auto fn = input.key in _ekeys;
         if (fn)
         {
+            trace("key=%s (%d)", input.key, input.key);
             try (*fn)(session);
             catch (Exception ex)
             {
