@@ -8,20 +8,13 @@ module history;
 import std.container.array : Array;
 import core.stdc.string : memcpy;
 
-enum HistoryType
-{
-    overwrite,
-    insertion,
-    deletion
-}
-
 // LP32: 8+4+4+4=20B
 // LP64: 8+4+8+8=28B
 /// Represents a history entry
 struct History // History entry
 {
     long address;
-    HistoryType type;
+    int status; // flags
     size_t size;
     // Insertion and Overwrite: new data
     // Deletion: old data
@@ -35,20 +28,10 @@ struct HistoryIterator
     size_t idx;
     size_t end;
     
-    bool empty()
-    {
-        return idx >= end;
-    }
-    
-    History front()
-    {
-        return stack[idx];
-    }
-    
-    History popFront()
-    {
-        return stack[idx++];
-    }
+    // Implement InputRange interfaces
+    bool empty() { return idx >= end; }
+    History front() { return stack[idx]; }
+    History popFront() { return stack[idx++]; }
 }
 
 // Manages history
@@ -66,7 +49,7 @@ class HistoryStack
     }
     
     // Add a new history entry to stack
-    void add(long address, const(void) *data, size_t size, HistoryType type = HistoryType.overwrite)
+    void add(long address, const(void) *data, size_t size, int status = 0)
     {
         // Can we fit this edit in our data buffer?
         if (used + size >= databuf.length)
@@ -78,89 +61,13 @@ class HistoryStack
         
         void *dst = databuf.ptr + used;
         memcpy(dst, data, size); // copy data to our buffer
-        stack.insert(History(address, type, size, dst)); // add entry
+        stack.insert(History(address, status, size, dst)); // add entry
         used += size;
     }
     
     // TODO: void appendLast(void *newdata, size_t len);
     //       Append data to last history entry
     // TODO: void removeLast()
-    
-    /// Apply the history to the given buffer.
-    ///
-    /// Caller is responsible to populate buffer with initiate data for this
-    /// function to be effective.
-    /// Params:
-    ///   buffer = Output buffer, will not change in size
-    ///   basepos = Base (start) position relative to buffer
-    /// Returns: New size of data, within buffer limits
-    deprecated
-    size_t apply(ubyte[] buffer, long basepos)
-    {
-        // Upper len in buffer, or "real" length within buffer
-        size_t n;
-        
-        // Apply oldest to newest entries
-        long shift; // affects bufidx by Deletions/Insertions
-        foreach (entry; stack)
-        {
-            // TODO: If Insert or Deletion, update base shift by entry.size
-            //       Since it affects all data
-            
-            // Entry's position relative to buffer's base position
-            static if (ptrdiff_t.sizeof < long.sizeof)
-            {
-                // Overflow check (failsafe)
-                // On 32-bit platforms, the difference produced might be beyond
-                // the 32-bit limits, causing an overflow.
-                // Realistically, a 4 GiB edit might happen, but is outside
-                // the scope for a viewing buffer.
-                long _ = entry.address - basepos;
-                if (_ < ptrdiff_t.min || _ > ptrdiff_t.max)
-                    continue;
-                ptrdiff_t bufidx = cast(ptrdiff_t)_;
-            }
-            else
-            {
-                ptrdiff_t bufidx = cast(ptrdiff_t)(entry.address - basepos);
-            }
-            
-            // End positional index
-            ptrdiff_t endidx = bufidx + entry.size;
-            
-            // Entry's start position (relative to buffer) is completely outside.
-            // It is not applicable, skip
-            if (bufidx > buffer.length)
-                continue;
-            
-            // Start of entry data starts within buffer
-            
-            
-            // Entry data ends within buffer
-            
-            
-            // Data steps within buffer.
-            // For example, if bufidx=-1 and size=3, only the last
-            // two bytes reaches buffer[0]+[1].
-            if (endidx <= 0)
-                continue;
-            
-            size_t l = endidx - bufidx;
-            
-            import std.algorithm.comparison : min;
-            
-            // TODO: fix overrun
-            //size_t l = min(entry.len, buffer.length - (p + entry.len));
-            // overwrite
-            memcpy(buffer.ptr + bufidx, entry.data, entry.size);
-            
-            size_t u = bufidx + entry.size; // upper
-            if (u > n)
-                n = u;
-        }
-        
-        return n;
-    }
     
     // Returns number of elements in history
     size_t count()
@@ -216,32 +123,32 @@ unittest
     assert(data0.length == 4);
     history.add(0, cast(void*)data0.ptr, data0.length);
     assert(history.count == 1);
+    assert(cast(string)(history[0].data)[0..data0.length] == data0);
     
     // Insert second entry after the first one
     string data1 = "hello";
     history.add(data0.length, cast(void*)data1.ptr, data1.length);
     assert(history.count == 2);
+    assert(cast(string)(history[1].data)[0..data1.length] == data1);
     
     // Check usage with foreach
     size_t i;
     foreach (entry; history.iterate)
     {
-        ++i;
+        final switch (++i) {
+        case 1: assert(entry.size == data0.length); break;
+        case 2: assert(entry.size == data1.length); break;
+        }
     }
     assert(i == 2);
     
+    // At least check count
     i = 0;
-    foreach (entry; history.iterate(0, 1))
-    {
-        ++i;
-    }
+    foreach (entry; history.iterate(0, 1)) { ++i; }
     assert(i == 1);
     
     i = 0;
-    foreach (entry; history.iterate(1, 2))
-    {
-        ++i;
-    }
+    foreach (entry; history.iterate(1, 2)) { ++i; }
     assert(i == 1);
 }
 
@@ -255,4 +162,8 @@ unittest
     history.add(0, cast(void*)data0.ptr, data0.length);
     assert(history.databuf.length >= 4);
     assert(history.used == 4);
+    
+    history.add(0, cast(void*)data0.ptr, data0.length);
+    assert(history.databuf.length >= 8);
+    assert(history.used == 8);
 }

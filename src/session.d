@@ -33,6 +33,13 @@ enum PanelType
     text,
 }
 
+enum HistoryType : ubyte
+{
+    overwrite,
+    insertion,
+    deletion
+}
+
 //
 // Address specifications
 //
@@ -240,7 +247,12 @@ class Session
         return _currentsize;
     }
     
-    // View content at position for this many bytes
+    /// View the content with all modifications.
+    /// Params:
+    ///   position = Base position.
+    ///   count = Number of bytes to read.
+    /// Returns: Array of bytes with edits.
+    ///          The length SHOULD NOT exceed count requested.
     ubyte[] view(long position, size_t count)
     {
         // TODO: Deletion strategy
@@ -248,43 +260,18 @@ class Session
         //       remove data from the buffer, we'll need to read
         //       more data back, so consider only read to fill in
         //       the blanks at calculated spots.
-        long shift;
-        foreach (entry; history.iterate())
-        {
-            // First, we need to determine if the edit has an influence
-            // outside the view buffer, because edits made before the
-            // requested view buffer have an influence on the output
-            if (entry.address + entry.size < position)
-            {
-                final switch (entry.type) {
-                case HistoryType.overwrite: break; // no influence
-                // Inserts "push" data away forward (view is further forward)
-                case HistoryType.insertion:
-                    shift += entry.size;
-                    break;
-                // Deletions "brings" data backward (view is rewinded)
-                case HistoryType.deletion:
-                    shift -= entry.size;
-                    break;
-                }
-            }
-        }
         
+        size_t r; /// final size of rendered view
+        
+        //
+        // Prepare view buffer.
+        // If we have a base document, read from it for initial data.
         bool moved   = position != _lastposition;
         bool resized = count != _readbuf.length;
-        
-        //
-        // Read buffer
-        //
-        
         if (resized)
         {
             _readbuf.length = count;
         }
-        _lastposition = position;
-        size_t r; /// final size of rendered view
-        
-        // Update internal buffer
         if (_document)
         {
             if (resized || moved)
@@ -292,26 +279,28 @@ class Session
             else
                 r = _readbuf.length;
         }
+        _lastposition = position;
         
         //
         // Apply history data
-        //
-        
         int viewlen = cast(int)_readbuf.length;
+        long end = position + count;
         foreach (entry; history.iterate())
         {
+            // Edit position starts beyond the view buffer
+            // and thus has no influence on it.
+            if (entry.address > end)
+                continue;
+            
+            // Edit data doesn't even reach view buffer,
+            // but might still influence view buffer (to do...)
+            if (entry.address + entry.size < position)
+                continue;
+            
             // These two indexes serve the area of influence to the buffer.
-            // Forcing 32bit indexes to avoid weird LP32 overflow hack check.
+            // Forcing 32bit indexes to avoid overflows on LP32 targets.
             int bufidx = cast(int)(entry.address - position);
             int endidx = bufidx + cast(uint)entry.size;
-            
-            // Start of influence is too ahead
-            if (bufidx > viewlen)
-                continue;
-            
-            // Edit data doesn't even reach view buffer
-            if (endidx <= 0)
-                continue;
             
             // Out of the start and end indexes, make offsets and length to account
             // the entry data+length.
@@ -328,7 +317,8 @@ class Session
             }
             
             // Adjust the effective size of the view buffer
-            final switch (entry.type) {
+            HistoryType type = cast(HistoryType)entry.status;
+            final switch (type) {
             case HistoryType.overwrite:
                 if (l > r)
                     r = l;
@@ -338,6 +328,9 @@ class Session
             case HistoryType.deletion:
                 break;
             }
+            
+            if (r >= count)
+                r = count;
             
             // Copy edit data
             import core.stdc.string : memcpy;
@@ -352,16 +345,14 @@ class Session
     {
         // NOTE: Caller is responsible to populate target path.
         //       Using assert will stop the program completely,
-        //       which would not appear in logs (if enabled)
-        //       and allows the message to be seen.
+        //       which would not appear in logs (if enabled).
+        //       This also allows the error message to be seen.
         enforce(target != null,    "assert: target is NULL");
         enforce(target.length > 0, "assert: target is EMPTY");
         
         // Careful failsafe
-        if (writingmode == WritingMode.readonly)
-        {
-            throw new Exception("Cannot save readonly file");
-        }
+        enforce(writingmode != WritingMode.readonly,
+            "Cannot save readonly file");
         
         // If there are really no edits (as caller should check on its own
         // anyway), then there are no new additional things to modify,
@@ -375,42 +366,25 @@ class Session
         import std.path  : dirName;
         
         // We need enough disk space for the temporary file and the target.
-        //
-        // Attempt to get the parent directory of target (even when inexistent)
-        // because on Windows, it needs to be a folder, to get available disk space.
         // TODO: Check disk space available separately for temp file.
         //       The temporary file might be on another location/disk.
-        string parentdir = dirName(target);
+        string parentdir = dirName(target); // Windows want directory
         ulong avail = getAvailableDiskSpace(parentdir);
-        if (avail < _currentsize * 2) // temp + target
-            throw new Exception("Lacking space to save");
+        enforce(avail < _currentsize * 2, // temp and target
+            text("Need ", (_currentsize * 2) - avail, " B of disk space"));
         
-        // We can go from writing a few bytes to hundreds of gigabytes,
-        // so to try to stay safe, we (at least for now) write everything
-        // to a temporary file, and then attempt to replace the target
-        // with our temporary file.
-        //
-        // Temporary file should get the same attributes than the
-        // target, except for a modified date, if present. That way,
-        // the attributes should be kept when copying the temp file.
+        // Because tmpnam(3), tempnam(3), and mktemp(3) are all deprecated for
+        // security and usability issues, a temporary file is used.
         //
         // On Linux, using tmpfile(3), a temporary file is immediately marked for
-        // deletion at its creation. Making me worried that the temporary file
-        // might not survive a move after the app closes (which I could test, but a
-        // path gives me a bit more flexibility in general).
-        //
-        // However, tmpnam(3), tempnam(3), and mktemp(3) are all deprecated for
-        // security and usability issues (e.g., Windows has GetTempPath2W introduced
-        // in Windows 11 build 22000 which MSVC/UCRT will eventually use anyway).
-        //
-        // It's safer to get a temp file, write to it, then overwrite target from
-        // temp file. Yes, it's I/O heavy, but should be okay as a first implementation.
+        // deletion at its creation. So, it should be deleted if the app crashes,
+        // which is fine pre-1.0.
         
         // TODO: Check if target is writable (without opening file).
         // TODO: "Cache" temp file
         //       In the event the temporary file is all written out,
         //       but the destination [disk] can't hold the target,
-        //       attempt to re-use the temporary file.
+        //       attempt ask again where to save it.
         // Temporary file to write content and edits to.
         // It is nameless, so do not bother getting its filename
         File tempfile = File.tmpfile();
@@ -440,22 +414,23 @@ class Session
         while (pos < _currentsize);
         
         tempfile.flush();
-        tempfile.sync();
+        tempfile.sync(); // calls OS-specific flush but is it really needed?
         long newsize = tempfile.tell;
         
         // If not all bytes were written, either due to the disk being full
         // or it being our fault, do not continue!
         trace("Wrote %d B out of %d B", newsize, _currentsize);
-        if (newsize != _currentsize)
-            throw new Exception(text("Expected ", _currentsize, " B, wrote ", newsize, " B"));
+        enforce(newsize != _currentsize,
+            text("Only wrote ", _currentsize, "/", newsize, " B of data"));
         
         tempfile.rewind();
         enforce(tempfile.tell == 0, "assert: File.rewind() != 0");
         
         // Check disk space again for target, just in case.
         // The exception (message) gives it chance to save it elsewhere.
-        if (getAvailableDiskSpace(parentdir) < _currentsize)
-            throw new Exception("Lacking disk space to save target");
+        avail = getAvailableDiskSpace(parentdir);
+        enforce(avail < _currentsize,
+            text("Need ", _currentsize - avail, " B of disk space"));
         
         // Temporary file should now be fully written, time to overwrite target
         // reading from temporary file.
@@ -472,10 +447,17 @@ class Session
         }
         while (tempfile.eof == false);
         
-        // TODO: Consider transforming document type to FileDocument if not FileDocument.
-        //       Though, it's not a concern for now.
+        targetfile.flush;
+        targetfile.sync;
+        
         // Save index and path for future saves
         historysavedidx = historyidx;
+        
+        // Turn as file document in hopes memory gets freed
+        import document.file : FileDocument;
+        _document = new FileDocument(target, false);
+        import core.memory : GC;
+        GC.collect();
     }
     
     //
@@ -509,6 +491,9 @@ class Session
         }
     }
     
+    // TODO: void historyExtend(const(void) *data, size_t len)
+    //       Extend last historical entry with more data
+    
     // TODO: void historyUndo()
     
     // TODO: void historyRedo()
@@ -536,16 +521,30 @@ unittest
 {
     scope Session sesh = new Session();
     
+    // Initial read
     assert(sesh.view(0, 32) == []);
+    assert(sesh.edited() == false);
     
+    // Write data
     string data0 = "test";
     sesh.historyAdd(0, data0.ptr, data0.length, HistoryType.overwrite);
+    assert(sesh.edited());
+    assert(sesh.view(0, 4)  == "test");
     assert(sesh.view(0, 32) == "test");
     
-    // overwrite data[3] (last pos) by emulating an edit
+    // Emulate an overwrite edit
     char c = 's';
     sesh.historyAdd(3, &c, char.sizeof, HistoryType.overwrite);
     assert(sesh.view(0, 32) == "tess");
+    
+    // Another...
+    sesh.historyAdd(1, &c, char.sizeof, HistoryType.overwrite);
+    assert(sesh.view(0, 32) == "tsss");
+    
+    assert(sesh.view(0, 1) == "t");
+    assert(sesh.view(1, 1) == "s");
+    assert(sesh.view(2, 1) == "s");
+    assert(sesh.view(3, 1) == "s");
 }
 
 // Emulate editing a document
@@ -559,11 +558,36 @@ unittest
         0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
         0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
     ];
+    enum L = data.length;
     scope MemoryDocument doc = new MemoryDocument();
     doc.append(data);
     
+    // Initial read
     scope Session sesh = new Session();
     sesh.attach(doc);
-    
+    assert(sesh.edited() == false);
     assert(sesh.view(0, data.length) == data);
+    assert(sesh.view(0, 4) == data[0..4]);
+    assert(sesh.view(L-4, 4) == data[L-4..$]);
+    
+    // Write data
+    string data0 = "test";
+    sesh.historyAdd(4, data0.ptr, data0.length, HistoryType.overwrite);
+    assert(sesh.edited());
+    
+    // check edit hasn't introduced artifacts, and the edit itself
+    assert(sesh.view(0, 4) == data[0..4]);
+    import std.stdio : writefln;
+    writefln("%(%d,%)", sesh.view(8, L));
+    assert(sesh.view(8, L) == data[8..$]);
+    assert(sesh.view(4, 4) == "test");
+    assert(sesh.view(2, 8) == "\xe6\xea"~"test"~"\x96\xf6");
+    
+    // test out of bound stuff
+    assert(sesh.view(4, 2) == "te");
+    assert(sesh.view(6, 2) == "st");
+    assert(sesh.view(2, 4) == "\xe6\xeate");
+    assert(sesh.view(6, 4) == "st\x96\xf6");
 }
+
+// TODO: benchmark view function with 1,000 edits
