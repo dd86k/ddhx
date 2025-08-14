@@ -97,21 +97,25 @@ void startddhx(string path, RC rc)
         import std.file : exists;
         import std.path : baseName;
         
+        // path is either null (no suggested name) or set to a path
+        // if path doesn't exist, Session.save(string) will simply create it
+        session.target = path;
+        
         if (path && exists(path))
         {
-            FileDocument filedoc = new FileDocument(path, rc.readonly);
-            session.attach(filedoc);
+            session.attach(new FileDocument(path, rc.readonly));
             if (rc.readonly)
                 session.writingmode = WritingMode.readonly;
-            session.target = path;
             
             message(baseName(path));
         }
+        else if (path)
+        {
+            message("(new file)");
+        }
         else // new buffer
         {
-            // path is either null (no suggested name) or set to a path
-            session.target = path;
-            message("new buffer");
+            message("(new buffer)");
         }
     }
     
@@ -140,9 +144,6 @@ void startddhx(string path, RC rc)
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
     _ekeys[Mod.ctrl|Key.Z]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.Y]  = _ecommands["redo"]                = &redo;
-    // TODO: "insert-file" (^R): insert data from file
-    // TODO: "insert": insert data of TYPE (e.g., u32)
-    // TODO: "overwrite": overwrite data using TYPE (e.g., u32)
     
     loop(session); // use this editor
 }
