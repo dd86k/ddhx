@@ -11,6 +11,7 @@ import std.stdio;
 import std.string;
 import std.range;
 import std.format;
+import document;
 import configuration;
 import session;
 import transcoder;
@@ -98,7 +99,12 @@ void startddhx(string path, RC rc)
         
         if (path && exists(path))
         {
-            session.openFile(path, rc.readonly);
+            FileDocument filedoc = new FileDocument(path, rc.readonly);
+            session.attach(filedoc);
+            if (rc.readonly)
+                session.writingmode = WritingMode.readonly;
+            session.target = path;
+            
             message(baseName(path));
         }
         else // new buffer
@@ -134,6 +140,9 @@ void startddhx(string path, RC rc)
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
     _ekeys[Mod.ctrl|Key.Z]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.Y]  = _ecommands["redo"]                = &redo;
+    // TODO: "insert-file" (^R): insert data from file
+    // TODO: "insert": insert data of TYPE (e.g., u32)
+    // TODO: "overwrite": overwrite data using TYPE (e.g., u32)
     
     loop(session); // use this editor
 }
@@ -651,8 +660,8 @@ void update_view(Session session, TerminalSize termsize)
     }
     
     // Read data
-    ubyte[] result = session.read(basepos, count);
-    int realcount  = cast(int)result.length;
+    ubyte[] result = session.view(basepos, count);
+    int realcount  = cast(int)result.length; // * bytesize
     
     session.curpos  = curpos;
     session.basepos = basepos;
