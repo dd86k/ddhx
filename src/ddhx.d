@@ -7,16 +7,16 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
+import configuration;
+import document;
+import editor;
+import logger;
+import std.format;
+import std.range;
 import std.stdio;
 import std.string;
-import std.range;
-import std.format;
-import document;
-import configuration;
-import editor;
-import transcoder;
 import terminal;
-import tracer;
+import transcoder;
 
 // TODO: Find a way to dump session data to be able to resume later
 //       Session/project whatever
@@ -178,12 +178,12 @@ Lread:
         auto fn = input.key in _ekeys;
         if (fn)
         {
-            trace("key=%s (%d)", input.key, input.key);
+            log("key=%s (%d)", input.key, input.key);
             try (*fn)(cureditor);
             catch (Exception ex)
             {
                 message(ex.msg);
-                trace("%s", ex);
+                log("%s", ex);
             }
             goto Lupdate;
         }
@@ -561,7 +561,7 @@ void save(Editor cureditor)
         cureditor.target = name;
     }
     
-    trace("target='%s'", cureditor.target);
+    log("target='%s'", cureditor.target);
     
     // Force updating the status bar to indicate that we're currently saving.
     // It might take a while since the current implementation.
@@ -573,7 +573,7 @@ void save(Editor cureditor)
     cureditor.save();
     message("Saved");
     
-    trace("saved to '%s'", cureditor.target);
+    log("saved to '%s'", cureditor.target);
 }
 
 // Send a message within the editor to be displayed.
@@ -596,13 +596,13 @@ void message(A...)(string fmt, A args)
     // would have been formatted, so just send a tiny message.
     catch (RangeError ex)
     {
-        trace("%s", ex);
+        log("%s", ex);
         message("message: RangeError");
     }
     // Should only be FormatException otherwise.
     catch (Exception ex)
     {
-        trace("%s", ex);
+        log("%s", ex);
         message("internal: %s", ex.msg);
     }
 }
@@ -690,7 +690,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
     int cols        = cureditor.columns;
     int datawidth   = dataSpec(cureditor.datatype).spacing; // data element width
     DataFormatter dfmt = DataFormatter(cureditor.datatype, result.ptr, result.length);
-    trace("address=%d viewpos=%d cols=%d datawidth=%d count=%d reslen=%d",
+    log("address=%d viewpos=%d cols=%d datawidth=%d count=%d reslen=%d",
         address, viewpos, cols, datawidth, count, reslen);
     terminalCursor(0, 1);
     for (int row; row < rows; ++row, address += cols)

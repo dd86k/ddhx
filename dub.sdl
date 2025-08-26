@@ -1,7 +1,7 @@
 name "ddhx"
-description "Hexadecimal file viewer"
+description "Binary file (hex) editor"
 authors "dd86k"
-copyright "Copyright © 2017-2024 dd86k"
+copyright "Copyright © 2017-2025 dd86k"
 license "MIT"
 
 #
@@ -11,9 +11,6 @@ license "MIT"
 buildType "debugv" {
     dflags "-vgc" "-vtls" platform="dmd"
     dflags "--vgc" "--vtls" platform="ldc"
-}
-buildType "trace" {
-    versions "Trace"
 }
 
 #

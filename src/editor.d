@@ -5,12 +5,12 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module editor;
 
+import document.base : IDocument;
+import logger;
+import patcher;
 import std.exception : enforce;
 import std.format;
-import document.base : IDocument;
 import transcoder : CharacterSet;
-import tracer;
-import patcher;
 
 enum WritingMode
 {
@@ -301,7 +301,7 @@ class Editor
         // Get range of edits to apply when saving.
         // TODO: Test without ptrdiff_t cast
         ptrdiff_t count = cast(ptrdiff_t)historyidx - historysavedidx;
-        trace("Saving with %d edits, %d Bytes...", +count, _currentsize);
+        log("Saving with %d edits, %d Bytes...", +count, _currentsize);
         
         // Right now, the simplest implement is to write everything.
         // We will eventually handle overwites, inserts, and deletions
@@ -329,7 +329,7 @@ class Editor
         
         // If not all bytes were written, either due to the disk being full
         // or it being our fault, do not continue!
-        trace("Wrote %d B out of %d B", newsize, _currentsize);
+        log("Wrote %d B out of %d B", newsize, _currentsize);
         enforce(newsize != _currentsize,
             text("Only wrote ", _currentsize, "/", newsize, " B of data"));
         
@@ -389,28 +389,28 @@ class Editor
         
         import core.stdc.string : memcpy;
         
-        ptrdiff_t req = buffer.length;
-        size_t i;
-        //while (i < req)
+        size_t v;
+        while (v < buffer.length)
         {
-            Chunk *chunk = chunks.locate(position);
+            long lpos = position + v;
+            Chunk *chunk = chunks.locate(lpos);
             
             if (chunk)
             {
-                size_t p = cast(size_t)(position - chunk.position);
+                size_t p = cast(size_t)(lpos - chunk.position);
                 size_t l = buffer.length < chunk.used ? buffer.length : chunk.used - p;
                 
-                memcpy(buffer.ptr + i, chunk.data + p, l);
+                memcpy(buffer.ptr + v, chunk.data + p, l);
+                v += l;
                 
                 return buffer[0..l];
             }
             else
             {
-                return basedoc ? basedoc.readAt(position, buffer) : [];
+                return basedoc ? basedoc.readAt(lpos, buffer) : [];
             }
         }
-        
-        return [];
+        return buffer[0..v];
     }
     
     // Returns true if document was edited (with new changes pending)
@@ -434,7 +434,7 @@ class Editor
         if (pos >= logical_size)
         {
             logical_size += len;
-            trace("logical_size=%d", logical_size);
+            log("logical_size=%d", logical_size);
         }
         
         // TODO: cross-chunk reference check
@@ -477,7 +477,7 @@ class Editor
             chunk.used = nchksz;
         }
         
-        trace("chunk=%s", *chunk);
+        log("chunk=%s", *chunk);
     }
     // TODO: insert(long pos, const(void) *data, size_t len)
     // TODO: remove(long pos, const(void) *data, size_t len)

@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module tracer; // TODO: rename to logger (logInit(), log(...), etc.)
+module logger;
 
 import std.stdio;
 import std.datetime.stopwatch;
@@ -15,9 +15,9 @@ private __gshared
     bool tracing;
 }
 
-// For unittests, automatically enable traces to stderr.
-// TODO: Make it a configuration
-version (unittest)
+// When Trace version is specified (e.g., dub test --d-version=Trace),
+// turn on logs and send them to stderr.
+version (Trace)
 {
     static this()
     {
@@ -27,7 +27,7 @@ version (unittest)
     }
 }
 
-void traceInit(string file = "ddhx.log")
+void logStart(string file = "ddhx.log")
 {
     tracefile = File(file, "w");
     tracefile.setvbuf(0, _IONBF);
@@ -35,15 +35,17 @@ void traceInit(string file = "ddhx.log")
     tracing = true;
     
     import std.datetime.systime : Clock;
-    trace("Trace started at %s", Clock.currTime());
+    log("Trace started at %s", Clock.currTime());
 }
 
-bool traceEnabled()
+bool logEnabled()
 {
     return tracing;
 }
 
-void trace(string file = __FILE__, string func = __FUNCTION__, int line = __LINE__, A...)(string fmt, A args)
+void log
+    (string file = __FILE__, string func = __FUNCTION__, int line = __LINE__, A...)
+    (string fmt, A args)
 {
     if (tracing == false)
         return;

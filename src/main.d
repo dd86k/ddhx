@@ -14,7 +14,7 @@ import std.stdio, std.getopt;
 import ddhx;
 import configuration;
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
-import tracer;
+import logger;
 
 private:
 
@@ -132,7 +132,7 @@ void main(string[] args)
     
     if (rc.logfile)
     {
-        traceInit(rc.logfile);
+        logStart(rc.logfile);
     }
     
     // Force exceptions to be printed on stderr and exit with code.
@@ -141,7 +141,7 @@ void main(string[] args)
     catch (Exception ex)
     {
         stderr.writeln(ex);
-        trace("%s", ex);
+        log("%s", ex);
         exit(EXIT_CRITICAL);
     }
 }
