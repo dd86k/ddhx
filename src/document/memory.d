@@ -9,6 +9,9 @@ import document.base : IDocument;
 
 class MemoryDocument : IDocument
 {
+    this() {}
+    this(const(ubyte)[] data) { append(data); }
+    
     void append(const(ubyte)[] data)
     {
         buffer ~= data;

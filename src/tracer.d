@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module tracer;
+module tracer; // TODO: rename to logger (logInit(), log(...), etc.)
 
 import std.stdio;
 import std.datetime.stopwatch;
@@ -15,7 +15,8 @@ private __gshared
     bool tracing;
 }
 
-// Auto-init logger to stderr for unittests
+// For unittests, automatically enable traces to stderr.
+// TODO: Make it a configuration
 version (unittest)
 {
     static this()

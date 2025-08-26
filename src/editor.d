@@ -1,16 +1,16 @@
-/// Session management.
+/// Editor engine.
 ///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module session;
+module editor;
 
 import std.exception : enforce;
 import std.format;
 import document.base : IDocument;
 import transcoder : CharacterSet;
-import history;
 import tracer;
+import patcher;
 
 enum WritingMode
 {
@@ -27,12 +27,7 @@ string writingModeToString(WritingMode mode)
     }
 }
 
-enum PanelType
-{
-    data,
-    text,
-}
-
+deprecated
 enum HistoryType : ubyte
 {
     overwrite,
@@ -196,10 +191,15 @@ unittest
 // Represents a session.
 //
 // Manages edits and document handling. Mostly exists to hold current settings.
-class Session
+class Editor
 {
     // New empty session
-    this()
+    this(
+        // Initial size of patch bufer
+        size_t patchbufsz = 0,
+        // Chunk size
+        size_t chunkinc = 4096,
+    )
     {
         // Defaults
         addresstype = AddressType.hex;
@@ -208,7 +208,8 @@ class Session
         columns = 16;
         writingmode = WritingMode.overwrite;
         
-        history = new HistoryStack();
+        patches = new PatchManager(patchbufsz);
+        chunks  = new ChunkManager(chunkinc);
     }
     
     // New session from opened document.
@@ -223,14 +224,18 @@ class Session
     // Variables
     //
     
+    // TODO: Specific structure to hold session data
+    //       struct Session {
+    //         int writemode;
+    //         long cursor_position;
+    //         string target;
+    //       }
     /// Current writing mode (read-only, insert, overwrite, etc.)
     WritingMode writingmode;
     /// Current cursor position.
     long curpos;
     /// Base viewing position.
     long basepos;
-    /// Currently select panel.
-    PanelType panel;
     /// Target file, if known.
     string target;
     
@@ -245,99 +250,6 @@ class Session
     long currentSize()
     {
         return _currentsize;
-    }
-    
-    /// View the content with all modifications.
-    /// Params:
-    ///   position = Base position.
-    ///   count = Number of bytes to read.
-    /// Returns: Array of bytes with edits.
-    ///          The length SHOULD NOT exceed count requested.
-    ubyte[] view(long position, size_t count)
-    {
-        // TODO: Deletion strategy
-        //       Because deletion history entries will actively
-        //       remove data from the buffer, we'll need to read
-        //       more data back, so consider only read to fill in
-        //       the blanks at calculated spots.
-        
-        size_t r; /// final size of rendered view
-        
-        //
-        // Prepare view buffer.
-        // If we have a base document, read from it for initial data.
-        bool moved   = position != _lastposition;
-        bool resized = count != _readbuf.length;
-        if (resized)
-        {
-            _readbuf.length = count;
-        }
-        if (_document)
-        {
-            if (resized || moved)
-                r = _document.readAt(position, _readbuf).length;
-            else
-                r = _readbuf.length;
-        }
-        _lastposition = position;
-        
-        //
-        // Apply history data
-        int viewlen = cast(int)_readbuf.length;
-        long end = position + count;
-        foreach (entry; history.iterate())
-        {
-            // Edit position starts beyond the view buffer
-            // and thus has no influence on it.
-            if (entry.address > end)
-                continue;
-            
-            // Edit data doesn't even reach view buffer,
-            // but might still influence view buffer (to do...)
-            if (entry.address + entry.size < position)
-                continue;
-            
-            // These two indexes serve the area of influence to the buffer.
-            // Forcing 32bit indexes to avoid overflows on LP32 targets.
-            int bufidx = cast(int)(entry.address - position);
-            int endidx = bufidx + cast(uint)entry.size;
-            
-            // Out of the start and end indexes, make offsets and length to account
-            // the entry data+length.
-            size_t o; // offset to entry.data
-            size_t l = entry.size; // 
-            if (bufidx < 0)
-            {
-                o = +bufidx;
-                l -= o;
-            }
-            else if (endidx >= _readbuf.length)
-            {
-                l = viewlen - bufidx;
-            }
-            
-            // Adjust the effective size of the view buffer
-            HistoryType type = cast(HistoryType)entry.status;
-            final switch (type) {
-            case HistoryType.overwrite:
-                if (l > r)
-                    r = l;
-                break;
-            case HistoryType.insertion:
-                break;
-            case HistoryType.deletion:
-                break;
-            }
-            
-            if (r >= count)
-                r = count;
-            
-            // Copy edit data
-            import core.stdc.string : memcpy;
-            memcpy(_readbuf.ptr + bufidx, entry.data + o, l);
-        }
-        
-        return _readbuf[0..r];
     }
     
     // Save to target with edits
@@ -381,10 +293,7 @@ class Session
         // which is fine pre-1.0.
         
         // TODO: Check if target is writable (without opening file).
-        // TODO: "Cache" temp file
-        //       In the event the temporary file is all written out,
-        //       but the destination [disk] can't hold the target,
-        //       attempt ask again where to save it.
+        // TODO: If temp unwritable, retry temp file next to target (+suffix)
         // Temporary file to write content and edits to.
         // It is nameless, so do not bother getting its filename
         File tempfile = File.tmpfile();
@@ -398,11 +307,12 @@ class Session
         // We will eventually handle overwites, inserts, and deletions
         // within the same file...
         enum SAVEBUFSZ = 32 * 1024;
+        ubyte[] savebuf = new ubyte[SAVEBUFSZ];
         long pos;
         do
         {
             // Read and apply history.
-            ubyte[] result = view(pos, SAVEBUFSZ);
+            ubyte[] result = view(pos, savebuf);
             
             // Write to temp file.
             // Should naturally throw ErrnoException when disk is full
@@ -447,8 +357,9 @@ class Session
         }
         while (tempfile.eof == false);
         
-        targetfile.flush;
-        targetfile.sync;
+        targetfile.flush();
+        targetfile.sync();
+        targetfile.close();
         
         // Save index and path for future saves
         historysavedidx = historyidx;
@@ -456,13 +367,51 @@ class Session
         // Turn as file document in hopes memory gets freed
         import document.file : FileDocument;
         _document = new FileDocument(target, false);
+        
+        // In case base document was a memory buffer
         import core.memory : GC;
         GC.collect();
+        GC.minimize();
     }
     
-    //
-    // History management
-    //
+    /// View the content with all modifications.
+    /// NOTE: Caller should hold its own buffer when its base position changes.
+    /// Params:
+    ///   position = Base position for viewing buffer.
+    ///   buffer = Viewing buffer.
+    /// Returns: Array of bytes with edits.
+    ubyte[] view(long position, ubyte[] buffer)
+    {
+        enforce(buffer,            "assert: buffer");
+        enforce(buffer.length > 0, "assert: buffer.length > 0");
+        enforce(position >= 0,     "assert: position >= 0");
+        enforce(position <= logical_size, "assert: position < logical_size");
+        
+        import core.stdc.string : memcpy;
+        
+        ptrdiff_t req = buffer.length;
+        size_t i;
+        //while (i < req)
+        {
+            Chunk *chunk = chunks.locate(position);
+            
+            if (chunk)
+            {
+                size_t p = cast(size_t)(position - chunk.position);
+                size_t l = buffer.length < chunk.used ? buffer.length : chunk.used - p;
+                
+                memcpy(buffer.ptr + i, chunk.data + p, l);
+                
+                return buffer[0..l];
+            }
+            else
+            {
+                return basedoc ? basedoc.readAt(position, buffer) : [];
+            }
+        }
+        
+        return [];
+    }
     
     // Returns true if document was edited (with new changes pending)
     // since the last time it was opened or saved.
@@ -473,78 +422,116 @@ class Session
         return historyidx != historysavedidx;
     }
     
-    // Add edit to history stack.
-    void historyAdd(long pos, const(void) *data, size_t len, HistoryType type = HistoryType.overwrite)
+    // Create a new patch where data is being overwritten
+    void overwrite(long pos, const(void) *data, size_t len)
     {
-        // TODO: Remove all history entries after index if history index < count
-        //       Then add newest entry
-        // TODO: Deletion strategy
-        //       If a new deletion is performed at the same position and
-        //       targets latest historyidx, then consider removing it.
-        history.add(pos, data, len, type);
+        enforce(pos >= 0 && pos <= _currentsize,
+            "assert: pos < 0 || pos > _currentsize");
+        
+        Patch patch = Patch(pos, PatchType.overwrite, 0, len, data);
+        
+        // If edit is made at EOF, update total logical size
+        if (pos >= logical_size)
+        {
+            logical_size += len;
+            trace("logical_size=%d", logical_size);
+        }
+        
+        // TODO: cross-chunk reference check
+        
+        // Time to locate (or create) a chunk to apply the patch to
+        Chunk *chunk = chunks.locate(pos);
+        if (chunk)
+        {
+            // If the chunk exists, get old data
+            patch.olddata = chunk.data + cast(size_t)(pos - chunk.position);
+        }
+        else
+        {
+            chunk = chunks.create(pos);
+            enforce(chunk, "assert: chunks.create(pos) != null");
+            
+            // If we have a base document, populate chunk with its data
+            if (basedoc)
+            {
+                ubyte *dat = cast(ubyte*)chunk.data;
+                chunk.used = basedoc.readAt(
+                    chunk.position, dat[0..chunk.length]).length;
+            }
+        }
+        
+        // Add patch into set with new and old data
+        patches.add(patch);
         historyidx++;
         
-        // If edit is made at end of file
-        if (pos >= _currentsize)
+        // Update chunk with new patch data
+        // NOTE: For now, chunks are aligned because I'm lazy :V
+        import core.stdc.string : memcpy;
+        size_t chkpos = cast(size_t)(pos - chunk.position);
+        memcpy(chunk.data + chkpos, data, len);
+        
+        // Update chunk used size if overwrite op goes beyond it
+        size_t nchksz = chkpos + len;
+        if (nchksz >= chunk.used)
         {
-            _currentsize += len;
+            chunk.used = nchksz;
         }
+        
+        trace("chunk=%s", *chunk);
     }
+    // TODO: insert(long pos, const(void) *data, size_t len)
+    // TODO: remove(long pos, const(void) *data, size_t len)
     
-    // TODO: void historyExtend(const(void) *data, size_t len)
-    //       Extend last historical entry with more data
+    // TODO: void undo()
     
-    // TODO: void historyUndo()
-    
-    // TODO: void historyRedo()
+    // TODO: void redo()
     
 private:
     // NOTE: Reading memory could be set as long.max
-    long _currentsize;
-    /// Base document
-    IDocument _document;
-    
-    // for read(long position, size_t count)
-    long _lastposition;
-    ubyte[] _readbuf; // Input read buffer
+    /// Current logical size including edits.
+    long logical_size;
+    /// Old alias for logical_size.
+    alias _currentsize = logical_size;
+    /// Base document.
+    IDocument basedoc;
+    /// Old alias for _document.
+    alias _document = basedoc;
     
     /// History index. To track current edit.
     size_t historyidx;
     /// History index since last save.
     size_t historysavedidx;
-    /// History stack.
-    HistoryStack history;
+    
+    PatchManager patches;
+    ChunkManager chunks;
 }
 
 // New buffer
 unittest
 {
-    scope Session sesh = new Session();
+    scope Editor e = new Editor();
+    
+    ubyte[32] buffer;
     
     // Initial read
-    assert(sesh.view(0, 32) == []);
-    assert(sesh.edited() == false);
+    assert(e.view(0, buffer[]) == []);
+    assert(e.edited() == false);
     
-    // Write data
+    // Write data at position 0
     string data0 = "test";
-    sesh.historyAdd(0, data0.ptr, data0.length, HistoryType.overwrite);
-    assert(sesh.edited());
-    assert(sesh.view(0, 4)  == "test");
-    assert(sesh.view(0, 32) == "test");
+    e.overwrite(0, data0.ptr, data0.length);
+    assert(e.edited());
+    assert(e.view(0, buffer[0..4]) == data0);
+    assert(e.view(0, buffer[])     == data0);
     
     // Emulate an overwrite edit
     char c = 's';
-    sesh.historyAdd(3, &c, char.sizeof, HistoryType.overwrite);
-    assert(sesh.view(0, 32) == "tess");
+    e.overwrite(3, &c, char.sizeof);
+    assert(e.view(0, buffer[]) == "tess");
     
     // Another...
-    sesh.historyAdd(1, &c, char.sizeof, HistoryType.overwrite);
-    assert(sesh.view(0, 32) == "tsss");
-    
-    assert(sesh.view(0, 1) == "t");
-    assert(sesh.view(1, 1) == "s");
-    assert(sesh.view(2, 1) == "s");
-    assert(sesh.view(3, 1) == "s");
+    e.overwrite(1, &c, char.sizeof);
+    assert(e.view(0, buffer[]) == "tsss");
 }
 
 // Emulate editing a document
@@ -558,36 +545,36 @@ unittest
         0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
         0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
     ];
-    enum L = data.length;
-    scope MemoryDocument doc = new MemoryDocument();
-    doc.append(data);
+    enum DLEN = data.length;
+    
+    ubyte[32] buffer;
+    
+    scope MemoryDocument doc = new MemoryDocument(data);
     
     // Initial read
-    scope Session sesh = new Session();
-    sesh.attach(doc);
-    assert(sesh.edited() == false);
-    assert(sesh.view(0, data.length) == data);
-    assert(sesh.view(0, 4) == data[0..4]);
-    assert(sesh.view(L-4, 4) == data[L-4..$]);
+    scope Editor e = new Editor(); e.attach(doc);
+    assert(e.edited() == false);
+    assert(e.view(0, buffer[])          == data);
+    assert(e.view(0, buffer[0..4])      == data[0..4]);
+    assert(e.view(DLEN-4, buffer[0..4]) == data[$-4..$]);
     
-    // Write data
-    string data0 = "test";
-    sesh.historyAdd(4, data0.ptr, data0.length, HistoryType.overwrite);
-    assert(sesh.edited());
+    // Read past EOF with no edits
+    ubyte[48] buffer2;
+    assert(e.view(0,  buffer2[]) == data);
+    assert(e.view(16, buffer2[0..16]) == data[16..$]);
+    
+    // Write data at position 4
+    static immutable string edit0 = "aaaa";
+    e.overwrite(4, edit0.ptr, edit0.length);
+    assert(e.edited());
+    assert(e.view(4, buffer[0..4]) == edit0);
     
     // check edit hasn't introduced artifacts, and the edit itself
-    assert(sesh.view(0, 4) == data[0..4]);
-    import std.stdio : writefln;
-    writefln("%(%d,%)", sesh.view(8, L));
-    assert(sesh.view(8, L) == data[8..$]);
-    assert(sesh.view(4, 4) == "test");
-    assert(sesh.view(2, 8) == "\xe6\xea"~"test"~"\x96\xf6");
+    assert(e.view(0, buffer[0..4]) == data[0..4]);
+    assert(e.view(8, buffer[8..$]) == data[8..$]);
+    assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
     
-    // test out of bound stuff
-    assert(sesh.view(4, 2) == "te");
-    assert(sesh.view(6, 2) == "st");
-    assert(sesh.view(2, 4) == "\xe6\xeate");
-    assert(sesh.view(6, 4) == "st\x96\xf6");
+    // Read past EOF with edit
+    assert(e.view(0, buffer2[]) == data[0..4]~cast(ubyte[])edit0~data[8..$]);
+    assert(e.view(8, buffer2[]) == data[8..$]);
 }
-
-// TODO: benchmark view function with 1,000 edits

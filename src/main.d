@@ -95,7 +95,7 @@ void main(string[] args)
         //"I|norc",       "Use defaults and ignore user configuration files", &cliNoRC,
         //"rc",           "Use supplied RC file", &cliRC,
         // NOTE: Available in releases just in case there is a need
-        "trace",        "Enable tracing, output to log file", &rc.logfile,
+        "log",          "Enable tracing, output to this log file", &rc.logfile,
         // Pages
         "version",      "Print the version page and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
