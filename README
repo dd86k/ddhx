@@ -42,7 +42,7 @@ Title font: Shaded Blocky (FIGlet)
 *                                    NOTICE                                    *
 ********************************************************************************
 
-This software is provided with NO WARANTY as it is marked as experimental.
+This software is provided with NO WARANTY as it is marked as EXPERIMENTAL.
 
 ALWAYS make backups of your files before editing them.
 
@@ -50,19 +50,27 @@ This is a Work In Progress (WIP). Everything was rewritten from scratch
 in attempts to have editing features, as version 0.5 will be the first
 version to feature editing.
 
-0.5 Roadmap:
+//
+// Roadmap
+//
+
+(List may change at any given time without notice)
+
+0.5:
 - [x] Support overwrites
-- [ ] Support insertions
 - [x] Support appends
-- [ ] Support deletions
 - [x] Save new buffer to file
 - [x] Save existing file
 - [ ] History undo/redo
-
-Future Roadmap:
-- [ ] Standard input (stdin) support to new buffer
-- [ ] Non-interactive session (--dump)
 - [ ] Command prompt
+
+0.6:
+- [ ] Support insertions
+- [ ] Support deletions
+- [ ] Standard input (stdin) support to new buffer
+
+Future:
+- [ ] Non-interactive session (--dump)
 - [ ] 'bind' command: map command to shortcut
 - [ ] Config file support
 - [ ] Support for other single-byte data types in view (d8, o8)
