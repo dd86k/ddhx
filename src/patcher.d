@@ -67,9 +67,6 @@ class PatchManager
     // Data pointed by the data fields are copied into the internal buffer.
     void add(Patch patch)
     {
-        // Add to patch list
-        patches.insert(patch);
-        
         // If we can't contain data for patch, increase buffer
         size_t newsize = patch_used + patch.size * 2;
         if (newsize >= patch_buffer.length)
@@ -90,6 +87,7 @@ class PatchManager
         // Copy its data into buffers
         void *buf0 = patch_buffer.ptr + patch_used;
         memcpy(buf0, patch.newdata, patch.size);
+        patch.newdata = buf0; // new address
         patch_used += patch.size;
         
         // Copy old data if it has any
@@ -97,21 +95,27 @@ class PatchManager
         {
             void *buf1 = buf0 + patch.size;
             memcpy(buf1, patch.olddata, patch.size);
+            patch.olddata = buf1; // new address
             patch_used += patch.size;
         }
+        
+        // Add to patch list
+        patches.insert(patch);
     }
     
     // Remove last patch.
     void remove()
     {
         if (patches.length == 0)
-            return;
+            return; // Nothing to remove
         
         // Remove last patch
         Patch patch = patches.back();
         patches.removeBack();
         
         patch_used -= patch.size;
+        if (patch.olddata)
+            patch_used -= patch.size;
         
         // TODO: Decrease patch_buffer.length by param_increment
     }
@@ -125,6 +129,12 @@ class PatchManager
     }
     // Range interface
     public alias back = last;
+    
+    Patch opIndex(size_t i)
+    {
+        // Let it throw if out of bounds
+        return patches[i];
+    }
     
 private:
     /// Size of initial and incremental patch data buffer
@@ -154,14 +164,25 @@ unittest
 }
 */
 
-/// Precalculated chunk
+/// Represents a chunk buffer.
+///
+/// This is used to speedup view rendering by precalculating patches into it.
 struct Chunk
 {
+    /// Actual logical position of chunk.
     long position;
-    long orig;
+    /// Capacity of the chunk, its allocated size.
     size_t length;
+    /// Allocated data.
     void *data;
+    /// Amount of data used in this chunk, its logical size.
     size_t used;
+    /// Patch ID.
+    ///
+    /// Currently used to count the number of patches applied in this chunk.
+    /// This eases memory management. When an undo operation is performed and
+    /// id reaches 0, the chunk is deleted.
+    size_t id;
 }
 
 // Utility to help with address alignment
@@ -174,36 +195,40 @@ long align64(long v, size_t alignment)
 }
 unittest
 {
-    assert(align64(0, 16)  == 0);
-    assert(align64(1, 16)  == 0);
-    assert(align64(2, 16)  == 0);
+    assert(align64( 0, 16) == 0);
+    assert(align64( 1, 16) == 0);
+    assert(align64( 2, 16) == 0);
     assert(align64(15, 16) == 0);
     assert(align64(16, 16) == 16);
     assert(align64(17, 16) == 16);
+    assert(align64(31, 16) == 16);
+    assert(align64(32, 16) == 32);
+    assert(align64(33, 16) == 32);
 }
 
 // Manages chunks
 //
 // Caller is responsible for populating data into chunks
+//
+// NOTE: For simplicity, chunks are SIZE aligned.
 class ChunkManager
 {
     // chksize = Size of chunk, smaller uses less memory but might be more fragmented.
     this(size_t chksize = 4096)
     {
         assert(chksize > 0, "chksize > 0");
-        param_chunk = chksize;
+        param_size = chksize;
     }
     
     // Caller must fill chunk data manually
     Chunk* create(long position)
     {
         // Using malloc eases memory management
-        void *data = malloc(param_chunk);
+        void *data = malloc(param_size);
         enforce(data, "assert: ChunkManager.create:malloc");
         
-        long basepos = align64(position, param_chunk);
-        
-        chunks[basepos] = Chunk(basepos, position, param_chunk, data, 0);
+        long basepos = align64(position, param_size);
+        chunks[basepos] = Chunk(basepos, param_size, data, 0, 0);
         
         // ptr returned is in heap anyway, so after its insertion
         return basepos in chunks;
@@ -211,11 +236,26 @@ class ChunkManager
     
     Chunk* locate(long position)
     {
-        return align64(position, param_chunk) in chunks;
+        return align64(position, param_size) in chunks;
+    }
+    
+    void remove(Chunk *chunk)
+    {
+        enforce(chunk,      "chunk != null");
+        enforce(chunk.data, "chunk.data != null");
+        
+        free(chunk.data);
+        
+        chunks.remove(chunk.position);
+    }
+    
+    void flush()
+    {
+        chunks.rehash();
     }
 
 private:
-    size_t param_chunk;
+    size_t param_size;
     
     // NOTE: Eventually use std.container.rbtree.RedBlackTree
     //       Using an AA will eventually lead to complications when managing
@@ -232,28 +272,24 @@ unittest
     Chunk *chunk0 = chunks.create(0);
     assert(chunk0);
     assert(chunk0.position == 0);
-    assert(chunk0.orig == 0);
     assert(chunk0.length == 32);
     assert(chunk0.data);
     
     chunk0 = chunks.locate(0);
     assert(chunk0);
     assert(chunk0.position == 0);
-    assert(chunk0.orig == 0);
     assert(chunk0.length == 32);
     assert(chunk0.data);
     
     Chunk *chunk1 = chunks.create(42);
     assert(chunk1);
     assert(chunk1.position == 32);
-    assert(chunk1.orig     == 42);
     assert(chunk1.length == 32);
     assert(chunk1.data);
     
     chunk1 = chunks.locate(42);
     assert(chunk1);
     assert(chunk1.position == 32);
-    assert(chunk1.orig     == 42);
     assert(chunk1.length == 32);
     assert(chunk1.data);
     

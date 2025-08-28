@@ -468,6 +468,8 @@ class Editor
             chunk.used = nchksz;
         }
         
+        chunk.id++;
+        
         log("chunk=%s", *chunk);
     }
     // TODO: insert(long pos, const(void) *data, size_t len)
