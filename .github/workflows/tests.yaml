@@ -1,0 +1,34 @@
+name: Tests
+
+on: [ push, pull_request ]
+
+# Tests ensures the project builds and executes unittest.
+# The entry points are rather minimal.
+jobs:
+  ddhx:
+    strategy:
+      matrix:
+        # https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job#standard-github-hosted-runners-for-public-repositories
+        os: [
+          ubuntu-22.04, ubuntu-22.04,
+          windows-2022, windows-2025,
+          windows-11-arm,
+          macos-13, macos-15
+        ]
+        # https://github.com/dlang-community/setup-dlang
+        dc: [ dmd, gdc, ldc ]
+        include:
+          # GDC on Linux only
+          - { os: ubuntu-22.04, ubuntu-24.04, dc: gdc }
+        exclude:
+          # DMD on x86 only
+          - { os: windows-11-arm, macos-15, dc: dmd }
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup D compiler
+      uses: dlang-community/setup-dlang@v2
+      with:
+        compiler: ${{ matrix.dc }}
+    - name: Tests
+      run: dub test
