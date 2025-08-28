@@ -53,20 +53,49 @@ private enum PanelType
 }
 
 /// Number of characters a row address will take
+deprecated
 private enum ROW_WIDTH = 11; // temporary until added to RC/Editor
 
-private __gshared // globals have the ugly "_e" prefix to be told apart
+/// Editor session.
+//
+// Because Editor mostly exists for ddhx (editor) and RC can be manually
+// handled elsewhere.
+struct Session
+{
+    /// Runtime configuration.
+    RC rc;
+    
+    /// 
+    Editor editor;
+    
+    /// Logical position at the start of the view.
+    long position_view;
+    /// Logical position of the cursor in the editor.
+    long position_cursor;
+    /// Currently focused panel.
+    PanelType panel;
+    
+    /// Target file.
+    string target;
+}
+
+private __gshared // globals have the ugly "g_" prefix to be told apart
 {
     // Editor status
     int _estatus;
     // Updated at render
     int _erows;
     
-    //
-    PanelType _epanel;
+    // HACK: Global for screen resize events
+    Session *g_session;
     
+    //
+    deprecated PanelType _epanel;
+    
+    // TODO: Consider making message buffer dynamically sized
     char[1024] _emessage;
     size_t _emessagelen;
+    static assert(_emessage.length >= 32, "Message buffer is really too short");
     
     // TODO: Should be turned into a struct.
     //       Allows additional unittests and settings (e.g., RTL).
@@ -78,26 +107,23 @@ private __gshared // globals have the ugly "_e" prefix to be told apart
     ubyte[8] _editbuf;
     
     /// HACK: Currently used editor for screen resize events
-    Editor _editor;
+    deprecated Editor _editor;
     
     /// Registered commands
-    void function(Editor)[string] _ecommands;
+    void function(Session*)[string] _ecommands;
     /// Mapped keys to commands
-    void function(Editor)[int] _ekeys;
+    void function(Session*)[int] _ekeys;
 }
 
-static assert(_emessage.length >= 32, "Message buffer is really too short");
+// TODO: void startddhx(Editor editor, RC *rc, string initmsg)
 
 // start editor
 void startddhx(string path, RC rc)
 {
     _estatus = UINIT; // init here since message could be called later
     
-    // TODO: Load config from RC
-    //       Should be in ctor, for consistency
-    //       Editor can reject settings (via exception)
-    Editor cureditor  = new Editor();
-    cureditor.columns = 16;
+    g_session = new Session(rc);
+    Editor editor = g_session.editor = new Editor();
     
     switch (path) {
     case null:
@@ -111,13 +137,12 @@ void startddhx(string path, RC rc)
         
         // path is either null (no suggested name) or set to a path
         // if path doesn't exist, Editor.save(string) will simply create it
-        cureditor.target = path;
+        g_session.target = path;
         
         if (path && exists(path))
         {
-            cureditor.attach(new FileDocument(path, rc.readonly));
-            if (rc.readonly)
-                cureditor.writingmode = WritingMode.readonly;
+            bool readonly = rc.writemode == WritingMode.readonly;
+            editor.attach(new FileDocument(path, readonly));
             
             message(baseName(path));
         }
@@ -157,18 +182,16 @@ void startddhx(string path, RC rc)
     _ekeys[Mod.ctrl|Key.Z]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.Y]  = _ecommands["redo"]                = &redo;
     
-    loop(cureditor); // use this editor
+    loop(g_session);
 }
 
 private:
 
 // 
-void loop(Editor cureditor)
+void loop(Session *session)
 {
-    _editor = cureditor; // save currently used editor due to resize function
-    
 Lupdate:
-    update(cureditor);
+    update(session);
     
 Lread:
     TermInput input = terminalRead();
@@ -179,7 +202,7 @@ Lread:
         if (fn)
         {
             log("key=%s (%d)", input.key, input.key);
-            try (*fn)(cureditor);
+            try (*fn)(session);
             catch (Exception ex)
             {
                 message(ex.msg);
@@ -191,21 +214,21 @@ Lread:
         // Check if key is for data input.
         // Otherwise, ignore key.
         int kv = void;
-        switch (_epanel) {
+        switch (session.panel) {
         case PanelType.data:
             // If the key input doesn't match the current data or text type, ignore
             // Should be at most 0-9, a-f, and A-F.
-            kv = keydata(cureditor.datatype, input.key);
+            kv = keydata(session.rc.data_type, input.key);
             if (kv < 0) // not a data input, so don't do anything
                 goto Lread;
             break;
         default:
-            message("Edit unsupported in panel: %s", _epanel);
+            message("Edit unsupported in panel: %s", session.panel);
             goto Lupdate;
         }
         
         // Check if the writing mode is valid
-        final switch (cureditor.writingmode) {
+        final switch (session.rc.writemode) {
         // Can't edit while document was opened read-only
         case WritingMode.readonly:
             message("Can't edit in read-only mode");
@@ -220,15 +243,15 @@ Lread:
         
         if (_editdigit == 0) // start new edit
         {
-            _editcurpos = cureditor.curpos;
+            _editcurpos = session.position_cursor;
             import core.stdc.string : memset;
             memset(_editbuf.ptr, 0, _editbuf.length);
         }
         
         _estatus |= UEDITING;
-        shfdata(_editbuf.ptr, _editbuf.length, cureditor.datatype, kv, _editdigit++);
+        shfdata(_editbuf.ptr, _editbuf.length, session.rc.data_type, kv, _editdigit++);
         
-        DataSpec spec = dataSpec(cureditor.datatype);
+        DataSpec spec = dataSpec(session.rc.data_type);
         int chars = spec.spacing;
         
         // If entered an edit fully or cursor position changed,
@@ -236,9 +259,9 @@ Lread:
         if (_editdigit >= chars)
         {
             // TODO: multi-byte edits
-            cureditor.overwrite(_editcurpos, _editbuf.ptr, ubyte.sizeof);
+            g_session.editor.overwrite(_editcurpos, _editbuf.ptr, ubyte.sizeof);
             _editdigit = 0;
-            move_right(cureditor);
+            move_right(g_session);
         }
         break;
     default:
@@ -250,7 +273,7 @@ Lread:
 
 void onresize()
 {
-    update(_editor);
+    update(g_session);
 }
 
 // Invoke command prompt
@@ -413,30 +436,30 @@ unittest
 }
 
 // Move the cursor relative to its position within the file
-void moverel(Editor cureditor, long pos)
+void moverel(Session *session, long pos)
 {
-    moveabs(cureditor, cureditor.curpos + pos);
+    moveabs(session, session.position_cursor + pos);
 }
 
 // Move the cursor to an absolute file position
-void moveabs(Editor cureditor, long pos)
+void moveabs(Session *session, long pos)
 {
     // If the cursor position changed while editing... Just save the edit.
     // Both _editdigit and _editcurpos are set by the editor reliably.
     if (_editdigit && _editcurpos != pos)
     {
         _editdigit = 0;
-        cureditor.overwrite(_editcurpos, _editbuf.ptr, ubyte.sizeof);
+        session.editor.overwrite(_editcurpos, _editbuf.ptr, ubyte.sizeof);
     }
     
     // Can't go beyond file
     if (pos < 0)
         pos = 0;
     // No need to update if it's at the same place
-    if (pos == cureditor.curpos)
+    if (pos == session.position_cursor)
         return;
     
-    cureditor.curpos = pos;
+    session.position_cursor = pos;
     _estatus |= UVIEW | USTATUSBAR;
 }
 
@@ -445,106 +468,106 @@ void moveabs(Editor cureditor, long pos)
 //
 
 // Move back a single item
-void move_left(Editor cureditor)
+void move_left(Session *session)
 {
-    if (cureditor.curpos == 0)
+    if (session.position_cursor == 0)
         return;
     
-    moverel(cureditor, -1);
+    moverel(session, -1);
 }
 // Move forward a single item
-void move_right(Editor cureditor)
+void move_right(Session *session)
 {
-    moverel(cureditor, +1);
+    moverel(session, +1);
 }
 // Move back a row
-void move_up(Editor cureditor)
+void move_up(Session *session)
 {
-    if (cureditor.curpos == 0)
+    if (session.position_cursor == 0)
         return;
     
-    moverel(cureditor, -cureditor.columns);
+    moverel(session, -session.rc.columns);
 }
 // Move forward a row
-void move_down(Editor cureditor)
+void move_down(Session *session)
 {
-    moverel(cureditor, +cureditor.columns);
+    moverel(session, +session.rc.columns);
 }
 // Move back a page
-void move_pg_up(Editor cureditor)
+void move_pg_up(Session *session)
 {
-    if (cureditor.curpos == 0)
+    if (session.position_cursor == 0)
         return;
     
-    moverel(cureditor, -(_erows * cureditor.columns));
+    moverel(session, -(_erows * session.rc.columns));
 }
 // Move forward a page
-void move_pg_down(Editor cureditor)
+void move_pg_down(Session *session)
 {
-    moverel(cureditor, +(_erows * cureditor.columns));
+    moverel(session, +(_erows * session.rc.columns));
 }
 // Move to start of line
-void move_ln_start(Editor cureditor) // move to start of line
+void move_ln_start(Session *session) // move to start of line
 {
-    moverel(cureditor, -(cureditor.curpos % cureditor.columns));
+    moverel(session, -(session.position_cursor % session.rc.columns));
 }
 // Move to end of line
-void move_ln_end(Editor cureditor) // move to end of line
+void move_ln_end(Session *session) // move to end of line
 {
-    moverel(cureditor, +(cureditor.columns - (cureditor.curpos % cureditor.columns)) - 1);
+    moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
 }
 // Move to absolute start of document
-void move_abs_start(Editor cureditor)
+void move_abs_start(Session *session)
 {
-    moveabs(cureditor, 0);
+    moveabs(session, 0);
 }
 // Move to absolute end of document
-void move_abs_end(Editor cureditor)
+void move_abs_end(Session *session)
 {
-    moveabs(cureditor, cureditor.currentSize());
+    moveabs(session, session.editor.currentSize());
 }
 
 // Change writing mode
-void change_writemode(Editor cureditor)
+void change_writemode(Session *session)
 {
-    final switch (cureditor.writingmode) {
+    final switch (session.rc.writemode) {
     case WritingMode.readonly: // Can't switch from read-only
         throw new Exception("Can't edit in read-only");
     case WritingMode.insert:
-        cureditor.writingmode = WritingMode.overwrite;
+        session.rc.writemode = WritingMode.overwrite;
         break;
     case WritingMode.overwrite:
-        cureditor.writingmode = WritingMode.insert;
+        session.rc.writemode = WritingMode.insert;
         break;
     }
     _estatus |= USTATUSBAR;
 }
 
 // Change active panel
-void change_panel(Editor cureditor)
+void change_panel(Session *session)
 {
-    _epanel++;
-    if (_epanel >= PanelType.max + 1)
-        _epanel = PanelType.init;
+    session.panel++;
+    if (session.panel >= PanelType.max + 1)
+        session.panel = PanelType.init;
 }
 
 // 
-void undo(Editor cureditor)
+void undo(Session *session)
 {
     throw new Exception("TODO: undo");
 }
 
 // 
-void redo(Editor cureditor)
+void redo(Session *session)
 {
     throw new Exception("TODO: redo");
 }
 
 // Save changes
-void save(Editor cureditor)
+void save(Session *session)
 {
     // No known path... Ask for one!
-    if (cureditor.target is null)
+    if (session.target is null)
     {
         string name = promptline("Name: ");
         if (name.length == 0)
@@ -552,28 +575,21 @@ void save(Editor cureditor)
             throw new Exception("Canceled");
         }
         
-        // Names:
-        // - "test": cwd + test
-        // - "./test": relative, as-is
-        // - "../test": relative, as-is
-        // - "/test": absolute, as-is
-        
-        cureditor.target = name;
+        // TODO: Check if target exists to ask for overwrite
+        session.target = name;
     }
     
-    log("target='%s'", cureditor.target);
+    log("target='%s'", session.target);
     
     // Force updating the status bar to indicate that we're currently saving.
     // It might take a while since the current implementation.
     message("Saving...");
-    update_status(cureditor, terminalSize());
+    update_status(session, terminalSize());
     
     // On error, an exception is thrown, where the command handler receives,
     // and displays its message.
-    cureditor.save();
+    session.editor.save(session.target);
     message("Saved");
-    
-    log("saved to '%s'", cureditor.target);
 }
 
 // Send a message within the editor to be displayed.
@@ -594,9 +610,9 @@ void message(A...)(string fmt, A args)
     // to avoid a crash while editing.
     // Sadly, can't know the effective number of characters that
     // would have been formatted, so just send a tiny message.
-    catch (RangeError ex)
+    catch (RangeError er)
     {
-        log("%s", ex);
+        log("%s", er);
         message("message: RangeError");
     }
     // Should only be FormatException otherwise.
@@ -608,23 +624,22 @@ void message(A...)(string fmt, A args)
 }
 
 // Render header bar on screen
-void update_header(Editor cureditor, TerminalSize termsize)
+void update_header(Session *session, TerminalSize termsize)
 {
     terminalCursor(0, 0);
     
     // Print spacers and current address type
-    string atype = addressTypeToString(cureditor.addresstype);
-    int prespaces = ROW_WIDTH - cast(int)atype.length;
-    assert(prespaces >= 0, "ROW_WIDTH is too short"); // causes misalignment
+    string atype = addressTypeToString(session.rc.address_type);
+    int prespaces = session.rc.address_spacing - cast(int)atype.length;
     size_t l = terminalWriteChar(' ', prespaces); // Print x spaces before address type
     l += terminalWrite(atype, " "); // print address type + spacer
     
-    int cols = cureditor.columns;
-    int cwidth = dataSpec(cureditor.datatype).spacing; // data width spec (for alignment with col headers)
+    int cols = session.rc.columns;
+    int cwidth = dataSpec(session.rc.data_type).spacing; // data width spec (for alignment with col headers)
     char[32] buf = void;
     for (int col; col < cols; ++col)
     {
-        string chdr = formatAddress(buf[], col, cwidth, cureditor.addresstype);
+        string chdr = formatAddress(buf[], col, cwidth, session.rc.address_type);
         l += terminalWrite(" ", chdr); // spacer + column header
     }
     
@@ -632,18 +647,17 @@ void update_header(Editor cureditor, TerminalSize termsize)
 }
 
 // Render view with data on screen
-void update_view(Editor cureditor, TerminalSize termsize)
+void update_view(Session *session, TerminalSize termsize)
 {
     if (termsize.rows < 4)
         return;
     
-    // TODO: Error if rendered estimated length >= terminal columns
-    
+    int cols        = session.rc.columns;
     int rows        = _erows = termsize.rows - 2;
-    int count       = rows * cureditor.columns;
-    long curpos     = cureditor.curpos;
-    long basepos    = cureditor.basepos;
-    long docsize    = cureditor.currentSize();
+    int count       = rows * cols;
+    long curpos     = session.position_cursor;
+    long basepos    = session.position_view;
+    long docsize    = session.editor.currentSize();
     
     // Cursor is past EOF
     if (curpos > docsize)
@@ -654,7 +668,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
     {
         while (curpos < basepos)
         {
-            basepos -= cureditor.columns;
+            basepos -= cols;
             if (basepos < 0)
             {
                 basepos = 0;
@@ -667,29 +681,38 @@ void update_view(Editor cureditor, TerminalSize termsize)
         // Catch up to cursor
         while (curpos >= basepos + count)
         {
-            basepos += cureditor.columns;
+            basepos += cols;
         }
     }
     
     // Read data
+    // TODO: To avoid unecessary I/O, avoid calling .view() when:
+    //       - position is the same as the last call
+    //       - count is the same as the last call
+    //       - no edits have been made
+    //       basically, when we simply move the cursor within the view
     // NOTE: scope T[] allocations does nothing
     //       This is a non-issue since the conservative GC will keep the
     //       allocation alive and simply resize it (either pool or realloc).
     // NOTE: new T[x] calls memset(3), wasting some cpu time
-    ubyte[] viewbuf; viewbuf.length = count;
-    ubyte[] result = cureditor.view(basepos, viewbuf);
+    __gshared ubyte[] viewbuf;
+    if (viewbuf.length != count)
+        viewbuf.length = count;
+    ubyte[] result = session.editor.view(basepos, viewbuf);
     int reslen     = cast(int)result.length; // * bytesize
     
-    cureditor.curpos  = curpos;
-    cureditor.basepos = basepos;
+    // Update positions
+    session.position_cursor = curpos;
+    session.position_view   = basepos;
     
     // Render view
     char[32] txtbuf = void;
     long address    = basepos;
     int viewpos     = cast(int)(curpos - address); // relative cursor position in view
-    int cols        = cureditor.columns;
-    int datawidth   = dataSpec(cureditor.datatype).spacing; // data element width
-    DataFormatter dfmt = DataFormatter(cureditor.datatype, result.ptr, result.length);
+    int datawidth   = dataSpec(session.rc.data_type).spacing; // data element width
+    int addspacing  = session.rc.address_spacing;
+    PanelType panel = session.panel;
+    DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     log("address=%d viewpos=%d cols=%d datawidth=%d count=%d reslen=%d",
         address, viewpos, cols, datawidth, count, reslen);
     terminalCursor(0, 1);
@@ -698,7 +721,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
         // '\n' could count as a character, avoid using it
         terminalCursor(0, row + 1);
         
-        string addr = formatAddress(txtbuf[], address, ROW_WIDTH, cureditor.addresstype);
+        string addr = formatAddress(txtbuf[], address, addspacing, session.rc.address_type);
         terminalWrite(addr, " "); // row address + spacer
         
         // Render view data
@@ -706,7 +729,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
         {
             int i = (row * cols) + col;
             
-            bool highlight = i == viewpos && _epanel == PanelType.data;
+            bool highlight = i == viewpos && panel == PanelType.data;
             
             terminalWrite(" "); // data-data spacer
             
@@ -716,7 +739,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
             {
                 dfmt.skip();
                 
-                string s = formatData(txtbuf[], _editbuf.ptr, _editbuf.length, cureditor.datatype);
+                string s = formatData(txtbuf[], _editbuf.ptr, _editbuf.length, session.rc.data_type);
                 terminalWrite(s);
             }
             else if (i < reslen) // apply data
@@ -740,7 +763,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
         {
             int i = (row * cols) + col;
             
-            bool highlight = i == viewpos && _epanel == PanelType.text;
+            bool highlight = i == viewpos && panel == PanelType.text;
             
             if (highlight) terminalInvertColor();
             
@@ -751,7 +774,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
             else
             {
                 // NOTE: Escape codes do not seem to be a worry with tests
-                string c = transcode(result[i], cureditor.charset);
+                string c = transcode(result[i], session.rc.charset);
                 terminalWrite(c ? c : ".");
             }
             
@@ -761,7 +784,7 @@ void update_view(Editor cureditor, TerminalSize termsize)
 }
 
 // Render status bar on screen
-void update_status(Editor cureditor, TerminalSize termsize)
+void update_status(Session *session, TerminalSize termsize)
 {
     terminalCursor(0, termsize.rows - 1);
     
@@ -776,13 +799,13 @@ void update_status(Editor cureditor, TerminalSize termsize)
     else
     {
         char[32] curbuf = void; // cursor address
-        string curstr = formatAddress(curbuf[], cureditor.curpos, 8, cureditor.addresstype);
+        string curstr = formatAddress(curbuf[], session.position_cursor, 8, session.rc.address_type);
         
         msg = cast(string)sformat(_emessage[], "%c %s | %3s | %8s | %s",
-            cureditor.edited ? '*' : ' ',
-            writingModeToString(cureditor.writingmode),
-            dataTypeToString(cureditor.datatype),
-            charsetID(cureditor.charset),
+            session.editor.edited() ? '*' : ' ',
+            writingModeToString(session.rc.writemode),
+            dataTypeToString(session.rc.data_type),
+            charsetID(session.rc.charset),
             curstr);
         
     }
@@ -817,7 +840,7 @@ void update_status(Editor cureditor, TerminalSize termsize)
 
 // Update all elements on screen depending on editor information
 // status global indicates what needs to be updated
-void update(Editor cureditor)
+void update(Session *session)
 {
     // NOTE: Right now, everything is updated unconditionally
     //       It's pointless to micro-optimize rendering processes while everything is WIP
@@ -826,25 +849,25 @@ void update(Editor cureditor)
     // Number of effective rows for data view
     _erows = termsize.rows - 2;
     
-    update_header(cureditor, termsize);
+    update_header(session, termsize);
     
-    update_view(cureditor, termsize);
+    update_view(session, termsize);
     
-    update_status(cureditor, termsize);
+    update_status(session, termsize);
     
     _estatus = 0;
 }
 
-void quit(Editor cureditor)
+void quit(Session *session)
 {
-    if (cureditor.edited)
+    if (session.editor.edited())
     {
         int r = promptkey("Save? (Y/N) ");
         switch (r) {
         case 'n', 'N':
             goto Lexit; // quit without saving
         case 'y', 'Y':
-            save(cureditor); // save and continue to quit
+            save(session); // save and continue to quit
             break;
         default:
             throw new Exception("Canceled");

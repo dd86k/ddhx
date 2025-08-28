@@ -193,14 +193,8 @@ class Editor
         size_t chunkinc = 4096,
     )
     {
+        // TODO: if chunkinc == 0, take page size
         assert(chunkinc > 0, "chunkinc > 0");
-        
-        // Defaults
-        addresstype = AddressType.hex;
-        datatype = DataType.x8;
-        charset = CharacterSet.ascii;
-        columns = 16;
-        writingmode = WritingMode.overwrite;
         
         patches = new PatchManager(patchbufsz);
         chunks  = new ChunkManager(chunkinc);
@@ -214,32 +208,6 @@ class Editor
         logical_size = doc.size(); // init size
     }
     
-    //
-    // Variables
-    //
-    
-    // TODO: Specific structure to hold session data
-    //       struct Session {
-    //         int writemode;
-    //         long cursor_position;
-    //         string target;
-    //       }
-    /// Current writing mode (read-only, insert, overwrite, etc.)
-    WritingMode writingmode;
-    /// Current cursor position.
-    long curpos;
-    /// Base viewing position.
-    long basepos;
-    /// Target file, if known.
-    string target;
-    
-    // TODO: Editor should keep a copy of RC to ease management
-    /// Desired amount of number of columns per row for each element.
-    int columns;
-    AddressType addresstype;
-    DataType datatype;
-    CharacterSet charset;
-    
     /// Current size of the document, including edits
     long currentSize()
     {
@@ -248,10 +216,10 @@ class Editor
     
     // Save to target with edits
     // TODO: Separate into its own function
-    void save()
+    void save(string target)
     {
-        log("target=%s writing=%d logical_size=%u",
-            target, writingmode, logical_size);
+        log("target=%s logical_size=%u",
+            target, logical_size);
         
         // NOTE: Caller is responsible to populate target path.
         //       Using assert will stop the program completely,
@@ -259,9 +227,6 @@ class Editor
         //       This also allows the error message to be seen.
         enforce(target != null,    "assert: target is NULL");
         enforce(target.length > 0, "assert: target is EMPTY");
-        
-        // Careful failsafe check against session setting
-        enforce(writingmode != WritingMode.readonly, "Cannot save readonly file");
         
         // If there are really no edits (as caller should check on its own
         // anyway), then there are no new additional things to modify,

@@ -75,6 +75,8 @@ void main(string[] args)
     enum SECRETCOUNT = 1;
     
     RC rc;
+    string orc; /// Use this rc file instead
+    bool onorc; /// Do not use rc file if it exists, force defaults
     GetoptResult res = void;
     try
     {
@@ -83,19 +85,46 @@ void main(string[] args)
         // Secret options
         "assistant",    "", &printpage,
         // Editor option
-        "c|columns",    "Set columns per row (default depends on --data)", &rc.columns,
-        "address",      "Set address mode ('hex', 'dec', or 'oct')", &rc.address_format,
-        "data",         "Set data mode (default: x8)", &rc.data_format,
+        "c|columns",    "Set columns per row (default depends on --data)",
+            (string _, string val)
+            {
+                configRC(rc, "columns", val);
+            },
+        "address",      "Set address mode ('hex', 'dec', or 'oct')",
+            (string _, string val)
+            {
+                configRC(rc, "address-type", val);
+            },
+        /*
+        "data",         "Set data mode (default: x8)",
+            (string _, string val)
+            {
+                configRC(rc, "data-type", val);
+            },
+        */
         //"filler",       "Set non-printable default character (default='.')", &cliOption,
-        "C|charset",    "Set character translation (default=ascii)", &rc.charset,
-        "r|readonly",   "Open file in read-only editing mode", &rc.readonly,
+        "C|charset",    "Set character translation (default='ascii')",
+            (string _, string val)
+            {
+                configRC(rc, "charset", val);
+            },
+        "r|readonly",   "Open file in read-only editing mode",
+            ()
+            {
+                import editor : WritingMode;
+                rc.writemode = WritingMode.readonly;
+            },
         // Application options
-        "s|seek",       "Seek at position", &rc.seek,
-        "l|length",     "Maximum amount of data to read", &rc.len,
-        //"I|norc",       "Use defaults and ignore user configuration files", &cliNoRC,
-        //"rc",           "Use supplied RC file", &cliRC,
+        //"s|seek",       "Seek at position", &rc.seek,
+        //"l|length",     "Maximum amount of data to read", &rc.len,
+        "I|norc",       "Use defaults and ignore user configuration files", &onorc,
+        "rc",           "Use supplied RC file", &orc,
         // NOTE: Available in releases just in case there is a need
-        "log",          "Enable tracing, output to this log file", &rc.logfile,
+        "log",          "Enable tracing to this file",
+            (string _, string val)
+            {
+                logStart(val);
+            },
         // Pages
         "version",      "Print the version page and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
@@ -114,12 +143,11 @@ void main(string[] args)
         
         writeln("Hex editor\n"~
             "USAGE\n"~
-            "  ddhx [FILE|-]\n"~
-            "  ddhx {-h|--help|--version|--ver]\n"~
+            "  ddhx [FILE|-] [OPTIONS]\n"~
+            "  ddhx {-h|--help|--version|--ver}\n"~
             "\n"~
             "OPTIONS");
-        foreach (opt; res.options[SECRETCOUNT..$])
-        with (opt)
+        foreach (opt; res.options[SECRETCOUNT..$]) with (opt)
         {
             if (optShort)
                 write(' ', optShort, ',');
@@ -130,11 +158,18 @@ void main(string[] args)
         exit(EXIT_SUCCESS);
     }
     
-    if (rc.logfile)
+    if (orc) // specified RC path
     {
-        logStart(rc.logfile);
+        loadRC(rc, orc);
+    }
+    else if (onorc == false)
+    {
+        // TODO: Find default config and load it
     }
     
+    // TODO: Move args processing up here.
+    //       Give ddhx only IDocument object.
+    //       If dumping (not interactive session), then define behavior in other module.
     // Force exceptions to be printed on stderr and exit with code.
     // I believe it defaults printing to stdout.
     try startddhx(args.length >= 2 ? args[1] : null, rc);
