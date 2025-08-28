@@ -201,6 +201,8 @@ class Editor
         size_t chunkinc = 4096,
     )
     {
+        assert(chunkinc > 0, "chunkinc > 0");
+        
         // Defaults
         addresstype = AddressType.hex;
         datatype = DataType.x8;
@@ -385,32 +387,57 @@ class Editor
         enforce(buffer,            "assert: buffer");
         enforce(buffer.length > 0, "assert: buffer.length > 0");
         enforce(position >= 0,     "assert: position >= 0");
-        enforce(position <= logical_size, "assert: position < logical_size");
+        enforce(position <= logical_size, "assert: position <= logical_size");
         
-        import core.stdc.string : memcpy;
+        import core.stdc.string : memcpy, memset;
         
-        size_t v;
-        while (v < buffer.length)
+        log("* position=%d buffer.length=%u", position, buffer.length);
+        
+        size_t bp; // buffer position
+        while (bp < buffer.length)
         {
-            long lpos = position + v;
+            long lpos = position + bp;
             Chunk *chunk = chunks.locate(lpos);
+            size_t want = buffer.length - bp;
+            log("lpos=%d bp=%u want=%u", lpos, bp, want);
             
-            if (chunk)
+            if (chunk) // edited chunk found
             {
-                size_t p = cast(size_t)(lpos - chunk.position);
-                size_t l = buffer.length < chunk.used ? buffer.length : chunk.used - p;
+                ptrdiff_t chkpos = lpos - chunk.position; // relative pos in chunk
+                size_t len = chunk.used < want ? chunk.used : want;
+                size_t chkavail = chunk.used - chkpos; // fixes basepos+want >= chkused
+                if (len >= chkavail)
+                    len = chkavail;
                 
-                memcpy(buffer.ptr + v, chunk.data + p, l);
-                v += l;
+                log("chunk.position=%u chunk.used=%u len=%u chkpos=%u",
+                    chunk.position, chunk.used, len, chkpos);
                 
-                return buffer[0..l];
+                memcpy(buffer.ptr + bp, chunk.data + chkpos, len);
+                bp += len;
+                
+                // If we're at End of Chunk, makes sense if chunk is currently
+                // growing and buffer couldn't be filled.
+                if (len < want) break;
             }
-            else
+            else if (basedoc) // no chunk but has source doc
             {
-                return basedoc ? basedoc.readAt(lpos, buffer) : [];
+                size_t len = basedoc.readAt(lpos, buffer[bp..want]).length;
+                log("len=%u", len);
+                bp += len;
+                
+                // If we're at EOF of the source document, this means
+                // that there is no more data to populate from document
+                if (len < want) break;
+            }
+            else // no chunks (edits) and no base document
+            {
+                log("none");
+                break;
             }
         }
-        return buffer[0..v];
+        log("bp=%u", bp);
+        enforce(bp <= buffer.length, "assert: bp <= buffer.length");
+        return buffer[0..bp];
     }
     
     // Returns true if document was edited (with new changes pending)
@@ -441,12 +468,12 @@ class Editor
         
         // Time to locate (or create) a chunk to apply the patch to
         Chunk *chunk = chunks.locate(pos);
-        if (chunk)
+        if (chunk) // update chunk
         {
             // If the chunk exists, get old data
             patch.olddata = chunk.data + cast(size_t)(pos - chunk.position);
         }
-        else
+        else // create new chunk and populate it
         {
             chunk = chunks.create(pos);
             enforce(chunk, "assert: chunks.create(pos) != null");
@@ -509,27 +536,29 @@ private:
 // New buffer
 unittest
 {
+    log("Test: New empty buffer");
+    
     scope Editor e = new Editor();
     
     ubyte[32] buffer;
     
-    // Initial read
+    log("Initial read");
     assert(e.view(0, buffer[]) == []);
     assert(e.edited() == false);
     
-    // Write data at position 0
+    log("Write data at position 0");
     string data0 = "test";
     e.overwrite(0, data0.ptr, data0.length);
     assert(e.edited());
     assert(e.view(0, buffer[0..4]) == data0);
     assert(e.view(0, buffer[])     == data0);
     
-    // Emulate an overwrite edit
+    log("Emulate an overwrite edit");
     char c = 's';
     e.overwrite(3, &c, char.sizeof);
     assert(e.view(0, buffer[]) == "tess");
     
-    // Another...
+    log("Another...");
     e.overwrite(1, &c, char.sizeof);
     assert(e.view(0, buffer[]) == "tsss");
 }
@@ -538,6 +567,8 @@ unittest
 unittest
 {
     import document.memory : MemoryDocument;
+    
+    log("Test: Editing document");
     
     static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
         0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
@@ -551,30 +582,29 @@ unittest
     
     scope MemoryDocument doc = new MemoryDocument(data);
     
-    // Initial read
+    log("Initial read");
     scope Editor e = new Editor(); e.attach(doc);
     assert(e.edited() == false);
     assert(e.view(0, buffer[])          == data);
     assert(e.view(0, buffer[0..4])      == data[0..4]);
     assert(e.view(DLEN-4, buffer[0..4]) == data[$-4..$]);
     
-    // Read past EOF with no edits
+    log("Read past EOF with no edits");
     ubyte[48] buffer2;
     assert(e.view(0,  buffer2[]) == data);
     assert(e.view(16, buffer2[0..16]) == data[16..$]);
     
-    // Write data at position 4
+    log("Write data at position 4");
     static immutable string edit0 = "aaaa";
     e.overwrite(4, edit0.ptr, edit0.length);
     assert(e.edited());
     assert(e.view(4, buffer[0..4]) == edit0);
-    
-    // check edit hasn't introduced artifacts, and the edit itself
     assert(e.view(0, buffer[0..4]) == data[0..4]);
     assert(e.view(8, buffer[8..$]) == data[8..$]);
     assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
     
-    // Read past EOF with edit
+    log("Read past EOF with edit");
     assert(e.view(0, buffer2[]) == data[0..4]~cast(ubyte[])edit0~data[8..$]);
+    log("Read past EOF with shift");
     assert(e.view(8, buffer2[]) == data[8..$]);
 }
