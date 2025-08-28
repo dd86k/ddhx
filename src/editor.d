@@ -330,10 +330,6 @@ class Editor
         // Save index and path for future saves
         historysavedidx = historyidx;
         
-        // Turn as file document in hopes memory gets freed
-        import document.file : FileDocument;
-        basedoc = new FileDocument(target, false);
-        
         // In case base document was a memory buffer
         import core.memory : GC;
         GC.collect();
