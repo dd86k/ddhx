@@ -83,34 +83,3 @@ string[] arguments(const(char)[] buffer)
     assert(arguments(`A           B`) == [ "A", "B" ]);
     //assert(arguments(`tab\tmoment`) == [ "tab", "moment" ]);
 }
-
-long cparse(string arg) @trusted
-{
-    import core.stdc.stdio : sscanf;
-    import std.string : toStringz;
-    import std.conv : text;
-    long r = void;
-    if (sscanf(arg.toStringz, "%lli", &r) != 1)
-        throw new Exception(text("Could not parse: ", arg));
-    return r;
-}
-@safe unittest
-{
-    import std.conv : octal;
-    // decimal
-    assert(cparse("0") == 0);
-    assert(cparse("1") == 1);
-    assert(cparse("-1") == -1);
-    assert(cparse("10") == 10);
-    assert(cparse("20") == 20);
-    // hex
-    assert(cparse("0x1") == 0x1);
-    assert(cparse("0x10") == 0x10);
-    assert(cparse("0x20") == 0x20);
-    // NOTE: Signed numbers cannot be over 0x8000_0000_0000_000
-    assert(cparse("0x1bcd1234ffffaaaa") == 0x1bcd_1234_ffff_aaaa);
-    // octal
-    assert(cparse("01") == 1);
-    assert(cparse("010") == octal!"010");
-    assert(cparse("020") == octal!"020");
-}

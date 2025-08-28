@@ -526,8 +526,7 @@ unittest
     
     static immutable string path = "tmp_empty";
     log("Saving to %s", path);
-    e.target = path;
-    e.save(); // throws if it needs to, stopping tests
+    e.save(path); // throws if it needs to, stopping tests
     
     // Needs to be readable after saving, obviously
     assert(e.view(0, buffer[]) == "tsss");
@@ -583,8 +582,7 @@ unittest
     
     static immutable string path = "tmp_doc";
     log("Saving to %s", path);
-    e.target = path;
-    e.save(); // throws if it needs to, stopping tests
+    e.save(path); // throws if it needs to, stopping tests
     
     // Needs to be readable after saving, obviously
     assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);

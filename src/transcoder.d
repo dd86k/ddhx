@@ -110,7 +110,7 @@ immutable(char)[] transcodeASCII(ubyte data) @trusted
         return emptychar;
     
     c[0] = data;
-    return c;
+    return cast(string)c[]; // compatible with gdc-11
 }
 @trusted unittest
 {
