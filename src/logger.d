@@ -29,13 +29,23 @@ version (Trace)
 
 void logStart(string file = "ddhx.log")
 {
-    tracefile = File(file, "w");
-    tracefile.setvbuf(0, _IONBF);
+    logOpen(file); // old behavior
     sw.start();
     tracing = true;
     
     import std.datetime.systime : Clock;
     log("Trace started at %s", Clock.currTime());
+}
+
+void logOpen(string file)
+{
+    tracefile = File(file, "w");
+    tracefile.setvbuf(0, _IONBF);
+}
+
+void logStop()
+{
+    tracing = false;
 }
 
 bool logEnabled()
