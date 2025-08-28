@@ -27,14 +27,6 @@ string writingModeToString(WritingMode mode)
     }
 }
 
-deprecated
-enum HistoryType : ubyte
-{
-    overwrite,
-    insertion,
-    deletion
-}
-
 //
 // Address specifications
 //
@@ -218,8 +210,8 @@ class Editor
     // Caller has more control for its initial opening operation.
     void attach(IDocument doc)
     {
-        _document = doc;
-        _currentsize = doc.size(); // init size
+        basedoc = doc;
+        logical_size = doc.size(); // init size
     }
     
     //
@@ -251,12 +243,16 @@ class Editor
     /// Current size of the document, including edits
     long currentSize()
     {
-        return _currentsize;
+        return logical_size;
     }
     
     // Save to target with edits
+    // TODO: Separate into its own function
     void save()
     {
+        log("target=%s writing=%d logical_size=%u",
+            target, writingmode, logical_size);
+        
         // NOTE: Caller is responsible to populate target path.
         //       Using assert will stop the program completely,
         //       which would not appear in logs (if enabled).
@@ -264,9 +260,8 @@ class Editor
         enforce(target != null,    "assert: target is NULL");
         enforce(target.length > 0, "assert: target is EMPTY");
         
-        // Careful failsafe
-        enforce(writingmode != WritingMode.readonly,
-            "Cannot save readonly file");
+        // Careful failsafe check against session setting
+        enforce(writingmode != WritingMode.readonly, "Cannot save readonly file");
         
         // If there are really no edits (as caller should check on its own
         // anyway), then there are no new additional things to modify,
@@ -284,8 +279,9 @@ class Editor
         //       The temporary file might be on another location/disk.
         string parentdir = dirName(target); // Windows want directory
         ulong avail = getAvailableDiskSpace(parentdir);
-        enforce(avail < _currentsize * 2, // temp and target
-            text("Need ", (_currentsize * 2) - avail, " B of disk space"));
+        ulong need  = logical_size * 2;
+        log("parent=%s avail=%u need=%u", parentdir, avail, need);
+        enforce(avail >= need, text(need - avail, " B required"));
         
         // Because tmpnam(3), tempnam(3), and mktemp(3) are all deprecated for
         // security and usability issues, a temporary file is used.
@@ -303,7 +299,7 @@ class Editor
         // Get range of edits to apply when saving.
         // TODO: Test without ptrdiff_t cast
         ptrdiff_t count = cast(ptrdiff_t)historyidx - historysavedidx;
-        log("Saving with %d edits, %d Bytes...", +count, _currentsize);
+        log("Saving with %d edits, %d Bytes...", +count, logical_size);
         
         // Right now, the simplest implement is to write everything.
         // We will eventually handle overwites, inserts, and deletions
@@ -323,7 +319,7 @@ class Editor
             
             pos += SAVEBUFSZ;
         }
-        while (pos < _currentsize);
+        while (pos < logical_size);
         
         tempfile.flush();
         tempfile.sync(); // calls OS-specific flush but is it really needed?
@@ -331,9 +327,9 @@ class Editor
         
         // If not all bytes were written, either due to the disk being full
         // or it being our fault, do not continue!
-        log("Wrote %d B out of %d B", newsize, _currentsize);
-        enforce(newsize != _currentsize,
-            text("Only wrote ", _currentsize, "/", newsize, " B of data"));
+        log("Wrote %d B out of %d B", newsize, logical_size);
+        enforce(newsize == logical_size,
+            text("Only wrote ", logical_size, "/", newsize, " B of data"));
         
         tempfile.rewind();
         enforce(tempfile.tell == 0, "assert: File.rewind() != 0");
@@ -341,15 +337,16 @@ class Editor
         // Check disk space again for target, just in case.
         // The exception (message) gives it chance to save it elsewhere.
         avail = getAvailableDiskSpace(parentdir);
-        enforce(avail < _currentsize,
-            text("Need ", _currentsize - avail, " B of disk space"));
+        enforce(avail >= logical_size,
+            text("Need ", logical_size - avail, " B of disk space"));
         
         // Temporary file should now be fully written, time to overwrite target
         // reading from temporary file.
         // Can't use std.file.copy since we don't know the name of our temporary file.
         // And overwriting it doesn't require us to copy attributes.
         // TODO: Manage target open failures
-        scope ubyte[] buffer = new ubyte[SAVEBUFSZ]; // read buffer
+        ubyte[] buffer; /// read buffer
+        buffer.length = SAVEBUFSZ;
         File targetfile = File(target, "wb"); // overwrite target
         do
         {
@@ -358,6 +355,8 @@ class Editor
             targetfile.rawWrite(result);
         }
         while (tempfile.eof == false);
+        buffer.length = 0; // doesn't cause a realloc,
+                           // but curious if GC will pick this up
         
         targetfile.flush();
         targetfile.sync();
@@ -368,7 +367,7 @@ class Editor
         
         // Turn as file document in hopes memory gets freed
         import document.file : FileDocument;
-        _document = new FileDocument(target, false);
+        basedoc = new FileDocument(target, false);
         
         // In case base document was a memory buffer
         import core.memory : GC;
@@ -452,8 +451,8 @@ class Editor
     // Create a new patch where data is being overwritten
     void overwrite(long pos, const(void) *data, size_t len)
     {
-        enforce(pos >= 0 && pos <= _currentsize,
-            "assert: pos < 0 || pos > _currentsize");
+        enforce(pos >= 0 && pos <= logical_size,
+            "assert: pos < 0 || pos > logical_size");
         
         Patch patch = Patch(pos, PatchType.overwrite, 0, len, data);
         
@@ -517,12 +516,8 @@ private:
     // NOTE: Reading memory could be set as long.max
     /// Current logical size including edits.
     long logical_size;
-    /// Old alias for logical_size.
-    alias _currentsize = logical_size;
     /// Base document.
     IDocument basedoc;
-    /// Old alias for _document.
-    alias _document = basedoc;
     
     /// History index. To track current edit.
     size_t historyidx;
@@ -561,6 +556,17 @@ unittest
     log("Another...");
     e.overwrite(1, &c, char.sizeof);
     assert(e.view(0, buffer[]) == "tsss");
+    
+    static immutable string path = "tmp_empty";
+    log("Saving to %s", path);
+    e.target = path;
+    e.save(); // throws if it needs to, stopping tests
+    
+    // Needs to be readable after saving, obviously
+    assert(e.view(0, buffer[]) == "tsss");
+    
+    import std.file : remove;
+    remove(path);
 }
 
 // Emulate editing a document
@@ -607,4 +613,15 @@ unittest
     assert(e.view(0, buffer2[]) == data[0..4]~cast(ubyte[])edit0~data[8..$]);
     log("Read past EOF with shift");
     assert(e.view(8, buffer2[]) == data[8..$]);
+    
+    static immutable string path = "tmp_doc";
+    log("Saving to %s", path);
+    e.target = path;
+    e.save(); // throws if it needs to, stopping tests
+    
+    // Needs to be readable after saving, obviously
+    assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
+    
+    import std.file : remove;
+    remove(path);
 }
