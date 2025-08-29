@@ -21,11 +21,15 @@ else
 
 class OSException : Exception
 {
-    this(int code = systemerr(),
+    this(string prefix = null,
+        int code = systemerr(),
         string _file = __FILE__, size_t _line = __LINE__)
     {
         oscode = code;
-        super(messageFromCode(code), _file, _line);
+        if (prefix)
+            super(prefix~": "~messageFromCode(code), _file, _line);
+        else
+            super(messageFromCode(code), _file, _line);
     }
     
     int oscode;

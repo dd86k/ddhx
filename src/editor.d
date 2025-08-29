@@ -236,16 +236,14 @@ class Editor
         
         import std.stdio : File;
         import std.conv  : text;
-        import std.file  : getAvailableDiskSpace;
-        import std.path  : dirName;
+        import os.file : availableDiskSpace;
         
         // We need enough disk space for the temporary file and the target.
         // TODO: Check disk space available separately for temp file.
         //       The temporary file might be on another location/disk.
-        string parentdir = dirName(target); // Windows want directory
-        ulong avail = getAvailableDiskSpace(parentdir);
+        ulong avail = availableDiskSpace(target);
         ulong need  = logical_size * 2;
-        log("parent=%s avail=%u need=%u", parentdir, avail, need);
+        log("avail=%u need=%u", avail, need);
         enforce(avail >= need, text(need - avail, " B required"));
         
         // Because tmpnam(3), tempnam(3), and mktemp(3) are all deprecated for
@@ -301,7 +299,7 @@ class Editor
         
         // Check disk space again for target, just in case.
         // The exception (message) gives it chance to save it elsewhere.
-        avail = getAvailableDiskSpace(parentdir);
+        avail = availableDiskSpace(target);
         enforce(avail >= logical_size,
             text("Need ", logical_size - avail, " B of disk space"));
         

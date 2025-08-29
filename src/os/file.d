@@ -49,9 +49,9 @@ else version (Posix)
         (type << _IOC_TYPESHIFT) |
         (nr   << _IOC_NRSHIFT) |
         (size << _IOC_SIZESHIFT);
-    //TODO: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
-    //      I don't know why, so I'm casting it to int to let it compile.
-    //      Fix later.
+    // TODO: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
+    //       I don't know why, so I'm casting it to int to let it compile.
+    //       Fix later.
     private enum _IOR(int type,int nr,size_t size) = cast(int)_IOC!(_IOC_READ,type,nr,size);
     private enum BLKGETSIZE64 = cast(int)_IOR!(0x12,114,size_t.sizeof);
     private alias BLOCKSIZE = BLKGETSIZE64;
@@ -131,7 +131,7 @@ struct OSFile
                 null,           // hTemplateFile
             );
             if (handle == INVALID_HANDLE_VALUE)
-                throw new OSException();
+                throw new OSException("Couldn't open file");
         }
         else version (Posix)
         {
@@ -145,7 +145,7 @@ struct OSFile
                 oflags |= O_RDONLY;
             handle = .open(path.toStringz, oflags);
             if (handle < 0)
-                throw new OSException();
+                throw new OSException("Couldn't open file");
         }
     }
     
@@ -156,17 +156,17 @@ struct OSFile
             LARGE_INTEGER i = void;
             i.QuadPart = pos;
             if (SetFilePointerEx(handle, i, &i, origin) == FALSE)
-                throw new OSException();
+                throw new OSException("Couldn't seek");
         }
         else version (linux) // Should cover glibc and musl
         {
             if (lseek64(handle, pos, origin) < 0)
-                throw new OSException();
+                throw new OSException("Couldn't seek");
         }
         else version (Posix)
         {
             if (lseek(handle, pos, origin) < 0)
-                throw new OSException();
+                throw new OSException("Couldn't seek");
         }
         else static assert(0, "Implement OSFile.seek");
     }
@@ -196,7 +196,7 @@ struct OSFile
         {
             LARGE_INTEGER li = void;
             if (GetFileSizeEx(handle, &li) == FALSE)
-                throw new OSException();
+                throw new OSException("Couldn't get file size");
             return li.QuadPart;
         }
         else version (Posix)
@@ -204,7 +204,7 @@ struct OSFile
             // TODO: macOS support
             stat_t stats = void;
             if (fstat(handle, &stats) < 0)
-                throw new OSException();
+                throw new OSException("Couldn't get file size");
             
             int typ = stats.st_mode & S_IFMT;
             switch (typ) {
@@ -216,7 +216,7 @@ struct OSFile
                 // TODO: BSD support
                 long s = void;
                 if (ioctl(handle, BLOCKSIZE, &s) < 0)
-                    throw new OSException();
+                    throw new OSException("Couldn't get file size");
                 return s;
             default:
                 import std.conv : text;
@@ -236,14 +236,14 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (ReadFile(handle, buffer, len, &len, null) == FALSE)
-                throw new OSException();
+                throw new OSException("Couldn't read from file");
             return (cast(ubyte*)buffer)[0..len];
         }
         else version (Posix)
         {
             ssize_t len = .read(handle, buffer, size);
             if (len < 0)
-                throw new OSException();
+                throw new OSException("Couldn't read from file");
             return (cast(ubyte*)buffer)[0..len];
         }
     }
@@ -259,14 +259,14 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (WriteFile(handle, data, len, &len, null) == FALSE)
-                throw new OSException();
+                throw new OSException("Couldn't write to file");
             return len; // 0 on error anyway
         }
         else version (Posix)
         {
             ssize_t len = .write(handle, data, size);
             if (len < 0)
-                throw new OSException();
+                throw new OSException("Couldn't write to file");
             return len;
         }
     }
@@ -298,4 +298,60 @@ struct OSFile
             handle = 0;
         }
     }
+}
+
+/// Replacement for std.file.getAvailableDiskSpace since gdc-11 (FE: 2.076),
+/// the default for Ubuntu 22.04, does not have have said function.
+///
+/// Plus does the safer thing on Windows where it forces getting the parent
+/// directory if the target isn't a directory.
+/// Params: path = Target path.
+/// Returns: Available bytes.
+/// Throws: OSException
+ulong availableDiskSpace(string path)
+{
+    // NOTE: std.file.cenforce is private... But we have OSException
+version (Windows)
+{
+    import std.path : dirName;
+    import std.file : isDir;
+    import core.sys.windows.winbase : GetDiskFreeSpaceExW;
+    import core.sys.windows.winnt : ULARGE_INTEGER, BOOL, TRUE, FALSE;
+    import std.internal.cstring : tempCStringW;
+    
+    if (isDir(path) == false)
+        path = dirName(path);
+    
+    ULARGE_INTEGER avail;
+    BOOL err = GetDiskFreeSpaceExW(path.tempCStringW(), &avail, null, null);
+    if (err == FALSE)
+        throw new OSException("Failed to get free available space");
+    
+    return avail.QuadPart;
+}
+else version (FreeBSD)
+{
+    import std.internal.cstring : tempCString;
+    import core.sys.freebsd.sys.mount : statfs, statfs_t;
+
+    statfs_t stats;
+    int err = statfs(path.tempCString(), &stats);
+    if (err < 0)
+        throw new OSException("Failed to get free available space");
+
+    return stats.f_bavail * stats.f_bsize;
+}
+else version (Posix)
+{
+    import std.internal.cstring : tempCString;
+    import core.sys.posix.sys.statvfs : statvfs, statvfs_t;
+
+    statvfs_t stats;
+    int err = statvfs(path.tempCString(), &stats);
+    if (err < 0)
+        throw new OSException("Failed to get free available space");
+
+    return stats.f_bavail * stats.f_frsize;
+}
+else static assert(0, "Unsupported platform");
 }
