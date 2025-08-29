@@ -117,8 +117,8 @@ void main(string[] args)
         // Application options
         //"s|seek",       "Seek at position", &rc.seek,
         //"l|length",     "Maximum amount of data to read", &rc.len,
-        "I|norc",       "Use defaults and ignore user configuration files", &onorc,
-        "rc",           "Use supplied RC file", &orc,
+        //"I|norc",       "Use defaults and ignore user configuration files", &onorc,
+        //"rc",           "Use supplied RC file", &orc,
         // NOTE: Available in releases just in case there is a need
         "log",          "Enable tracing to this file",
             (string _, string val)
@@ -141,6 +141,7 @@ void main(string[] args)
         // Replace default help line
         res.options[$-1].help = "Print this help page and exit";
         
+        // Usage and options
         writeln("Hex editor\n"~
             "USAGE\n"~
             "  ddhx [FILE|-] [OPTIONS]\n"~
@@ -155,17 +156,41 @@ void main(string[] args)
                 write("    ");
             writefln(" %-14s  %s", optLong, help);
         }
+        
+        // Manually typed for now...
+        writeln();
+        versionline("KEYS", "ACTION");
+        versionline("  a-f & 0-9", "(edit keys)");
+        versionline("  LeftArrow", "cursor-left");
+        versionline("  RightArrow", "cursor-right");
+        versionline("  UpArrow", "cursor-up");
+        versionline("  DownArrow", "cursor-down");
+        versionline("  PageUp", "page-up");
+        versionline("  PageDown", "page-down");
+        versionline("  Home", "line-start");
+        versionline("  End", "line-end");
+        versionline("  Ctrl+Home", "cursor-sof");
+        versionline("  Ctrl+End", "cursor-eof");
+        versionline("  Tab", "change-panel");
+        versionline("  Insert", "change-writemode");
+        versionline("  Ctrl+S", "save");
+        versionline("  Ctrl+U", "undo");
+        versionline("  Ctrl+Y", "redo");
+        versionline("  Q", "quit");
+        
         exit(EXIT_SUCCESS);
     }
     
+    /*
     if (orc) // specified RC path
     {
         loadRC(rc, orc);
     }
-    else if (onorc == false)
+    else if (onorc == false) // noRC==false: Allowed to use default config if exists
     {
         // TODO: Find default config and load it
     }
+    */
     
     // TODO: Move args processing up here.
     //       Give ddhx only IDocument object.
