@@ -85,9 +85,6 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // HACK: Global for screen resize events
     Session *g_session;
     
-    //
-    deprecated PanelType _epanel;
-    
     // TODO: Consider making message buffer dynamically sized
     char[1024] _emessage;
     size_t _emessagelen;
@@ -101,9 +98,6 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     size_t _editdigit;
     // 
     ubyte[8] _editbuf;
-    
-    /// HACK: Currently used editor for screen resize events
-    deprecated Editor _editor;
     
     /// Registered commands
     void function(Session*)[string] _ecommands;
@@ -156,7 +150,6 @@ void startddhx(string path, RC rc)
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
     // NOTE: This works with exceptions (vs. atexit(3))
     //       Called before exception handler is called (tested on linux)
-    scope(exit) terminalRestore();
     terminalOnResize(&onresize);
     terminalHideCursor();
     
@@ -175,10 +168,17 @@ void startddhx(string path, RC rc)
     _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_panel;
     _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
-    _ekeys[Mod.ctrl|Key.Z]  = _ecommands["undo"]                = &undo;
+    _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.Y]  = _ecommands["redo"]                = &redo;
     
+    // Special keybinds with no attached commands
+    _ekeys[':'] = &prompt_command;
+    //_ekeys['/'] = &prompt_frwd_search;
+    //_ekeys['&'] = &prompt_back_search;
+    
     loop(g_session);
+    
+    terminalRestore();
 }
 
 private:
@@ -270,6 +270,41 @@ Lread:
 void onresize()
 {
     update(g_session);
+}
+
+void prompt_command(Session *session)
+{
+    string line = promptline(":");
+    
+    import utils : arguments;
+    
+    string[] argv = arguments(line);
+    if (argv.length == 0)
+        return;
+    
+    string argv0 = argv[0];
+    
+    // Command
+    const(void function(Session*)) *com = argv0 in _ecommands;
+    if (com)
+    {
+        log("command=%s", argv0);
+        try (*com)(session);
+        catch (Exception ex)
+        {
+            log("%s", ex);
+            message(ex.msg);
+        }
+        return;
+    }
+    
+    // RC
+    try configRC(session.rc, argv0, argv.length > 1 ? argv[1] : null);
+    catch (Exception ex)
+    {
+        log("%s", ex);
+        message(ex.msg);
+    }
 }
 
 // Invoke command prompt
@@ -718,7 +753,7 @@ void update_view(Session *session, TerminalSize termsize)
         terminalCursor(0, row + 1);
         
         string addr = formatAddress(txtbuf[], address, addspacing, session.rc.address_type);
-        terminalWrite(addr, " "); // row address + spacer
+        size_t w = terminalWrite(addr, " "); // row address + spacer
         
         // Render view data
         for (int col; col < cols; ++col)
@@ -727,7 +762,7 @@ void update_view(Session *session, TerminalSize termsize)
             
             bool highlight = i == viewpos && panel == PanelType.data;
             
-            terminalWrite(" "); // data-data spacer
+            w += terminalWrite(" "); // data-data spacer
             
             if (highlight) terminalInvertColor();
             
@@ -736,23 +771,23 @@ void update_view(Session *session, TerminalSize termsize)
                 dfmt.skip();
                 
                 string s = formatData(txtbuf[], _editbuf.ptr, _editbuf.length, session.rc.data_type);
-                terminalWrite(s);
+                w += terminalWrite(s);
             }
             else if (i < reslen) // apply data
             {
                 string s = dfmt.formatdata();
-                terminalWrite(s);
+                w += terminalWrite(s);
             }
             else // no data, print spacer
             {
-                terminalWriteChar(' ', datawidth);
+                w += terminalWriteChar(' ', datawidth);
             }
             
             if (highlight) terminalResetColor();
         }
         
         // data-text spacer
-        terminalWrite("  ");
+        w += terminalWrite("  ");
         
         // Render character data
         for (int col; col < cols; ++col)
@@ -765,17 +800,22 @@ void update_view(Session *session, TerminalSize termsize)
             
             if (i >= reslen) // unavail
             {
-                terminalWrite(" ");
+                w += terminalWrite(" ");
             }
             else
             {
                 // NOTE: Escape codes do not seem to be a worry with tests
                 string c = transcode(result[i], session.rc.charset);
-                terminalWrite(c ? c : ".");
+                w += terminalWrite(c ? c : ".");
             }
             
             if (highlight) terminalResetColor();
         }
+        
+        // Fill rest of spaces
+        int f = termsize.columns - cast(int)w;
+        if (f > 0)
+            terminalWriteChar(' ', f);
     }
 }
 

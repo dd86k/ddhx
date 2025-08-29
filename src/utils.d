@@ -8,7 +8,7 @@ module utils;
 /// Split arguments while accounting for quotes.
 ///
 /// Uses the GC to append to the new array.
-/// Params: text = Shell-like input.
+/// Params: buffer = Shell-like input.
 /// Returns: Arguments.
 /// Throws: Does not explicitly throw any exceptions.
 string[] arguments(const(char)[] buffer)
@@ -17,7 +17,7 @@ string[] arguments(const(char)[] buffer)
     import std.ascii : isControl, isWhite;
     // NOTE: Using split/splitter would destroy quoted arguments
     
-    //TODO: Escape characters (with '\\')
+    // TODO: Escape characters (with '\\')
     
     buffer = strip(buffer);
     
@@ -63,7 +63,7 @@ string[] arguments(const(char)[] buffer)
 }
 @system unittest
 {
-    //TODO: Test embedded string quotes
+    // TODO: Test nested string quotes
     assert(arguments("") == []);
     assert(arguments("\n") == []);
     assert(arguments("a") == [ "a" ]);
