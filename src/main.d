@@ -108,7 +108,7 @@ void main(string[] args)
             {
                 configRC(rc, "charset", val);
             },
-        "r|readonly",   "Open file in read-only editing mode",
+        "R|readonly",   "Open file in read-only editing mode",
             ()
             {
                 import editor : WritingMode;

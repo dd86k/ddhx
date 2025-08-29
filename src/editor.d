@@ -20,10 +20,11 @@ enum WritingMode
 }
 string writingModeToString(WritingMode mode)
 {
+    // Noticed most (GUI) text editors have these in caps
     final switch (mode) {
-    case WritingMode.readonly:  return "r/o";
-    case WritingMode.overwrite: return "ovr";
-    case WritingMode.insert:    return "ins";
+    case WritingMode.readonly:  return "R/O";
+    case WritingMode.overwrite: return "OVR";
+    case WritingMode.insert:    return "INS";
     }
 }
 
