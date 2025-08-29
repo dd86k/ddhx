@@ -62,7 +62,7 @@ version to feature editing.
 - [x] Save new buffer to file
 - [x] Save existing file
 - [ ] History undo/redo
-- [ ] Command prompt
+- [x] Command prompt
 
 0.6:
 - [ ] Support insertions

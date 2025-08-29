@@ -311,16 +311,18 @@ struct OSFile
 ulong availableDiskSpace(string path)
 {
     // NOTE: std.file.cenforce is private... But we have OSException
+    
+    import std.file : exists;
+    import std.path : dirName;
+    
+    if (exists(path) == false)
+        path = dirName(path);
+    
 version (Windows)
 {
-    import std.path : dirName;
-    import std.file : isDir;
     import core.sys.windows.winbase : GetDiskFreeSpaceExW;
     import core.sys.windows.winnt : ULARGE_INTEGER, BOOL, TRUE, FALSE;
     import std.internal.cstring : tempCStringW;
-    
-    if (isDir(path) == false)
-        path = dirName(path);
     
     ULARGE_INTEGER avail;
     BOOL err = GetDiskFreeSpaceExW(path.tempCStringW(), &avail, null, null);
