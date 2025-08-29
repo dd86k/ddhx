@@ -11,11 +11,11 @@ import configuration;
 import document;
 import editor;
 import logger;
+import os.terminal;
 import std.format;
 import std.range;
 import std.stdio;
 import std.string;
-import terminal;
 import transcoder;
 
 // TODO: Find a way to dump session data to be able to resume later
@@ -51,10 +51,6 @@ private enum PanelType
     data,
     text,
 }
-
-/// Number of characters a row address will take
-deprecated
-private enum ROW_WIDTH = 11; // temporary until added to RC/Editor
 
 /// Editor session.
 //
@@ -205,8 +201,8 @@ Lread:
             try (*fn)(session);
             catch (Exception ex)
             {
-                message(ex.msg);
                 log("%s", ex);
+                message(ex.msg);
             }
             goto Lupdate;
         }
