@@ -29,8 +29,6 @@ jobs:
           - { os: macos-13, dc: gdc }
           - { os: macos-14, dc: gdc }
           - { os: macos-15, dc: gdc }
-          # gdc-11 (2.076) doesn't have std.file.getAvailableDiskSpace
-          - { os: ubuntu-22.04, dc: gdc }
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
