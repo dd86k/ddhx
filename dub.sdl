@@ -12,6 +12,23 @@ buildType "debugv" {
     dflags "-vgc" "-vtls" platform="dmd"
     dflags "--vgc" "--vtls" platform="ldc"
 }
+# NOTE: static builds
+#       Currently pretty broken, as only LDC honors the request.
+#       On Alpine, you'll need xz-dev and llvm-libundwind-static but the latter
+#       can't overwrite /usr/lib/libundwind.a (GCC).
+#       On Ubuntu, you'll need about the same.
+buildType "static-debug" {
+    buildOptions "debugMode" "debugInfo"
+	dflags "-L=-static" platform="dmd"
+	dflags "-Wl,-static" platform="gdc"
+	dflags "--static" platform="ldc"
+}
+buildType "static-release" {
+    buildOptions "releaseMode" "optimize" "inline"
+	dflags "-L=-static" platform="dmd"
+	dflags "-Wl,-static" platform="gdc"
+	dflags "--static" platform="ldc"
+}
 
 #
 # Tests
