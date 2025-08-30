@@ -56,12 +56,18 @@ else version (Posix)
     private enum BLKGETSIZE64 = cast(int)_IOR!(0x12,114,size_t.sizeof);
     private alias BLOCKSIZE = BLKGETSIZE64;
     
-    import core.stdc.config : c_ulong;
+    import core.stdc.config : c_long, c_ulong;
     
+    // NOTE: In Musl source, ioctl is really defined as
+    //       src/misc/ioctl.c: int ioctl(int fd, int req, ...)
+    //       But linker will complain about a redefinition (static compile):
+    //       Previous IR: i32 (i32, i64, ...) (incoming library..?)
+    //       New IR     : i32 (i32, i32, ...) (when defined with int)
+    //       Using 'c_long' seems to fix this (under amd64), but I'm not convinced.
     version (CRuntime_Bionic)
         private extern (C) int ioctl(int, int, ...);
     else version (CRuntime_Musl)
-        private extern (C) int ioctl(int, int, ...);
+        private extern (C) int ioctl(int, c_long, ...);
     else // glibc, BSDs
         private extern (C) int ioctl(int, c_ulong, ...);
     
