@@ -423,8 +423,6 @@ class Editor
             log("logical_size=%d", logical_size);
         }
         
-        // TODO: cross-chunk reference check
-        
         // Time to locate (or create) a chunk to apply the patch to
         Chunk *chunk = chunks.locate(pos);
         if (chunk) // update chunk

@@ -439,10 +439,10 @@ TerminalSize terminalSize()
     }
     else version (Posix)
     {
-        //TODO: Consider using LINES and COLUMNS environment variables
-        //      as fallback if ioctl returns -1.
-        //TODO: Consider ESC [ 18 t for fallback of environment.
-        //      Reply: ESC [ 8 ; ROWS ; COLUMNS t
+        // TODO: Consider using LINES and COLUMNS environment variables
+        //       as fallback if ioctl returns -1.
+        // TODO: Consider ESC [ 18 t for fallback of environment.
+        //       Reply: ESC [ 8 ; ROWS ; COLUMNS t
         winsize ws = void;
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
         size.rows    = ws.ws_row;

@@ -54,14 +54,14 @@ version to feature editing.
 // Roadmap
 //
 
-(List may change at any given time without notice)
+This list may change at any given time without notice.
 
 0.5:
 - [x] Support overwrites
 - [x] Support appends
 - [x] Save new buffer to file
 - [x] Save existing file
-- [ ] History undo/redo
+- [x] History undo/redo
 - [x] Command prompt
 
 0.6:
@@ -77,4 +77,45 @@ Future:
 - [ ] Support for multi-byte data types in view (d16, f32, etc.)
 - [ ] Insert characters
 - [ ] Insert zeros
-- [ ] Data selection range
+- [ ] Insert file
+- [ ] Select multiple elements
+
+//
+// Commands
+//
+
+NAME                    KEY             DESCRIPTION
+"cursor-left"           LeftArrow       Navigate one element back
+"cursor-right"          RightArrow      Navigate one element forward
+"cursor-up"             UpArrow         Navigate one line back
+"cursor-down"           DownArrow       Navigate one line forward
+"cursor-page-up"        PageUp          Navigate one page back (rows*columns)
+"cursor-page-down"      PageDown        Navigate one page forward (rows*columns)
+"cursor-line-start"     Home            Navigate to start of line
+"cursor-line-end"       End             Navigate to end of line
+"cursor-sof"            ^Home           Go to start of buffer
+"cursor-eof"            ^End            Go to end of buffer
+"change-panel"          Tab             Switch between data and text panel
+"change-writemode"      Insert          Change writing mode
+"save"                  ^S              Save buffer to file
+"undo"                  ^U              Undo change
+"redo"                  ^R              Redo change
+"quit"                  Q               Quit program
+                        :               Show command prompt
+
+//
+// Configurations
+//
+
+"columns"
+        Number of elements to show on a row
+        Argument: Number
+"address-type"
+        Change displayed address type
+        Argument: "hex", "dec", or "oct"
+"address-spacing"
+        Change how much spacing the left address column takes
+        Argument: Number
+"charset"
+        Change displayed character set
+        Argument: "ascii", "cp437", "mac", or "ebcdic"
