@@ -24,7 +24,7 @@ import core.stdc.stdlib : malloc, realloc, free;
 
 enum PatchType : short
 {
-    overwrite,
+    replace,
     insertion,
     deletion,
 }
@@ -62,10 +62,8 @@ class PatchManager
         param_increment = incsize;
     }
     
-    // Add new patch.
-    //
-    // Data pointed by the data fields are copied into the internal buffer.
-    void add(Patch patch)
+    private
+    void prepare(ref Patch patch)
     {
         // If we can't contain data for patch, increase buffer
         size_t newsize = patch_used + patch.size * 2;
@@ -98,12 +96,10 @@ class PatchManager
             patch.olddata = buf1; // new address
             patch_used += patch.size;
         }
-        
-        // Add to patch list
-        patches.insert(patch);
     }
     
     // Remove last patch.
+    /*
     void remove()
     {
         if (patches.length == 0)
@@ -121,19 +117,31 @@ class PatchManager
     }
     // Range interface
     public alias removeBack = remove;
+    */
     
-    // Get last patch
-    Patch last()
+    size_t count()
     {
-        throw new Exception("TODO");
+        return patches.length;
     }
-    // Range interface
-    public alias back = last;
     
     Patch opIndex(size_t i)
     {
         // Let it throw if out of bounds
         return patches[i];
+    }
+    
+    void insert(size_t i, Patch patch)
+    {
+        prepare(patch);
+        
+        if (patches.length == 0 || i >= patches.length)
+        {
+            patches.insert(patch);
+        }
+        else if (i < patches.length)
+        {
+            patches[i] = patch;
+        }
     }
     
 private:
@@ -153,16 +161,22 @@ private:
     /// History stack
     Array!Patch patches; // Array!T supports slicing
 }
-/*
 unittest
 {
     static immutable ubyte[] data0 = [ 0xfe ];
-    Patch patch0 = Patch(0, PatchType.overwrite, 0, 1, data0.ptr);
     
     scope PatchManager patches = new PatchManager();
-    patches.add(patch0);
+    patches.insert(0, Patch(0, PatchType.replace, 0, 1, data0.ptr, null));
+    patches.insert(1, Patch(1, PatchType.replace, 0, 1, data0.ptr, null));
+    patches.insert(2, Patch(2, PatchType.replace, 0, 1, data0.ptr, null));
+    
+    assert(patches[0].address == 0);
+    assert(patches[1].address == 1);
+    assert(patches[2].address == 2);
+    
+    patches.insert(2, Patch(10, PatchType.replace, 0, 1, data0.ptr, null));
+    assert(patches[2].address == 10);
 }
-*/
 
 /// Represents a chunk buffer.
 ///
@@ -170,19 +184,27 @@ unittest
 struct Chunk
 {
     /// Actual logical position of chunk.
+    ///
+    /// Set by ChunkManager.
     long position;
-    /// Capacity of the chunk, its allocated size.
-    size_t length;
     /// Allocated data.
+    ///
+    /// Set by ChunkManager.
     void *data;
+    /// Capacity of the chunk, its allocated size.
+    ///
+    /// Set by ChunkManager.
+    size_t length;
     /// Amount of data used in this chunk, its logical size.
     size_t used;
+    /// Amount of data written by the source document.
+    size_t orig;
     /// Patch ID.
     ///
     /// Currently used to count the number of patches applied in this chunk.
     /// This eases memory management. When an undo operation is performed and
     /// id reaches 0, the chunk is deleted.
-    size_t id;
+    uint id;
 }
 
 // Utility to help with address alignment
@@ -228,7 +250,7 @@ class ChunkManager
         enforce(data, "assert: ChunkManager.create:malloc");
         
         long basepos = align64(position, param_size);
-        chunks[basepos] = Chunk(basepos, param_size, data, 0, 0);
+        chunks[basepos] = Chunk(basepos, data, param_size, 0, 0, 0);
         
         // ptr returned is in heap anyway, so after its insertion
         return basepos in chunks;

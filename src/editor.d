@@ -409,12 +409,12 @@ class Editor
     }
     
     // Create a new patch where data is being overwritten
-    void overwrite(long pos, const(void) *data, size_t len)
+    void replace(long pos, const(void) *data, size_t len)
     {
         enforce(pos >= 0 && pos <= logical_size,
             "assert: pos < 0 || pos > logical_size");
         
-        Patch patch = Patch(pos, PatchType.overwrite, 0, len, data);
+        Patch patch = Patch(pos, PatchType.replace, 0, len, data, null);
         
         // If edit is made at EOF, update total logical size
         if (pos >= logical_size)
@@ -440,15 +440,23 @@ class Editor
             // If we have a base document, populate chunk with its data
             if (basedoc)
             {
-                ubyte *dat = cast(ubyte*)chunk.data;
-                chunk.used = basedoc.readAt(
-                    chunk.position, dat[0..chunk.length]).length;
+                chunk.orig = chunk.used = basedoc.readAt(
+                    chunk.position, (cast(ubyte*)chunk.data)[0..chunk.length]).length;
+                
+                // If chunk offset inside within used range, then there is old data
+                size_t o = cast(size_t)(pos - chunk.position);
+                if (o < chunk.used)
+                    patch.olddata = cast(ubyte*)chunk.data + o;
             }
         }
         
         // Add patch into set with new and old data
-        patches.add(patch);
-        historyidx++;
+        log("add historyidx=%u patch=%s", historyidx, patch);
+        patches.insert(historyidx++, patch);
+        //patches.add(patch);
+        //historyidx++;
+        
+        // TODO: Check cross-chunk
         
         // Update chunk with new patch data
         // NOTE: For now, chunks are aligned because I'm lazy :V
@@ -467,12 +475,88 @@ class Editor
         
         log("chunk=%s", *chunk);
     }
+    /// Ditto
+    public alias overwrite = replace;
     // TODO: insert(long pos, const(void) *data, size_t len)
     // TODO: remove(long pos, const(void) *data, size_t len)
+    //       Because delete is (was) a reserved keyword
     
-    // TODO: void undo()
+    void undo()
+    {
+        if (historyidx <= 0)
+            return;
+        
+        Patch patch = patches[historyidx - 1];
+        // WTF did i forget
+        //enforce(patch.olddata, "assert: patch.olddata != NULL");
+        
+        Chunk *chunk = chunks.locate(patch.address);
+        
+        // WTF if that happens
+        enforce(chunk, "assert: chunk != NULL");
+        
+        log("patch=%s chunk=%s", patch, *chunk);
+        
+        // TODO: If insert/deletion, don't forget to reshift chunks
+        // TODO: Check cross-chunk access
+        
+        // End chunk: Update sizes if applicable
+        if (patch.address + patch.size >= chunk.position + chunk.used &&
+            patch.address + patch.size >  chunk.position + chunk.orig)
+        {
+            chunk.used -= patch.size;
+            
+            logical_size -= patch.size;
+        }
+        // Apply old data if not truncated by resize
+        else if (patch.olddata)
+        {
+            import core.stdc.string : memcpy;
+            ptrdiff_t o = patch.address - chunk.position;
+            memcpy(chunk.data + o, patch.olddata, patch.size);
+        }
+        
+        chunk.id--;
+        historyidx--;
+    }
     
-    // TODO: void redo()
+    void redo()
+    {
+        if (historyidx >= patches.count())
+            return;
+        
+        Patch patch = patches[historyidx];
+        // WTF did i forget
+        //enforce(patch.olddata, "assert: patch.olddata != NULL");
+        
+        Chunk *chunk = chunks.locate(patch.address);
+        
+        // WTF if that happens
+        enforce(chunk, "assert: chunk != NULL");
+        
+        log("patch=%s chunk=%s", patch, *chunk);
+        
+        // TODO: If insert/deletion, don't forget to reshift chunks
+        
+        // Apply new data
+        import core.stdc.string : memcpy;
+        ptrdiff_t o = patch.address - chunk.position;
+        
+        // TODO: Check cross-chunk
+        memcpy(chunk.data + o, patch.newdata, patch.size);
+        
+        // End chunk: Update sizes if applicable
+        if (patch.address + patch.size >= chunk.position + chunk.used &&
+            patch.address + patch.size >  chunk.position + chunk.orig)
+        {
+            chunk.used += patch.size;
+            
+            logical_size += patch.size;
+        }
+        
+        chunk.id++;
+        historyidx++;
+    }
     
 private:
     // NOTE: Reading memory could be set as long.max
@@ -502,22 +586,26 @@ unittest
     log("Initial read");
     assert(e.view(0, buffer[]) == []);
     assert(e.edited() == false);
+    assert(e.currentSize() == 0);
     
     log("Write data at position 0");
     string data0 = "test";
-    e.overwrite(0, data0.ptr, data0.length);
+    e.replace(0, data0.ptr, data0.length);
     assert(e.edited());
     assert(e.view(0, buffer[0..4]) == data0);
     assert(e.view(0, buffer[])     == data0);
+    assert(e.currentSize() == 4);
     
     log("Emulate an overwrite edit");
     char c = 's';
-    e.overwrite(3, &c, char.sizeof);
+    e.replace(3, &c, char.sizeof);
     assert(e.view(0, buffer[]) == "tess");
+    assert(e.currentSize() == 4);
     
     log("Another...");
-    e.overwrite(1, &c, char.sizeof);
+    e.replace(1, &c, char.sizeof);
     assert(e.view(0, buffer[]) == "tsss");
+    assert(e.currentSize() == 4);
     
     static immutable string path = "tmp_empty";
     log("Saving to %s", path);
@@ -525,6 +613,7 @@ unittest
     
     // Needs to be readable after saving, obviously
     assert(e.view(0, buffer[]) == "tsss");
+    assert(e.currentSize() == 4);
     
     import std.file : remove;
     remove(path);
@@ -555,25 +644,30 @@ unittest
     assert(e.view(0, buffer[])          == data);
     assert(e.view(0, buffer[0..4])      == data[0..4]);
     assert(e.view(DLEN-4, buffer[0..4]) == data[$-4..$]);
+    assert(e.currentSize() == data.length);
     
     log("Read past EOF with no edits");
     ubyte[48] buffer2;
     assert(e.view(0,  buffer2[]) == data);
     assert(e.view(16, buffer2[0..16]) == data[16..$]);
+    assert(e.currentSize() == data.length);
     
     log("Write data at position 4");
     static immutable string edit0 = "aaaa";
-    e.overwrite(4, edit0.ptr, edit0.length);
+    e.replace(4, edit0.ptr, edit0.length);
     assert(e.edited());
     assert(e.view(4, buffer[0..4]) == edit0);
     assert(e.view(0, buffer[0..4]) == data[0..4]);
     assert(e.view(8, buffer[8..$]) == data[8..$]);
     assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
+    assert(e.currentSize() == data.length);
     
     log("Read past EOF with edit");
     assert(e.view(0, buffer2[]) == data[0..4]~cast(ubyte[])edit0~data[8..$]);
+    assert(e.currentSize() == data.length);
     log("Read past EOF with shift");
     assert(e.view(8, buffer2[]) == data[8..$]);
+    assert(e.currentSize() == data.length);
     
     static immutable string path = "tmp_doc";
     log("Saving to %s", path);
@@ -581,7 +675,143 @@ unittest
     
     // Needs to be readable after saving, obviously
     assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
+    assert(e.currentSize() == data.length);
     
     import std.file : remove;
     remove(path);
+}
+
+// Test undo/redo
+unittest
+{
+    log("Test: Redo/Undo");
+    
+    scope Editor e = new Editor();
+    
+    char a = 'a';
+    e.replace(0, &a, char.sizeof);
+    char b = 'b';
+    e.replace(1, &b, char.sizeof);
+    
+    ubyte[4] buf = void;
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+    
+    e.undo();
+    assert(e.view(0, buf[]) == "a");
+    assert(e.currentSize() == 1);
+    e.redo();
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+    e.redo();
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+    e.undo();
+    e.undo();
+    assert(e.view(0, buf[]) == []);
+    assert(e.currentSize() == 0);
+    e.undo();
+    assert(e.view(0, buf[]) == []);
+    assert(e.currentSize() == 0);
+    e.redo();
+    e.redo();
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+}
+
+// Test undo/redo with doc
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("Test: Redo/Undo with doc");
+    
+    scope MemoryDocument doc = new MemoryDocument([ 'd', 'd' ]);
+    scope Editor e = new Editor();
+    e.attach(doc);
+    
+    ubyte[4] buf = void;
+    assert(e.view(0, buf[]) == "dd");
+    assert(e.currentSize() == 2);
+    
+    char a = 'a';
+    e.replace(0, &a, char.sizeof);
+    char b = 'b';
+    e.replace(1, &b, char.sizeof);
+    
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+    
+    // Undo and redo once
+    e.undo();
+    assert(e.view(0, buf[]) == "ad");
+    assert(e.currentSize() == 2);
+    e.redo();
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+    
+    // Overdoing redo
+    e.redo();
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+    
+    // Undo all
+    e.undo();
+    e.undo();
+    assert(e.view(0, buf[]) == "dd");
+    assert(e.currentSize() == 2);
+    
+    // Overdoing undo
+    e.undo();
+    assert(e.view(0, buf[]) == "dd");
+    assert(e.currentSize() == 2);
+    
+    // Redo all
+    e.redo();
+    e.redo();
+    assert(e.view(0, buf[]) == "ab");
+    assert(e.currentSize() == 2);
+}
+
+// Test undo/redo with larger doc
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("Test: Redo/Undo with large doc");
+    
+    // all memset to 0
+    enum DOC_SIZE = 8000;
+    scope MemoryDocument doc = new MemoryDocument(new ubyte[DOC_SIZE]);
+    scope Editor e = new Editor();
+    e.attach(doc);
+    
+    ubyte[32] buf = void;
+    assert(e.view(40, buf[0..4]) == [ 0, 0, 0, 0 ]);
+    assert(e.currentSize() == 8000);
+    
+    char a = 0xff;
+    e.replace(41, &a, char.sizeof);
+    e.replace(42, &a, char.sizeof);
+    assert(e.view(40, buf[0..4]) == [ 0, 0xff, 0xff, 0 ]);
+    assert(e.currentSize() == 8000);
+    
+    e.undo();
+    assert(e.view(40, buf[0..4]) == [ 0, 0xff, 0, 0 ]);
+    assert(e.currentSize() == 8000);
+    
+    e.undo();
+    assert(e.view(40, buf[0..4]) == [ 0, 0, 0, 0 ]);
+    assert(e.currentSize() == 8000);
+    
+    e.replace(41, &a, char.sizeof);
+    e.replace(42, &a, char.sizeof);
+    e.replace(43, &a, char.sizeof);
+    e.replace(44, &a, char.sizeof);
+    e.undo();
+    e.undo();
+    e.undo();
+    e.undo();
+    assert(e.view(40, buf[0..8]) == [ 0, 0, 0, 0, 0, 0, 0, 0 ]);
+    assert(e.currentSize() == 8000);
 }

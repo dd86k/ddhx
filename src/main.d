@@ -175,7 +175,7 @@ void main(string[] args)
         versionline("  Insert", "change-writemode");
         versionline("  Ctrl+S", "save");
         versionline("  Ctrl+U", "undo");
-        versionline("  Ctrl+Y", "redo");
+        versionline("  Ctrl+R", "redo");
         versionline("  Q", "quit");
         
         exit(EXIT_SUCCESS);

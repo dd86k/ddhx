@@ -169,7 +169,7 @@ void startddhx(string path, RC rc)
     _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
     _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
-    _ekeys[Mod.ctrl|Key.Y]  = _ecommands["redo"]                = &redo;
+    _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
     
     // Special keybinds with no attached commands
     _ekeys[':'] = &prompt_command;
@@ -225,12 +225,10 @@ Lread:
         
         // Check if the writing mode is valid
         final switch (session.rc.writemode) {
-        // Can't edit while document was opened read-only
         case WritingMode.readonly:
             message("Can't edit in read-only mode");
             goto Lupdate;
-        // Temporary since I don't yet support insertions
-        case WritingMode.insert:
+        case WritingMode.insert: // temp for msg
             message("TODO: Insert mode");
             goto Lupdate;
         case WritingMode.overwrite:
@@ -585,13 +583,20 @@ void change_panel(Session *session)
 // 
 void undo(Session *session)
 {
-    throw new Exception("TODO: undo");
+    session.editor.undo();
+    
+    if (session.editor.currentSize() >= session.position_cursor)
+        move_left(session);
+    
+    _estatus |= UVIEW;
 }
 
 // 
 void redo(Session *session)
 {
-    throw new Exception("TODO: redo");
+    session.editor.redo();
+    
+    _estatus |= UVIEW;
 }
 
 // Save changes
@@ -720,8 +725,8 @@ void update_view(Session *session, TerminalSize termsize)
     // TODO: To avoid unecessary I/O, avoid calling .view() when:
     //       - position is the same as the last call
     //       - count is the same as the last call
-    //       - no edits have been made
-    //       basically, when we simply move the cursor within the view
+    //       - no edits have been made (+ undo/redo)
+    //       Could rely on UVIEW status
     // NOTE: scope T[] allocations does nothing
     //       This is a non-issue since the conservative GC will keep the
     //       allocation alive and simply resize it (either pool or realloc).
