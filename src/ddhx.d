@@ -679,7 +679,10 @@ void update_header(Session *session, TerminalSize termsize)
         l += terminalWrite(" ", chdr); // spacer + column header
     }
     
-    // TODO: Fill rest of upper bar with spaces
+    // Fill rest of upper bar with spaces
+    int rem = termsize.columns - cast(int)l - 1;
+    if (rem > 0)
+        terminalWriteChar(' ', rem);
 }
 
 // Render view with data on screen
