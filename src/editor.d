@@ -362,7 +362,7 @@ class Editor
             
             if (chunk) // edited chunk found
             {
-                ptrdiff_t chkpos = lpos - chunk.position; // relative pos in chunk
+                ptrdiff_t chkpos = cast(ptrdiff_t)(lpos - chunk.position);
                 size_t len = chunk.used < want ? chunk.used : want;
                 size_t chkavail = chunk.used - chkpos; // fixes basepos+want >= chkused
                 if (len >= chkavail)
@@ -510,7 +510,7 @@ class Editor
         else if (patch.olddata)
         {
             import core.stdc.string : memcpy;
-            ptrdiff_t o = patch.address - chunk.position;
+            ptrdiff_t o = cast(ptrdiff_t)(patch.address - chunk.position);
             memcpy(chunk.data + o, patch.olddata, patch.size);
         }
         
@@ -538,7 +538,7 @@ class Editor
         
         // Apply new data
         import core.stdc.string : memcpy;
-        ptrdiff_t o = patch.address - chunk.position;
+        ptrdiff_t o = cast(ptrdiff_t)(patch.address - chunk.position);
         
         // TODO: Check cross-chunk
         memcpy(chunk.data + o, patch.newdata, patch.size);
