@@ -605,20 +605,32 @@ void save(Session *session)
     // No known path... Ask for one!
     if (session.target is null)
     {
-        string name = promptline("Name: ");
-        if (name.length == 0)
+        // Ask for a filename
+        string target = promptline("Name: ");
+        if (target.length == 0)
         {
             throw new Exception("Canceled");
         }
         
-        // TODO: Check if target exists to ask for overwrite
-        session.target = name;
+        // Check if target exists to ask for overwrite
+        import std.file : exists;
+        if (exists(target))
+        {
+            switch (promptkey("Overwrite? (Y/N) ")) {
+            case 'y', 'Y': // Continue
+                break;
+            default:
+                throw new Exception("Canceled");
+            }
+        }
+        
+        session.target = target;
     }
     
     log("target='%s'", session.target);
     
     // Force updating the status bar to indicate that we're currently saving.
-    // It might take a while since the current implementation.
+    // It might take a while with the current implementation.
     message("Saving...");
     update_status(session, terminalSize());
     
@@ -906,8 +918,7 @@ void quit(Session *session)
 {
     if (session.editor.edited())
     {
-        int r = promptkey("Save? (Y/N) ");
-        switch (r) {
+        switch (promptkey("Save? (Y/N) ")) {
         case 'n', 'N':
             goto Lexit; // quit without saving
         case 'y', 'Y':
