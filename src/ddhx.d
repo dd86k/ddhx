@@ -87,10 +87,7 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // HACK: Global for screen resize events
     Session *g_session;
     
-    // TODO: Consider making message buffer dynamically sized
-    char[1024] _emessage;
-    size_t _emessagelen;
-    static assert(_emessage.length >= 32, "Message buffer is really too short");
+    string _emessagebuf;
     
     // TODO: Should be turned into a struct.
     //       Allows additional unittests and settings (e.g., RTL).
@@ -202,6 +199,7 @@ Lread:
         {
             log("key=%s (%d)", input.key, input.key);
             try (*fn)(session);
+            catch (IgnoreException) {}
             catch (Exception ex)
             {
                 log("%s", ex);
@@ -291,6 +289,7 @@ void prompt_command(Session *session)
     {
         log("command=%s", argv0);
         try (*com)(session);
+        catch (IgnoreException) {}
         catch (Exception ex)
         {
             log("%s", ex);
@@ -587,36 +586,18 @@ void change_panel(Session *session)
 void undo(Session *session)
 {
     import patcher : Patch;
-    try
-    {
-        Patch patch = session.editor.undo();
-        
-        moveabs(session, patch.address);
-    }
-    catch (IgnoreException) {}
-    catch (Exception ex)
-    {
-        log("%s", ex);
-        message(ex.msg);
-    }
+    Patch patch = session.editor.undo();
+    
+    moveabs(session, patch.address);
 }
 
 // 
 void redo(Session *session)
 {
     import patcher : Patch;
-    try
-    {
-        Patch patch = session.editor.redo();
-    
-        moveabs(session, patch.address + patch.size);
-    }
-    catch (IgnoreException) {}
-    catch (Exception ex)
-    {
-        log("%s", ex);
-        message(ex.msg);
-    }
+    Patch patch = session.editor.redo();
+
+    moveabs(session, patch.address + patch.size);
 }
 
 // 
@@ -706,23 +687,13 @@ void message(A...)(string fmt, A args)
     //       It COULD happen that multiple messages are sent before they
     //       are displayed. Right now, only the last message is taken into
     //       account.
-    //       Easiest fix would be Array!char[1024] or something similar.
-    import core.exception : RangeError;
+    //       Easiest fix would be Array!string or something similar.
+    
     try
     {
-        _emessagelen = sformat(_emessage[], fmt, args).length;
+        _emessagebuf = format(fmt, args);
         _estatus |= UMESSAGE;
     }
-    // While not recommended, I don't have a choice if this occurs
-    // to avoid a crash while editing.
-    // Sadly, can't know the effective number of characters that
-    // would have been formatted, so just send a tiny message.
-    catch (RangeError er)
-    {
-        log("%s", er);
-        message("message: RangeError");
-    }
-    // Should only be FormatException otherwise.
     catch (Exception ex)
     {
         log("%s", ex);
@@ -903,20 +874,24 @@ void update_status(Session *session, TerminalSize termsize)
 {
     terminalCursor(0, termsize.rows - 1);
     
+    // Typical session are 80/120 columns.
+    // A fullscreen terminal window (1080p, 10pt) is around 240x54.
+    // If crashes, at this point, fuck it just use a heap buffer starting at 4K.
+    char[512] statusbuf = void;
+    
     // If there is a pending message, print that.
     // Otherwise, print status bar using the message buffer space.
     string msg = void;
     if (_estatus & UMESSAGE)
     {
-        // NOTE: _emessagelen is kind of checked in message()
-        msg = cast(string)_emessage[0.._emessagelen];
+        msg = _emessagebuf;
     }
     else
     {
         char[32] curbuf = void; // cursor address
-        string curstr = formatAddress(curbuf[], session.position_cursor, 8, session.rc.address_type);
+        string curstr = formatAddress(curbuf, session.position_cursor, 8, session.rc.address_type);
         
-        msg = cast(string)sformat(_emessage[], "%c %s | %3s | %8s | %s",
+        msg = cast(string)sformat(statusbuf, "%c %s | %3s | %8s | %s",
             session.editor.edited() ? '*' : ' ',
             writingModeToString(session.rc.writemode),
             dataTypeToString(session.rc.data_type),
@@ -941,15 +916,12 @@ void update_status(Session *session, TerminalSize termsize)
     {
         import core.stdc.string : memset;
         
+        terminalWrite(msg.ptr, msglen);
+        
         // Pad to end of screen with spaces
         int rem = cols - msglen;
         if (rem > 0)
-        {
-            memset(_emessage.ptr + msg.length, ' ', rem);
-            msglen += rem;
-        }
-        
-        terminalWrite(msg.ptr, msglen);
+            terminalWriteChar(' ', rem);
     }
 }
 
