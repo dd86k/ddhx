@@ -32,10 +32,10 @@ else version (Posix)
     import core.stdc.stdio : SEEK_SET, SEEK_CUR, SEEK_END;
     import std.string : toStringz;
     
-    // BLKGETSIZE64 missing from dmd 2.098.1 and ldc 1.24.0
-    // ldc 1.24 missing core.sys.linux.fs
-    // source musl 1.2.0 and glibc 2.25 has roughly same settings.
-    
+    // NOTE: BLKGETSIZE64
+    //       BLKGETSIZE64 is missing from dmd 2.098.1 and ldc 1.24.0
+    //       ldc 1.24 missing core.sys.linux.fs
+    //       source musl 1.2.0 and glibc 2.25 has roughly same settings.
     private enum _IOC_NRBITS = 8;
     private enum _IOC_TYPEBITS = 8;
     private enum _IOC_SIZEBITS = 14;
@@ -58,18 +58,24 @@ else version (Posix)
     
     import core.stdc.config : c_long, c_ulong;
     
-    // NOTE: In Musl source, ioctl is really defined as
-    //       src/misc/ioctl.c: int ioctl(int fd, int req, ...)
+    // NOTE: ioctl(3)
+    //       In Musl source, ioctl is really defined as
+    //         src/misc/ioctl.c: int ioctl(int fd, int req, ...)
     //       But linker will complain about a redefinition (static compile):
-    //       Previous IR: i32 (i32, i64, ...) (incoming library..?)
-    //       New IR     : i32 (i32, i32, ...) (when defined with int)
+    //         Previous IR: i32 (i32, i64, ...) (libc)
+    //         New IR     : i32 (i32, i32, ...) (our definition with int)
     //       Using 'c_long' seems to fix this (under amd64), but I'm not convinced.
     version (CRuntime_Bionic)
-        private extern (C) int ioctl(int, int, ...);
+        private alias IOCTL_TYPE = int;
     else version (CRuntime_Musl)
-        private extern (C) int ioctl(int, c_long, ...);
-    else // glibc, BSDs
-        private extern (C) int ioctl(int, c_ulong, ...);
+        private alias IOCTL_TYPE = c_long;
+    else // Glibc, BSDs
+        private alias IOCTL_TYPE = c_ulong;
+    private extern (C) int ioctl(int, IOCTL_TYPE, ...);
+    
+    // NOTE: lseek64
+    //       Most Linux system modules have been updated since the last time I had
+    //       to force myself using lseek64 definitions.
     
     private alias OSHANDLE = int;
 }
@@ -164,11 +170,6 @@ struct OSFile
             if (SetFilePointerEx(handle, i, &i, origin) == FALSE)
                 throw new OSException("Couldn't seek");
         }
-        else version (linux) // Should cover glibc and musl
-        {
-            if (lseek64(handle, pos, origin) < 0)
-                throw new OSException("Couldn't seek");
-        }
         else version (Posix)
         {
             if (lseek(handle, pos, origin) < 0)
@@ -184,10 +185,6 @@ struct OSFile
             LARGE_INTEGER i; // .init
             SetFilePointerEx(handle, i, &i, FILE_CURRENT);
             return i.QuadPart;
-        }
-        else version (linux)
-        {
-            return lseek64(handle, 0, SEEK_CUR);
         }
         else version (Posix)
         {
