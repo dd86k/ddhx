@@ -172,6 +172,7 @@ void startddhx(string path, RC rc)
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
     _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
+    _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
     
     // Special keybinds with no attached commands
     _ekeys[':'] = &prompt_command;
@@ -601,6 +602,43 @@ void redo(Session *session)
     _estatus |= UVIEW;
 }
 
+// 
+void goto_(Session *session)
+{
+    import utils : scan;
+    
+    string line = promptline("goto: ");
+    
+    // Assume canceled
+    if (line.length == 0)
+        return;
+    
+    // Keywords
+    switch (line) {
+    case "end", "eof":   move_abs_end(session); return;
+    case "start", "sof": move_abs_start(session); return;
+    default:
+    }
+    
+    // Number
+    switch (line[0]) {
+    case '+':
+        if (line.length <= 1)
+            throw new Exception("Incomplete number");
+        
+        moverel(session, scan(line[1..$]));
+        break;
+    case '-':
+        if (line.length <= 1)
+            throw new Exception("Incomplete number");
+        
+        moverel(session, -scan(line[1..$]));
+        break;
+    default:
+        moveabs(session, scan(line));
+    }
+}
+
 // Save changes
 void save(Session *session)
 {
@@ -618,6 +656,8 @@ void save(Session *session)
         import std.file : exists;
         if (exists(target))
         {
+            // NOTE: Don't explicitly check if directory exists.
+            //       The filesystem will report the error anyway.
             switch (promptkey("Overwrite? (Y/N) ")) {
             case 'y', 'Y': // Continue
                 break;
