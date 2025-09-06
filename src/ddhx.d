@@ -586,20 +586,37 @@ void change_panel(Session *session)
 // 
 void undo(Session *session)
 {
-    session.editor.undo();
-    
-    if (session.editor.currentSize() >= session.position_cursor)
-        move_left(session);
-    
-    _estatus |= UVIEW;
+    import patcher : Patch;
+    try
+    {
+        Patch patch = session.editor.undo();
+        
+        moveabs(session, patch.address);
+    }
+    catch (IgnoreException) {}
+    catch (Exception ex)
+    {
+        log("%s", ex);
+        message(ex.msg);
+    }
 }
 
 // 
 void redo(Session *session)
 {
-    session.editor.redo();
+    import patcher : Patch;
+    try
+    {
+        Patch patch = session.editor.redo();
     
-    _estatus |= UVIEW;
+        moveabs(session, patch.address + patch.size);
+    }
+    catch (IgnoreException) {}
+    catch (Exception ex)
+    {
+        log("%s", ex);
+        message(ex.msg);
+    }
 }
 
 // 

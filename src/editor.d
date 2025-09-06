@@ -12,6 +12,11 @@ import std.exception : enforce;
 import std.format;
 import transcoder : CharacterSet;
 
+class IgnoreException : Exception
+{
+    this() { super(null); }
+}
+
 enum WritingMode
 {
     readonly,
@@ -479,10 +484,10 @@ class Editor
     // TODO: remove(long pos, const(void) *data, size_t len)
     //       Because delete is (was) a reserved keyword
     
-    void undo()
+    Patch undo()
     {
         if (historyidx <= 0)
-            return;
+            throw new IgnoreException();
         
         Patch patch = patches[historyidx - 1];
         // WTF did i forget
@@ -516,12 +521,14 @@ class Editor
         
         chunk.id--;
         historyidx--;
+        
+        return patch;
     }
     
-    void redo()
+    Patch redo()
     {
         if (historyidx >= patches.count())
-            return;
+            throw new IgnoreException();
         
         Patch patch = patches[historyidx];
         // WTF did i forget
@@ -554,6 +561,8 @@ class Editor
         
         chunk.id++;
         historyidx++;
+        
+        return patch;
     }
     
 private:
