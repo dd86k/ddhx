@@ -89,7 +89,7 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     
     string _emessagebuf;
     
-    // TODO: Should be turned into a struct.
+    // TODO: Should be turned into a "reader" (struct+function)
     //       Allows additional unittests and settings (e.g., RTL).
     // location where edit started
     long _editcurpos;
@@ -99,12 +99,12 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     ubyte[8] _editbuf;
     
     /// Registered commands
-    void function(Session*)[string] _ecommands;
+    void function(Session*, string[])[string] _ecommands;
     /// Mapped keys to commands
-    void function(Session*)[int] _ekeys;
+    void function(Session*, string[])[int] _ekeys;
 }
 
-// TODO: void startddhx(Editor editor, RC *rc, string initmsg)
+// TODO: void startddhx(Editor editor, RC *rc, string path, string initmsg)
 
 // start editor
 void startddhx(string path, RC rc)
@@ -170,6 +170,7 @@ void startddhx(string path, RC rc)
     _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
     _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
+    _ecommands["set"] = &set;
     
     // Special keybinds with no attached commands
     _ekeys[':'] = &prompt_command;
@@ -198,7 +199,7 @@ Lread:
         if (fn)
         {
             log("key=%s (%d)", input.key, input.key);
-            try (*fn)(session);
+            try (*fn)(session, null);
             catch (IgnoreException) {}
             catch (Exception ex)
             {
@@ -256,7 +257,7 @@ Lread:
             // TODO: multi-byte edits
             g_session.editor.overwrite(_editcurpos, _editbuf.ptr, ubyte.sizeof);
             _editdigit = 0;
-            move_right(g_session);
+            move_right(g_session, null);
         }
         break;
     default:
@@ -269,42 +270,6 @@ Lread:
 void onresize()
 {
     update(g_session);
-}
-
-void prompt_command(Session *session)
-{
-    string line = promptline(":");
-    
-    import utils : arguments;
-    
-    string[] argv = arguments(line);
-    if (argv.length == 0)
-        return;
-    
-    string argv0 = argv[0];
-    
-    // Command
-    const(void function(Session*)) *com = argv0 in _ecommands;
-    if (com)
-    {
-        log("command=%s", argv0);
-        try (*com)(session);
-        catch (IgnoreException) {}
-        catch (Exception ex)
-        {
-            log("%s", ex);
-            message(ex.msg);
-        }
-        return;
-    }
-    
-    // RC
-    try configRC(session.rc, argv0, argv.length > 1 ? argv[1] : null);
-    catch (Exception ex)
-    {
-        log("%s", ex);
-        message(ex.msg);
-    }
 }
 
 // Invoke command prompt
@@ -323,8 +288,7 @@ string promptline(string text)
     
     // Clear upper space
     terminalCursor(0, 0);
-    for (int x; x < tcols; ++x)
-        terminalWrite(" ");
+    terminalWriteChar(' ', tcols);
     
     // Print prompt, cursor will be after prompt
     terminalCursor(0, 0);
@@ -492,192 +456,6 @@ void moveabs(Session *session, long pos)
     
     session.position_cursor = pos;
     _estatus |= UVIEW | USTATUSBAR;
-}
-
-//
-// Commands
-//
-
-// Move back a single item
-void move_left(Session *session)
-{
-    if (session.position_cursor == 0)
-        return;
-    
-    moverel(session, -1);
-}
-// Move forward a single item
-void move_right(Session *session)
-{
-    moverel(session, +1);
-}
-// Move back a row
-void move_up(Session *session)
-{
-    if (session.position_cursor == 0)
-        return;
-    
-    moverel(session, -session.rc.columns);
-}
-// Move forward a row
-void move_down(Session *session)
-{
-    moverel(session, +session.rc.columns);
-}
-// Move back a page
-void move_pg_up(Session *session)
-{
-    if (session.position_cursor == 0)
-        return;
-    
-    moverel(session, -(_erows * session.rc.columns));
-}
-// Move forward a page
-void move_pg_down(Session *session)
-{
-    moverel(session, +(_erows * session.rc.columns));
-}
-// Move to start of line
-void move_ln_start(Session *session) // move to start of line
-{
-    moverel(session, -(session.position_cursor % session.rc.columns));
-}
-// Move to end of line
-void move_ln_end(Session *session) // move to end of line
-{
-    moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
-}
-// Move to absolute start of document
-void move_abs_start(Session *session)
-{
-    moveabs(session, 0);
-}
-// Move to absolute end of document
-void move_abs_end(Session *session)
-{
-    moveabs(session, session.editor.currentSize());
-}
-
-// Change writing mode
-void change_writemode(Session *session)
-{
-    final switch (session.rc.writemode) {
-    case WritingMode.readonly: // Can't switch from read-only
-        throw new Exception("Can't edit in read-only");
-    case WritingMode.insert:
-        session.rc.writemode = WritingMode.overwrite;
-        break;
-    case WritingMode.overwrite:
-        session.rc.writemode = WritingMode.insert;
-        break;
-    }
-    _estatus |= USTATUSBAR;
-}
-
-// Change active panel
-void change_panel(Session *session)
-{
-    session.panel++;
-    if (session.panel >= PanelType.max + 1)
-        session.panel = PanelType.init;
-}
-
-// 
-void undo(Session *session)
-{
-    import patcher : Patch;
-    Patch patch = session.editor.undo();
-    
-    moveabs(session, patch.address);
-}
-
-// 
-void redo(Session *session)
-{
-    import patcher : Patch;
-    Patch patch = session.editor.redo();
-
-    moveabs(session, patch.address + patch.size);
-}
-
-// 
-void goto_(Session *session)
-{
-    import utils : scan;
-    
-    string line = promptline("goto: ");
-    
-    // Assume canceled
-    if (line.length == 0)
-        return;
-    
-    // Keywords
-    switch (line) {
-    case "end", "eof":   move_abs_end(session); return;
-    case "start", "sof": move_abs_start(session); return;
-    default:
-    }
-    
-    // Number
-    switch (line[0]) {
-    case '+':
-        if (line.length <= 1)
-            throw new Exception("Incomplete number");
-        
-        moverel(session, scan(line[1..$]));
-        break;
-    case '-':
-        if (line.length <= 1)
-            throw new Exception("Incomplete number");
-        
-        moverel(session, -scan(line[1..$]));
-        break;
-    default:
-        moveabs(session, scan(line));
-    }
-}
-
-// Save changes
-void save(Session *session)
-{
-    // No known path... Ask for one!
-    if (session.target is null)
-    {
-        // Ask for a filename
-        string target = promptline("Name: ");
-        if (target.length == 0)
-        {
-            throw new Exception("Canceled");
-        }
-        
-        // Check if target exists to ask for overwrite
-        import std.file : exists;
-        if (exists(target))
-        {
-            // NOTE: Don't explicitly check if directory exists.
-            //       The filesystem will report the error anyway.
-            switch (promptkey("Overwrite? (Y/N) ")) {
-            case 'y', 'Y': // Continue
-                break;
-            default:
-                throw new Exception("Canceled");
-            }
-        }
-        
-        session.target = target;
-    }
-    
-    log("target='%s'", session.target);
-    
-    // Force updating the status bar to indicate that we're currently saving.
-    // It might take a while with the current implementation.
-    message("Saving...");
-    update_status(session, terminalSize());
-    
-    // On error, an exception is thrown, where the command handler receives,
-    // and displays its message.
-    session.editor.save(session.target);
-    message("Saved");
 }
 
 // Send a message within the editor to be displayed.
@@ -945,7 +723,249 @@ void update(Session *session)
     _estatus = 0;
 }
 
-void quit(Session *session)
+//
+// ANCHOR Commands
+//
+
+// Run command
+void prompt_command(Session *session, string[] args)
+{
+    import utils : arguments;
+    
+    string line = promptline(">");
+    if (line.length == 0)
+        return;
+    
+    string[] argv = arguments(line);
+    if (argv.length == 0)
+        return;
+    
+    log("command='%s'", argv);
+    string argv0 = argv[0];
+    argv = argv.length > 1 ? argv[1..$] : null;
+    
+    // Command
+    const(void function(Session*, string[])) *com = argv0 in _ecommands;
+    if (com)
+    {
+        try (*com)(session, argv);
+        catch (IgnoreException) {}
+        catch (Exception ex)
+        {
+            log("%s", ex);
+            message(ex.msg);
+        }
+    }
+    else
+    {
+        message("command not found: '%s'", argv0);
+    }
+}
+
+// Move back a single item
+void move_left(Session *session, string[] args)
+{
+    if (session.position_cursor == 0)
+        return;
+    
+    moverel(session, -1);
+}
+// Move forward a single item
+void move_right(Session *session, string[] args)
+{
+    moverel(session, +1);
+}
+// Move back a row
+void move_up(Session *session, string[] args)
+{
+    if (session.position_cursor == 0)
+        return;
+    
+    moverel(session, -session.rc.columns);
+}
+// Move forward a row
+void move_down(Session *session, string[] args)
+{
+    moverel(session, +session.rc.columns);
+}
+// Move back a page
+void move_pg_up(Session *session, string[] args)
+{
+    if (session.position_cursor == 0)
+        return;
+    
+    moverel(session, -(_erows * session.rc.columns));
+}
+// Move forward a page
+void move_pg_down(Session *session, string[] args)
+{
+    moverel(session, +(_erows * session.rc.columns));
+}
+// Move to start of line
+void move_ln_start(Session *session, string[] args) // move to start of line
+{
+    moverel(session, -(session.position_cursor % session.rc.columns));
+}
+// Move to end of line
+void move_ln_end(Session *session, string[] args) // move to end of line
+{
+    moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
+}
+// Move to absolute start of document
+void move_abs_start(Session *session, string[] args)
+{
+    moveabs(session, 0);
+}
+// Move to absolute end of document
+void move_abs_end(Session *session, string[] args)
+{
+    moveabs(session, session.editor.currentSize());
+}
+
+// Change writing mode
+void change_writemode(Session *session, string[] args)
+{
+    final switch (session.rc.writemode) {
+    case WritingMode.readonly: // Can't switch from read-only
+        throw new Exception("Can't edit in read-only");
+    case WritingMode.insert:
+        session.rc.writemode = WritingMode.overwrite;
+        break;
+    case WritingMode.overwrite:
+        session.rc.writemode = WritingMode.insert;
+        break;
+    }
+    _estatus |= USTATUSBAR;
+}
+
+// Change active panel
+void change_panel(Session *session, string[] args)
+{
+    session.panel++;
+    if (session.panel >= PanelType.max + 1)
+        session.panel = PanelType.init;
+}
+
+// 
+void undo(Session *session, string[] args)
+{
+    import patcher : Patch;
+    Patch patch = session.editor.undo();
+    
+    moveabs(session, patch.address);
+}
+
+// 
+void redo(Session *session, string[] args)
+{
+    import patcher : Patch;
+    Patch patch = session.editor.redo();
+
+    moveabs(session, patch.address + patch.size);
+}
+
+// 
+void goto_(Session *session, string[] args)
+{
+    import utils : scan;
+    
+    string off = void;
+    if (args is null || args.length < 1)
+        off = promptline("offset: ");
+    else
+        off = args[0];
+    
+    // Assume canceled
+    if (off.length == 0)
+        return;
+    
+    // Keywords
+    switch (off) {
+    case "end", "eof":   move_abs_end(session, null); return;
+    case "start", "sof": move_abs_start(session, null); return;
+    default:
+    }
+    
+    // Number
+    switch (off[0]) {
+    case '+':
+        if (off.length <= 1)
+            throw new Exception("Incomplete number");
+        
+        moverel(session, scan(off[1..$]));
+        break;
+    case '-':
+        if (off.length <= 1)
+            throw new Exception("Incomplete number");
+        
+        moverel(session, -scan(off[1..$]));
+        break;
+    default:
+        moveabs(session, scan(off));
+    }
+}
+
+// Save changes
+void save(Session *session, string[] args)
+{
+    // No known path... Ask for one!
+    if (session.target is null)
+    {
+        // Ask for a filename
+        string target = promptline("Name: ");
+        if (target.length == 0)
+        {
+            throw new Exception("Canceled");
+        }
+        
+        // Check if target exists to ask for overwrite
+        import std.file : exists;
+        if (exists(target))
+        {
+            // NOTE: Don't explicitly check if directory exists.
+            //       The filesystem will report the error anyway.
+            switch (promptkey("Overwrite? (Y/N) ")) {
+            case 'y', 'Y': // Continue
+                break;
+            default:
+                throw new Exception("Canceled");
+            }
+        }
+        
+        session.target = target;
+    }
+    
+    log("target='%s'", session.target);
+    
+    // Force updating the status bar to indicate that we're currently saving.
+    // It might take a while with the current implementation.
+    message("Saving...");
+    update_status(session, terminalSize());
+    
+    // On error, an exception is thrown, where the command handler receives,
+    // and displays its message.
+    session.editor.save(session.target);
+    message("Saved");
+}
+
+void set(Session *session, string[] args)
+{
+    string setting = void;
+    if (args is null || args.length < 1)
+        setting = promptline("setting: ");
+    else
+        setting = args[0];
+    
+    string value = void;
+    if (args is null || args.length < 2)
+        value = promptline("value: ");
+    else
+        value = args[1];
+    
+    configRC(session.rc, setting, value);
+}
+
+void quit(Session *session, string[] args)
 {
     if (session.editor.edited())
     {
@@ -953,7 +973,7 @@ void quit(Session *session)
         case 'n', 'N':
             goto Lexit; // quit without saving
         case 'y', 'Y':
-            save(session); // save and continue to quit
+            save(session, null); // save and continue to quit
             break;
         default:
             throw new Exception("Canceled");
