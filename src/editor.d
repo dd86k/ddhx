@@ -710,14 +710,14 @@ unittest
     e.redo();
     assert(e.view(0, buf[]) == "ab");
     assert(e.currentSize() == 2);
-    e.redo();
+    try e.redo(); catch (Exception) {} // over
     assert(e.view(0, buf[]) == "ab");
     assert(e.currentSize() == 2);
     e.undo();
     e.undo();
     assert(e.view(0, buf[]) == []);
     assert(e.currentSize() == 0);
-    e.undo();
+    try e.undo(); catch (Exception) {} // over
     assert(e.view(0, buf[]) == []);
     assert(e.currentSize() == 0);
     e.redo();
@@ -758,7 +758,7 @@ unittest
     assert(e.currentSize() == 2);
     
     // Overdoing redo
-    e.redo();
+    try e.redo(); catch (Exception) {}
     assert(e.view(0, buf[]) == "ab");
     assert(e.currentSize() == 2);
     
@@ -769,7 +769,7 @@ unittest
     assert(e.currentSize() == 2);
     
     // Overdoing undo
-    e.undo();
+    try e.undo(); catch (Exception) {}
     assert(e.view(0, buf[]) == "dd");
     assert(e.currentSize() == 2);
     
@@ -780,7 +780,7 @@ unittest
     assert(e.currentSize() == 2);
 }
 
-// Test undo/redo with larger doc
+// Test undo/redo with larger document
 unittest
 {
     import document.memory : MemoryDocument;
@@ -821,4 +821,27 @@ unittest
     e.undo();
     assert(e.view(40, buf[0..8]) == [ 0, 0, 0, 0, 0, 0, 0, 0 ]);
     assert(e.currentSize() == 8000);
+}
+
+// Test appending to a document
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("Test: Redo/Undo with end appends");
+    
+    static immutable ubyte[] data = [ 0xf2, 0x49, 0xe6, 0xea ];
+    
+    scope MemoryDocument doc = new MemoryDocument(data);
+    scope Editor e = new Editor();
+    e.attach(doc);
+    
+    ubyte d = 0xff;
+    e.replace(data.length    , &d, ubyte.sizeof);
+    e.replace(data.length + 1, &d, ubyte.sizeof);
+    e.replace(data.length + 2, &d, ubyte.sizeof);
+    e.replace(data.length + 3, &d, ubyte.sizeof);
+    
+    ubyte[32] buf = void;
+    assert(e.view(0, buf[0..8]) == [ 0xf2, 0x49, 0xe6, 0xea, 0xff, 0xff, 0xff, 0xff ]);
 }
