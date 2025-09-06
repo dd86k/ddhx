@@ -173,7 +173,7 @@ void startddhx(string path, RC rc)
     _ecommands["set"] = &set;
     
     // Special keybinds with no attached commands
-    _ekeys[':'] = &prompt_command;
+    _ekeys[Key.Enter] = &prompt_command;
     //_ekeys['/'] = &prompt_frwd_search;
     //_ekeys['&'] = &prompt_back_search;
     
