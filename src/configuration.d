@@ -61,6 +61,7 @@ void configRC(ref RC rc, string field, string value)
             throw new Exception("Cannot have negative or zero columns");
         rc.columns = cols;
         break;
+    case "address":
     case "address-type":
         switch (value) {
         case "hex": rc.address_type = AddressType.hex; break;
