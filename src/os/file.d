@@ -59,14 +59,17 @@ else version (Posix)
     import core.stdc.config : c_long, c_ulong;
     
     // NOTE: ioctl(3)
+    //       Bionic actually used int at some point.
+    //       i64 usage noticed on Android 16 (6.1.148-android14-11).
+    version (CRuntime_Bionic)
+        private alias IOCTL_TYPE = c_long;
     //       In Musl source, ioctl is really defined as
     //         src/misc/ioctl.c: int ioctl(int fd, int req, ...)
     //       But linker will complain about a redefinition (static compile):
     //         Previous IR: i32 (i32, i64, ...) (libc)
     //         New IR     : i32 (i32, i32, ...) (our definition with int)
     //       Using 'c_long' seems to fix this (under amd64), but I'm not convinced.
-    version (CRuntime_Bionic)
-        private alias IOCTL_TYPE = int;
+    //       I think 'misc' is used when standalone (e.g., not built against Glibc).
     else version (CRuntime_Musl)
         private alias IOCTL_TYPE = c_long;
     else // Glibc, BSDs
