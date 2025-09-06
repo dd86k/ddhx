@@ -52,6 +52,7 @@ void versionline(string field, string line)
 
 void printpage(string opt)
 {
+    import platform : TARGET_TRIPLE;
     final switch (opt) {
     case OPTION_SECRET:
         writeln(SECRET);
@@ -61,6 +62,7 @@ void printpage(string opt)
         versionline(null,   DDHX_COPYRIGHT);
         versionline(null,   DDHX_BUILDINFO);
         versionline("Compiler", __VENDOR__~" "~DVER!__VERSION__);
+        versionline(null,   TARGET_TRIPLE);
         versionline("Homepage", "https://github.com/dd86k/ddhx");
         break;
     case OPTION_VER:

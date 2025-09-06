@@ -687,7 +687,7 @@ void message(A...)(string fmt, A args)
     //       It COULD happen that multiple messages are sent before they
     //       are displayed. Right now, only the last message is taken into
     //       account.
-    //       Easiest fix would be Array!string or something similar.
+    //       Easiest fix would be string[] or something similar.
     
     try
     {
