@@ -85,25 +85,47 @@ Future:
 // Commands
 //
 
-NAME                    KEY             DESCRIPTION
-"cursor-left"           LeftArrow       Navigate one element back
-"cursor-right"          RightArrow      Navigate one element forward
-"cursor-up"             UpArrow         Navigate one line back
-"cursor-down"           DownArrow       Navigate one line forward
-"cursor-page-up"        PageUp          Navigate one page back (rows*columns)
-"cursor-page-down"      PageDown        Navigate one page forward (rows*columns)
-"cursor-line-start"     Home            Navigate to start of line
-"cursor-line-end"       End             Navigate to end of line
-"cursor-sof"            ^Home           Go to start of buffer
-"cursor-eof"            ^End            Go to end of buffer
-"change-panel"          Tab             Switch between data and text panel
-"change-writemode"      Insert          Change writing mode
-"save"                  ^S              Save buffer to file
-"undo"                  ^U              Undo change
-"redo"                  ^R              Redo change
-"quit"                  Q               Quit program
-                        Enter           Show command prompt
-"set"                                   Set a session value. (See Configuration section)
+COMMAND                 DESCRIPTION
+"cursor-left"           Navigate one element back
+"cursor-right"          Navigate one element forward
+"cursor-up"             Navigate one line back
+"cursor-down"           Navigate one line forward
+"cursor-page-up"        Navigate one page back (rows*columns)
+"cursor-page-down"      Navigate one page forward (rows*columns)
+"cursor-line-start"     Navigate to start of line
+"cursor-line-end"       Navigate to end of line
+"cursor-sof"            Go to start of buffer
+"cursor-eof"            Go to end of buffer
+"change-panel"          Switch between data and text panel
+"change-writemode"      Change writing mode
+"save"                  Save buffer to file
+"undo"                  Undo change
+"redo"                  Redo change
+"quit"                  Quit program
+"set"                   Set a session value. (See Configuration section)
+
+//
+// Default keybinds
+//
+
+KEY             COMMAND
+LeftArrow       "cursor-left"
+RightArrow      "cursor-right"
+UpArrow         "cursor-up"
+DownArrow       "cursor-down"
+PageUp          "cursor-page-up"
+PageDown        "cursor-page-down"
+Home            "cursor-line-start"
+End             "cursor-line-end"
+^Home           "cursor-sof"
+^End            "cursor-eof"
+Tab             "change-panel"
+Insert          "change-writemode"
+^S              "save"
+^U              "undo"
+^R              "redo"
+Q               "quit"
+Enter           Show command prompt
 
 //
 // Configuration
