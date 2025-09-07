@@ -73,8 +73,8 @@ void configRC(ref RC rc, string field, string value)
         break;
     case "address-spacing":
         int aspc = to!int(value);
-        if (aspc <= 0)
-            throw new Exception("Cannot have negative or zero address spacing");
+        if (aspc < 3) // due to offset indicator ("hex",etc.)
+            throw new Exception("Can't have address spacing lower than 3");
         rc.address_spacing = aspc;
         break;
     case "charset":

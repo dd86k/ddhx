@@ -86,7 +86,9 @@ void main(string[] args)
         res = getopt(args, config.caseSensitive,
         // Secret options
         "assistant",    "", &printpage,
-        // Editor option
+        //
+        // Runtime configuration
+        //
         "c|columns",    "Set columns per row (default depends on --data)",
             (string _, string val)
             {
@@ -96,6 +98,11 @@ void main(string[] args)
             (string _, string val)
             {
                 configRC(rc, "address-type", val);
+            },
+        "address-spacing", "Set address spacing in characters",
+            (string _, string val)
+            {
+                configRC(rc, "address-spacing", val);
             },
         /*
         "data",         "Set data mode (default: x8)",
@@ -110,6 +117,9 @@ void main(string[] args)
             {
                 configRC(rc, "charset", val);
             },
+        //
+        // Editor configuration
+        //
         "R|readonly",   "Open file in read-only editing mode",
             ()
             {

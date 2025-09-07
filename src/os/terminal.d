@@ -759,15 +759,24 @@ size_t terminalWrite(const(void) *data, size_t size)
 {
     version (Windows)
     {
-        uint r = void;
-        assert(WriteFile(hOut, data, cast(uint)size, &r, null));
-        return r;
+        uint written = void;
+        BOOL r = WriteFile(hOut, data, cast(uint)size, &written, null);
+        if (r == FALSE)
+        {
+            import os.error : OSException;
+            throw new OSException("WriteFile failed");
+        }
+        return written;
     }
     else version (Posix)
     {
-        ssize_t r = write(STDOUT_FILENO, data, size);
-        assert(r >= 0);
-        return r;
+        ssize_t written = write(STDOUT_FILENO, data, size);
+        if (written < 0)
+        {
+            import os.error : OSException;
+            throw new OSException("write failed");
+        }
+        return written;
     }
 }
 
