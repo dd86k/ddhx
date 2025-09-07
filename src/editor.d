@@ -234,12 +234,6 @@ class Editor
         enforce(target != null,    "assert: target is NULL");
         enforce(target.length > 0, "assert: target is EMPTY");
         
-        // If there are really no edits (as caller should check on its own
-        // anyway), then there are no new additional things to modify,
-        // so return as saved. Nothing else to do.
-        if (edited() == false)
-            return;
-        
         import std.stdio : File;
         import std.conv  : text;
         import os.file : availableDiskSpace;
