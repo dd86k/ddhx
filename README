@@ -99,10 +99,11 @@ COMMAND                 DESCRIPTION
 "change-panel"          Switch between data and text panel
 "change-writemode"      Change writing mode
 "save"                  Save buffer to file
+"save-as"               Save buffer as a different name
 "undo"                  Undo change
 "redo"                  Redo change
 "quit"                  Quit program
-"set"                   Set a session value. (See Configuration section)
+"set"                   Set a configuration value. (See Configuration section)
 
 //
 // Default keybinds
@@ -122,6 +123,7 @@ End             "cursor-line-end"
 Tab             "change-panel"
 Insert          "change-writemode"
 ^S              "save"
+^O              "save-as"
 ^U              "undo"
 ^R              "redo"
 Q               "quit"

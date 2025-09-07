@@ -167,6 +167,7 @@ void startddhx(string path, RC rc)
     _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_panel;
     _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
+    _ekeys[Mod.ctrl|Key.O]  = _ecommands["save-as"]             = &save_as;
     _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
     _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
@@ -948,6 +949,24 @@ void save(Session *session, string[] args)
     message("Saved");
 }
 
+// Save as file
+void save_as(Session *session, string[] args)
+{
+    string name = void;
+    if (args is null || args.length < 1)
+    {
+        name = promptline("Save as: ");
+        if (name.length == 0)
+            throw new Exception("Canceled");
+    }
+    else
+        name = args[0];
+    
+    session.target = name;
+    save(session, null);
+}
+
+// Set runtime config
 void set(Session *session, string[] args)
 {
     string setting = void;
