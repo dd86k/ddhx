@@ -132,7 +132,6 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     _ekeys[Key.End]         = _ecommands["cursor-line-end"]     = &move_ln_end;
     _ekeys[Mod.ctrl|Key.Home] = _ecommands["cursor-sof"]        = &move_abs_start;
     _ekeys[Mod.ctrl|Key.End ] = _ecommands["cursor-eof"]        = &move_abs_end;
-    _ekeys[Key.Q]           = _ecommands["quit"]                = &quit;
     _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_panel;
     _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
@@ -140,7 +139,8 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
     _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
-    _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-cursor"]       = &report_position;
+    _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-position"]     = &report_position;
+    _ekeys[Key.Q] = _ekeys[Mod.ctrl|Key.X] = _ecommands["quit"] = &quit;
     // Reserved:
     // Ctrl+F and/or '/': Forward search
     // Ctrl+B and/or '&': Backward search
@@ -874,7 +874,10 @@ void report_position(Session *session, string[] args)
 {
     long curpos  = session.position_cursor;
     long docsize = session.editor.currentSize;
-    message("%f%% / %d B", cast(float)curpos / docsize * 100, docsize);
+    message("%d / %d B (%f%%)",
+        curpos,
+        docsize,
+        cast(float)curpos / docsize * 100);
 }
 
 // Save changes
