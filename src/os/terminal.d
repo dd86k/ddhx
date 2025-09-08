@@ -855,36 +855,30 @@ Lread:
             
             event.type = InputType.keyDown;
             
-            const char ascii = ir.KeyEvent.AsciiChar;
+            // NOTE: Unavailable shortcuts.
+            //       With the "Enable Ctrl key shortcuts", conhost (and possibly
+            //       Windows Terminal) will interfere with some Ctrl shortcuts,
+            //       like Ctrl+Home and Ctrl+End. Setting it that settings
+            //       restores this capability.
+            with (ir.KeyEvent) {
+            if (dwControlKeyState & ALT_PRESSED)   event.key = Mod.alt;
+            if (dwControlKeyState & CTRL_PRESSED)  event.key = Mod.ctrl;
+            if (dwControlKeyState & SHIFT_PRESSED) event.key = Mod.shift;
+            }
             
+            const char ascii = ir.KeyEvent.AsciiChar;
             if (ascii >= 'a' && ascii <= 'z')
             {
-                event.key = ascii - 32;
+                event.key |= ascii - 32;
                 return event;
             }
             else if (ascii >= 0x20 && ascii < 0x7f)
             {
-                event.key = ascii;
-                
-                // '?' on a fr-ca kb is technically shift+6,
-                // breaking app input since expecting no modifiers
-                if (ascii >= 'A' && ascii <= 'Z')
-                    event.key = Mod.shift;
-                
+                event.key |= ascii;
                 return event;
             }
             
-            // NOTE: Conhost by default interferes with ^Home and ^End
-            //       With the "Enable Ctrl key shortcuts", conhost (and possibly
-            //       Windows Terminal) will interfere with some Ctrl shortcuts,
-            //       like Ctrl+Home and Ctrl+End. Setting it off restores this
-            //       capability.
-            event.key = keycode;
-            with (ir.KeyEvent) {
-            if (dwControlKeyState & ALT_PRESSED)   event.key |= Mod.alt;
-            if (dwControlKeyState & CTRL_PRESSED)  event.key |= Mod.ctrl;
-            if (dwControlKeyState & SHIFT_PRESSED) event.key |= Mod.shift;
-            }
+            event.key |= keycode;
             return event;
         /*case MOUSE_EVENT:
             if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED)
@@ -973,6 +967,24 @@ Lread:
             else
                 event.key = c;
             return event;
+        case 2: // Usually Alt+Key encoded as \033 Key
+            switch (b[0]) {
+            case '\033':
+                char c = b[1];
+                if (c >= 'a' && c <= 'z')
+                {
+                    event.key = cast(ushort)(b[1] - 32) | Mod.alt;
+                    return event;
+                }
+                else if (c >= 'A' && c <= 'F')
+                {
+                    event.key = b[1] | Mod.alt | Mod.shift;
+                    return event;
+                }
+                break;
+            default:
+            }
+            break;
         default:
         }
         
