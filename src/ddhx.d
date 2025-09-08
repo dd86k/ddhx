@@ -140,6 +140,11 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
     _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
     _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
+    _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-cursor"]       = &report_position;
+    // Reserved:
+    // Ctrl+F and/or '/': Forward search
+    // Ctrl+B and/or '&': Backward search
+    
     _ecommands["set"] = &set;
     
     // Special keybinds with no attached commands
@@ -492,6 +497,7 @@ void update_view(Session *session, TerminalSize termsize)
     if (curpos > docsize)
         curpos = docsize;
     
+    // TODO: Fix performance case where jumping across, say, 4 GiB
     // Adjust base (camera/view) positon, which is the position we read at.
     if (curpos < basepos) // cursor is behind
     {
@@ -873,6 +879,14 @@ void goto_(Session *session, string[] args)
     default:
         moveabs(session, scan(off));
     }
+}
+
+// Report cursor position on screen
+void report_position(Session *session, string[] args)
+{
+    long curpos  = session.position_cursor;
+    long docsize = session.editor.currentSize;
+    message("%f%% / %d B", cast(float)curpos / docsize * 100, docsize);
 }
 
 // Save changes
