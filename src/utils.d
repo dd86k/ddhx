@@ -189,3 +189,41 @@ ulong parsebin(scope string input)
     }
     catch (Exception) {}
 }
+
+// Utility to help with address alignment
+long align64down(long v, size_t alignment)
+{
+	long mask = alignment - 1;
+	return v & ~mask;
+}
+unittest
+{
+    assert(align64down( 0, 16) == 0);
+    assert(align64down( 1, 16) == 0);
+    assert(align64down( 2, 16) == 0);
+    assert(align64down(15, 16) == 0);
+    assert(align64down(16, 16) == 16);
+    assert(align64down(17, 16) == 16);
+    assert(align64down(31, 16) == 16);
+    assert(align64down(32, 16) == 32);
+    assert(align64down(33, 16) == 32);
+}
+
+// Utility to help with address alignment
+long align64up(long v, size_t alignment)
+{
+	long mask = alignment - 1;
+	return (v+mask) & ~mask;
+}
+unittest
+{
+    assert(align64up( 0, 16) == 0);
+    assert(align64up( 1, 16) == 16);
+    assert(align64up( 2, 16) == 16);
+    assert(align64up(15, 16) == 16);
+    assert(align64up(16, 16) == 16);
+    assert(align64up(17, 16) == 32);
+    assert(align64up(31, 16) == 32);
+    assert(align64up(32, 16) == 32);
+    assert(align64up(33, 16) == 48);
+}

@@ -497,27 +497,15 @@ void update_view(Session *session, TerminalSize termsize)
     if (curpos > docsize)
         curpos = docsize;
     
-    // TODO: Fix performance case where jumping across, say, 4 GiB
     // Adjust base (camera/view) positon, which is the position we read at.
-    if (curpos < basepos) // cursor is behind
+    import utils : align64down, align64up;
+    if (curpos < basepos) // cursor is behind view
     {
-        while (curpos < basepos)
-        {
-            basepos -= cols;
-            if (basepos < 0)
-            {
-                basepos = 0;
-                break;
-            }
-        }
+        basepos = align64down(curpos, cols);
     }
-    else if (curpos >= basepos + count) // cursor is ahead
+    else if (curpos >= basepos + count) // cursor is ahead of view
     {
-        // Catch up to cursor
-        while (curpos >= basepos + count)
-        {
-            basepos += cols;
-        }
+        basepos = align64up(curpos - count + 1, cols);
     }
     
     // Read data

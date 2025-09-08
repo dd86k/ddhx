@@ -21,6 +21,7 @@ import std.container.rbtree : RedBlackTree;
 import std.exception : enforce;
 import core.stdc.string : memcpy;
 import core.stdc.stdlib : malloc, realloc, free;
+import utils : align64down;
 
 enum PatchType : short
 {
@@ -207,27 +208,6 @@ struct Chunk
     uint id;
 }
 
-// Utility to help with address alignment
-private
-long align64(long v, size_t alignment)
-{
-	long mask = alignment - 1;
-    // NOTE: v+mask "rounds" up (e.g., v=1,a=4 returns 4)
-	return v & ~mask;
-}
-unittest
-{
-    assert(align64( 0, 16) == 0);
-    assert(align64( 1, 16) == 0);
-    assert(align64( 2, 16) == 0);
-    assert(align64(15, 16) == 0);
-    assert(align64(16, 16) == 16);
-    assert(align64(17, 16) == 16);
-    assert(align64(31, 16) == 16);
-    assert(align64(32, 16) == 32);
-    assert(align64(33, 16) == 32);
-}
-
 // Manages chunks
 //
 // Caller is responsible for populating data into chunks
@@ -249,7 +229,7 @@ class ChunkManager
         void *data = malloc(param_size);
         enforce(data, "assert: ChunkManager.create:malloc");
         
-        long basepos = align64(position, param_size);
+        long basepos = align64down(position, param_size);
         chunks[basepos] = Chunk(basepos, data, param_size, 0, 0, 0);
         
         // ptr returned is in heap anyway, so after its insertion
@@ -258,7 +238,7 @@ class ChunkManager
     
     Chunk* locate(long position)
     {
-        return align64(position, param_size) in chunks;
+        return align64down(position, param_size) in chunks;
     }
     
     void remove(Chunk *chunk)
