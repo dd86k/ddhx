@@ -1,7 +1,7 @@
 module tests.input;
 
 import std.stdio;
-import terminal;
+import os.terminal;
 
 @system unittest
 {

@@ -1,7 +1,7 @@
 module tests.color;
 
 import std.stdio;
-import terminal;
+import os.terminal;
 
 void termColor(TermColor c, string text)
 {
