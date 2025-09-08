@@ -218,56 +218,55 @@ void main(string[] args)
     }
     */
     
-    string target = args.length >= 2 ? args[1] : null;
-    Editor editor = new Editor(0, ochksize);
-    string initmsg;
-    
-    import document.file : FileDocument;
-    import document.memory : MemoryDocument;
-    switch (target) {
-    case null:
-        initmsg = "new buffer";
-        break;
-    case "-": // MemoryDocument
-        target = null;
-        initmsg = "new buffer";
-        MemoryDocument doc = new MemoryDocument();
-        foreach (const(ubyte)[] chk; stdin.byChunk(4096))
-        {
-            doc.append(chk);
-        }
-        editor.attach(doc);
-        break;
-    default: // assume target is file
-        import std.file : exists;
-        import std.path : baseName;
+    try
+    {
+        string target = args.length >= 2 ? args[1] : null;
+        Editor editor = new Editor(0, ochksize);
+        string initmsg;
         
-        if (target && exists(target))
-        {
-            bool readonly = rc.writemode == WritingMode.readonly;
-            editor.attach(new FileDocument(target, readonly));
+        import document.file : FileDocument;
+        import document.memory : MemoryDocument;
+        switch (target) {
+        case null:
+            initmsg = "new buffer";
+            break;
+        case "-": // MemoryDocument
+            target = null;
+            initmsg = "new buffer";
+            MemoryDocument doc = new MemoryDocument();
+            foreach (const(ubyte)[] chk; stdin.byChunk(4096))
+            {
+                doc.append(chk);
+            }
+            editor.attach(doc);
+            break;
+        default: // assume target is file
+            import std.file : exists;
+            import std.path : baseName;
             
-            initmsg = baseName(target);
+            if (target && exists(target))
+            {
+                bool readonly = rc.writemode == WritingMode.readonly;
+                editor.attach(new FileDocument(target, readonly));
+                
+                initmsg = baseName(target);
+            }
+            else if (target)
+            {
+                initmsg = "(new file)";
+            }
+            else // new buffer
+            {
+                initmsg = "(new buffer)";
+            }
         }
-        else if (target)
-        {
-            initmsg = "(new file)";
-        }
-        else // new buffer
-        {
-            initmsg = "(new buffer)";
-        }
-    }
     
-    // TODO: Move args processing up here.
-    //       Give ddhx only IDocument object.
-    //       If dumping (not interactive session), then define behavior in other module.
-    // Force exceptions to be printed on stderr and exit with code.
-    // I believe it defaults printing to stdout.
-    try startddhx(editor, rc, target, initmsg);
+        startddhx(editor, rc, target, initmsg);
+    }
     catch (Exception ex)
     {
-        stderr.writeln(ex);
+        debug stderr.writeln("error: ", ex);
+        else  stderr.writeln("error: ", ex.msg);
         log("%s", ex);
         exit(EXIT_CRITICAL);
     }
