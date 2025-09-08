@@ -565,7 +565,11 @@ void terminalForeground(TermColor col)
             FOREGROUND_INTENSITY | FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
         ];
         
-        SetConsoleTextAttribute(hOut, (oldAttr & 0xf0) | FGCOLORS[col]);
+        CONSOLE_SCREEN_BUFFER_INFO csbi = void;
+        GetConsoleScreenBufferInfo(hOut, &csbi);
+        WORD current = csbi.wAttributes;
+        
+        SetConsoleTextAttribute(hOut, (current & 0xf0) | FGCOLORS[col]);
     }
     else version (Posix)
     {
@@ -648,7 +652,11 @@ void terminalBackground(TermColor col)
             BACKGROUND_INTENSITY | BACKGROUND_GREEN | BACKGROUND_RED | BACKGROUND_BLUE,
         ];
         
-        SetConsoleTextAttribute(hOut, (oldAttr & 0xf) | FGCOLORS[col]);
+        CONSOLE_SCREEN_BUFFER_INFO csbi = void;
+        GetConsoleScreenBufferInfo(hOut, &csbi);
+        WORD current = csbi.wAttributes;
+        
+        SetConsoleTextAttribute(hOut, (current & 0xf) | FGCOLORS[col]);
     }
     else version (Posix)
     {

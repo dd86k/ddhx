@@ -5,6 +5,7 @@ import os.terminal;
 
 void termColor(TermColor c, string text)
 {
+    terminalForeground(TermColor.black);
     terminalBackground(c);
     terminalWrite(text);
     terminalResetColor();
