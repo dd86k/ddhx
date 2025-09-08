@@ -224,8 +224,12 @@ class Editor
     // TODO: Separate into its own function
     void save(string target)
     {
-        log("target=%s logical_size=%u",
-            target, logical_size);
+        log("target=%s logical_size=%u", target, logical_size);
+        
+        // TODO: Speedup saving
+        //       In an attempt to speed up saving (ie, with multiple gigabytes),
+        //       it might be worth file to only overwrite the target file (if it
+        //       exists) with chunks of edited data.
         
         // NOTE: Caller is responsible to populate target path.
         //       Using assert will stop the program completely,

@@ -104,46 +104,15 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     void function(Session*, string[])[int] _ekeys;
 }
 
-// TODO: void startddhx(Editor editor, RC *rc, string path, string initmsg)
-
-// start editor
-void startddhx(string path, RC rc)
+void startddhx(Editor editor, ref RC rc, string path, string initmsg)
 {
     _estatus = UINIT; // init here since message could be called later
     
     g_session = new Session(rc);
-    Editor editor = g_session.editor = new Editor();
+    g_session.target = path;
+    g_session.editor = editor;
     
-    switch (path) {
-    case null:
-        message("new buffer");
-        break;
-    case "-": // MemoryDocument
-        throw new Exception("TODO: Support streams.");
-    default:
-        import std.file : exists;
-        import std.path : baseName;
-        
-        // path is either null (no suggested name) or set to a path
-        // if path doesn't exist, Editor.save(string) will simply create it
-        g_session.target = path;
-        
-        if (path && exists(path))
-        {
-            bool readonly = rc.writemode == WritingMode.readonly;
-            editor.attach(new FileDocument(path, readonly));
-            
-            message(baseName(path));
-        }
-        else if (path)
-        {
-            message("(new file)");
-        }
-        else // new buffer
-        {
-            message("(new buffer)");
-        }
-    }
+    message(initmsg);
     
     // TODO: ^C handler
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);

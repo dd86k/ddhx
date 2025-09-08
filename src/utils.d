@@ -84,10 +84,12 @@ string[] arguments(const(char)[] buffer)
     //assert(arguments(`tab\tmoment`) == [ "tab", "moment" ]);
 }
 
+// Parse string as long supporting dec/hex/oct bases.
 long scan(scope string input)
 {
     // std.format.read, std.conv.to, and std.conv.parse makes this harder
     // than it should be...
+    // If we need ulong, use strtoull
     
     import core.stdc.stdlib : strtoll;
     import core.stdc.errno : errno;
@@ -118,4 +120,72 @@ long scan(scope string input)
     assert(scan("01")  == octal!"1");
     assert(scan("02")  == octal!"2");
     assert(scan("010") == octal!"10");
+}
+
+// Parse as a binary number with optional suffix up to gigabytes.
+//
+// For example, "32K" translates to 32768 (Bytes, 32 * 1024).
+ulong parsebin(scope string input)
+{
+    import std.exception : enforce;
+    import std.conv : to;
+    
+    enforce(input, "input is NULL");
+    enforce(input.length, "input is EMPTY");
+    
+    ulong mult = 1;
+    if (input.length > 1)
+    {
+        switch (input[$-1]) {
+        case 'k', 'K':
+            input = input[0..$-1];
+            mult = 1024;
+            break;
+        case 'm', 'M':
+            input = input[0..$-1];
+            mult = 1024 * 1024;
+            break;
+        case 'g', 'G':
+            input = input[0..$-1];
+            mult = 1024 * 1024 * 1024;
+            break;
+        default:
+        }
+    }
+    
+    return to!ulong(input) * mult;
+}
+@system unittest
+{
+    assert(parsebin("0") == 0);
+    assert(parsebin("1") == 1);
+    assert(parsebin("10") == 10);
+    assert(parsebin("8086") == 8086);
+    
+    assert(parsebin("1k") ==     1024);
+    assert(parsebin("1K") ==     1024);
+    assert(parsebin("2K") == 2 * 1024);
+    assert(parsebin("1024K") == 1024 * 1024);
+    
+    assert(parsebin("1m") ==     1024 * 1024);
+    assert(parsebin("1M") ==     1024 * 1024);
+    assert(parsebin("2M") == 2 * 1024 * 1024);
+    
+    assert(parsebin("1g") ==      1024 * 1024 * 1024);
+    assert(parsebin("1G") ==      1024 * 1024 * 1024);
+    assert(parsebin("2G") == 2L * 1024 * 1024 * 1024);
+    
+    try
+    {
+        parsebin(null);
+        assert(false); // Needs to throw
+    }
+    catch (Exception) {}
+    
+    try
+    {
+        parsebin("");
+        assert(false); // Needs to throw
+    }
+    catch (Exception) {}
 }

@@ -11,9 +11,10 @@ module main;
 //       module (and package modules) when running 'dub test'.
 
 import std.stdio, std.getopt;
-import ddhx;
-import configuration;
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
+import configuration;
+import ddhx;
+import editor;
 import logger;
 
 private:
@@ -77,6 +78,7 @@ void main(string[] args)
     enum SECRETCOUNT = 1;
     
     RC rc;
+    size_t ochksize = 4096;
     string orc; /// Use this rc file instead
     bool onorc; /// Do not use rc file if it exists, force defaults
     GetoptResult res = void;
@@ -126,18 +128,30 @@ void main(string[] args)
                 import editor : WritingMode;
                 rc.writemode = WritingMode.readonly;
             },
-        // Application options
         //"s|seek",       "Seek at position", &rc.seek,
         //"l|length",     "Maximum amount of data to read", &rc.len,
         //"I|norc",       "Use defaults and ignore user configuration files", &onorc,
-        //"rc",           "Use supplied RC file", &orc,
-        // NOTE: Available in releases just in case there is a need
-        "log",          "Enable tracing to this file",
+        //"f|rcfile",     "Use supplied file for options", &orc,
+        //
+        // Debugging options
+        //
+        "log",          "Debugging: Enable tracing to this file",
             (string _, string val)
             {
                 logStart(val);
             },
+        "chunksize",    "Debugging: Set in-memory patch chunks to this size",
+            (string _, string val)
+            {
+                import utils : parsebin;
+                ulong sz = parsebin(val);
+                if (sz > 64 * 1024 * 1024) // 64 MiB
+                    throw new Exception("Chunk size SHOULD be lower than 64 MiB");
+                ochksize = cast(size_t)sz;
+            },
+        //
         // Pages
+        //
         "version",      "Print the version page and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
         );
@@ -166,7 +180,7 @@ void main(string[] args)
                 write(' ', optShort, ',');
             else
                 write("    ");
-            writefln(" %-14s  %s", optLong, help);
+            writefln(" %*s %s", -17, optLong, help);
         }
         
         // Manually typed for now...
@@ -204,12 +218,45 @@ void main(string[] args)
     }
     */
     
+    string target = args.length >= 2 ? args[1] : null;
+    Editor editor = new Editor(0, ochksize);
+    string initmsg;
+    
+    import document.file : FileDocument;
+    import document.memory : MemoryDocument;
+    switch (target) {
+    case null:
+        initmsg = "new buffer";
+        break;
+    case "-": // MemoryDocument
+        throw new Exception("TODO: Support streams.");
+    default: // assume target is file
+        import std.file : exists;
+        import std.path : baseName;
+        
+        if (target && exists(target))
+        {
+            bool readonly = rc.writemode == WritingMode.readonly;
+            editor.attach(new FileDocument(target, readonly));
+            
+            initmsg = baseName(target);
+        }
+        else if (target)
+        {
+            initmsg = "(new file)";
+        }
+        else // new buffer
+        {
+            initmsg = "(new buffer)";
+        }
+    }
+    
     // TODO: Move args processing up here.
     //       Give ddhx only IDocument object.
     //       If dumping (not interactive session), then define behavior in other module.
     // Force exceptions to be printed on stderr and exit with code.
     // I believe it defaults printing to stdout.
-    try startddhx(args.length >= 2 ? args[1] : null, rc);
+    try startddhx(editor, rc, target, initmsg);
     catch (Exception ex)
     {
         stderr.writeln(ex);
