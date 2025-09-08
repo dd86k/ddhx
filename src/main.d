@@ -229,7 +229,15 @@ void main(string[] args)
         initmsg = "new buffer";
         break;
     case "-": // MemoryDocument
-        throw new Exception("TODO: Support streams.");
+        target = null;
+        initmsg = "new buffer";
+        MemoryDocument doc = new MemoryDocument();
+        foreach (const(ubyte)[] chk; stdin.byChunk(4096))
+        {
+            doc.append(chk);
+        }
+        editor.attach(doc);
+        break;
     default: // assume target is file
         import std.file : exists;
         import std.path : baseName;
