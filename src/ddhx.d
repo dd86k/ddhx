@@ -116,8 +116,6 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     
     // TODO: ^C handler
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
-    // NOTE: This works with exceptions (vs. atexit(3))
-    //       Called before exception handler is called (tested on linux)
     terminalOnResize(&onresize);
     terminalHideCursor();
     
@@ -132,6 +130,8 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     _ekeys[Key.End]         = _ecommands["cursor-line-end"]     = &move_ln_end;
     _ekeys[Mod.ctrl|Key.Home] = _ecommands["cursor-sof"]        = &move_abs_start;
     _ekeys[Mod.ctrl|Key.End ] = _ecommands["cursor-eof"]        = &move_abs_end;
+    _ekeys[Mod.ctrl|Key.LeftArrow]  = _ecommands["cursor-skip-back"]  = &move_skip_backward;
+    _ekeys[Mod.ctrl|Key.RightArrow] = _ecommands["cursor-skip-front"] = &move_skip_forward;
     _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_panel;
     _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
@@ -144,7 +144,10 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     // Reserved:
     // Ctrl+F and/or '/': Forward search
     // Ctrl+B and/or '&': Backward search
+    // Ctrl+L: Refresh screen
+    // Alt+Key could be hiding/showing bars with "toggle-*" commands
     
+    // Commands with no default shortcuts
     _ecommands["set"] = &set;
     
     // Special keybinds with no attached commands
@@ -784,6 +787,104 @@ void move_abs_start(Session *session, string[] args)
 void move_abs_end(Session *session, string[] args)
 {
     moveabs(session, session.editor.currentSize());
+}
+
+/// For move_diff_backward and move_diff_forward, this is the size of the
+/// search buffer (haystack).
+enum SEARCH_SIZE = 64 * 1024;
+
+// Move to different element back
+void move_skip_backward(Session *session, string[] args)
+{
+    import core.stdc.string : memcmp;
+    import core.stdc.stdlib : malloc, free;
+    
+    size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
+    long curpos = session.position_cursor;
+    
+    // Get current element
+    ubyte buffer = void;
+    ubyte[] needle = session.editor.view(curpos, &buffer, elemsize);
+    if (needle.length < elemsize)
+        return; // Nothing to do
+    
+    curpos -= elemsize;
+    
+    long base = curpos - SEARCH_SIZE;
+    if (base < 0)
+    {
+        base = 0;
+    }
+    
+    // See notes in move_diff_forward
+    ubyte[] haybuffer = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
+    if (haybuffer is null)
+        throw new Exception("error: Out of memory");
+    scope(exit) free(haybuffer.ptr);
+    
+    ubyte[] haystack = session.editor.view(base, haybuffer);
+    if (haystack.length < elemsize)
+    {
+        moveabs(session, curpos - elemsize);
+        return; // Nothing to do, but still move by an element
+    }
+    
+    for (size_t o = curpos - base; o > 0; --o, --curpos)
+    {
+        if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+        {
+            moveabs(session, curpos);
+            return;
+        }
+    }
+    
+    moveabs(session, curpos);
+}
+
+// Move to different element forward
+void move_skip_forward(Session *session, string[] args)
+{
+    import core.stdc.string : memcmp;
+    import core.stdc.stdlib : malloc, free;
+    
+    size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
+    long curpos = session.position_cursor;
+    
+    // Get current element
+    ubyte buffer = void;
+    ubyte[] needle = session.editor.view(curpos, &buffer, elemsize);
+    if (needle.length < elemsize)
+        return; // Nothing to do
+    
+    curpos += elemsize;
+    
+    // NOTE: Don't bother going past buffer for now.
+    //       I don't have a reliable check for EOF, so the first
+    //       implementation checks up to N.
+    // TODO: Eventually re-visit need of malloc vs. array allocation
+    ubyte[] haybuffer = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
+    if (haybuffer is null)
+        throw new Exception("error: Out of memory");
+    scope(exit) free(haybuffer.ptr);
+    
+    ubyte[] haystack = session.editor.view(curpos, haybuffer);
+    if (haystack.length < elemsize)
+    {
+        moveabs(session, curpos);
+        return; // Nothing to do, but move by an element
+    }
+    
+    for (size_t o; o < haystack.length; ++o, ++curpos)
+    {
+        if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+        {
+            moveabs(session, curpos);
+            return;
+        }
+    }
+    
+    // If we reached end of buffer (EOF in the future), move there
+    moveabs(session, curpos);
 }
 
 // Change writing mode
