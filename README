@@ -65,6 +65,7 @@ This list may change at any given time without notice.
 - [x] History undo/redo
 - [x] Command prompt
 - [x] Standard input (stdin) support as new buffer
+- [x] Skip to different element (or byte) (Ctrl+Left/Right)
 
 0.6:
 - [ ] Support insertions
@@ -80,7 +81,22 @@ Future:
 - [ ] Insert zeros
 - [ ] Insert file
 - [ ] Select multiple elements, copy, and paste
-- [ ] Skip to different element (or byte) (Ctrl+Up/Down)
+
+//
+// Usage
+//
+
+ddhx aims to be a small and easy hexadecimal editor. For that purpose, there
+are multiple ways of using 
+
+To create a new buffer:
+  $ ddhx
+To open an existing or create a file at this location:
+  $ ddhx FILENAME
+To open a new buffer with data piped:
+  $ echo test | ddhx -
+
+Minimum recommended terminal size is 80x24.
 
 //
 // Commands
@@ -97,8 +113,11 @@ COMMAND                 DESCRIPTION
 "cursor-line-end"       Navigate to end of line
 "cursor-sof"            Go to start of buffer
 "cursor-eof"            Go to end of buffer
+"cursor-diff-back"      Skip to different element backward
+"cursor-diff-front"     Skip to different element forward
 "change-panel"          Switch between data and text panel
 "change-writemode"      Change writing mode
+"report-position"       Report the position of the cursor in the buffer
 "save"                  Save buffer to file
 "save-as"               Save buffer as a different name
 "undo"                  Undo change
@@ -110,6 +129,8 @@ COMMAND                 DESCRIPTION
 // Default keybinds
 //
 
+Keys 0-9 and a-f are used to perform edits.
+
 KEY             COMMAND
 LeftArrow       "cursor-left"
 RightArrow      "cursor-right"
@@ -119,15 +140,18 @@ PageUp          "cursor-page-up"
 PageDown        "cursor-page-down"
 Home            "cursor-line-start"
 End             "cursor-line-end"
-^Home           "cursor-sof"
-^End            "cursor-eof"
+Ctrl+Home       "cursor-sof"
+Ctrl+End        "cursor-eof"
+Ctrl+LeftArrow  "cursor-skip-back"
+Ctrl+RightArrow "cursor-skip-front"
 Tab             "change-panel"
 Insert          "change-writemode"
-^S              "save"
-^O              "save-as"
-^U              "undo"
-^R              "redo"
-Q               "quit"
+Ctrl+P          "report-position"
+Ctrl+S          "save"
+Ctrl+O          "save-as"
+Ctrl+U          "undo"
+Ctrl+R          "redo"
+Q or Ctrl+X     "quit"
 Enter           Show command prompt
 
 //
@@ -137,12 +161,16 @@ Enter           Show command prompt
 "columns"
         Number of elements to show on a row
         Argument: Number
+        Default: 16
 "address-type", "address"
         Change displayed address type
         Argument: "hex", "dec", or "oct"
+        Default: "hex"
 "address-spacing"
         Change how much spacing the left address column takes
         Argument: Number
+        Default: 11 (enough up to 0xfffffffffff, so ~16 TiB)
 "charset"
         Change displayed character set
         Argument: "ascii", "cp437", "mac", or "ebcdic"
+        Default: "ascii"
