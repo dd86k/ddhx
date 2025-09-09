@@ -802,6 +802,11 @@ void move_skip_backward(Session *session, string[] args)
     size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
     long curpos = session.position_cursor;
     
+    // If cursor is at the very end of buffer, move it by one element
+    // back, because there isn't any data there, it's empty.
+    if (session.position_cursor == session.editor.currentSize())
+        --curpos;
+    
     // Get current element
     ubyte buffer = void;
     ubyte[] needle = session.editor.view(curpos, &buffer, elemsize);
@@ -812,9 +817,7 @@ void move_skip_backward(Session *session, string[] args)
     
     long base = curpos - SEARCH_SIZE;
     if (base < 0)
-    {
         base = 0;
-    }
     
     // See notes in move_diff_forward
     ubyte[] haybuffer = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
@@ -838,6 +841,8 @@ void move_skip_backward(Session *session, string[] args)
         }
     }
     
+    // TODO: Keep reading until different element/byte or start of file reached
+    // Move anyway since it's the intent
     moveabs(session, curpos);
 }
 
@@ -883,6 +888,7 @@ void move_skip_forward(Session *session, string[] args)
         }
     }
     
+    // TODO: Keep reaching forward until different element/byte or EOF reached
     // If we reached end of buffer (EOF in the future), move there
     moveabs(session, curpos);
 }
