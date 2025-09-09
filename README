@@ -86,21 +86,45 @@ Future:
 // Usage
 //
 
-ddhx aims to be a small and easy hexadecimal editor. For that purpose, there
-are multiple ways of using 
+ddhx aims to be a small and easy-to-use visual hexadecimal editor. For that
+purpose, there are multiple ways of using the editor.
+
+Sypnopsis:
+  ddhx [OPTIONS] [FILE|-]
+  ddhx {-h|--help|--version|--ver}
 
 To create a new buffer:
   $ ddhx
-To open an existing or create a file at this location:
+To open an existing or create a new file at this location:
   $ ddhx FILENAME
 To open a new buffer with data piped:
   $ echo test | ddhx -
 
-Minimum recommended terminal size is 80x24.
+Minimum recommended terminal size is 80x24 characters.
+
+Navigation can be done using keybinds or commands. Editing is done directly
+using the A to F and 0 to 9 keys. And saving is default mapped to Ctrl+S.
+
+Currently, only overwrite and append operations are supported.
 
 //
 // Commands
 //
+
+Commands can be executed using the command prompt.
+
+By pressing Return, you can type a command, and then confirm it by pressing the
+Return key again.
+
+Some commands have arguments. When these arguments are omitted, the associated
+command will prompt for these arguments.
+
+For example, moving the cursor ahead of 32 bytes:
+  >goto +0x20
+
+Typing "goto" alone will make the program ask for an offset. This command also
+has the shortcut of Ctrl+G. In the case of "goto", it accepts decimal, octal,
+and hexadecimal values.
 
 COMMAND                 DESCRIPTION
 "cursor-left"           Navigate one element back
@@ -129,8 +153,6 @@ COMMAND                 DESCRIPTION
 // Default keybinds
 //
 
-Keys 0-9 and a-f are used to perform edits.
-
 KEY             COMMAND
 LeftArrow       "cursor-left"
 RightArrow      "cursor-right"
@@ -152,11 +174,19 @@ Ctrl+O          "save-as"
 Ctrl+U          "undo"
 Ctrl+R          "redo"
 Q or Ctrl+X     "quit"
-Enter           Show command prompt
+Enter, Return   Show command prompt
 
 //
 // Configuration
 //
+
+The editor can be configured at runtime using the "set" command.
+
+For example, changing the character set:
+  "set charset mac"
+
+Many of these configuration parameters can be set using the Command-Line
+Interface. For example, "columns" is mapped to "-c" and "--columns="
 
 "columns"
         Number of elements to show on a row
@@ -174,3 +204,23 @@ Enter           Show command prompt
         Change displayed character set
         Argument: "ascii", "cp437", "mac", or "ebcdic"
         Default: "ascii"
+
+//
+// Compiling & Debugging
+//
+
+To compile this project, you'll need a D compiler and DUB.
+
+All major compilers are supported (DMD, GDC, and LDC). LDC, GDC, and DUB are
+typically available in package repositories as gdc/gdc-*/gcc-gdc, ldc2, and
+dub.
+
+Compile a debug build:
+  $ dub build
+Compile a release build using a specific compiler:
+  $ dub build -b release --compiler=ldc2
+
+Run unit tests with log traces:
+  $ dub test --d-version=Trace
+
+The --log=FILENAME CLI option is useful for reporting bugs.
