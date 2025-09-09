@@ -282,6 +282,10 @@ unittest
     assert(chunk0.position == 0);
     assert(chunk0.length == 32);
     assert(chunk0.data);
+    assert(chunks.locate(0)  == chunk0);
+    assert(chunks.locate(31) == chunk0);
+    assert(chunks.locate(32) == null);
+    assert(chunks.locate(33) == null);
     
     Chunk *chunk1 = chunks.create(42);
     assert(chunk1);

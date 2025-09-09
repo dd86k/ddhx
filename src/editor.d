@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor;
+module editor; // TODO: Rename module to doceditor and to class DocEditor
 
 import document.base : IDocument;
 import logger;
@@ -338,8 +338,18 @@ class Editor
         GC.minimize();
     }
     
-    /// View the content with all modifications.
-    /// NOTE: Caller should hold its own buffer when its base position changes.
+    /// View the content of the document with current modifications.
+    /// Params:
+    ///   position = Base position for viewing buffer.
+    ///   buffer = Viewing buffer pointer.
+    ///   size = Size of the view buffer.
+    /// Returns: Array of bytes with edits.
+    ubyte[] view(long position, void *buffer, size_t size)
+    {
+        return view(position, (cast(ubyte*)buffer)[0..size]);
+    }
+    
+    /// View the content of the document with all modifications.
     /// Params:
     ///   position = Base position for viewing buffer.
     ///   buffer = Viewing buffer.
@@ -365,25 +375,28 @@ class Editor
             
             if (chunk) // edited chunk found
             {
+                // Relative chunk position to requested logical position.
                 ptrdiff_t chkpos = cast(ptrdiff_t)(lpos - chunk.position);
-                size_t len = chunk.used < want ? chunk.used : want;
-                size_t chkavail = chunk.used - chkpos; // fixes basepos+want >= chkused
-                if (len >= chkavail)
-                    len = chkavail;
                 
-                log("chunk.position=%u chunk.used=%u len=%u chkpos=%u",
-                    chunk.position, chunk.used, len, chkpos);
+                // First, we need to see if the required length fits within the
+                // chunk.
+                if (chkpos + want < chunk.used) // fits within wants, allowed to break
+                {
+                    memcpy(buffer.ptr + bp, chunk.data + chkpos, want);
+                    bp += want;
+                    break;
+                }
                 
+                // Otherwise, we fill what we can from chunk and continue to next position
+                size_t len = chunk.used - chkpos;
                 memcpy(buffer.ptr + bp, chunk.data + chkpos, len);
                 bp += len;
                 
-                // If we're at End of Chunk, makes sense if chunk is currently
-                // growing and buffer couldn't be filled.
-                if (len < want) break;
+                if (chunk.used < chunk.length) break;
             }
             else if (basedoc) // no chunk but has source doc
             {
-                size_t len = basedoc.readAt(lpos, buffer[bp..want]).length;
+                size_t len = basedoc.readAt(lpos, buffer[bp..$]).length;
                 log("len=%u", len);
                 bp += len;
                 
@@ -785,11 +798,10 @@ unittest
     
     log("Test: Redo/Undo with large doc");
     
-    // all memset to 0
+    // new operator memset's to 0
     enum DOC_SIZE = 8000;
-    scope MemoryDocument doc = new MemoryDocument(new ubyte[DOC_SIZE]);
     scope Editor e = new Editor();
-    e.attach(doc);
+    e.attach(new MemoryDocument(new ubyte[DOC_SIZE]));
     
     ubyte[32] buf = void;
     assert(e.view(40, buf[0..4]) == [ 0, 0, 0, 0 ]);
@@ -830,9 +842,8 @@ unittest
     
     static immutable ubyte[] data = [ 0xf2, 0x49, 0xe6, 0xea ];
     
-    scope MemoryDocument doc = new MemoryDocument(data);
     scope Editor e = new Editor();
-    e.attach(doc);
+    e.attach(new MemoryDocument(data));
     
     ubyte d = 0xff;
     e.replace(data.length    , &d, ubyte.sizeof);
@@ -842,4 +853,66 @@ unittest
     
     ubyte[32] buf = void;
     assert(e.view(0, buf[0..8]) == [ 0xf2, 0x49, 0xe6, 0xea, 0xff, 0xff, 0xff, 0xff ]);
+}
+
+// Test reading past edited chunk sizes
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("Test: Edit chunk after source doc");
+    
+    static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
+        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
+    ];
+    
+    // Chunk size of 16 forces .view() to get more information beyond
+    // edited chunk by reading the original doc for the view buffer.
+    scope Editor e = new Editor(0, 16);
+    e.attach(new MemoryDocument(data));
+    
+    ubyte[32] buf = void;
+    assert(e.view(0, buf) == data);
+    
+    ubyte ff = 0xff;
+    e.replace(19, &ff, ubyte.sizeof);
+    assert(e.view(0, buf) == [ // 32 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf, // <-+- doc
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <-´
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36, // <-+- chunk
+        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41, // <-´
+    ]);
+}
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("Test: Edit chunk before source doc");
+    
+    static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
+        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
+    ];
+    
+    // Chunk size of 16 forces .view() to get more information beyond
+    // edited chunk by reading the original doc for the view buffer.
+    scope Editor e = new Editor(0, 16);
+    e.attach(new MemoryDocument(data));
+    
+    ubyte[32] buf = void;
+    assert(e.view(0, buf) == data);
+    
+    ubyte ff = 0xff;
+    e.replace(3, &ff, ubyte.sizeof);
+    assert(e.view(0, buf) == [ // 32 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xff, 0x32, 0xb0, 0x90, 0xcf, // <-+- chunk
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <-´
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36, // <-+- doc
+        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41, // <-´
+    ]);
 }
