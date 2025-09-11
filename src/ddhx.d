@@ -142,10 +142,11 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-position"]     = &report_position;
     _ekeys[Key.Q] = _ekeys[Mod.ctrl|Key.X] = _ecommands["quit"] = &quit;
     // Reserved:
-    // Ctrl+F and/or '/': Forward search
-    // Ctrl+B and/or '&': Backward search
-    // Ctrl+L: Refresh screen
-    // Alt+Key could be hiding/showing bars with "toggle-*" commands
+    // "search|search-front" (Ctrl+F and/or '/'): Forward search
+    // "search-back" (Ctrl+B and/or '?'): Backward search
+    // "refresh" (Ctrl+L): Refresh screen
+    // "toggle-*" (Alt+Key): Hiding/showing panels
+    // "save-settings": Save session settings into .ddhxrc
     
     // Commands with no default shortcuts
     _ecommands["set"] = &set;
@@ -248,6 +249,16 @@ Lread:
 void onresize()
 {
     update(g_session);
+}
+
+// Bind a shortcut to a command
+void bind(int key, string name)
+{
+    import std.conv : text;
+    void function(Session*,string[]) *func = name in _ecommands;
+    if (func == null)
+        throw new Exception(text("Command not found: '", name, "'"));
+    _ekeys[key] = *func;
 }
 
 // Invoke command prompt
@@ -971,9 +982,38 @@ void goto_(Session *session, string[] args)
         
         moverel(session, -scan(off[1..$]));
         break;
+    case '%':
+        import std.conv : to;
+        
+        if (off.length <= 1) // just '%'
+            throw new Exception("Need percentage number");
+        
+        // Didn't want to over-complicate myself with floats, so int it is for now.
+        // Also, there are functions to do integer division with rem.
+        //
+        // Otherwise, I'd have to deal with floats, single-precision (float) only
+        // have a mantissa of 23 bits and doubles have a mantissa of 53 bits.
+        uint per = to!uint(off[1..$]);
+        if (per > 100) // Yeah we can't go over the document
+            throw new Exception("Percentage cannot be over 100");
+        
+        moveabs(session, llpercentdiv(session.editor.currentSize(), per));
+        break;
     default:
         moveabs(session, scan(off));
     }
+}
+
+long llpercentdiv(long a, long per)
+{
+    // TODO: Check for overflow using std.numeric (if available) or manually
+    return (a * per) / 100;
+}
+unittest
+{
+    assert(llpercentdiv(1000,   0) == 0);
+    assert(llpercentdiv(1000,  50) == 500);
+    assert(llpercentdiv(1000, 100) == 1000);
 }
 
 // Report cursor position on screen
