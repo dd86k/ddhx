@@ -269,6 +269,7 @@ void main(string[] args)
     }
     catch (Exception ex)
     {
+        writeln(); // if cursor was at some weird place
         debug stderr.writeln("error: ", ex);
         else  stderr.writeln("error: ", ex.msg);
         log("%s", ex);
