@@ -142,6 +142,7 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
     _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
     _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-position"]     = &report_position;
+    _ekeys[Mod.ctrl|Key.L]  = _ecommands["refresh"]             = &refresh;
     _ekeys[Key.Q] = _ekeys[Mod.ctrl|Key.X] = _ecommands["quit"] = &quit;
     // Reserved:
     // "search|search-front" (Ctrl+F and/or '/'): Forward search
@@ -946,6 +947,12 @@ void change_writemode(Session *session, string[] args)
         break;
     }
     _estatus |= USTATUSBAR;
+}
+
+// Refresh screen
+void refresh(Session *session, string[] args)
+{
+    update(session);
 }
 
 // Change active panel
