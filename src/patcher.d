@@ -255,8 +255,15 @@ class ChunkManager
     {
         chunks.rehash();
     }
+    
+    // get configured size for chunks
+    size_t alignment()
+    {
+        return param_size;
+    }
 
 private:
+    /// Size of chunk and base memory alignment.
     size_t param_size;
     
     // NOTE: Eventually use std.container.rbtree.RedBlackTree

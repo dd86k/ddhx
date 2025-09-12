@@ -362,16 +362,21 @@ class Editor
         enforce(position <= logical_size, "assert: position <= logical_size");
         
         import core.stdc.string : memcpy, memset;
+        debug import std.datetime.stopwatch : StopWatch, Duration;
         
         log("* position=%d buffer.length=%u", position, buffer.length);
         
-        size_t bp; // buffer position
-        while (bp < buffer.length)
+        debug StopWatch sw;
+        debug sw.start();
+        
+        size_t cksize = chunks.alignment;
+        size_t l; // length
+        while (l < buffer.length)
         {
-            long lpos = position + bp;
+            long lpos = position + l;
             Chunk *chunk = chunks.locate(lpos);
-            size_t want = buffer.length - bp;
-            log("lpos=%d bp=%u want=%u", lpos, bp, want);
+            size_t want = buffer.length - l;
+            log("lpos=%d l=%u want=%u", lpos, l, want);
             
             if (chunk) // edited chunk found
             {
@@ -382,37 +387,48 @@ class Editor
                 // chunk.
                 if (chkpos + want < chunk.used) // fits within wants, allowed to break
                 {
-                    memcpy(buffer.ptr + bp, chunk.data + chkpos, want);
-                    bp += want;
+                    log("CHUNK chkpos=%d want=%u", chkpos, want);
+                    memcpy(buffer.ptr + l, chunk.data + chkpos, want);
+                    l += want;
                     break;
                 }
                 
                 // Otherwise, we fill what we can from chunk and continue to next position
                 size_t len = chunk.used - chkpos;
-                memcpy(buffer.ptr + bp, chunk.data + chkpos, len);
-                bp += len;
+                log("CHUNK.PART chkpos=%d len=%u", chkpos, len);
+                memcpy(buffer.ptr + l, chunk.data + chkpos, len);
+                l += len;
                 
                 if (chunk.used < chunk.length) break;
             }
             else if (basedoc) // no chunk but has source doc
             {
-                size_t len = basedoc.readAt(lpos, buffer[bp..$]).length;
+                // Only read up to a chunk size to avoid overlapping
+                if (want > cksize)
+                    want = cksize;
+                
+                log("DOC want=%u", want);
+                size_t len = basedoc.readAt(lpos, buffer[l..l+want]).length;
                 log("len=%u", len);
-                bp += len;
+                l += len;
                 
                 // If we're at EOF of the source document, this means
-                // that there is no more data to populate from document
+                // that there is no more data to populate from basedoc
                 if (len < want) break;
             }
             else // no chunks (edits) and no base document
             {
-                log("none");
+                log("NONE");
                 break;
             }
         }
-        log("bp=%u", bp);
-        enforce(bp <= buffer.length, "assert: bp <= buffer.length");
-        return buffer[0..bp];
+        log("l=%u", l);
+        
+        debug sw.stop();
+        debug log("TIME sw=%s", sw.peek());
+        
+        enforce(l <= buffer.length, "assert: l <= buffer.length");
+        return buffer[0..l];
     }
     
     // Returns true if document was edited (with new changes pending)
@@ -592,10 +608,10 @@ private:
     ChunkManager chunks;
 }
 
-// New buffer
+/// New empty document
 unittest
 {
-    log("Test: New empty buffer");
+    log("TEST-0001");
     
     scope Editor e = new Editor();
     
@@ -637,12 +653,12 @@ unittest
     remove(path);
 }
 
-// Emulate editing a document
+/// Emulate editing an existing document
 unittest
 {
     import document.memory : MemoryDocument;
     
-    log("Test: Editing document");
+    log("TEST-0002");
     
     static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
         0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
@@ -656,7 +672,6 @@ unittest
     
     scope MemoryDocument doc = new MemoryDocument(data);
     
-    log("Initial read");
     scope Editor e = new Editor(); e.attach(doc);
     assert(e.edited() == false);
     assert(e.view(0, buffer[])          == data);
@@ -664,13 +679,11 @@ unittest
     assert(e.view(DLEN-4, buffer[0..4]) == data[$-4..$]);
     assert(e.currentSize() == data.length);
     
-    log("Read past EOF with no edits");
     ubyte[48] buffer2;
     assert(e.view(0,  buffer2[]) == data);
     assert(e.view(16, buffer2[0..16]) == data[16..$]);
     assert(e.currentSize() == data.length);
     
-    log("Write data at position 4");
     static immutable string edit0 = "aaaa";
     e.replace(4, edit0.ptr, edit0.length);
     assert(e.edited());
@@ -680,15 +693,12 @@ unittest
     assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
     assert(e.currentSize() == data.length);
     
-    log("Read past EOF with edit");
     assert(e.view(0, buffer2[]) == data[0..4]~cast(ubyte[])edit0~data[8..$]);
     assert(e.currentSize() == data.length);
-    log("Read past EOF with shift");
     assert(e.view(8, buffer2[]) == data[8..$]);
     assert(e.currentSize() == data.length);
     
     static immutable string path = "tmp_doc";
-    log("Saving to %s", path);
     e.save(path); // throws if it needs to, stopping tests
     
     // Needs to be readable after saving, obviously
@@ -699,10 +709,10 @@ unittest
     remove(path);
 }
 
-// Test undo/redo
+/// Test undo/redo
 unittest
 {
-    log("Test: Redo/Undo");
+    log("TEST-0003");
     
     scope Editor e = new Editor();
     
@@ -737,12 +747,12 @@ unittest
     assert(e.currentSize() == 2);
 }
 
-// Test undo/redo with doc
+/// Test undo/redo with document
 unittest
 {
     import document.memory : MemoryDocument;
     
-    log("Test: Redo/Undo with doc");
+    log("TEST-0004");
     
     scope MemoryDocument doc = new MemoryDocument([ 'd', 'd' ]);
     scope Editor e = new Editor();
@@ -791,12 +801,12 @@ unittest
     assert(e.currentSize() == 2);
 }
 
-// Test undo/redo with larger document
+/// Test undo/redo with larger document
 unittest
 {
     import document.memory : MemoryDocument;
     
-    log("Test: Redo/Undo with large doc");
+    log("TEST-0005");
     
     // new operator memset's to 0
     enum DOC_SIZE = 8000;
@@ -833,12 +843,12 @@ unittest
     assert(e.currentSize() == 8000);
 }
 
-// Test appending to a document
+/// Test appending to a document with undo/redo
 unittest
 {
     import document.memory : MemoryDocument;
     
-    log("Test: Redo/Undo with end appends");
+    log("TEST-0006");
     
     static immutable ubyte[] data = [ 0xf2, 0x49, 0xe6, 0xea ];
     
@@ -855,12 +865,12 @@ unittest
     assert(e.view(0, buf[0..8]) == [ 0xf2, 0x49, 0xe6, 0xea, 0xff, 0xff, 0xff, 0xff ]);
 }
 
-// Test reading past edited chunk sizes
+/// Test reading past edited chunk sizes
 unittest
 {
     import document.memory : MemoryDocument;
     
-    log("Test: Edit chunk after source doc");
+    log("TEST-0007");
     
     static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
         0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
@@ -882,15 +892,17 @@ unittest
     assert(e.view(0, buf) == [ // 32 bytes, 8 bytes per row
         0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf, // <-+- doc
         0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <-´
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36, // <-+- chunk
+        0x0e, 0xce, 0xb1, 0xff, 0xe4, 0xc6, 0xd4, 0x36, // <-+- chunk
         0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41, // <-´
     ]);
 }
+
+/// Rendering edit chunk before source document
 unittest
 {
     import document.memory : MemoryDocument;
     
-    log("Test: Edit chunk before source doc");
+    log("TEST-0008");
     
     static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
         0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
@@ -914,5 +926,81 @@ unittest
         0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <-´
         0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36, // <-+- doc
         0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41, // <-´
+    ]);
+}
+
+/// Rendering source document before chunk mid-view
+///
+/// This is an issue when the view function starts with the source
+/// document, but doesn't see the edited chunk ahead, skipping it
+/// entirely, especially with an offset
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0009");
+    
+    static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
+        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
+    ];
+    
+    scope Editor e = new Editor(0, 8);
+    e.attach(new MemoryDocument(data));
+    
+    ubyte[32] buf = void;
+    assert(e.view(16, buf[0..16]) == data[16..$]);
+    
+    ubyte ff = 0xff;
+    e.replace(cast(int)data.length-1, &ff, ubyte.sizeof);
+    
+    assert(e.view(16,  buf[0..16]) == [
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36, // <- doc
+        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0xff, // <- chunk
+    ]);
+}
+
+/// Append data to end of chunk with a source document
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0010");
+    
+    static immutable ubyte[] data = [ // 28 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
+        0xe1, 0xe6, 0xd5, 0xb7, 
+    ];
+    
+    scope Editor e = new Editor(0, 16);
+    e.attach(new MemoryDocument(data));
+    
+    ubyte[32] buf = void;
+    assert(e.view(16, buf[0..16]) == data[16..$]);
+    
+    ubyte ff = 0xff;
+    e.replace(cast(int)data.length, &ff, ubyte.sizeof);
+    
+    assert(e.view(0,  buf) == [ // 29 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
+        0xe1, 0xe6, 0xd5, 0xb7, 0xff
+    ]);
+    assert(e.view(8,  buf) == [
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
+        0xe1, 0xe6, 0xd5, 0xb7, 0xff
+    ]);
+    assert(e.view(16,  buf) == [
+        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
+        0xe1, 0xe6, 0xd5, 0xb7, 0xff
+    ]);
+    assert(e.view(24,  buf) == [
+        0xe1, 0xe6, 0xd5, 0xb7, 0xff
     ]);
 }
