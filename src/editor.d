@@ -425,7 +425,7 @@ class Editor
         log("l=%u", l);
         
         debug sw.stop();
-        debug log("TIME sw=%s", sw.peek());
+        debug log("TIME view=%s", sw.peek());
         
         enforce(l <= buffer.length, "assert: l <= buffer.length");
         return buffer[0..l];

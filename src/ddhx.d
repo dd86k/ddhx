@@ -422,6 +422,15 @@ unittest
     assert(*s64 == 0x1f);
 }
 
+// Command requires argument
+string arg(string[] args, size_t idx, string prefix)
+{
+    if (args is null || args.length <= idx)
+        return promptline(prefix);
+    else
+        return args[idx];
+}
+
 // Move the cursor relative to its position within the file
 void moverel(Session *session, long pos)
 {
@@ -440,16 +449,18 @@ void moveabs(Session *session, long pos)
     }
     
     // Can't go beyond file
+    long docsize = session.editor.currentSize;
     if (pos < 0)
         pos = 0;
+    if (pos > docsize)
+        pos = docsize;
+    
     // No need to update if it's at the same place
     if (pos == session.position_cursor)
         return;
     
     // Adjust base (camera/view) position if the moved cursor (new position)
     // is behind or ahead of the view.
-    // Putting this here introduces a cute behavior where if the cursor is at
-    // EOF, pressing down notches the view back down a row.
     import utils : align64down, align64up;
     int count = session.rc.columns * _erows;
     if (pos < session.position_view) // cursor is behind view
@@ -518,7 +529,9 @@ void update_view(Session *session, TerminalSize termsize)
     if (termsize.rows < 4)
         return;
     
-    // TODO: Stopwatch rendering update in logs for debug builds
+    import std.datetime.stopwatch : StopWatch, Duration;
+    debug StopWatch sw;
+    debug sw.start();
     
     int cols        = session.rc.columns;
     int rows        = _erows = termsize.rows - 2;
@@ -632,6 +645,9 @@ void update_view(Session *session, TerminalSize termsize)
         if (f > 0)
             terminalWriteChar(' ', f);
     }
+    
+    debug sw.stop();
+    debug log("TIME update_view=%s", sw.peek());
 }
 
 // Render status bar on screen
@@ -988,15 +1004,9 @@ void goto_(Session *session, string[] args)
 {
     import utils : scan;
     
-    string off = void;
-    if (args is null || args.length < 1)
-        off = promptline("offset: ");
-    else
-        off = args[0];
-    
-    // Assume canceled
+    string off = arg(args, 0, "offset: ");
     if (off.length == 0)
-        return;
+        return; // special since it will happen often to cancel
     
     // Keywords
     switch (off) {
@@ -1099,15 +1109,9 @@ void save(Session *session, string[] args)
 // Save as file
 void save_as(Session *session, string[] args)
 {
-    string name = void;
-    if (args is null || args.length < 1)
-    {
-        name = promptline("Save as: ");
-        if (name.length == 0)
-            throw new Exception("Canceled");
-    }
-    else
-        name = args[0];
+    string name = arg(args, 0, "Save as: ");
+    if (name.length == 0)
+        throw new Exception("Canceled");
     
     session.target = name;
     save(session, null);
@@ -1116,17 +1120,13 @@ void save_as(Session *session, string[] args)
 // Set runtime config
 void set(Session *session, string[] args)
 {
-    string setting = void;
-    if (args is null || args.length < 1)
-        setting = promptline("setting: ");
-    else
-        setting = args[0];
+    string setting = arg(args, 0, "setting: ");
+    if (setting.length == 0)
+        throw new Exception("Canceled");
     
-    string value = void;
-    if (args is null || args.length < 2)
-        value = promptline("value: ");
-    else
-        value = args[1];
+    string value = arg(args, 1, "value: ");
+    if (value.length == 0)
+        throw new Exception("Canceled");
     
     configRC(session.rc, setting, value);
 }

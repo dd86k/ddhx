@@ -183,30 +183,7 @@ void main(string[] args)
             writefln(" %*s %s", -17, optLong, help);
         }
         
-        // Manually typed for now...
-        writeln();
-        versionline("KEYS",         "COMMAND");
-        versionline(" a-f & 0-9",  "(edit keys)");
-        versionline(" LeftArrow",  "cursor-left");
-        versionline(" RightArrow", "cursor-right");
-        versionline(" UpArrow",    "cursor-up");
-        versionline(" DownArrow",  "cursor-down");
-        versionline(" PageUp",     "page-up");
-        versionline(" PageDown",   "page-down");
-        versionline(" Home",       "line-start");
-        versionline(" End",        "line-end");
-        versionline(" Ctrl+Home",  "cursor-sof");
-        versionline(" Ctrl+End",   "cursor-eof");
-        versionline(" Ctrl+Left",  "cursor-skip-back");
-        versionline(" Ctrl+Right", "cursor-skip-front");
-        versionline(" Tab",        "change-panel");
-        versionline(" Insert",     "change-writemode");
-        versionline(" Ctrl+S",     "save");
-        versionline(" Ctrl+O",     "save-as");
-        versionline(" Ctrl+U",     "undo");
-        versionline(" Ctrl+R",     "redo");
-        versionline(" Ctrl+P",     "report-position");
-        versionline(" Q",          "quit");
+        // TODO: Find a painless way to show keybinds here
         
         exit(EXIT_SUCCESS);
     }
@@ -270,8 +247,8 @@ void main(string[] args)
     catch (Exception ex)
     {
         writeln(); // if cursor was at some weird place
-        debug stderr.writeln("error: ", ex);
-        else  stderr.writeln("error: ", ex.msg);
+        debug stderr.writeln("fatal: ", ex);
+        else  stderr.writeln("fatal: ", ex.msg);
         log("%s", ex);
         exit(EXIT_CRITICAL);
     }
