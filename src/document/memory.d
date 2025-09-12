@@ -53,7 +53,7 @@ class MemoryDocument : IDocument
     }
     
 private:
-    ubyte[] buffer;
+    const(ubyte)[] buffer;
 }
 
 unittest

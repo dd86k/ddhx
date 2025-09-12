@@ -14,7 +14,7 @@ import std.stdio, std.getopt;
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
 import configuration;
 import ddhx;
-import editor;
+import doceditor;
 import logger;
 
 private:
@@ -125,7 +125,6 @@ void main(string[] args)
         "R|readonly",   "Open file in read-only editing mode",
             ()
             {
-                import editor : WritingMode;
                 rc.writemode = WritingMode.readonly;
             },
         //"s|seek",       "Seek at position", &rc.seek,
@@ -202,7 +201,7 @@ void main(string[] args)
     try
     {
         string target = args.length >= 2 ? args[1] : null;
-        Editor editor = new Editor(0, ochksize);
+        DocEditor editor = new DocEditor(0, ochksize);
         string initmsg;
         
         import document.file : FileDocument;
