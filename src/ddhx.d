@@ -132,6 +132,8 @@ void startddhx(Editor editor, ref RC rc, string path, string initmsg)
     _ekeys[Mod.ctrl|Key.End ] = _ecommands["cursor-eof"]        = &move_abs_end;
     _ekeys[Mod.ctrl|Key.LeftArrow]  = _ecommands["cursor-skip-back"]  = &move_skip_backward;
     _ekeys[Mod.ctrl|Key.RightArrow] = _ecommands["cursor-skip-front"] = &move_skip_forward;
+    _ekeys[Mod.ctrl|Key.UpArrow]   = _ecommands["view-up"]      = &view_up;
+    _ekeys[Mod.ctrl|Key.DownArrow] = _ecommands["view-down"]    = &view_down;
     _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_panel;
     _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
     _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
@@ -443,6 +445,21 @@ void moveabs(Session *session, long pos)
     if (pos == session.position_cursor)
         return;
     
+    // Adjust base (camera/view) position if the moved cursor (new position)
+    // is behind or ahead of the view.
+    // Putting this here introduces a cute behavior where if the cursor is at
+    // EOF, pressing down notches the view back down a row.
+    import utils : align64down, align64up;
+    int count = session.rc.columns * _erows;
+    if (pos < session.position_view) // cursor is behind view
+    {
+        session.position_view = align64down(pos, session.rc.columns);
+    }
+    else if (pos >= session.position_view + count) // cursor is ahead of view
+    {
+        session.position_view = align64up(pos - count + 1, session.rc.columns);
+    }
+    
     session.position_cursor = pos;
     _estatus |= UVIEW | USTATUSBAR;
 }
@@ -500,6 +517,8 @@ void update_view(Session *session, TerminalSize termsize)
     if (termsize.rows < 4)
         return;
     
+    // TODO: Stopwatch rendering update in logs for debug builds
+    
     int cols        = session.rc.columns;
     int rows        = _erows = termsize.rows - 2;
     int count       = rows * cols;
@@ -510,17 +529,6 @@ void update_view(Session *session, TerminalSize termsize)
     // Cursor is past EOF
     if (curpos > docsize)
         curpos = docsize;
-    
-    // Adjust base (camera/view) positon, which is the position we read at.
-    import utils : align64down, align64up;
-    if (curpos < basepos) // cursor is behind view
-    {
-        basepos = align64down(curpos, cols);
-    }
-    else if (curpos >= basepos + count) // cursor is ahead of view
-    {
-        basepos = align64up(curpos - count + 1, cols);
-    }
     
     // Read data
     // TODO: To avoid unecessary I/O, avoid calling .view() when:
@@ -663,7 +671,7 @@ void update_status(Session *session, TerminalSize termsize)
     {
         // TODO: Attempt to "scroll" message
         //       Loop keypresses to continue?
-        //       Might include " >" to signal continuation
+        //       Might include "+" at end of message to signal continuation
         import std.algorithm.comparison : min;
         size_t e = min(cols, msg.length);
         terminalWrite(msg[0..e]);
@@ -904,6 +912,26 @@ void move_skip_forward(Session *session, string[] args)
     moveabs(session, curpos);
 }
 
+// Move view up
+void view_up(Session *session, string[] args)
+{
+    if (session.position_view == 0)
+        return;
+    
+    session.position_view -= session.rc.columns;
+}
+
+// Move view down
+void view_down(Session *session, string[] args)
+{
+    int count = session.rc.columns * _erows;
+    long max = session.editor.currentSize - count;
+    if (session.position_view >= max)
+        return;
+    
+    session.position_view += session.rc.columns;
+}
+
 // Change writing mode
 void change_writemode(Session *session, string[] args)
 {
@@ -997,23 +1025,12 @@ void goto_(Session *session, string[] args)
         if (per > 100) // Yeah we can't go over the document
             throw new Exception("Percentage cannot be over 100");
         
+        import utils : llpercentdiv;
         moveabs(session, llpercentdiv(session.editor.currentSize(), per));
         break;
     default:
         moveabs(session, scan(off));
     }
-}
-
-long llpercentdiv(long a, long per)
-{
-    // TODO: Check for overflow using std.numeric (if available) or manually
-    return (a * per) / 100;
-}
-unittest
-{
-    assert(llpercentdiv(1000,   0) == 0);
-    assert(llpercentdiv(1000,  50) == 500);
-    assert(llpercentdiv(1000, 100) == 1000);
 }
 
 // Report cursor position on screen

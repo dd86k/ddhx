@@ -227,3 +227,20 @@ unittest
     assert(align64up(32, 16) == 32);
     assert(align64up(33, 16) == 48);
 }
+
+/// Divides an integer by a whole percentage
+/// Params:
+///     a = Number
+///     per = Percent (0-100)
+/// Returns: Number. Value of 1000 with per=50(%) will give 500.
+long llpercentdiv(long a, int per)
+{
+    // TODO: Check for overflow using std.numeric (if available) or manually
+    return (a * per) / 100;
+}
+unittest
+{
+    assert(llpercentdiv(1000,   0) == 0);
+    assert(llpercentdiv(1000,  50) == 500);
+    assert(llpercentdiv(1000, 100) == 1000);
+}
