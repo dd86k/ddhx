@@ -920,6 +920,8 @@ void view_up(Session *session, string[] args)
         return;
     
     session.position_view -= session.rc.columns;
+    if (session.position_view < 0)
+        session.position_view = 0;
 }
 
 // Move view down
