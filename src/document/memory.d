@@ -7,24 +7,36 @@ module document.memory;
 
 import document.base : IDocument;
 
+/// Memory document, holds data in memory entirely.
 class MemoryDocument : IDocument
 {
+    /// New empty document
     this() {}
-    this(const(ubyte)[] data) { append(data); }
+    /// New document from existing data
+    this(const(ubyte)[] data) { buffer = data; }
     
+    /// Append data to document.
+    /// Params: data = Byte array data.
     void append(const(ubyte)[] data)
     {
         buffer ~= data;
     }
     
+    /// Current size of document.
+    /// Returns: Size in bytes.
     long size()
     {
         return buffer.length;
     }
     
+    /// Read at this position.
+    /// Params:
+    ///     position = Position.
+    ///     buf = Buffer.
+    /// Returns: Slice.
     ubyte[] readAt(long position, ubyte[] buf)
     {
-        // no data
+        // Holds no data or input data is empty.
         if (buffer is null || buf.length == 0)
             return [];
         

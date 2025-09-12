@@ -1,9 +1,9 @@
-/// Editor engine.
+/// DocEditor engine.
 ///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor; // TODO: Rename module to doceditor and to class DocEditor
+module doceditor;
 
 import document.base : IDocument;
 import logger;
@@ -12,17 +12,22 @@ import std.exception : enforce;
 import std.format;
 import transcoder : CharacterSet;
 
+/// Used in situations where something happened but it's safe to ignore
 class IgnoreException : Exception
 {
-    this() { super(null); }
+    this() { super(null); } // @suppress(dscanner.style.undocumented_declaration)
 }
 
+/// Indicates which writing mode is active when entering data.
 enum WritingMode
 {
-    readonly,
-    overwrite,
-    insert,
+    readonly,   /// Read-only restricts any edits to be performed.
+    overwrite,  /// Overwrite replaces currently selected elements.
+    insert,     /// Insert inserts new data in-between elements.
 }
+/// Get label for this writing mode.
+/// Params: mode = WritingMode.
+/// Returns: Label string.
 string writingModeToString(WritingMode mode)
 {
     // Noticed most (GUI) text editors have these in caps
@@ -37,10 +42,16 @@ string writingModeToString(WritingMode mode)
 // Address specifications
 //
 
+/// Address type used for displaying offsets.
 enum AddressType
 {
-    hex, dec, oct,
+    hex,    /// Hexadecimal.
+    dec,    /// Decimal.
+    oct,    /// Octal.
 }
+/// Get label for this address type.
+/// Params: type = AddressType.
+/// Returns: 
 string addressTypeToString(AddressType type)
 {
     final switch (type) {
@@ -49,6 +60,13 @@ string addressTypeToString(AddressType type)
     case AddressType.oct: return "oct";
     }
 }
+/// Format an address using this type.
+/// Params:
+///     buf = Character buffer.
+///     v = Address value.
+///     spacing = Number of spacing in characters.
+///     type = AddressType.
+/// Returns: String slice.
 string formatAddress(char[] buf, long v, int spacing, AddressType type)
 {
     string spec = void;
@@ -85,30 +103,45 @@ unittest
 // Data handling
 //
 
-// 
+/// Describes how a single element should be formatted.
 enum DataType
 {
-    x8,
+    x8,     /// 8-bit hexadecimal (e.g., 0xff will be ff)
 }
+/// Data specification for this data type.
 struct DataSpec
 {
+    /// Name (e.g., "x8").
     string name;
     /// Number of characters it occupies at maximum. Used for alignment.
     int spacing;
 }
+/// Get specification for this data type.
+/// Params: type = Data type.
+/// Returns: Data specification.
 DataSpec dataSpec(DataType type)
 {
     final switch (type) {
     case DataType.x8: return DataSpec("x8", 2);
     }
 }
-string dataTypeToString(DataType type) // for printing
+/// Get label for this data type.
+/// Params: type = Data type.
+/// Returns: Label.
+string dataTypeToString(DataType type)
 {
     final switch (type) {
     case DataType.x8: return "x8";
     }
 }
-// Format element depending on editor settings
+/// Format element depending on editor settings.
+/// Params:
+///     buf = Character buffer.
+///     dat = Pointer to data.
+///     len = Length of data.
+///     type = Data type.
+/// Returns: String slice with formatted data.
+/// Throws: An exception when length criteria isn't met.
 string formatData(char[] buf, void *dat, size_t len, DataType type)
 {
     final switch (type) {
@@ -128,6 +161,12 @@ unittest
     assert(formatData(buf[], &c, ubyte.sizeof, DataType.x8) == "ff");
 }
 
+/// Format element as x8.
+/// Params:
+///     buf = Character buffer.
+///     v = Element value.
+///     spacer = Space-pad instead of zero-pad.
+/// Returns: String slice.
 string formatx8(char[] buf, ubyte v, bool spacer)
 {
     return cast(string)sformat(buf, spacer ? "%2x" : "%02x", v);
@@ -140,9 +179,10 @@ unittest
     assert(formatx8(buf[], 0xff, false) == "ff");
 }
 
-// Helps to walk over a buffer
+/// Helper structure that walks over a buffer and formats every element.
 struct DataFormatter
 {
+    /// New instance
     this(DataType dtype, const(ubyte) *data, size_t len)
     {
         buffer = data;
@@ -162,11 +202,17 @@ struct DataFormatter
         }
     }
     
+    /// Skip an element.
     void skip()
     {
         buffer += size;
     }
     
+    /// Format an element.
+    ///
+    /// Returns null when done.
+    ///
+    /// Set in ctor.
     string delegate() formatdata;
     
 private:
@@ -189,7 +235,7 @@ unittest
 // Represents a session.
 //
 // Manages edits and document handling. Mostly exists to hold current settings.
-class Editor
+class DocEditor
 {
     // New empty session
     this(
@@ -613,7 +659,7 @@ unittest
 {
     log("TEST-0001");
     
-    scope Editor e = new Editor();
+    scope DocEditor e = new DocEditor();
     
     ubyte[32] buffer;
     
@@ -672,7 +718,7 @@ unittest
     
     scope MemoryDocument doc = new MemoryDocument(data);
     
-    scope Editor e = new Editor(); e.attach(doc);
+    scope DocEditor e = new DocEditor(); e.attach(doc);
     assert(e.edited() == false);
     assert(e.view(0, buffer[])          == data);
     assert(e.view(0, buffer[0..4])      == data[0..4]);
@@ -714,7 +760,7 @@ unittest
 {
     log("TEST-0003");
     
-    scope Editor e = new Editor();
+    scope DocEditor e = new DocEditor();
     
     char a = 'a';
     e.replace(0, &a, char.sizeof);
@@ -755,7 +801,7 @@ unittest
     log("TEST-0004");
     
     scope MemoryDocument doc = new MemoryDocument([ 'd', 'd' ]);
-    scope Editor e = new Editor();
+    scope DocEditor e = new DocEditor();
     e.attach(doc);
     
     ubyte[4] buf = void;
@@ -810,7 +856,7 @@ unittest
     
     // new operator memset's to 0
     enum DOC_SIZE = 8000;
-    scope Editor e = new Editor();
+    scope DocEditor e = new DocEditor();
     e.attach(new MemoryDocument(new ubyte[DOC_SIZE]));
     
     ubyte[32] buf = void;
@@ -852,7 +898,7 @@ unittest
     
     static immutable ubyte[] data = [ 0xf2, 0x49, 0xe6, 0xea ];
     
-    scope Editor e = new Editor();
+    scope DocEditor e = new DocEditor();
     e.attach(new MemoryDocument(data));
     
     ubyte d = 0xff;
@@ -881,7 +927,7 @@ unittest
     
     // Chunk size of 16 forces .view() to get more information beyond
     // edited chunk by reading the original doc for the view buffer.
-    scope Editor e = new Editor(0, 16);
+    scope DocEditor e = new DocEditor(0, 16);
     e.attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;
@@ -913,7 +959,7 @@ unittest
     
     // Chunk size of 16 forces .view() to get more information beyond
     // edited chunk by reading the original doc for the view buffer.
-    scope Editor e = new Editor(0, 16);
+    scope DocEditor e = new DocEditor(0, 16);
     e.attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;
@@ -947,7 +993,7 @@ unittest
         0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
     ];
     
-    scope Editor e = new Editor(0, 8);
+    scope DocEditor e = new DocEditor(0, 8);
     e.attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;
@@ -976,7 +1022,7 @@ unittest
         0xe1, 0xe6, 0xd5, 0xb7, 
     ];
     
-    scope Editor e = new Editor(0, 16);
+    scope DocEditor e = new DocEditor(0, 16);
     e.attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;

@@ -23,11 +23,12 @@ import core.stdc.string : memcpy;
 import core.stdc.stdlib : malloc, realloc, free;
 import utils : align64down;
 
+/// Type of patch.
 enum PatchType : short
 {
-    replace,
-    insertion,
-    deletion,
+    replace,    /// Replace these bytes for range.
+    insertion,  /// Insert these bytes starting at position.
+    deletion,   /// Delete (trim) out this range of bytes.
 }
 
 /// Represents a patch
@@ -53,9 +54,10 @@ struct Patch
     const(void) *olddata;
 }
 
-// 
+/// Manages the storage of patches.
 class PatchManager
 {
+    /// New manager.
     // datasize = Initial and incremental size of data buffer for holding patch data.
     this(size_t initsize = 0, size_t incsize = 4096)
     {
@@ -120,17 +122,25 @@ class PatchManager
     public alias removeBack = remove;
     */
     
+    /// Count of patches in memory.
+    /// Returns: Total amount.
     size_t count()
     {
         return patches.length;
     }
     
-    Patch opIndex(size_t i)
+    Patch opIndex(size_t i) // @suppress(dscanner.style.undocumented_declaration)
     {
         // Let it throw if out of bounds
         return patches[i];
     }
     
+    /// Append or overwrite patch at this index.
+    ///
+    /// This might happen when we undo and start writing new data.
+    /// Params:
+    ///     i = Index.
+    ///     patch = Patch.
     void insert(size_t i, Patch patch)
     {
         prepare(patch);

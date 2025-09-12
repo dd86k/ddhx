@@ -27,6 +27,8 @@ version (Trace)
     }
 }
 
+/// Start logging to this file.
+/// Params: file = File path.
 void logStart(string file = "ddhx.log")
 {
     logOpen(file); // old behavior
@@ -37,22 +39,31 @@ void logStart(string file = "ddhx.log")
     log("Trace started at %s", Clock.currTime());
 }
 
+/// Set the file path to log to.
+/// Params: file = File path.
 void logOpen(string file)
 {
     tracefile = File(file, "w");
     tracefile.setvbuf(0, _IONBF);
 }
 
+/// Stop logging.
 void logStop()
 {
     tracing = false;
 }
 
+/// Logging status.
+/// Returns: true if currently logging.
 bool logEnabled()
 {
     return tracing;
 }
 
+/// Log an entry.
+/// Params:
+///     fmt = Format.
+///     args = Arguments.
 void log
     (string file = __FILE__, string func = __FUNCTION__, int line = __LINE__, A...)
     (string fmt, A args)

@@ -10,6 +10,7 @@ import std.mmfile : MmFile;
 import os.error : OSException;
 import document.base : IDocument;
 
+/// Memory-mapped flags.
 enum MMFlags
 {
     exists  = 1,        /// File must exist.
@@ -33,6 +34,7 @@ public class MmFileDocument : MmFile, IDocument
 {
     private void *address;
     
+    /// New mmfile.
     this(string path, int flags)
     {
         super(path,
@@ -43,11 +45,18 @@ public class MmFileDocument : MmFile, IDocument
             address);
     }
     
+    /// Read at position.
+    /// Params:
+    ///     position = Offset position.
+    ///     buffer = 
+    /// Returns: Slice.
     ubyte[] readAt(long position, ubyte[] buffer)
     {
         return buffer = cast(ubyte[])this[position..position+buffer.length];
     }
     
+    /// Total size of mapped file.
+    /// Returns: Size in bytes.
     long size()
     {
         return long.max;

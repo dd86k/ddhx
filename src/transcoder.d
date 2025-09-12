@@ -35,6 +35,10 @@ private immutable
     string NAME_MAC    = "Mac OS Roman (Windows 10000)";
 }
 
+/// Get character set ID from a string value.
+/// Params:
+///     id = String ID.
+/// Returns: CharacterSet (ID).
 CharacterSet selectCharacterSet(string id)
 {
     switch (id) with (CharacterSet)
@@ -46,6 +50,11 @@ CharacterSet selectCharacterSet(string id)
     default:        throw new Exception(text("Invalid charset: ", id));
     }
 }
+/// Transcode data using this character set.
+/// Params:
+///     data = Byte data.
+///     set = CharacterSet.
+/// Returns: String slice.
 immutable(char)[] transcode(ubyte data, CharacterSet set)
 {
     final switch (set) with (CharacterSet) {
@@ -55,6 +64,9 @@ immutable(char)[] transcode(ubyte data, CharacterSet set)
     case mac:    return transcodeMac(data);
     }
 }
+/// Get character set label.
+/// Params: charset = Character set.
+/// Returns: String label.
 string charsetID(CharacterSet charset)
 {
     switch (charset) with (CharacterSet) {
@@ -65,6 +77,9 @@ string charsetID(CharacterSet charset)
     default:        throw new Exception(text("Invalid charset: ", charset));
     }
 }
+/// Get character set name.
+/// Params: charset = Character set.
+/// Returns: String label.
 string charsetName(int charset)
 {
     switch (charset) with (CharacterSet) {
@@ -119,7 +134,7 @@ immutable(char)[] transcodeASCII(ubyte data) @trusted
     assert(transcodeASCII(0x7f) == []);
 }
 
-private immutable U[256] mapCP437 = [
+immutable U[256] mapCP437 = [
 //         0      1      2      3      4      5      6      7
 /*00*/     [], C!'☺', C!'☻', C!'♥', C!'♦', C!'♣', C!'♠', C!'•',
 /*08*/  C!'◘', C!'○', C!'◙', C!'♂', C!'♀', C!'♪', C!'♫', C!'☼',
@@ -165,7 +180,7 @@ unittest
     assert(transcodeCP437(1) == [ '\xe2', '\x98', '\xba' ]);
 }
 
-private immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40) just unprintable
+immutable U[192] mapEBCDIC = [ // 256 - 64 (0x40) just unprintable
 //         0      1      2      3      4      5      6      7 
 /*40*/  C!' ', C!' ', C!'â', C!'ä', C!'à', C!'á', C!'ã', C!'å',
 /*48*/  C!'ç', C!'ñ', C!'¢', C!'.', C!'<', C!'(', C!'+', C!'|',
@@ -206,7 +221,7 @@ unittest
 // Mac OS Roman (Windows-10000) "mac"
 // https://en.wikipedia.org/wiki/Mac_OS_Roman
 // NOTE: 0xF0 is the apple logo and that's obviously not in Unicode
-private immutable U[224] mapMac = [ // 256 - 32 (0x20)
+immutable U[224] mapMac = [ // 256 - 32 (0x20)
 //         0      1      2      3      4      5      6      7 
 /*20*/  C!' ', C!'!', C!'"', C!'#', C!'$', C!'%', C!'&',C!'\'',
 /*28*/  C!'(', C!')', C!'*', C!'+', C!',', C!'-', C!'.', C!'/',

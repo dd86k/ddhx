@@ -114,6 +114,7 @@ enum OFlags
 //       useful when writing all changes to file
 //       Win32: Seek + SetEndOfFile
 //       others: ftruncate
+/// Represents an OS abstracted file instance.
 struct OSFile
 {
     private OSHANDLE handle;
@@ -122,6 +123,11 @@ struct OSFile
     //       By default, at least on Windows, files aren't shared. Enabling
     //       sharing would allow refreshing view (manually) when a program
     //       writes to file.
+    /// Open new or existing file.
+    /// Params:
+    ///     path = File path.
+    ///     flags = OFlags.
+    /// Throws: OSException.
     void open(string path, int flags = OFlags.readWrite)
     {
         version (Windows)
@@ -164,6 +170,11 @@ struct OSFile
         }
     }
     
+    /// Seek to position.
+    /// Params:
+    ///     origin = Seek origin.
+    ///     pos = Position.
+    /// Throws: OSException.
     void seek(Seek origin, long pos)
     {
         version (Windows)
@@ -181,6 +192,8 @@ struct OSFile
         else static assert(0, "Implement OSFile.seek");
     }
     
+    /// Tell current position.
+    /// Returns: Position.
     long tell()
     {
         version (Windows)
@@ -196,6 +209,9 @@ struct OSFile
         else static assert(0, "Implement OSFile.tell");
     }
     
+    /// Get size of file.
+    /// Returns: Size in bytes.
+    /// Throws: OSException.
     long size()
     {
         version (Windows)
@@ -231,11 +247,20 @@ struct OSFile
         }
     }
     
+    /// Read file at current position.
+    /// Params: buffer = Byte buffer.
+    /// Returns: Slice.
     ubyte[] read(ubyte[] buffer)
     {
         return read(buffer.ptr, buffer.length);
     }
     
+    /// Read file at current position.
+    /// Params:
+    ///     buffer = Buffer pointer.
+    ///     size = Buffer size.
+    /// Returns: Slice.
+    /// Throws: OSException.
     ubyte[] read(void *buffer, size_t size)
     {
         version (Windows)
@@ -254,11 +279,20 @@ struct OSFile
         }
     }
     
+    /// Write file at current position.
+    /// Params: data = Byte buffer.
+    /// Returns: Amount written.
     size_t write(ubyte[] data)
     {
         return write(data.ptr, data.length);
     }
     
+    /// Write file at current position.
+    /// Params:
+    ///     data = Buffer pointer.
+    ///     size = Buffer size.
+    /// Returns: Amount written.
+    /// Throws: OSException.
     size_t write(ubyte *data, size_t size)
     {
         version (Windows)
@@ -277,6 +311,7 @@ struct OSFile
         }
     }
     
+    /// Flush data to disk.
     void flush()
     {
         version (Windows)
@@ -289,6 +324,7 @@ struct OSFile
         }
     }
     
+    /// Close file.
     void close()
     {
         version (Windows)

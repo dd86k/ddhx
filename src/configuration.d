@@ -9,7 +9,7 @@ module configuration;
 // "rc" local variable names.
 
 import transcoder : CharacterSet, selectCharacterSet;
-import editor : WritingMode, AddressType, DataType;
+import doceditor : WritingMode, AddressType, DataType;
 
 /// Editor configuration
 struct RC
@@ -44,12 +44,22 @@ struct RC
     long seek;
 }
 
-void loadRC(ref RC rc, string path)
+/// Load a configuration from a target file path.
+/// Params:
+///     rc = RC instance reference.
+///     path = File path.
+void loadRC(ref RC rc, string path) // @suppress(dscanner.style.doc_missing_throw)
 {
     throw new Exception("TODO");
 }
 
 // Used when configurating runtime config and parsing command values.
+/// Set a runtime configuration setting to a value.
+/// Params:
+///     rc = RC instance reference.
+///     field = Setting name.
+///     value = New value.
+/// Throws: Exception when a setting or value is invalid.
 void configRC(ref RC rc, string field, string value)
 {
     import std.conv : text, to;

@@ -19,8 +19,10 @@ else
     private alias systemerr = errno;
 }
 
+/// OS error exception.
 class OSException : Exception
 {
+    /// New exception with optional message prefix 
     this(string prefix = null,
         int code = systemerr(),
         string _file = __FILE__, size_t _line = __LINE__)
@@ -32,9 +34,11 @@ class OSException : Exception
             super(messageFromCode(code), _file, _line);
     }
     
+    /// Original OS code.
     int oscode;
 }
 
+private
 string messageFromCode(int code)
 {
 version (Windows)

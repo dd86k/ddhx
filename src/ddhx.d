@@ -7,15 +7,15 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-import configuration;
-import document;
-import editor;
-import logger;
-import os.terminal;
 import std.format;
 import std.range;
 import std.stdio;
 import std.string;
+import os.terminal;
+import configuration;
+import doceditor;
+import document;
+import logger;
 import transcoder;
 
 // TODO: Find a way to dump session data to be able to resume later
@@ -64,7 +64,7 @@ struct Session
     RC rc;
     
     /// 
-    Editor editor;
+    DocEditor editor;
     
     /// Logical position at the start of the view.
     long position_view;
@@ -104,7 +104,13 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     void function(Session*, string[])[int] _ekeys;
 }
 
-void startddhx(Editor editor, ref RC rc, string path, string initmsg)
+/// Start a new instance of the hex editor.
+/// Params:
+///     editor = Document editor instance.
+///     rc = Copy of the RC instance.
+///     string = Target path.
+///     initmsg = Initial message.
+void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
 {
     _estatus = UINIT; // init here since message could be called later
     

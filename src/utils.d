@@ -84,7 +84,10 @@ string[] arguments(const(char)[] buffer)
     //assert(arguments(`tab\tmoment`) == [ "tab", "moment" ]);
 }
 
-// Parse string as long supporting dec/hex/oct bases.
+/// Parse string as hexadecimal, decimal, or octal.
+/// Params: input = String input.
+/// Returns: Parsed value.
+/// Throws: Exception when errno != 0.
 long scan(scope string input)
 {
     // std.format.read, std.conv.to, and std.conv.parse makes this harder
@@ -122,9 +125,12 @@ long scan(scope string input)
     assert(scan("010") == octal!"10");
 }
 
-// Parse as a binary number with optional suffix up to gigabytes.
-//
-// For example, "32K" translates to 32768 (Bytes, 32 * 1024).
+/// Parse as a binary number with optional suffix up to gigabytes.
+///
+/// For example, "32K" translates to 32768 (Bytes, 32 * 1024).
+/// Params: input = String input.
+/// Returns: Byte count.
+/// Throws: Exception or ConvException on error.
 ulong parsebin(scope string input)
 {
     import std.exception : enforce;
@@ -177,20 +183,24 @@ ulong parsebin(scope string input)
     
     try
     {
-        parsebin(null);
+        parsebin(null); // @suppress(dscanner.unused_result)
         assert(false); // Needs to throw
     }
     catch (Exception) {}
     
     try
     {
-        parsebin("");
+        parsebin(""); // @suppress(dscanner.unused_result)
         assert(false); // Needs to throw
     }
     catch (Exception) {}
 }
 
-// Utility to help with address alignment
+/// Align a value downwards.
+/// Params:
+///     v = Value.
+///     alignment = Alignment value.
+/// Returns: Aligned value.
 long align64down(long v, size_t alignment)
 {
 	long mask = alignment - 1;
@@ -209,7 +219,11 @@ unittest
     assert(align64down(33, 16) == 32);
 }
 
-// Utility to help with address alignment
+/// Align a value upwards.
+/// Params:
+///     v = Value.
+///     alignment = Alignment value.
+/// Returns: Aligned value.
 long align64up(long v, size_t alignment)
 {
 	long mask = alignment - 1;

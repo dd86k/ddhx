@@ -183,6 +183,8 @@ else version (Posix)
     private __gshared termios old_ios, new_ios;
 }
 
+private import os.error : OSException;
+
 /// Flags for terminalInit.
 enum TermFeat {
     /// Initiate only the basic.
@@ -288,7 +290,8 @@ void terminalInit(int features = 0)
             fstat(STDIN_FILENO, &s);
             if (S_ISFIFO(s.st_mode))
                 stdin.reopen("/dev/tty", "r");
-            tcgetattr(STDIN_FILENO, &old_ios);
+            if (tcgetattr(STDIN_FILENO, &old_ios) < 0)
+                throw new OSException("tcgetattr(STDIN_FILENO) failed");
             new_ios = old_ios;
             // NOTE: input modes
             // - IXON enables ^S and ^Q
@@ -315,7 +318,8 @@ void terminalInit(int features = 0)
             // maximum amount of time to wait for input,
             // 1 being 1/10 of a second (100 milliseconds)
             //new_ios.c_cc[VTIME] = 0;
-            tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
+            if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios) < 0)
+                throw new OSException("tcsetattr(STDIN_FILENO) failed");
         }
         
         if (features & TermFeat.altScreen)
@@ -356,15 +360,17 @@ void terminalRestore()
         
         // restablish input ios
         if (current_features & TermFeat.inputSys)
-            tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
+            cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
     }
 }
 
 private __gshared void function() terminalOnResizeEvent;
 
-// Set handler for resize events.
-// On Windows, (at least for conhost) this is only called when the buffer is
-// resized, not the window.
+/// Set handler for resize events.
+///
+/// On Windows, (at least for conhost) this is only called when the buffer is
+/// resized, not the window.
+/// Params: func = Function to call.
 void terminalOnResize(void function() func)
 {
     version (Posix)
@@ -387,15 +393,17 @@ void terminalResized(int signo, siginfo_t *info, void *content)
         terminalOnResizeEvent();
 }
 
+/// Pause terminal input. (On POSIX, this restores the old IOS)
 void terminalPauseInput()
 {
     version (Posix)
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
+        cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 }
+/// Resume terminal input. (On POSIX, this restores the old IOS)
 void terminalResumeInput()
 {
     version (Posix)
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
+        cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
 }
 
 /// Clear screen
@@ -426,7 +434,8 @@ void terminalClear()
 }
 
 /// Get terminal window size in characters.
-/// Returns: Size
+/// Returns: Size.
+/// Throws: OSException.
 TerminalSize terminalSize()
 {
     TerminalSize size = void;
@@ -444,7 +453,8 @@ TerminalSize terminalSize()
         // TODO: Consider ESC [ 18 t for fallback of environment.
         //       Reply: ESC [ 8 ; ROWS ; COLUMNS t
         winsize ws = void;
-        ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
+        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0)
+            throw new OSException("ioctl(STDOUT_FILENO, TIOCGWINSZ) failed");
         size.rows    = ws.ws_row;
         size.columns = ws.ws_col;
     } else static assert(0, "terminalSize: Not implemented");
@@ -505,6 +515,7 @@ void terminalShowCursor()
     }
 }
 
+/// Terminal color.
 enum TermColor
 {
     black,
@@ -526,6 +537,8 @@ enum TermColor
 }
 
 // NOTE: For 24-bit colors, overload with terminalForeground(int r,int g,int b)
+/// Set terminal foreground color.
+/// Params: col = Color.
 void terminalForeground(TermColor col)
 {
     version (Windows)
@@ -612,7 +625,8 @@ void terminalForeground(TermColor col)
     } // version (Posix)
 }
 
-// Apply a color for future output
+/// Set terminal background color.
+/// Params: col = Color.
 void terminalBackground(TermColor col)
 {
     version (Windows)
@@ -763,6 +777,7 @@ size_t terminalWrite(const(void)[][] data...)
 ///     data = Character data.
 ///     size = Amount in bytes.
 /// Returns: Number of bytes written.
+/// Throws: OSException.
 size_t terminalWrite(const(void) *data, size_t size)
 {
     version (Windows)
@@ -770,20 +785,14 @@ size_t terminalWrite(const(void) *data, size_t size)
         uint written = void;
         BOOL r = WriteFile(hOut, data, cast(uint)size, &written, null);
         if (r == FALSE)
-        {
-            import os.error : OSException;
             throw new OSException("WriteFile failed");
-        }
         return written;
     }
     else version (Posix)
     {
         ssize_t written = write(STDOUT_FILENO, data, size);
         if (written < 0)
-        {
-            import os.error : OSException;
             throw new OSException("write failed");
-        }
         return written;
     }
 }
@@ -997,9 +1006,9 @@ Lread:
                 if (c < 32 || c > 126) // non-printable ascii
                     printf("\\0%o ", c);
                 else
-                    putchar(b[i]);
+                    cast(void)putchar(b[i]);
             }
-            putchar('\n');
+            cast(void)putchar('\n');
             stdout.flush();
         }
         
