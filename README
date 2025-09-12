@@ -107,6 +107,20 @@ using the A to F and 0 to 9 keys. And saving is default mapped to Ctrl+S.
 
 Currently, only overwrite and append operations are supported.
 
+The command-line interface matches POSIX guidelines.
+
+OPTIONS                 DESCRIPTION
+ -c, --columns          Set columns per row (default depends on --data)
+     --address          Set address mode ('hex', 'dec', or 'oct')
+     --address-spacing  Set address spacing in characters
+ -C, --charset          Set character translation (default='ascii')
+ -R, --readonly         Open file in read-only editing mode
+     --log              Debugging: Enable tracing to this file
+     --chunksize        Debugging: Set in-memory patch chunks to this size
+     --version          Print the version page and exit
+     --ver              Print only the version and exit
+ -h, --help             Print this help page and exit
+
 //
 // Commands
 //
@@ -139,6 +153,9 @@ COMMAND                 DESCRIPTION
 "cursor-eof"            Go to end of buffer
 "cursor-diff-back"      Skip to different element backward
 "cursor-diff-front"     Skip to different element forward
+"move-up"               Move view up a row
+"move-down"             Move view down a row
+"goto"                  Go to position
 "change-panel"          Switch between data and text panel
 "change-writemode"      Change writing mode
 "report-position"       Report the position of the cursor in the buffer
@@ -166,6 +183,8 @@ Ctrl+Home       "cursor-sof"
 Ctrl+End        "cursor-eof"
 Ctrl+LeftArrow  "cursor-skip-back"
 Ctrl+RightArrow "cursor-skip-front"
+Ctrl+UpArrow    "move-up"
+Ctrl+DownArrow  "move-down"
 Tab             "change-panel"
 Insert          "change-writemode"
 Ctrl+P          "report-position"
@@ -199,7 +218,7 @@ Interface. For example, "columns" is mapped to "-c" and "--columns="
 "address-spacing"
         Change how much spacing the left address column takes
         Argument: Number
-        Default: 11 (enough up to 0xfffffffffff, so ~16 TiB)
+        Default: 11 (upto 0xfffffffffff, so ~16 TiB)
 "charset"
         Change displayed character set
         Argument: "ascii", "cp437", "mac", or "ebcdic"
@@ -223,4 +242,4 @@ Compile a release build using a specific compiler:
 Run unit tests with log traces:
   $ dub test --d-version=Trace
 
-The --log=FILENAME CLI option is useful for reporting bugs.
+The --log=FILENAME option is useful for reporting bugs.
