@@ -4,30 +4,39 @@ authors "dd86k"
 copyright "Copyright © 2017-2025 dd86k"
 license "MIT"
 
-#
-# Debug builds
-#
-
 buildType "debugv" {
     dflags "-vgc" "-vtls" platform="dmd"
     dflags "--vgc" "--vtls" platform="ldc"
 }
+
+buildType "native" {
+    buildOptions "releaseMode" "optimize" "inline"
+	dflags "-mcpu=native" platform="dmd"
+	dflags "-march=native" platform="gdc"
+	dflags "-mcpu=native" platform="ldc"
+}
+
 # NOTE: static builds
-#       Currently pretty broken, as only LDC honors the request.
-#       On Alpine, you'll need xz-dev and llvm-libundwind-static but the latter
-#       can't overwrite /usr/lib/libundwind.a (GCC).
-#       On Ubuntu, you'll need about the same.
+#       Currently somewhat broken.
+#       On Alpine, at least only GDC is known to work.
+#       On Ubuntu, nothing works, thanks to glibc requiring SOs.
 buildType "static-debug" {
     buildOptions "debugMode" "debugInfo"
 	dflags "-L=-static" platform="dmd"
-	dflags "-Wl,-static" platform="gdc"
+	dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
 	dflags "--static" platform="ldc"
 }
 buildType "static-release" {
     buildOptions "releaseMode" "optimize" "inline"
 	dflags "-L=-static" platform="dmd"
-	dflags "-Wl,-static" platform="gdc"
+	dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
 	dflags "--static" platform="ldc"
+}
+buildType "static-native" {
+    buildOptions "releaseMode" "optimize" "inline"
+	dflags "-L=-static" "-mcpu=native" platform="dmd"
+	dflags "-Wl,-static" "-static" "-static-libgcc" "-march=native" platform="gdc"
+	dflags "--static" "-mcpu=native" platform="ldc"
 }
 
 #
