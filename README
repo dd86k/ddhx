@@ -92,11 +92,11 @@ Sypnopsis:
   ddhx [OPTIONS] [FILE|-]
   ddhx {-h|--help|--version|--ver}
 
-To create a new buffer:
+Create a new document:
   $ ddhx
-To open an existing or create a new file at this location:
+Open an existing or create a new file at this location:
   $ ddhx FILENAME
-To open a new buffer with data piped:
+Create a new document from stream data:
   $ echo test | ddhx -
 
 Minimum recommended terminal size is 80x24 characters.
@@ -158,8 +158,8 @@ COMMAND                 DESCRIPTION
 "cursor-page-down"      Navigate one page forward (rows*columns)
 "cursor-line-start"     Navigate to start of line
 "cursor-line-end"       Navigate to end of line
-"cursor-sof"            Go to start of buffer
-"cursor-eof"            Go to end of buffer
+"cursor-sof"            Go to start of document
+"cursor-eof"            Go to end of document
 "cursor-diff-back"      Skip to different element backward
 "cursor-diff-front"     Skip to different element forward
 "move-up"               Move view up a row
@@ -167,12 +167,13 @@ COMMAND                 DESCRIPTION
 "goto"                  Go to position
 "change-panel"          Switch between data and text panel
 "change-writemode"      Change writing mode
-"report-position"       Report the position of the cursor in the buffer
-"save"                  Save buffer to file
-"save-as"               Save buffer as a different name
+"report-position"       Report the position of the cursor in the document
+"save"                  Save document to file
+"save-as"               Save document as a different name
 "undo"                  Undo change
 "redo"                  Redo change
 "refresh"               Refresh screen
+"autosize"              Automatically set number of columns according to screen
 "set"                   Set a configuration value. (See Configuration section)
 "quit"                  Quit program
 
@@ -203,6 +204,7 @@ Ctrl+O              "save-as"
 Ctrl+U              "undo"
 Ctrl+R              "redo"
 Ctrl+L              "refresh"
+Alt+R               "autosize"
 Q or Ctrl+X         "quit"
 Enter, Return       Show command prompt
 
@@ -220,21 +222,21 @@ Interface. For example, "columns" is mapped to "-c" and "--columns="
 
 Fields:
 "columns"
-        Number of elements to show on a row
-        Argument: Number
-        Default: 16
+    Number of elements to show on a row
+    Argument: Number
+    Default: 16
 "address-type", "address"
-        Change displayed address type
-        Argument: "hex", "dec", or "oct"
-        Default: "hex"
+    Change displayed address type
+    Argument: "hex", "dec", or "oct"
+    Default: "hex"
 "address-spacing"
-        Change how much spacing the left address column takes
-        Argument: Number
-        Default: 11 (upto 0xfffffffffff, so ~16 TiB)
+    Change how much spacing the left address column takes
+    Argument: Number
+    Default: 11 (upto 0xfffffffffff, so ~16 TiB)
 "charset"
-        Change displayed character set
-        Argument: "ascii", "cp437", "mac", or "ebcdic"
-        Default: "ascii"
+    Change displayed character set
+    Argument: "ascii", "cp437", "mac", or "ebcdic"
+    Default: "ascii"
 
 //
 // Compiling & Debugging
@@ -248,10 +250,12 @@ dub.
 
 Compile a debug build:
   $ dub build
-Compile a release build using a specific compiler:
+Compile a release build using a specified compiler:
   $ dub build -b release --compiler=ldc2
 
 Run unit tests with log traces:
   $ dub test --d-version=Trace
 
-The --log=FILENAME option is useful for reporting bugs.
+ddhx comes with a few debugging options:
+  --log=FILENAME to store debugging logs. Useful for reporting bugs.
+  --chunksize=N to specify a different size/alignment of edit chunks.

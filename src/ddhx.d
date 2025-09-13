@@ -149,6 +149,7 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
     _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
     _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-position"]     = &report_position;
     _ekeys[Mod.ctrl|Key.L]  = _ecommands["refresh"]             = &refresh;
+    _ekeys[Mod.alt|Key.R]   = _ecommands["autosize"]            = &autosize;
     _ekeys[Key.Q] = _ekeys[Mod.ctrl|Key.X] = _ecommands["quit"] = &quit;
     // Reserved:
     // "search|search-front" (Ctrl+F and/or '/'): Forward search
@@ -1067,6 +1068,31 @@ void report_position(Session *session, string[] args)
         curpos,
         docsize,
         cast(float)curpos / docsize * 100);
+}
+
+// Given parameters, suggest a number of available terminal columns.
+int suggestcols(int tcols, int aspace, int dspace)
+{
+    int left = tcols - (aspace + 4); // address + spaces around data
+    return left / (2+dspace); // old flawed algo, temporary
+}
+unittest
+{
+    enum X8SPACING = 2;
+    enum D8SPACING = 3;
+    assert(suggestcols(80, 11, X8SPACING) == 16); // 11 chars for address, x8 formatting
+    //assert(suggestcols(80, 11, D8SPACING) == 16); // 11 chars for address, d8 formatting
+}
+
+// Automatically size the number of columns that can fix on screen
+// using the currently selected data mode.
+void autosize(Session *session, string[] args)
+{
+    int adspacing = session.rc.address_spacing;
+    DataSpec spec = dataSpec(session.rc.data_type);
+    TerminalSize tsize = terminalSize();
+    
+    session.rc.columns = suggestcols(tsize.columns, adspacing, spec.spacing);
 }
 
 // Save changes
