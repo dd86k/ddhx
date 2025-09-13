@@ -11,6 +11,10 @@ module configuration;
 import transcoder : CharacterSet, selectCharacterSet;
 import doceditor : WritingMode, AddressType, DataType;
 
+// TODO: autosize (with --autosize)
+//       When set, automatically resize width (columns).
+//       In partical, at startup and when terminal is resized.
+
 /// Editor configuration
 struct RC
 {
@@ -26,7 +30,6 @@ struct RC
     /// Writing mode.
     ///
     /// Opening document as read-only automatically sets this as readonly too.
-    // TODO: Move to ddhx.Session.
     WritingMode writemode = WritingMode.overwrite;
     
     /// Number of columns
@@ -34,14 +37,37 @@ struct RC
     
     /// Number of characters to fill when printing row address.
     int address_spacing = 11;
-    
-    /// Maximum allowed size (length).
-    /// File: TODO
-    /// Stream: (Memory buffer) TODO
-    long maxsize;
-    
-    /// Minimum seek position.
-    long seek;
+}
+
+/// Return true/false given sting input.
+///
+/// Values like "on"/"off" are accepted.
+///
+/// More values could be accepted in the future, such as "true"/"false",
+/// "yes"/"no", "enabled"/"disabled", but for the sake of consistency
+/// and simplicity, it's better to just stick to one pair.
+/// Params: input = String value input.
+/// Returns: true for "on", false for "off"
+/// Throws: Exception if neither.
+private
+bool boolean(string input)
+{
+    switch (input) {
+    case "on":  return true;
+    case "off": return false;
+    default:    throw new Exception(`Only "on" or "off" accepted`);
+    }
+}
+unittest
+{
+    assert(boolean("on")  == true);
+    assert(boolean("off") == false);
+    try
+    {
+        cast(void)boolean(null);
+        assert(false);
+    }
+    catch (Exception) {}
 }
 
 /// Load a configuration from a target file path.
