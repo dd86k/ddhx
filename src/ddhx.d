@@ -977,6 +977,7 @@ void change_writemode(Session *session, string[] args)
 // Refresh screen
 void refresh(Session *session, string[] args)
 {
+    terminalClear();
     update(session);
 }
 
