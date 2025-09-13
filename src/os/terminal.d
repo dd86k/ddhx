@@ -293,24 +293,24 @@ void terminalInit(int features = 0)
             if (tcgetattr(STDIN_FILENO, &old_ios) < 0)
                 throw new OSException("tcgetattr(STDIN_FILENO) failed");
             new_ios = old_ios;
-            // NOTE: input modes
-            // - IXON enables ^S and ^Q
-            // - ICRNL enables ^M
-            // - BRKINT causes SIGINT (^C) on break conditions
-            // - INPCK enables parity checking
-            // - ISTRIP strips the 8th bit
+            // input modes
+            // remove IXON (enables ^S and ^Q)
+            // remove ICRNL (enables ^M)
+            // remove BRKINT (causes SIGINT (^C) on break conditions)
+            // remove INPCK (enables parity checking)
+            // remove ISTRIP (strips the 8th bit)
             new_ios.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
-            // NOTE: output modes
-            // - OPOST turns on output post-processing
+            // output modes
+            // remove OPOST (turns on output post-processing)
             //new_ios.c_oflag &= ~(OPOST);
-            // NOTE: local modes
-            // - ICANON turns on canonical mode (per-line instead of per-byte)
-            // - ECHO turns on character echo
-            // - ISIG enables ^C and ^Z signals
-            // - IEXTEN enables ^V
+            // local modes
+            // remove ICANON (turns on canonical mode (per-line instead of per-byte))
+            // remove ECHO (turns on character echo)
+            // remove ISIG (enables ^C and ^Z signals)
+            // remove IEXTEN (enables ^V)
             new_ios.c_lflag &= ~(ICANON | ECHO | IEXTEN);
-            // NOTE: control modes
-            // - CS8 sets Character Size to 8-bit
+            // control modes
+            // add CS8 sets Character Size to 8-bit
             new_ios.c_cflag |= CS8;
             // minimum amount of bytes to read,
             // 0 being return as soon as there is data
@@ -318,7 +318,8 @@ void terminalInit(int features = 0)
             // maximum amount of time to wait for input,
             // 1 being 1/10 of a second (100 milliseconds)
             //new_ios.c_cc[VTIME] = 0;
-            if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios) < 0)
+            //if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios) < 0)
+            if (tcsetattr(STDIN_FILENO, TCSANOW, &new_ios) < 0)
                 throw new OSException("tcsetattr(STDIN_FILENO) failed");
         }
         
@@ -326,6 +327,7 @@ void terminalInit(int features = 0)
         {
             // change to alternative screen buffer
             stdout.write("\033[?1049h");
+            stdout.flush;
         }
     } // version (Posix)
     
@@ -360,7 +362,7 @@ void terminalRestore()
         
         // restablish input ios
         if (current_features & TermFeat.inputSys)
-            cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
+            cast(void)tcsetattr(STDIN_FILENO, TCSANOW, &old_ios);
     }
 }
 
