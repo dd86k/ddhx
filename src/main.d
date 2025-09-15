@@ -200,6 +200,9 @@ void main(string[] args)
     
     try
     {
+        static immutable string MSG_NEWBUF  = "(new buffer)";
+        static immutable string MSG_NEWFILE = "(new file)";
+        
         string target = args.length >= 2 ? args[1] : null;
         DocEditor editor = new DocEditor(0, ochksize);
         string initmsg;
@@ -208,11 +211,11 @@ void main(string[] args)
         import document.memory : MemoryDocument;
         switch (target) {
         case null:
-            initmsg = "new buffer";
+            initmsg = MSG_NEWBUF;
             break;
         case "-": // MemoryDocument
             target = null;
-            initmsg = "new buffer";
+            initmsg = MSG_NEWBUF;
             MemoryDocument doc = new MemoryDocument();
             foreach (const(ubyte)[] chk; stdin.byChunk(4096))
             {
@@ -233,11 +236,11 @@ void main(string[] args)
             }
             else if (target)
             {
-                initmsg = "(new file)";
+                initmsg = MSG_NEWFILE;
             }
             else // new buffer
             {
-                initmsg = "(new buffer)";
+                initmsg = MSG_NEWBUF;
             }
         }
     

@@ -148,15 +148,17 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
     _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
     _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
     _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-position"]     = &report_position;
+    _ekeys[Mod.ctrl|Key.N]  = _ecommands["report-name"]     = &report_name;
     _ekeys[Mod.ctrl|Key.L]  = _ecommands["refresh"]             = &refresh;
     _ekeys[Mod.alt|Key.R]   = _ecommands["autosize"]            = &autosize;
     _ekeys[Key.Q] = _ekeys[Mod.ctrl|Key.X] = _ecommands["quit"] = &quit;
-    // Reserved:
+    // Reserved (Idea: Ctrl=Action, Alt=Alternative):
     // "search|search-front" (Ctrl+F and/or '/'): Forward search
     // "search-back" (Ctrl+B and/or '?'): Backward search
     // "refresh" (Ctrl+L): Refresh screen
     // "toggle-*" (Alt+Key): Hiding/showing panels
     // "save-settings": Save session settings into .ddhxrc
+    // "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
     
     // Commands with no default shortcuts
     _ecommands["set"] = &set;
@@ -1069,6 +1071,20 @@ void report_position(Session *session, string[] args)
         curpos,
         docsize,
         cast(float)curpos / docsize * 100);
+}
+
+// Report document name on screen (as a reminder)
+void report_name(Session *session, string[] args)
+{
+    import std.path : baseName;
+    
+    if (session.target is null)
+    {
+        message("(new buffer)");
+        return;
+    }
+    
+    message( baseName(session.target) );
 }
 
 // Given parameters, suggest a number of available terminal columns.
