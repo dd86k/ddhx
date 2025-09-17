@@ -877,7 +877,7 @@ void move_skip_backward(Session *session, string[] args)
         return; // Nothing to do, but still move by an element
     }
     
-    for (size_t o = curpos - base; o > 0; --o, --curpos)
+    for (size_t o = cast(size_t)(curpos - base); o > 0; --o, --curpos)
     {
         if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
         {
