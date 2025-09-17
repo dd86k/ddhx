@@ -71,13 +71,14 @@ This list may change at any given time without notice.
 - [ ] Support deletions
 
 Future:
+- [ ] Support searching
 - [ ] Non-interactive session (--dump)
-- [ ] 'bind' command: map command to shortcut
+- [ ] "bind" command: map command to shortcut
 - [ ] Config file support
 - [ ] Support for other single-byte data types in view (d8, o8)
 - [ ] Support for multi-byte data types in view (d16, f32, etc.)
 - [ ] Insert characters
-- [ ] Insert zeros
+- [ ] Insert patterns (e.g., zeros, etc.)
 - [ ] Insert file
 - [ ] Select multiple elements, copy, and paste
 
@@ -168,6 +169,7 @@ COMMAND                 DESCRIPTION
 "change-panel"          Switch between data and text panel
 "change-writemode"      Change writing mode
 "report-position"       Report the position of the cursor in the document
+"report-name"           Report the name of the document, or "(new buffer)"
 "save"                  Save document to file
 "save-as"               Save document as a different name
 "undo"                  Undo change
@@ -199,6 +201,7 @@ Ctrl+DownArrow      "view-down"
 Tab                 "change-panel"
 Insert              "change-writemode"
 Ctrl+P              "report-position"
+Ctrl+N              "report-name"
 Ctrl+S              "save"
 Ctrl+O              "save-as"
 Ctrl+U              "undo"
