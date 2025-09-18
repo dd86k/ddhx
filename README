@@ -34,7 +34,7 @@
 
 ddhx is a multi-platform Text UI hex editor, inspired by GNU nano and vim.
 
-Currently available for Windows, macOS, Linux, and FreeBSD.
+Currently available for Windows, macOS, Linux, and BSDs.
 
 License: MIT
 Title font: Shaded Blocky (FIGlet)
