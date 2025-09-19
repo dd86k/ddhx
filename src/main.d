@@ -60,11 +60,12 @@ void printpage(string opt)
         break;
     case OPTION_VERSION:
         versionline("ddhx", DDHX_VERSION);
-        versionline(null,   DDHX_COPYRIGHT);
         versionline(null,   DDHX_BUILDINFO);
+        versionline("License", "MIT");
+        versionline(null,   DDHX_COPYRIGHT);
+        versionline("Homepage", "https://github.com/dd86k/ddhx");
         versionline("Compiler", __VENDOR__~" "~DVER!__VERSION__);
         versionline(null,   TARGET_TRIPLE);
-        versionline("Homepage", "https://github.com/dd86k/ddhx");
         break;
     case OPTION_VER:
         writeln(DDHX_VERSION);
