@@ -459,9 +459,9 @@ void moveabs(Session *session, long pos)
     
     // Can't go beyond file
     long docsize = session.editor.currentSize;
-    if (pos < 0)
+    if (pos < 0) // cursor shouldn't be negative position
         pos = 0;
-    if (pos > docsize)
+    if (pos > docsize) // cursor past document
         pos = docsize;
     
     // No need to update if it's at the same place
@@ -547,11 +547,6 @@ void update_view(Session *session, TerminalSize termsize)
     int count       = rows * cols;
     long curpos     = session.position_cursor;
     long basepos    = session.position_view;
-    long docsize    = session.editor.currentSize();
-    
-    // Cursor is past EOF
-    if (curpos > docsize)
-        curpos = docsize;
     
     // Read data
     // TODO: To avoid unecessary I/O, avoid calling .view() when:
@@ -836,9 +831,9 @@ void move_abs_end(Session *session, string[] args)
 
 /// For move_diff_backward and move_diff_forward, this is the size of the
 /// search buffer (haystack).
-enum SEARCH_SIZE = 64 * 1024;
+enum SEARCH_SIZE = 16 * 1024;
 
-// Move to different element back
+// Move to different element backward
 void move_skip_backward(Session *session, string[] args)
 {
     import core.stdc.string : memcmp;
@@ -847,8 +842,12 @@ void move_skip_backward(Session *session, string[] args)
     size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
     long curpos = session.position_cursor;
     
+    // Nothing to really do... so avoid the necessary work
+    if (curpos == 0)
+        return;
+    
     // If cursor is at the very end of buffer, move it by one element
-    // back, because there isn't any data there, it's empty.
+    // back, because there's no data where the cursor points to.
     if (session.position_cursor == session.editor.currentSize())
         --curpos;
     
@@ -858,36 +857,47 @@ void move_skip_backward(Session *session, string[] args)
     if (needle.length < elemsize)
         return; // Nothing to do
     
+    // Position cursor at its starting line. If there isn't different
+    // data anyway, it would already be moved and ready next time
+    // the command is hit.
     curpos -= elemsize;
     
-    long base = curpos - SEARCH_SIZE;
-    if (base < 0)
-        base = 0;
-    
-    // See notes in move_diff_forward
+    // See notes in move_skip_forward
     ubyte[] haybuffer = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
     if (haybuffer is null)
         throw new Exception("error: Out of memory");
     scope(exit) free(haybuffer.ptr);
     
-    ubyte[] haystack = session.editor.view(base, haybuffer);
-    if (haystack.length < elemsize)
+    // 
+    long base = curpos;
+    do
     {
-        moveabs(session, curpos - elemsize);
-        return; // Nothing to do, but still move by an element
-    }
-    
-    for (size_t o = cast(size_t)(curpos - base); o > 0; --o, --curpos)
-    {
-        if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+        base -= SEARCH_SIZE;
+        if (base < 0)
+            base = 0;
+        
+        ubyte[] haystack = session.editor.view(base, haybuffer);
+        if (haystack.length < elemsize)
         {
-            moveabs(session, curpos);
+            // somehow haystack is smaller than needle, so give up
+            // move by needle size backward
+            moveabs(session, curpos - elemsize);
             return;
         }
+        
+        for (size_t o = cast(size_t)(curpos - base); o > 0; --o, --curpos)
+        {
+            if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+            {
+                break;
+            }
+        }
     }
+    while (base > 0);
     
-    // TODO: Keep reading until different element/byte or start of file reached
-    // Move anyway since it's the intent
+    // Move even if nothing found, since it is the intent.
+    // In a text editor, if Ctrl+Left is hit (imagine a long line of same
+    // characters) the cursor still moves to the start of the document.
     moveabs(session, curpos);
 }
 
@@ -899,6 +909,11 @@ void move_skip_forward(Session *session, string[] args)
     
     size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
     long curpos = session.position_cursor;
+    long docsize = session.editor.size();
+    
+    // Already at the end of document, nothing to do
+    if (curpos == docsize)
+        return;
     
     // Get current element
     ubyte buffer = void;
@@ -908,30 +923,33 @@ void move_skip_forward(Session *session, string[] args)
     
     curpos += elemsize;
     
-    // NOTE: Don't bother going past buffer for now.
-    //       I don't have a reliable check for EOF, so the first
-    //       implementation checks up to N.
     // TODO: Eventually re-visit need of malloc vs. array allocation
+    // Throwing on malloc failure is weird... but uses less memory than a search buffer
     ubyte[] haybuffer = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
     if (haybuffer is null)
         throw new Exception("error: Out of memory");
     scope(exit) free(haybuffer.ptr);
     
-    ubyte[] haystack = session.editor.view(curpos, haybuffer);
-    if (haystack.length < elemsize)
+    // 
+    do
     {
-        moveabs(session, curpos);
-        return; // Nothing to do, but move by an element
-    }
-    
-    for (size_t o; o < haystack.length; ++o, ++curpos)
-    {
-        if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+        ubyte[] haystack = session.editor.view(curpos, haybuffer);
+        if (haystack.length < elemsize)
         {
             moveabs(session, curpos);
-            return;
+            return; // Nothing to do, but move by an element
+        }
+        
+        for (size_t o; o < haystack.length; ++o, ++curpos)
+        {
+            if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+            {
+                moveabs(session, curpos);
+                return;
+            }
         }
     }
+    while (curpos < docsize);
     
     // TODO: Keep reaching forward until different element/byte or EOF reached
     // If we reached end of buffer (EOF in the future), move there

@@ -261,10 +261,12 @@ class DocEditor
     }
     
     /// Current size of the document, including edits
-    long currentSize()
+    long size()
     {
         return logical_size;
     }
+    /// Ditto
+    alias currentSize = size; // Older alias
     
     // Save to target with edits
     // TODO: Separate into its own function
