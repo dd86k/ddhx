@@ -954,7 +954,7 @@ void view_down(Session *session, string[] args)
 {
     int count = session.rc.columns * _erows;
     long max = session.editor.currentSize - count;
-    if (session.position_view >= max)
+    if (session.position_view > max)
         return;
     
     session.position_view += session.rc.columns;
