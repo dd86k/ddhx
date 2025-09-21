@@ -3,8 +3,7 @@
 docs.json
 __dummy.html
 dub.selections.json
-ddhx-test-library
-ddhx-test-default
+ddhx-test-*
 /ddhx
 __test__*__
 *.o
@@ -18,11 +17,10 @@ __test__*__
 *.bzip2
 .fuse_*
 
-# Editors
+# Other editors
 *.swp
 
 # Project
-src/gitinfo.d
 .ddhxrc
 *.log
 

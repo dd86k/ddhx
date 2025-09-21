@@ -1,5 +1,5 @@
 name "ddhx"
-description "Binary file (hex) editor"
+description "Binary file editor"
 authors "dd86k"
 copyright "Copyright © 2017-2025 dd86k"
 license "MIT"
@@ -11,39 +11,39 @@ buildType "debugv" {
 
 buildType "native" {
     buildOptions "releaseMode" "optimize" "inline"
-	dflags "-mcpu=native" platform="dmd"
-	dflags "-march=native" platform="gdc"
-	dflags "-mcpu=native" platform="ldc"
+    dflags "-mcpu=native" platform="dmd"
+    dflags "-march=native" platform="gdc"
+    dflags "-mcpu=native" platform="ldc"
 }
 
 # NOTE: static builds
 #       Currently somewhat broken.
 #       On Alpine, at least only GDC is known to work.
-#       On Ubuntu, nothing works, thanks to glibc requiring SOs.
+#       On Ubuntu, nothing works, thanks to glibc requiring other shared objects.
 buildType "static-debug" {
     buildOptions "debugMode" "debugInfo"
-	dflags "-L=-static" platform="dmd"
-	dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
-	dflags "--static" platform="ldc"
+    dflags "-L=-static" platform="dmd"
+    dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
+    dflags "--static" platform="ldc"
 }
 buildType "static-release" {
     buildOptions "releaseMode" "optimize" "inline"
-	dflags "-L=-static" platform="dmd"
-	dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
-	dflags "--static" platform="ldc"
+    dflags "-L=-static" platform="dmd"
+    dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
+    dflags "--static" platform="ldc"
 }
 buildType "static-native" {
     buildOptions "releaseMode" "optimize" "inline"
-	dflags "-L=-static" "-mcpu=native" platform="dmd"
-	dflags "-Wl,-static" "-static" "-static-libgcc" "-march=native" platform="gdc"
-	dflags "--static" "-mcpu=native" platform="ldc"
+    dflags "-L=-static" "-mcpu=native" platform="dmd"
+    dflags "-Wl,-static" "-static" "-static-libgcc" "-march=native" platform="gdc"
+    dflags "--static" "-mcpu=native" platform="ldc"
 }
 
 #
 # Tests
 #
 
-# TODO: Change to configuration
+# NOTE: Don't bother making configurations, DUB will just pick the first one
 buildType "input" {
     versions "TestInput"
     buildOptions "unittests"
