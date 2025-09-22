@@ -41,27 +41,27 @@ class OSException : Exception
 private
 string messageFromCode(int code)
 {
-version (Windows)
-{
-    // TODO: Get console codepage
-    enum BUFSZ = 1024;
-    __gshared char[BUFSZ] buffer;
-    uint len = FormatMessageA(
-        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-        null,
-        code,
-        0,	// Default
-        buffer.ptr,
-        BUFSZ,
-        null);
-    
-    if (len == 0)
-        return cast(string)sformat(buffer, "FormatMessageA returned code %#x", GetLastError());
-    
-    return cast(string)buffer[0..len];
-}
-else
-{
-    return cast(string)fromStringz( strerror(code) );
-}
+    version (Windows)
+    {
+        enum BUFSZ = 1024;
+        __gshared char[BUFSZ] buffer;
+        uint len = FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_MAX_WIDTH_MASK,
+            null,
+            code,
+            0,	// Default
+            buffer.ptr,
+            BUFSZ,
+            null);
+        
+        import std.conv : text;
+        if (len == 0)
+            throw new Exception(text("FormatMessageA Error=", GetLastError(), " Original=", code));
+        
+        return cast(string)buffer[0..len];
+    }
+    else
+    {
+        return cast(string)fromStringz( strerror(code) );
+    }
 }

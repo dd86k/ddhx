@@ -65,7 +65,54 @@ class PatchManager
         param_increment = incsize;
     }
     
-    private
+    /// Count of patches in memory.
+    /// Returns: Total amount.
+    size_t count()
+    {
+        return patches.length;
+    }
+    
+    Patch opIndex(size_t i) // @suppress(dscanner.style.undocumented_declaration)
+    {
+        // Let it throw if out of bounds
+        return patches[i];
+    }
+    
+    /// Append or overwrite patch at this index.
+    ///
+    /// This might happen when we undo and start writing new data.
+    /// Params:
+    ///     i = Index.
+    ///     patch = Patch.
+    void insert(size_t i, Patch patch)
+    {
+        prepare(patch);
+        
+        // If index fits in set, replace patch at index
+        if (i < patches.length)
+            patches[i] = patch;
+        else // Otherwise, add it so set
+            patches.insert(patch);
+    }
+    
+private:
+    /// Size of initial and incremental patch data buffer
+    size_t param_increment;
+    
+    /// Buffer for new and old patch data
+    ubyte[] patch_buffer;
+    /// Amount of buffer used
+    size_t  patch_used;
+    
+    // NOTE: SList
+    //       The .insert alias is mapped to .insertFront, which puts last inserted
+    //       elements as the first element, making it useless with foreach (starts
+    //       with last inserted element, which we don't want). On top of the fact
+    //       that foreach_reverse is unavailable with SList.
+    /// History stack
+    Array!Patch patches; // Array!T supports slicing
+    
+    // Prepare patch before adding to list, which means copying its data
     void prepare(ref Patch patch)
     {
         // If we can't contain data for patch, increase buffer
@@ -100,77 +147,6 @@ class PatchManager
             patch_used += patch.size;
         }
     }
-    
-    // Remove last patch.
-    /*
-    void remove()
-    {
-        if (patches.length == 0)
-            return; // Nothing to remove
-        
-        // Remove last patch
-        Patch patch = patches.back();
-        patches.removeBack();
-        
-        patch_used -= patch.size;
-        if (patch.olddata)
-            patch_used -= patch.size;
-        
-        // TODO: Decrease patch_buffer.length by param_increment
-    }
-    // Range interface
-    public alias removeBack = remove;
-    */
-    
-    /// Count of patches in memory.
-    /// Returns: Total amount.
-    size_t count()
-    {
-        return patches.length;
-    }
-    
-    Patch opIndex(size_t i) // @suppress(dscanner.style.undocumented_declaration)
-    {
-        // Let it throw if out of bounds
-        return patches[i];
-    }
-    
-    /// Append or overwrite patch at this index.
-    ///
-    /// This might happen when we undo and start writing new data.
-    /// Params:
-    ///     i = Index.
-    ///     patch = Patch.
-    void insert(size_t i, Patch patch)
-    {
-        prepare(patch);
-        
-        if (patches.length == 0 || i >= patches.length)
-        {
-            patches.insert(patch);
-        }
-        else if (i < patches.length)
-        {
-            patches[i] = patch;
-        }
-    }
-    
-private:
-    /// Size of initial and incremental patch data buffer
-    size_t param_increment;
-    
-    /// Buffer for new and old patch data
-    ubyte[] patch_buffer;
-    /// Amount of buffer used
-    size_t  patch_used;
-    
-    // NOTE: SList
-    //       The .insert alias is mapped to .insertFront, which puts last inserted
-    //       elements as the first element, making it useless with foreach (starts
-    //       with last inserted element, which we don't want). On top of the fact
-    //       that foreach_reverse is unavailable with SList.
-    /// History stack
-    Array!Patch patches; // Array!T supports slicing
 }
 unittest
 {

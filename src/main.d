@@ -85,7 +85,7 @@ void main(string[] args)
     GetoptResult res = void;
     try
     {
-        // TODO: --color/--no-color, respecting $TERM
+        // TODO: --color/--no-color: Force color option (overrides rc)
         res = getopt(args, config.caseSensitive,
         // Secret options
         "assistant",    "", &printpage,

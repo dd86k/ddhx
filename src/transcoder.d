@@ -93,10 +93,10 @@ string charsetName(int charset)
 
 private:
 
-// TODO: Consider registering encoders to EncodingScheme
-//       to transcode to other charsets other than UTF-8
-// TODO: Translation function could return something specific if it needs another byte
-//       With static param, internally cleared when successful
+// TODO: Consider registering encoders to std.encoding.EncodingScheme
+//       to transcode to other charsets other than UTF-8 and from
+//       other existing schemes found in std.encoding, including
+//       ISO-8859-1.
 // TODO: Other single-byte character sets
 //       - ISO/IEC 8859-1 "iso8859-1"
 //         https://en.wikipedia.org/wiki/ISO/IEC_8859-1

@@ -944,14 +944,12 @@ void move_skip_forward(Session *session, string[] args)
         {
             if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
             {
-                moveabs(session, curpos);
-                return;
+                break;
             }
         }
     }
     while (curpos < docsize);
     
-    // TODO: Keep reaching forward until different element/byte or EOF reached
     // If we reached end of buffer (EOF in the future), move there
     moveabs(session, curpos);
 }

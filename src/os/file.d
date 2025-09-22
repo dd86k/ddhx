@@ -24,37 +24,11 @@ version (Windows)
 }
 else version (Posix)
 {
-    import core.sys.posix.unistd;
-    import core.sys.posix.sys.types;
-    import core.sys.posix.sys.stat;
+    import core.sys.posix.unistd : lseek, read, write, fsync, close;
     import core.sys.posix.fcntl;
     import core.stdc.errno;
     import core.stdc.stdio : SEEK_SET, SEEK_CUR, SEEK_END;
     import std.string : toStringz;
-    
-    // NOTE: BLKGETSIZE64
-    //       BLKGETSIZE64 is missing from dmd 2.098.1 and ldc 1.24.0
-    //       ldc 1.24 missing core.sys.linux.fs
-    //       source musl 1.2.0 and glibc 2.25 has roughly same settings.
-    private enum _IOC_NRBITS = 8;
-    private enum _IOC_TYPEBITS = 8;
-    private enum _IOC_SIZEBITS = 14;
-    private enum _IOC_NRSHIFT = 0;
-    private enum _IOC_TYPESHIFT = _IOC_NRSHIFT+_IOC_NRBITS;
-    private enum _IOC_SIZESHIFT = _IOC_TYPESHIFT+_IOC_TYPEBITS;
-    private enum _IOC_DIRSHIFT = _IOC_SIZESHIFT+_IOC_SIZEBITS;
-    private enum _IOC_READ = 2;
-    private enum _IOC(int dir,int type,int nr,size_t size) =
-        (dir  << _IOC_DIRSHIFT) |
-        (type << _IOC_TYPESHIFT) |
-        (nr   << _IOC_NRSHIFT) |
-        (size << _IOC_SIZESHIFT);
-    // TODO: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
-    //       I don't know why, so I'm casting it to int to let it compile.
-    //       Fix later.
-    private enum _IOR(int type,int nr,size_t size) = cast(int)_IOC!(_IOC_READ,type,nr,size);
-    private enum BLKGETSIZE64 = cast(int)_IOR!(0x12,114,size_t.sizeof);
-    private alias BLOCKSIZE = BLKGETSIZE64;
     
     import core.stdc.config : c_long, c_ulong;
     
@@ -76,6 +50,29 @@ else version (Posix)
         private alias IOCTL_TYPE = c_ulong;
     private extern (C) int ioctl(int, IOCTL_TYPE, ...);
     
+    // NOTE: BLKGETSIZE64
+    //       BLKGETSIZE64 is missing from dmd 2.098.1 and ldc 1.24.0
+    //       ldc 1.24 missing core.sys.linux.fs
+    //       source musl 1.2.0 and glibc 2.25 has roughly same settings.
+    private enum _IOC_NRBITS = 8;
+    private enum _IOC_TYPEBITS = 8;
+    private enum _IOC_SIZEBITS = 14;
+    private enum _IOC_NRSHIFT = 0;
+    private enum _IOC_TYPESHIFT = _IOC_NRSHIFT+_IOC_NRBITS;
+    private enum _IOC_SIZESHIFT = _IOC_TYPESHIFT+_IOC_TYPEBITS;
+    private enum _IOC_DIRSHIFT = _IOC_SIZESHIFT+_IOC_SIZEBITS;
+    private enum _IOC_READ = 2;
+    private enum _IOC(int dir,int type,int nr,size_t size) =
+        (dir  << _IOC_DIRSHIFT) |
+        (type << _IOC_TYPESHIFT) |
+        (nr   << _IOC_NRSHIFT) |
+        (size << _IOC_SIZESHIFT);
+    // NOTE: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
+    //       I don't know why, so I'm casting it to used ioctl type to let it compile.
+    private enum _IOR(int type,int nr,size_t size) = cast(IOCTL_TYPE)_IOC!(_IOC_READ,type,nr,size);
+    private enum BLKGETSIZE64 = cast(IOCTL_TYPE)_IOR!(0x12,114,size_t.sizeof);
+    private alias BLOCKSIZE = BLKGETSIZE64;
+    
     // NOTE: lseek64
     //       Most Linux system modules have been updated since the last time I had
     //       to force myself using lseek64 definitions.
@@ -89,8 +86,10 @@ else
 
 import os.error : OSException;
 
-//TODO: FileType GetType(string)
-//      Pipe, device, etc.
+// TODO: FileType GetType(string)
+//       Pipe, device, etc.
+//       Win32: GetFileType
+//       POSIX: fstat(3)
 
 /// File seek origin.
 enum Seek
@@ -223,7 +222,6 @@ struct OSFile
         }
         else version (Posix)
         {
-            // TODO: macOS support
             stat_t stats = void;
             if (fstat(handle, &stats) < 0)
                 throw new OSException("Couldn't get file size");
@@ -235,7 +233,6 @@ struct OSFile
                 return stats.st_size;
             case S_IFBLK: // Block devices (like a disk)
                 // fstat(2) sets st_size to 0 on block devices
-                // TODO: BSD support
                 long s = void;
                 if (ioctl(handle, BLOCKSIZE, &s) < 0)
                     throw new OSException("Couldn't get file size");

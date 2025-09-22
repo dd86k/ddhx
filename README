@@ -50,6 +50,9 @@ ALWAYS make backups of your files before editing them.
 This is a Work In Progress (WIP). Everything was rewritten from scratch
 in attempts in version 0.5 to have editing features.
 
+It also outputs UTF-8. You might want to stick to the ASCII charset
+setting if your terminal or console lacks UTF-8 capabilities.
+
 //
 // Roadmap
 //

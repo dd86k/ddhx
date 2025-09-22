@@ -198,7 +198,7 @@ struct DataFormatter
             size = ubyte.sizeof;
             break;
         default:
-            throw new Exception("TODO");
+            throw new Exception("Not implemented");
         }
     }
     
@@ -268,8 +268,8 @@ class DocEditor
     /// Ditto
     alias currentSize = size; // Older alias
     
-    // Save to target with edits
-    // TODO: Separate into its own function
+    /// Save as file to a specified location.
+    /// Params: target = File system path.
     void save(string target)
     {
         log("target=%s logical_size=%u", target, logical_size);
@@ -314,7 +314,7 @@ class DocEditor
         // Get range of edits to apply when saving.
         // TODO: Test without ptrdiff_t cast
         ptrdiff_t count = cast(ptrdiff_t)historyidx - historysavedidx;
-        log("Saving with %d edits, %d Bytes...", +count, logical_size);
+        log("Saving with %d edits, %d Bytes...", count, logical_size);
         
         // Right now, the simplest implement is to write everything.
         // We will eventually handle overwites, inserts, and deletions
@@ -343,8 +343,7 @@ class DocEditor
         // If not all bytes were written, either due to the disk being full
         // or it being our fault, do not continue!
         log("Wrote %d B out of %d B", newsize, logical_size);
-        enforce(newsize == logical_size,
-            text("Only wrote ", logical_size, "/", newsize, " B of data"));
+        enforce(newsize == logical_size, text("Only wrote ", logical_size, "/", newsize, " B of data"));
         
         tempfile.rewind();
         enforce(tempfile.tell == 0, "assert: File.rewind() != 0");
@@ -352,8 +351,7 @@ class DocEditor
         // Check disk space again for target, just in case.
         // The exception (message) gives it chance to save it elsewhere.
         avail = availableDiskSpace(target);
-        enforce(avail >= logical_size,
-            text("Need ", logical_size - avail, " B of disk space"));
+        enforce(avail >= logical_size, text("Need ", logical_size - avail, " B of disk space"));
         
         // Temporary file should now be fully written, time to overwrite target
         // reading from temporary file.
@@ -531,8 +529,6 @@ class DocEditor
         // Add patch into set with new and old data
         log("add historyidx=%u patch=%s", historyidx, patch);
         patches.insert(historyidx++, patch);
-        //patches.add(patch);
-        //historyidx++;
         
         // TODO: Check cross-chunk
         

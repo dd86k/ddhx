@@ -1017,9 +1017,6 @@ Lread:
         // Make a slice of misc. input.
         const(char)[] inputString = b[0..r];
         
-        //TODO: Checking for mouse inputs
-        //      Starts with \033[M
-        
         // Checking for other key inputs
         foreach (ki; keyInputsVTE)
         {
