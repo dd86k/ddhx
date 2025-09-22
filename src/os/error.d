@@ -43,7 +43,7 @@ string messageFromCode(int code)
 {
     version (Windows)
     {
-        enum BUFSZ = 1024;
+        enum BUFSZ = 256;
         __gshared char[BUFSZ] buffer;
         uint len = FormatMessageA(
             FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_MAX_WIDTH_MASK,

@@ -564,10 +564,6 @@ void update_view(Session *session, TerminalSize termsize)
     ubyte[] result = session.editor.view(basepos, viewbuf);
     int reslen     = cast(int)result.length; // * bytesize
     
-    // Update positions
-    session.position_cursor = curpos;
-    session.position_view   = basepos;
-    
     // Render view
     char[32] txtbuf = void;
     long address    = basepos;
@@ -578,7 +574,6 @@ void update_view(Session *session, TerminalSize termsize)
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     log("address=%d viewpos=%d cols=%d datawidth=%d count=%d reslen=%d",
         address, viewpos, cols, datawidth, count, reslen);
-    terminalCursor(0, 1);
     for (int row; row < rows; ++row, address += cols)
     {
         // '\n' could count as a character, avoid using it
