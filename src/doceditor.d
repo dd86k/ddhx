@@ -242,11 +242,12 @@ class DocEditor
         // Initial size of patch bufer
         size_t patchbufsz = 0,
         // Chunk size
-        size_t chunkinc = 4096,
+        size_t chunkinc = 0,
     )
     {
-        // TODO: if chunkinc == 0, take page size
-        assert(chunkinc > 0, "chunkinc > 0");
+        import core.memory : pageSize;
+        if (chunkinc == 0)
+            chunkinc = pageSize;
         
         patches = new PatchManager(patchbufsz);
         chunks  = new ChunkManager(chunkinc);
