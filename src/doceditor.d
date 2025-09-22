@@ -245,11 +245,12 @@ class DocEditor
         size_t chunkinc = 0,
     )
     {
-        import core.memory : pageSize;
+        import os.mem : syspagesize;
+        size_t pagesize = syspagesize();
         if (chunkinc == 0)
-            chunkinc = pageSize;
+            chunkinc = pagesize;
         
-        patches = new PatchManager(patchbufsz, pageSize);
+        patches = new PatchManager(patchbufsz, pagesize);
         chunks  = new ChunkManager(chunkinc);
     }
     
@@ -531,8 +532,6 @@ class DocEditor
         log("add historyidx=%u patch=%s", historyidx, patch);
         patches.insert(historyidx++, patch);
         
-        // TODO: Check cross-chunk
-        
         // Update chunk with new patch data
         // NOTE: For now, chunks are aligned because I'm lazy :V
         import core.stdc.string : memcpy;
@@ -573,7 +572,6 @@ class DocEditor
         log("patch=%s chunk=%s", patch, *chunk);
         
         // TODO: If insert/deletion, don't forget to reshift chunks
-        // TODO: Check cross-chunk access
         
         // End chunk: Update sizes if applicable
         if (patch.address + patch.size >= chunk.position + chunk.used &&
@@ -619,7 +617,6 @@ class DocEditor
         import core.stdc.string : memcpy;
         ptrdiff_t o = cast(ptrdiff_t)(patch.address - chunk.position);
         
-        // TODO: Check cross-chunk
         memcpy(chunk.data + o, patch.newdata, patch.size);
         
         // End chunk: Update sizes if applicable
