@@ -57,7 +57,7 @@ struct Patch
 /// Manages the storage of patches.
 class PatchManager
 {
-    /// New manager.
+    /// Create a new PatchManager.
     // datasize = Initial and incremental size of data buffer for holding patch data.
     this(size_t initsize = 0, size_t incsize = 4096)
     {

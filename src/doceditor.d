@@ -249,7 +249,7 @@ class DocEditor
         if (chunkinc == 0)
             chunkinc = pageSize;
         
-        patches = new PatchManager(patchbufsz);
+        patches = new PatchManager(patchbufsz, pageSize);
         chunks  = new ChunkManager(chunkinc);
     }
     
@@ -1047,5 +1047,30 @@ unittest
     ]);
     assert(e.view(24,  buf) == [
         0xe1, 0xe6, 0xd5, 0xb7, 0xff
+    ]);
+}
+
+/// Check cross-chunk edits
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0011");
+    
+    static immutable ubyte[] data = [ // 16 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
+        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+    ];
+    
+    scope DocEditor e = new DocEditor(0, 8);
+    e.attach(new MemoryDocument(data));
+    
+    ubyte[16] buffer;
+    
+    string s = "hi";
+    e.replace(7, s.ptr, s.length);
+    assert(e.view(0, buffer) == [ // 16 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 'h',
+        'i',  0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
     ]);
 }
