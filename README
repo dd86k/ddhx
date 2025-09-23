@@ -72,12 +72,12 @@ This list may change at any given time without notice.
 0.6:
 - [ ] Support insertions
 - [ ] Support deletions
+- [ ] Config file support
+- [ ] "bind" command: map command to shortcut
 
 Future:
 - [ ] Support searching
 - [ ] Non-interactive session (--dump)
-- [ ] "bind" command: map command to shortcut
-- [ ] Config file support
 - [ ] Support for other single-byte data types in view (d8, o8)
 - [ ] Support for multi-byte data types in view (d16, f32, etc.)
 - [ ] Insert characters
@@ -164,8 +164,8 @@ COMMAND                 DESCRIPTION
 "cursor-line-end"       Navigate to end of line
 "cursor-sof"            Go to start of document
 "cursor-eof"            Go to end of document
-"cursor-diff-back"      Skip to different element backward
-"cursor-diff-front"     Skip to different element forward
+"cursor-skip-back"      Skip to different element backward
+"cursor-skip-front"     Skip to different element forward
 "move-up"               Move view up a row
 "move-down"             Move view down a row
 "goto"                  Go to position
@@ -186,33 +186,7 @@ COMMAND                 DESCRIPTION
 // Default keybinds
 //
 
-KEY                 COMMAND
-LeftArrow           "cursor-left"
-RightArrow          "cursor-right"
-UpArrow             "cursor-up"
-DownArrow           "cursor-down"
-PageUp              "cursor-page-up"
-PageDown            "cursor-page-down"
-Home                "cursor-line-start"
-End                 "cursor-line-end"
-Ctrl+Home           "cursor-sof"
-Ctrl+End            "cursor-eof"
-Ctrl+LeftArrow      "cursor-skip-back"
-Ctrl+RightArrow     "cursor-skip-front"
-Ctrl+UpArrow        "view-up"
-Ctrl+DownArrow      "view-down"
-Tab                 "change-panel"
-Insert              "change-writemode"
-Ctrl+P              "report-position"
-Ctrl+N              "report-name"
-Ctrl+S              "save"
-Ctrl+O              "save-as"
-Ctrl+U              "undo"
-Ctrl+R              "redo"
-Ctrl+L              "refresh"
-Alt+R               "autosize"
-Q or Ctrl+X         "quit"
-Enter, Return       Show command prompt
+To view default keybinds, execute `ddhx --help-keys`.
 
 //
 // Configuration

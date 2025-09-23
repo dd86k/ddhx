@@ -86,6 +86,8 @@ void main(string[] args)
     try
     {
         // TODO: --color/--no-color: Force color option (overrides rc)
+        // TODO: --help-commands: list of commands
+        // TODO: --help-configs: list of configurations
         res = getopt(args, config.caseSensitive,
         // Secret options
         "assistant",    "", &printpage,
@@ -154,6 +156,23 @@ void main(string[] args)
         //
         "version",      "Print the version page and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
+        "help-keys",    "Print default shortcuts and exit",
+        {
+            writefln("%*s%s", -25, "COMMAND", "KEYS");
+            foreach (command; default_commands)
+            {
+                if (command.key == 0) // no keys set
+                    continue;
+                
+                writef(" %*s", -25, command.name);
+                import os.terminal : Key, Mod;
+                if (command.key & Mod.ctrl)  write("Ctrl+");
+                if (command.key & Mod.alt)   write("Alt+");
+                if (command.key & Mod.shift) write("Shift+");
+                writeln(cast(Key)cast(short)command.key);
+            }
+            exit(EXIT_SUCCESS);
+        }
         );
     }
     catch (Exception ex)
@@ -170,8 +189,8 @@ void main(string[] args)
         // Usage and options
         writeln("Hex editor\n"~
             "USAGE\n"~
-            "  ddhx [FILE|-] [OPTIONS]\n"~
-            "  ddhx {-h|--help|--version|--ver}\n"~
+            " ddhx [FILE|-] [OPTIONS]\n"~
+            " ddhx {-h|--help|--version|--ver}\n"~
             "\n"~
             "OPTIONS");
         foreach (opt; res.options[SECRETCOUNT..$]) with (opt)
@@ -180,10 +199,8 @@ void main(string[] args)
                 write(' ', optShort, ',');
             else
                 write("    ");
-            writefln(" %*s %s", -17, optLong, help);
+            writefln(" %*s %s", -20, optLong, help);
         }
-        
-        // TODO: Find a painless way to show keybinds here
         
         exit(EXIT_SUCCESS);
     }

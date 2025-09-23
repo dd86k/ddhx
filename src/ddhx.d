@@ -104,6 +104,66 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     void function(Session*, string[])[int] _ekeys;
 }
 
+struct Command
+{
+    string name;
+    int key;
+    void function(Session*, string[]) impl;
+}
+
+// Reserved (Idea: Ctrl=Action, Alt=Alternative):
+// "search|search-front" (Ctrl+F and/or '/'): Forward search
+// "search-back" (Ctrl+B and/or '?'): Backward search
+// "refresh" (Ctrl+L): Refresh screen
+// "toggle-*" (Alt+Key): Hiding/showing panels
+// "save-settings": Save session settings into .ddhxrc
+// "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
+__gshared Command[] default_commands = [
+    { "cursor-left",        Key.LeftArrow,          &move_left },
+    { "cursor-right",       Key.RightArrow,         &move_right },
+    { "cursor-up",          Key.UpArrow,            &move_up },
+    { "cursor-down",        Key.DownArrow,          &move_down },
+    { "cursor-page-up",     Key.PageUp,             &move_pg_up },
+    { "cursor-page-down",   Key.PageDown,           &move_pg_down },
+    { "cursor-home",        Key.Home,               &move_ln_start },
+    { "cursor-end",         Key.End,                &move_ln_end },
+    { "cursor-sof",         Mod.ctrl|Key.Home,      &move_abs_start },
+    { "cursor-eof",         Mod.ctrl|Key.End,       &move_abs_end },
+    { "cursor-skip-back",   Mod.ctrl|Key.LeftArrow, &move_skip_backward },
+    { "cursor-skip-front",  Mod.ctrl|Key.RightArrow,&move_skip_forward },
+    { "view-up",            Mod.ctrl|Key.UpArrow,   &view_up },
+    { "view-down",          Mod.ctrl|Key.DownArrow, &view_down },
+    { "change-panel",       Key.Tab,                &change_panel },
+    { "change-writemode",   Key.Insert,             &change_writemode },
+    { "save",               Mod.ctrl|Key.S,         &save },
+    { "save-as",            Mod.ctrl|Key.O,         &save_as },
+    { "undo",               Mod.ctrl|Key.U,         &undo },
+    { "redo",               Mod.ctrl|Key.R,         &redo },
+    { "goto",               Mod.ctrl|Key.G,         &goto_ },
+    { "report-position",    Mod.ctrl|Key.P,         &report_position },
+    { "report-name",        Mod.ctrl|Key.N,         &report_name },
+    { "refresh",            Mod.ctrl|Key.L,         &refresh },
+    { "autosize",           Mod.alt|Key.R,          &autosize },
+    { "set",                0,                      &set },
+    { "quit",               Key.Q,                  &quit },
+];
+/// Check if command names or shortcuts are duplicated
+unittest
+{
+    foreach (command; default_commands)
+    {
+        assert(command.name, "missing command name");
+        
+        if (command.name in _ecommands)
+            assert(false, "dupe name: "~command.name);
+        _ecommands[command.name] = command.impl;
+        
+        if (command.key in _ekeys)
+            assert(false, "dupe key: "~command.name);
+        _ekeys[command.key] = command.impl;
+    }
+}
+
 /// Start a new instance of the hex editor.
 /// Params:
 ///     editor = Document editor instance.
@@ -126,47 +186,16 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
     terminalHideCursor();
     
     // Setup default commands and shortcuts
-    _ekeys[Key.LeftArrow]   = _ecommands["cursor-left"]         = &move_left;
-    _ekeys[Key.RightArrow]  = _ecommands["cursor-right"]        = &move_right;
-    _ekeys[Key.UpArrow]     = _ecommands["cursor-up"]           = &move_up;
-    _ekeys[Key.DownArrow]   = _ecommands["cursor-down"]         = &move_down;
-    _ekeys[Key.PageUp]      = _ecommands["cursor-page-up"]      = &move_pg_up;
-    _ekeys[Key.PageDown]    = _ecommands["cursor-page-down"]    = &move_pg_down;
-    _ekeys[Key.Home]        = _ecommands["cursor-line-start"]   = &move_ln_start;
-    _ekeys[Key.End]         = _ecommands["cursor-line-end"]     = &move_ln_end;
-    _ekeys[Mod.ctrl|Key.Home] = _ecommands["cursor-sof"]        = &move_abs_start;
-    _ekeys[Mod.ctrl|Key.End ] = _ecommands["cursor-eof"]        = &move_abs_end;
-    _ekeys[Mod.ctrl|Key.LeftArrow]  = _ecommands["cursor-skip-back"]  = &move_skip_backward;
-    _ekeys[Mod.ctrl|Key.RightArrow] = _ecommands["cursor-skip-front"] = &move_skip_forward;
-    _ekeys[Mod.ctrl|Key.UpArrow]   = _ecommands["view-up"]      = &view_up;
-    _ekeys[Mod.ctrl|Key.DownArrow] = _ecommands["view-down"]    = &view_down;
-    _ekeys[Key.Tab]         = _ecommands["change-panel"]        = &change_panel;
-    _ekeys[Key.Insert]      = _ecommands["change-writemode"]    = &change_writemode;
-    _ekeys[Mod.ctrl|Key.S]  = _ecommands["save"]                = &save;
-    _ekeys[Mod.ctrl|Key.O]  = _ecommands["save-as"]             = &save_as;
-    _ekeys[Mod.ctrl|Key.U]  = _ecommands["undo"]                = &undo;
-    _ekeys[Mod.ctrl|Key.R]  = _ecommands["redo"]                = &redo;
-    _ekeys[Mod.ctrl|Key.G]  = _ecommands["goto"]                = &goto_;
-    _ekeys[Mod.ctrl|Key.P]  = _ecommands["report-position"]     = &report_position;
-    _ekeys[Mod.ctrl|Key.N]  = _ecommands["report-name"]     = &report_name;
-    _ekeys[Mod.ctrl|Key.L]  = _ecommands["refresh"]             = &refresh;
-    _ekeys[Mod.alt|Key.R]   = _ecommands["autosize"]            = &autosize;
-    _ekeys[Key.Q] = _ekeys[Mod.ctrl|Key.X] = _ecommands["quit"] = &quit;
-    // Reserved (Idea: Ctrl=Action, Alt=Alternative):
-    // "search|search-front" (Ctrl+F and/or '/'): Forward search
-    // "search-back" (Ctrl+B and/or '?'): Backward search
-    // "refresh" (Ctrl+L): Refresh screen
-    // "toggle-*" (Alt+Key): Hiding/showing panels
-    // "save-settings": Save session settings into .ddhxrc
-    // "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
-    
-    // Commands with no default shortcuts
-    _ecommands["set"] = &set;
+    foreach (command; default_commands)
+    {
+        _ecommands[command.name] = command.impl;
+        
+        if (command.key)
+            _ekeys[command.key] = command.impl;
+    }
     
     // Special keybinds with no attached commands
     _ekeys[Key.Enter] = &prompt_command;
-    //_ekeys['/'] = &prompt_frwd_search;
-    //_ekeys['&'] = &prompt_back_search;
     
     loop(g_session);
     
