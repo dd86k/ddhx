@@ -100,25 +100,28 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     
     /// Registered commands
     void function(Session*, string[])[string] _ecommands;
-    /// Mapped keys to commands
+    /// Registered shortcuts
     void function(Session*, string[])[int] _ekeys;
 }
 
+/// Represents a command with a name (required), a shortcut, and a function
+/// that implements it (required).
 struct Command
 {
-    string name;
-    int key;
-    void function(Session*, string[]) impl;
+    string name;    /// Command short name
+    int key;        /// Shortcut
+    void function(Session*, string[]) impl; /// Implementation
 }
 
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
-// "search|search-front" (Ctrl+F and/or '/'): Forward search
-// "search-back" (Ctrl+B and/or '?'): Backward search
-// "refresh" (Ctrl+L): Refresh screen
-// "toggle-*" (Alt+Key): Hiding/showing panels
-// "save-settings": Save session settings into .ddhxrc
-// "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
-__gshared Command[] default_commands = [
+// - "search|search-front" (Ctrl+F and/or '/'): Forward search
+// - "search-back" (Ctrl+B and/or '?'): Backward search
+// - "refresh" (Ctrl+L): Refresh screen
+// - "toggle-*" (Alt+Key): Hiding/showing panels
+// - "save-settings": Save session settings into .ddhxrc
+// - "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
+/// List of default commands and shortcuts
+immutable Command[] default_commands = [
     { "cursor-left",        Key.LeftArrow,          &move_left },
     { "cursor-right",       Key.RightArrow,         &move_right },
     { "cursor-up",          Key.UpArrow,            &move_up },

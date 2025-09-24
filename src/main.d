@@ -86,25 +86,25 @@ void main(string[] args)
     try
     {
         // TODO: --color/--no-color: Force color option (overrides rc)
-        // TODO: --help-commands: list of commands
-        // TODO: --help-configs: list of configurations
+        // TODO: --help-commands: list of commands + descriptions
+        // TODO: --help-configs: list of configurations + descriptions
         res = getopt(args, config.caseSensitive,
         // Secret options
         "assistant",    "", &printpage,
         //
         // Runtime configuration
         //
-        "c|columns",    "Set columns per row (default depends on --data)",
+        "c|columns",    "Set columns per row (default: 16)",
             (string _, string val)
             {
                 configRC(rc, "columns", val);
             },
-        "address",      "Set address mode ('hex', 'dec', or 'oct')",
+        "address",      "Set address mode ('hex'/'dec'/'oct', default: 'hex')",
             (string _, string val)
             {
                 configRC(rc, "address-type", val);
             },
-        "address-spacing", "Set address spacing in characters",
+        "address-spacing", "Set address spacing in characters (default: 11)",
             (string _, string val)
             {
                 configRC(rc, "address-spacing", val);
@@ -125,7 +125,7 @@ void main(string[] args)
         //
         // Editor configuration
         //
-        "R|readonly",   "Open file in read-only editing mode",
+        "R|readonly",   "Open file as read-only and restrict editing",
             ()
             {
                 rc.writemode = WritingMode.readonly;
