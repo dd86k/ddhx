@@ -113,6 +113,11 @@ struct Command
     void function(Session*, string[]) impl; /// Implementation
 }
 
+// NOTE: __gshared usage for default_commands
+//       When using immutable, windows-11-arm builds (using LDC) tests are passing,
+//       but then the program exits with with STATUS_HEAP_CORRUPTION.
+//       No issue when running with the --ver switch, so probably an edge case with
+//       unittests. Anyway, it was fine with __gshared, so use that.
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
 // - "search|search-front" (Ctrl+F and/or '/'): Forward search
 // - "search-back" (Ctrl+B and/or '?'): Backward search
@@ -121,7 +126,7 @@ struct Command
 // - "save-settings": Save session settings into .ddhxrc
 // - "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
 /// List of default commands and shortcuts
-immutable Command[] default_commands = [
+__gshared Command[] default_commands = [
     { "cursor-left",        Key.LeftArrow,          &move_left },
     { "cursor-right",       Key.RightArrow,         &move_right },
     { "cursor-up",          Key.UpArrow,            &move_up },
