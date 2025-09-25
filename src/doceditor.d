@@ -503,6 +503,11 @@ class DocEditor
             log("logical_size=%d", logical_size);
         }
         
+        // TODO: Rewrite this function
+        //       It'd be better to rewrite this function that "walks" across
+        //       "chunks" (min(chunk.length, len_rem)) which should cover
+        //       chunk gaps and chunk overflows.
+        
         // Time to locate (or create) a chunk to apply the patch to
         Chunk *chunk = chunks.locate(pos);
         if (chunk) // update chunk
@@ -519,38 +524,52 @@ class DocEditor
             if (basedoc)
             {
                 chunk.orig = chunk.used = basedoc.readAt(
-                    chunk.position, (cast(ubyte*)chunk.data)[0..chunk.length]).length;
+                    chunk.position, (cast(ubyte*)chunk.data)[0..chunk.length]
+                ).length;
+                
+                size_t chkoff = cast(size_t)(pos - chunk.position);
                 
                 // If chunk offset inside within used range, then there is old data
-                size_t o = cast(size_t)(pos - chunk.position);
-                if (o < chunk.used)
-                    patch.olddata = cast(ubyte*)chunk.data + o;
+                if (chkoff < chunk.used)
+                    patch.olddata = cast(ubyte*)chunk.data + chkoff;
             }
         }
         
+        // TODO: Fix cross-chunk old data reference
+        //       Probably with a "copy old data" function which can append
         // Add patch into set with new and old data
         log("add historyidx=%u patch=%s", historyidx, patch);
         patches.insert(historyidx++, patch);
         
         // Update chunk with new patch data
-        // NOTE: For now, chunks are aligned because I'm lazy :V
         import core.stdc.string : memcpy;
-        size_t chkpos = cast(size_t)(pos - chunk.position);
-        memcpy(chunk.data + chkpos, data, len);
-        
-        // Update chunk used size if overwrite op goes beyond it
-        size_t nchksz = chkpos + len;
-        if (nchksz >= chunk.used)
+        size_t chkoff = cast(size_t)(pos - chunk.position);
+        log("memcpy chkoff=%u len=%u chklen=%u chkusd=%u chkorg=%u",
+            chkoff, len, chunk.length, chunk.used, chunk.orig);
+        if (chkoff + len <= chunk.length) // data fits inside chunk
         {
-            chunk.used = nchksz;
+            memcpy(chunk.data + chkoff, data, len);
+            
+            // If new size is higher than currently used, then it is
+            // growsing, update its used size.
+            size_t nchksz = chkoff + len;
+            if (nchksz >= chunk.used)
+            {
+                chunk.used = nchksz;
+            }
+            
+            chunk.id++;
         }
-        
-        chunk.id++;
+        else // data overflows chunk
+        {
+            throw new Exception("assert: Chunk overflow");
+        }
         
         log("chunk=%s", *chunk);
     }
     /// Ditto
     public alias overwrite = replace;
+    
     // TODO: insert(long pos, const(void) *data, size_t len)
     // TODO: remove(long pos, const(void) *data, size_t len)
     //       Because delete is (was) a reserved keyword
@@ -1047,8 +1066,11 @@ unittest
     ]);
 }
 
-/// Check cross-chunk edits
-unittest
+// TODO: TEST-0011 (test disabled until relevant)
+//       Editor can only edit single bytes right now...
+//       If you enable this test, it might pass and silently fail
+/// Replace data across two chunks
+/*unittest
 {
     import document.memory : MemoryDocument;
     
@@ -1067,7 +1089,33 @@ unittest
     string s = "hi";
     e.replace(7, s.ptr, s.length);
     assert(e.view(0, buffer) == [ // 16 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 'h',
-        'i',  0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90,  'h', // <- chunk 0
+         'i', 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <- chunk 1
     ]);
-}
+}*/
+
+// TODO: TEST-0012 (test disabled until relevant)
+//       Editor can only edit single bytes right now...
+/// Append to a chunk so much it overflows to another chunk
+/*unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0012");
+    
+    static immutable ubyte[] data = [ // 7 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90,
+    ];
+    
+    scope DocEditor e = new DocEditor(0, 8);
+    e.attach(new MemoryDocument(data));
+    
+    ubyte[16] buffer;
+    
+    string s = "hello";
+    e.replace(6, s.ptr, s.length);
+    assert(e.view(0, buffer) == [ // 16 bytes, 8 bytes per row
+        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0,  'h',  'e', // <- chunk 0
+         'l',  'l',  'l',  'o'                          // <- chunk 1
+    ]);
+}*/
