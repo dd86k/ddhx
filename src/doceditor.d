@@ -256,10 +256,11 @@ class DocEditor
     
     // New session from opened document.
     // Caller has more control for its initial opening operation.
-    void attach(IDocument doc)
+    typeof(this) attach(IDocument doc)
     {
         basedoc = doc;
         logical_size = doc.size(); // init size
+        return this;
     }
     
     /// Current size of the document, including edits
@@ -733,7 +734,7 @@ unittest
     
     scope MemoryDocument doc = new MemoryDocument(data);
     
-    scope DocEditor e = new DocEditor(); e.attach(doc);
+    scope DocEditor e = new DocEditor().attach(doc);
     assert(e.edited() == false);
     assert(e.view(0, buffer[])          == data);
     assert(e.view(0, buffer[0..4])      == data[0..4]);
@@ -816,8 +817,7 @@ unittest
     log("TEST-0004");
     
     scope MemoryDocument doc = new MemoryDocument([ 'd', 'd' ]);
-    scope DocEditor e = new DocEditor();
-    e.attach(doc);
+    scope DocEditor e = new DocEditor().attach(doc);
     
     ubyte[4] buf = void;
     assert(e.view(0, buf[]) == "dd");
@@ -871,8 +871,7 @@ unittest
     
     // new operator memset's to 0
     enum DOC_SIZE = 8000;
-    scope DocEditor e = new DocEditor();
-    e.attach(new MemoryDocument(new ubyte[DOC_SIZE]));
+    scope DocEditor e = new DocEditor().attach(new MemoryDocument(new ubyte[DOC_SIZE]));
     
     ubyte[32] buf = void;
     assert(e.view(40, buf[0..4]) == [ 0, 0, 0, 0 ]);
@@ -913,8 +912,7 @@ unittest
     
     static immutable ubyte[] data = [ 0xf2, 0x49, 0xe6, 0xea ];
     
-    scope DocEditor e = new DocEditor();
-    e.attach(new MemoryDocument(data));
+    scope DocEditor e = new DocEditor().attach(new MemoryDocument(data));
     
     ubyte d = 0xff;
     e.replace(data.length    , &d, ubyte.sizeof);
@@ -942,8 +940,7 @@ unittest
     
     // Chunk size of 16 forces .view() to get more information beyond
     // edited chunk by reading the original doc for the view buffer.
-    scope DocEditor e = new DocEditor(0, 16);
-    e.attach(new MemoryDocument(data));
+    scope DocEditor e = new DocEditor(0, 16).attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;
     assert(e.view(0, buf) == data);
@@ -974,8 +971,7 @@ unittest
     
     // Chunk size of 16 forces .view() to get more information beyond
     // edited chunk by reading the original doc for the view buffer.
-    scope DocEditor e = new DocEditor(0, 16);
-    e.attach(new MemoryDocument(data));
+    scope DocEditor e = new DocEditor(0, 16).attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;
     assert(e.view(0, buf) == data);
@@ -1008,8 +1004,7 @@ unittest
         0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
     ];
     
-    scope DocEditor e = new DocEditor(0, 8);
-    e.attach(new MemoryDocument(data));
+    scope DocEditor e = new DocEditor(0, 8).attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;
     assert(e.view(16, buf[0..16]) == data[16..$]);
@@ -1037,8 +1032,7 @@ unittest
         0xe1, 0xe6, 0xd5, 0xb7, 
     ];
     
-    scope DocEditor e = new DocEditor(0, 16);
-    e.attach(new MemoryDocument(data));
+    scope DocEditor e = new DocEditor(0, 16).attach(new MemoryDocument(data));
     
     ubyte[32] buf = void;
     assert(e.view(16, buf[0..16]) == data[16..$]);
@@ -1081,8 +1075,7 @@ unittest
         0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
     ];
     
-    scope DocEditor e = new DocEditor(0, 8);
-    e.attach(new MemoryDocument(data));
+    scope DocEditor e = new DocEditor(0, 8).attach(new MemoryDocument(data));
     
     ubyte[16] buffer;
     
@@ -1107,8 +1100,7 @@ unittest
         0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90,
     ];
     
-    scope DocEditor e = new DocEditor(0, 8);
-    e.attach(new MemoryDocument(data));
+    scope DocEditor e = new DocEditor(0, 8).attach(new MemoryDocument(data));
     
     ubyte[16] buffer;
     
