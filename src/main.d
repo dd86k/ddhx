@@ -41,34 +41,54 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
-immutable string OPTION_SECRET  = "assistant";
-immutable string OPTION_VERSION = "version";
-immutable string OPTION_VER     = "ver";
-
 // print a line with spaces for field and value
-void versionline(string field, string line)
+void printfield(string field, string line, int spacing = -12)
 {
-    writefln("%*s %s", -12, field ? field : "", line);
+    writefln("%*s %s", spacing, field ? field : "", line);
 }
 
 void printpage(string opt)
 {
-    import platform : TARGET_TRIPLE;
     final switch (opt) {
-    case OPTION_SECRET:
+    case "assistant":
         writeln(SECRET);
         break;
-    case OPTION_VERSION:
-        versionline("ddhx", DDHX_VERSION);
-        versionline(null,   DDHX_BUILDINFO);
-        versionline("License", "MIT");
-        versionline(null,   DDHX_COPYRIGHT);
-        versionline("Homepage", "https://github.com/dd86k/ddhx");
-        versionline("Compiler", __VENDOR__~" "~DVER!__VERSION__);
-        versionline(null,   TARGET_TRIPLE);
+    case "version":
+        import platform : TARGET_TRIPLE;
+        printfield("ddhx",      DDHX_VERSION);
+        printfield(null,        DDHX_BUILDINFO);
+        printfield("License",   "MIT");
+        printfield(null,        DDHX_COPYRIGHT);
+        printfield("Homepage",  "https://github.com/dd86k/ddhx");
+        printfield("Compiler",  __VENDOR__~" "~DVER!__VERSION__);
+        printfield(null,        TARGET_TRIPLE);
         break;
-    case OPTION_VER:
+    case "ver":
         writeln(DDHX_VERSION);
+        break;
+    case "help-keys":
+        enum SPACING = -25;
+        printfield("COMMAND", "KEYS", SPACING);
+        foreach (command; default_commands)
+        {
+            if (command.key == 0) // no keys set
+                continue;
+            
+            writef("%*s ", SPACING, command.name);
+            import os.terminal : Key, Mod;
+            if (command.key & Mod.ctrl)  write("Ctrl+");
+            if (command.key & Mod.alt)   write("Alt+");
+            if (command.key & Mod.shift) write("Shift+");
+            writeln(cast(Key)cast(short)command.key);
+        }
+        break;
+    case "help-commands":
+        enum SPACING = -25;
+        printfield("COMMAND", "DESCRIPTION", SPACING);
+        foreach (command; default_commands)
+        {
+            printfield(command.name, command.description, SPACING);
+        }
         break;
     }
     exit(EXIT_SUCCESS);
@@ -86,7 +106,6 @@ void main(string[] args)
     try
     {
         // TODO: --color/--no-color: Force color option (overrides rc)
-        // TODO: --help-commands: list of commands + descriptions
         // TODO: --help-configs: list of configurations + descriptions
         res = getopt(args, config.caseSensitive,
         // Secret options
@@ -156,23 +175,8 @@ void main(string[] args)
         //
         "version",      "Print the version page and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
-        "help-keys",    "Print default shortcuts and exit",
-        {
-            writefln("%*s%s", -25, "COMMAND", "KEYS");
-            foreach (command; default_commands)
-            {
-                if (command.key == 0) // no keys set
-                    continue;
-                
-                writef(" %*s", -25, command.name);
-                import os.terminal : Key, Mod;
-                if (command.key & Mod.ctrl)  write("Ctrl+");
-                if (command.key & Mod.alt)   write("Alt+");
-                if (command.key & Mod.shift) write("Shift+");
-                writeln(cast(Key)cast(short)command.key);
-            }
-            exit(EXIT_SUCCESS);
-        }
+        "help-keys",    "Print default shortcuts and exit", &printpage,
+        "help-commands","Print commands page and exit", &printpage
         );
     }
     catch (Exception ex)

@@ -108,8 +108,9 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
 /// that implements it (required).
 struct Command
 {
-    string name;    /// Command short name
-    int key;        /// Shortcut
+    string name;        /// Command short name
+    string description; /// Short description
+    int key;            /// Default shortcut
     void function(Session*, string[]) impl; /// Implementation
 }
 
@@ -126,34 +127,61 @@ struct Command
 // - "save-settings": Save session settings into .ddhxrc
 // - "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
 /// List of default commands and shortcuts
-__gshared Command[] default_commands = [
-    { "cursor-left",        Key.LeftArrow,          &move_left },
-    { "cursor-right",       Key.RightArrow,         &move_right },
-    { "cursor-up",          Key.UpArrow,            &move_up },
-    { "cursor-down",        Key.DownArrow,          &move_down },
-    { "cursor-page-up",     Key.PageUp,             &move_pg_up },
-    { "cursor-page-down",   Key.PageDown,           &move_pg_down },
-    { "cursor-home",        Key.Home,               &move_ln_start },
-    { "cursor-end",         Key.End,                &move_ln_end },
-    { "cursor-sof",         Mod.ctrl|Key.Home,      &move_abs_start },
-    { "cursor-eof",         Mod.ctrl|Key.End,       &move_abs_end },
-    { "cursor-skip-back",   Mod.ctrl|Key.LeftArrow, &move_skip_backward },
-    { "cursor-skip-front",  Mod.ctrl|Key.RightArrow,&move_skip_forward },
-    { "view-up",            Mod.ctrl|Key.UpArrow,   &view_up },
-    { "view-down",          Mod.ctrl|Key.DownArrow, &view_down },
-    { "change-panel",       Key.Tab,                &change_panel },
-    { "change-writemode",   Key.Insert,             &change_writemode },
-    { "save",               Mod.ctrl|Key.S,         &save },
-    { "save-as",            Mod.ctrl|Key.O,         &save_as },
-    { "undo",               Mod.ctrl|Key.U,         &undo },
-    { "redo",               Mod.ctrl|Key.R,         &redo },
-    { "goto",               Mod.ctrl|Key.G,         &goto_ },
-    { "report-position",    Mod.ctrl|Key.P,         &report_position },
-    { "report-name",        Mod.ctrl|Key.N,         &report_name },
-    { "refresh",            Mod.ctrl|Key.L,         &refresh },
-    { "autosize",           Mod.alt|Key.R,          &autosize },
-    { "set",                0,                      &set },
-    { "quit",               Key.Q,                  &quit },
+immutable Command[] default_commands = [
+    { "cursor-left",        "Navigate one element back",
+        Key.LeftArrow,          &move_left },
+    { "cursor-right",       "Navigate one element forward",
+        Key.RightArrow,         &move_right },
+    { "cursor-up",          "Navigate one line back",
+        Key.UpArrow,            &move_up },
+    { "cursor-down",        "Navigate one line forward",
+        Key.DownArrow,          &move_down },
+    { "cursor-page-up",     "Navigate one screen page back",
+        Key.PageUp,             &move_pg_up },
+    { "cursor-page-down",   "Navigate one screen page forward",
+        Key.PageDown,           &move_pg_down },
+    { "cursor-home",        "Navigate to start of line",
+        Key.Home,               &move_ln_start },
+    { "cursor-end",         "Navigate to end of line",
+        Key.End,                &move_ln_end },
+    { "cursor-sof",         "Navigate to start of document",
+        Mod.ctrl|Key.Home,      &move_abs_start },
+    { "cursor-eof",         "Navigate to end of document",
+        Mod.ctrl|Key.End,       &move_abs_end },
+    { "cursor-skip-back",   "Skip forward to different element",
+        Mod.ctrl|Key.LeftArrow, &move_skip_backward },
+    { "cursor-skip-front",  "Skip backward to different element",
+        Mod.ctrl|Key.RightArrow,&move_skip_forward },
+    { "view-up",            "Move view up a row",
+        Mod.ctrl|Key.UpArrow,   &view_up },
+    { "view-down",          "Move view down a row",
+        Mod.ctrl|Key.DownArrow, &view_down },
+    { "change-panel",       "Switch to another data panel",
+        Key.Tab,                &change_panel },
+    { "change-writemode",   "Switch writing mode (overwrite, insert)",
+        Key.Insert,             &change_writemode },
+    { "save",               "Save document to file",
+        Mod.ctrl|Key.S,         &save },
+    { "save-as",            "Save document as a different file",
+        Mod.ctrl|Key.O,         &save_as },
+    { "undo",               "Undo last edit",
+        Mod.ctrl|Key.U,         &undo },
+    { "redo",               "Redo previously undone edit",
+        Mod.ctrl|Key.R,         &redo },
+    { "goto",               "Navigate or jump to a specific position",
+        Mod.ctrl|Key.G,         &goto_ },
+    { "report-position",    "Report cursor position on screen",
+        Mod.ctrl|Key.P,         &report_position },
+    { "report-name",        "Report document name on screen",
+        Mod.ctrl|Key.N,         &report_name },
+    { "refresh",            "Refresh entire screen",
+        Mod.ctrl|Key.L,         &refresh },
+    { "autosize",           "Automatically set column size depending of screen",
+        Mod.alt|Key.R,          &autosize },
+    { "set",                "Set a configuration value",
+        0,                      &set },
+    { "quit",               "Quit program",
+        Key.Q,                  &quit },
 ];
 /// Check if command names or shortcuts are duplicated
 unittest
