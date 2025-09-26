@@ -188,7 +188,11 @@ unittest
 {
     foreach (command; default_commands)
     {
+        // Needs a command name
         assert(command.name, "missing command name");
+        
+        // Needs an implementation function
+        assert(command.impl, "missing impl: "~command.name);
         
         if (command.name in _ecommands)
             assert(false, "dupe name: "~command.name);

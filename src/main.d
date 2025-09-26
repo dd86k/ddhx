@@ -90,6 +90,15 @@ void printpage(string opt)
             printfield(command.name, command.description, SPACING);
         }
         break;
+    case "help-configs":
+        foreach (conf; configurations)
+        {
+            writeln(conf.name);
+            writeln('\t', conf.description);
+            writeln('\t', "Values: ", conf.availvalues);
+            writeln('\t', "Default: ", conf.defaultval);
+        }
+        break;
     }
     exit(EXIT_SUCCESS);
 }
@@ -116,17 +125,17 @@ void main(string[] args)
         "c|columns",    "Set columns per row (default: 16)",
             (string _, string val)
             {
-                configRC(rc, "columns", val);
+                configuration_columns(rc, val);
             },
-        "address",      "Set address mode ('hex'/'dec'/'oct', default: 'hex')",
+        "A|addressing", `Set address mode ("hex"/"dec"/"oct", default: "hex")`,
             (string _, string val)
             {
-                configRC(rc, "address-type", val);
+                configuration_addressing(rc, val);
             },
         "address-spacing", "Set address spacing in characters (default: 11)",
             (string _, string val)
             {
-                configRC(rc, "address-spacing", val);
+                configuration_charset(rc, val);
             },
         /*
         "data",         "Set data mode (default: x8)",
@@ -136,7 +145,7 @@ void main(string[] args)
             },
         */
         //"filler",       "Set non-printable default character (default='.')", &cliOption,
-        "C|charset",    "Set character translation (default='ascii')",
+        "C|charset",    `Set character translation (default="ascii")`,
             (string _, string val)
             {
                 configRC(rc, "charset", val);
@@ -176,7 +185,8 @@ void main(string[] args)
         "version",      "Print the version page and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
         "help-keys",    "Print default shortcuts and exit", &printpage,
-        "help-commands","Print commands page and exit", &printpage
+        "help-commands","Print commands page and exit", &printpage,
+        "help-configs", "Print configuration page and exit", &printpage,
         );
     }
     catch (Exception ex)
