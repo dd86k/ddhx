@@ -12,12 +12,6 @@ import std.exception : enforce;
 import std.format;
 import transcoder : CharacterSet;
 
-/// Used in situations where something happened but it's safe to ignore
-class IgnoreException : Exception
-{
-    this() { super(null); } // @suppress(dscanner.style.undocumented_declaration)
-}
-
 /// Indicates which writing mode is active when entering data.
 enum WritingMode
 {
@@ -66,26 +60,32 @@ string addressTypeToString(AddressType type)
 ///     v = Address value.
 ///     spacing = Number of spacing in characters.
 ///     type = AddressType.
+///     zeros = If set, prepend with zeros.
 /// Returns: String slice.
-string formatAddress(char[] buf, long v, int spacing, AddressType type)
+string formatAddress(char[] buf, long v, int spacing, AddressType type, bool zeros = false)
 {
     string spec = void;
     final switch (type) {
-    case AddressType.hex: spec = "%*x"; break;
-    case AddressType.dec: spec = "%*d"; break;
-    case AddressType.oct: spec = "%*o"; break;
+    case AddressType.hex: spec = zeros ? "%0*x" : "%*x"; break;
+    case AddressType.dec: spec = zeros ? "%0*d" : "%*d"; break;
+    case AddressType.oct: spec = zeros ? "%0*o" : "%*o"; break;
     }
     return cast(string)sformat(buf, spec, spacing, v);
 }
 unittest
 {
     char[32] buf = void;
-    // Columns
+    // Address offset in column
     assert(formatAddress(buf[], 0x00, 2, AddressType.hex) == " 0");
     assert(formatAddress(buf[], 0x01, 2, AddressType.hex) == " 1");
     assert(formatAddress(buf[], 0x80, 2, AddressType.hex) == "80");
     assert(formatAddress(buf[], 0xff, 2, AddressType.hex) == "ff");
-    // Rows
+    assert(formatAddress(buf[], 0xff, 2, AddressType.dec) == "255");
+    assert(formatAddress(buf[], 0xff, 2, AddressType.oct) == "377");
+    assert(formatAddress(buf[], 0xf, 3, AddressType.hex, true) == "00f");
+    assert(formatAddress(buf[], 0xf, 3, AddressType.dec, true) == "015");
+    assert(formatAddress(buf[], 0xf, 3, AddressType.oct, true) == "017");
+    // Address offset in left panel
     assert(formatAddress(buf[], 0x00, 10, AddressType.hex)        == "         0");
     assert(formatAddress(buf[], 0x01, 10, AddressType.hex)        == "         1");
     assert(formatAddress(buf[], 0x80, 10, AddressType.hex)        == "        80");
@@ -97,6 +97,8 @@ unittest
     assert(formatAddress(buf[], 0x1000000, 10, AddressType.hex)   == "   1000000");
     assert(formatAddress(buf[], 0x10000000, 10, AddressType.hex)  == "  10000000");
     assert(formatAddress(buf[], 0x100000000, 10, AddressType.hex) == " 100000000");
+    assert(formatAddress(buf[], 0x100000000, 10, AddressType.hex) == " 100000000");
+    assert(formatAddress(buf[], ulong.max, 10, AddressType.hex)   == "ffffffffffffffff");
 }
 
 //
@@ -107,6 +109,10 @@ unittest
 enum DataType
 {
     x8,     /// 8-bit hexadecimal (e.g., 0xff will be ff)
+    //u8,     /// 8-bit unsigned decimal (0xff -> 255)
+    //o8,     /// 8-bit unsigned octal (0xff -> 377)
+    //s8,     /// 8-bit signal decimal
+    //i8,     /// 8-bit signal octal
 }
 /// Data specification for this data type.
 struct DataSpec
@@ -123,6 +129,8 @@ DataSpec dataSpec(DataType type)
 {
     final switch (type) {
     case DataType.x8: return DataSpec("x8", 2);
+    //case DataType.u8: return DataSpec("u8", 3);
+    //case DataType.o8: return DataSpec("o8", 3);
     }
 }
 /// Get label for this data type.
@@ -147,7 +155,7 @@ string formatData(char[] buf, void *dat, size_t len, DataType type)
     final switch (type) {
     case DataType.x8:
         enforce(len >= ubyte.sizeof, "length ran out");
-        return formatx8(buf, *cast(ubyte*)dat, false);
+        return formatx8(buf, *cast(ubyte*)dat, true);
     }
 }
 unittest
@@ -165,17 +173,20 @@ unittest
 /// Params:
 ///     buf = Character buffer.
 ///     v = Element value.
-///     spacer = Space-pad instead of zero-pad.
+///     zeros = If true, prepend with zeros.
 /// Returns: String slice.
-string formatx8(char[] buf, ubyte v, bool spacer)
+string formatx8(char[] buf, ubyte v, bool zeros)
 {
-    return cast(string)sformat(buf, spacer ? "%2x" : "%02x", v);
+    return cast(string)sformat(buf, zeros ? "%02x" : "%2x", v);
 }
 unittest
 {
     char[32] buf = void;
-    assert(formatx8(buf[], 0x00, false) == "00");
-    assert(formatx8(buf[], 0x01, false) == "01");
+    assert(formatx8(buf[], 0x00, true)  == "00");
+    assert(formatx8(buf[], 0x01, true)  == "01");
+    assert(formatx8(buf[], 0xff, true)  == "ff");
+    assert(formatx8(buf[], 0x00, false) == " 0");
+    assert(formatx8(buf[], 0x01, false) == " 1");
     assert(formatx8(buf[], 0xff, false) == "ff");
 }
 
@@ -193,7 +204,7 @@ struct DataFormatter
             formatdata = () {
                 if (buffer + size > max)
                     return null;
-                return formatx8(textbuf[], *cast(ubyte*)(buffer++), false);
+                return formatx8(textbuf[], *cast(ubyte*)(buffer++), true);
             };
             size = ubyte.sizeof;
             break;
@@ -239,7 +250,7 @@ class DocEditor
 {
     // New empty session
     this(
-        // Initial size of patch bufer
+        // Initial size of patch buffer
         size_t patchbufsz = 0,
         // Chunk size
         size_t chunkinc = 0,
@@ -492,8 +503,8 @@ class DocEditor
     // Create a new patch where data is being overwritten
     void replace(long pos, const(void) *data, size_t len)
     {
-        enforce(pos >= 0 && pos <= logical_size,
-            "assert: pos < 0 || pos > logical_size");
+        enforce(pos >= 0,            "assert: pos >= 0");
+        enforce(pos <= logical_size, "assert: pos <= logical_size");
         
         Patch patch = Patch(pos, PatchType.replace, 0, len, data, null);
         
@@ -578,7 +589,7 @@ class DocEditor
     Patch undo()
     {
         if (historyidx <= 0)
-            throw new IgnoreException();
+            return Patch();
         
         Patch patch = patches[historyidx - 1];
         // WTF did i forget
@@ -598,7 +609,6 @@ class DocEditor
             patch.address + patch.size >  chunk.position + chunk.orig)
         {
             chunk.used -= patch.size;
-            
             logical_size -= patch.size;
         }
         // Apply old data if not truncated by resize
@@ -618,7 +628,7 @@ class DocEditor
     Patch redo()
     {
         if (historyidx >= patches.count())
-            throw new IgnoreException();
+            return Patch();
         
         Patch patch = patches[historyidx];
         // WTF did i forget
@@ -644,7 +654,6 @@ class DocEditor
             patch.address + patch.size >  chunk.position + chunk.orig)
         {
             chunk.used += patch.size;
-            
             logical_size += patch.size;
         }
         

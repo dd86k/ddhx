@@ -260,7 +260,6 @@ Lread:
         {
             log("key=%s (%d)", input.key, input.key);
             try (*fn)(session, null);
-            catch (IgnoreException) {}
             catch (Exception ex)
             {
                 log("%s", ex);
@@ -666,13 +665,13 @@ void update_view(Session *session, TerminalSize termsize)
             {
                 dfmt.skip();
                 
-                string s = formatData(txtbuf[], _editbuf.ptr, _editbuf.length, session.rc.data_type);
-                w += terminalWrite(s);
+                w += terminalWrite(
+                    formatData(txtbuf[], _editbuf.ptr, _editbuf.length, session.rc.data_type)
+                );
             }
             else if (i < reslen) // apply data
             {
-                string s = dfmt.formatdata();
-                w += terminalWrite(s);
+                w += terminalWrite(dfmt.formatdata());
             }
             else // no data, print spacer
             {
@@ -694,15 +693,15 @@ void update_view(Session *session, TerminalSize termsize)
             
             if (highlight) terminalInvertColor();
             
-            if (i >= reslen) // unavail
-            {
-                w += terminalWrite(" ");
-            }
-            else
+            if (i < reslen)
             {
                 // NOTE: Escape codes do not seem to be a worry with tests
                 string c = transcode(result[i], session.rc.charset);
                 w += terminalWrite(c ? c : ".");
+            }
+            else // no data
+            {
+                w += terminalWrite(" ");
             }
             
             if (highlight) terminalResetColor();
@@ -820,7 +819,6 @@ void prompt_command(Session *session, string[] args)
     if (com)
     {
         try (*com)(session, argv);
-        catch (IgnoreException) {}
         catch (Exception ex)
         {
             log("%s", ex);
@@ -1077,7 +1075,8 @@ void undo(Session *session, string[] args)
     import patcher : Patch;
     Patch patch = session.editor.undo();
     
-    moveabs(session, patch.address);
+    if (patch.size)
+        moveabs(session, patch.address);
 }
 
 // 
@@ -1085,8 +1084,9 @@ void redo(Session *session, string[] args)
 {
     import patcher : Patch;
     Patch patch = session.editor.redo();
-
-    moveabs(session, patch.address + patch.size);
+    
+    if (patch.size)
+        moveabs(session, patch.address + patch.size);
 }
 
 // 
