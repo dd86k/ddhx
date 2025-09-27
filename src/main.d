@@ -54,14 +54,11 @@ void printpage(string opt)
         writeln(SECRET);
         break;
     case "version":
-        import platform : TARGET_TRIPLE;
         printfield("ddhx",      DDHX_VERSION);
         printfield(null,        DDHX_BUILDINFO);
         printfield("License",   "MIT");
         printfield(null,        DDHX_COPYRIGHT);
         printfield("Homepage",  "https://github.com/dd86k/ddhx");
-        printfield("Compiler",  __VENDOR__~" "~DVER!__VERSION__);
-        printfield(null,        TARGET_TRIPLE);
         break;
     case "ver":
         writeln(DDHX_VERSION);
@@ -98,6 +95,14 @@ void printpage(string opt)
             writeln('\t', "Values: ", conf.availvalues);
             writeln('\t', "Default: ", conf.defaultval);
         }
+        break;
+    case "help-debug":
+        import platform : TARGET_TRIPLE;
+        import os.path : findConfig;
+        printfield("Compiler",  __VENDOR__~" "~DVER!__VERSION__);
+        printfield("Target",    TARGET_TRIPLE);
+        string confpath = findConfig("ddhx", ".ddhxrc");
+        printfield("Config",    confpath ? confpath : "none");
         break;
     }
     exit(EXIT_SUCCESS);
@@ -187,6 +192,7 @@ void main(string[] args)
         "help-keys",    "Print default shortcuts and exit", &printpage,
         "help-commands","Print commands page and exit", &printpage,
         "help-configs", "Print configuration page and exit", &printpage,
+        "help-debug",   "Print debug page and exit", &printpage,
         );
     }
     catch (Exception ex)
