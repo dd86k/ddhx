@@ -932,7 +932,7 @@ void move_skip_backward(Session *session, string[] args)
     
     // 
     long base = curpos;
-    do
+    loop: do
     {
         base -= SEARCH_SIZE;
         if (base < 0)
@@ -951,7 +951,7 @@ void move_skip_backward(Session *session, string[] args)
         {
             if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
             {
-                break;
+                break loop;
             }
         }
     }
@@ -993,7 +993,7 @@ void move_skip_forward(Session *session, string[] args)
     scope(exit) free(haybuffer.ptr);
     
     // 
-    do
+    loop: do
     {
         ubyte[] haystack = session.editor.view(curpos, haybuffer);
         if (haystack.length < elemsize)
@@ -1006,7 +1006,7 @@ void move_skip_forward(Session *session, string[] args)
         {
             if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
             {
-                break;
+                break loop;
             }
         }
     }
