@@ -23,8 +23,7 @@ else version (Posix)
 }
 
 import std.process : environment;
-import std.path : dirSeparator, buildPath;
-import std.file : exists;
+import std.path : buildPath;
 
 // NOTE: As of Windows Vista, the SHGetSpecialFolderPathW function is a wrapper
 //       for SHGetKnownFolderPath. The latter not defined in the shlobj module.
@@ -39,37 +38,34 @@ string getHomeFolder()
     version (Windows)
     {
         // 1. %USERPROFILE%
-        if ("USERPROFILE" in environment)
-            return environment["USERPROFILE"];
+        if (string userprofile = environment.get("USERPROFILE"))
+            return userprofile;
         // 2. %HOMEDRIVE% and %HOMEPATH%
-        if ("HOMEDRIVE" in environment && "HOMEPATH" in environment)
-            return environment["HOMEDRIVE"] ~ environment["HOMEPATH"];
+        string homedrive = environment.get("HOMEDRIVE");
+        string homepath  = environment.get("HOMEPATH");
+        if (homedrive && homepath)
+            return homedrive ~ homepath;
         // 3. SHGetFolderPath
         wchar *buffer = cast(wchar*)malloc(1024);
+        assert(buffer, "malloc failed");
+        scope(exit) free(buffer); // transcode allocates, so it's safe to free
         if (SHGetFolderPathW(null, CSIDL_PROFILE, null, 0, buffer) == S_OK)
         {
             string path;
             transcode(buffer[0..wcslen(buffer)], path);
-            free(buffer); // since transcode allocates
             return path;
         }
-        free(buffer);
     }
     else version (Posix)
     {
         // 1. $HOME
-        if ("HOME" in environment)
-            return environment["HOME"];
+        if (string home = environment.get("HOME"))
+            return home;
         // 2. getpwuid+getuid
-        uid_t uid = getuid();
-        if (uid >= 0)
+        passwd *wd = getpwuid(getuid());
+        if (wd && wd.pw_dir)
         {
-            passwd *wd = getpwuid(uid);
-            if (wd)
-            {
-                return cast(immutable(char)[])
-                    wd.pw_dir[0..strlen(wd.pw_dir)];
-            }
+            return cast(string)wd.pw_dir[0..strlen(wd.pw_dir)];
         }
     }
     
@@ -86,29 +82,27 @@ string getUserConfigFolder()
     version (Windows)
     {
         // 1. %LOCALAPPDATA%
-        if ("LOCALAPPDATA" in environment)
-            return environment["LOCALAPPDATA"];
+        if (string localappdata = environment.get("LOCALAPPDATA"))
+            return localappdata;
         // 2. SHGetFolderPath
         wchar *buffer = cast(wchar*)malloc(1024);
+        assert(buffer, "malloc failed");
+        scope(exit) free(buffer); // transcode allocates
         if (SHGetFolderPathW(null, CSIDL_LOCAL_APPDATA, null, 0, buffer) == S_OK)
         {
             string path;
             transcode(buffer[0..wcslen(buffer)], path);
-            free(buffer); // transcode allocates
             return path;
         }
-        free(buffer);
     }
     else version (Posix)
     {
-        if ("XDG_CONFIG_HOME" in environment)
-            return environment["XDG_CONFIG_HOME"];
+        if (string xdg_config_home = environment.get("XDG_CONFIG_HOME"))
+            return xdg_config_home;
     }
     
     // Fallback
-    
     string base = getHomeFolder;
-    
     if (base is null)
         return null;
     
@@ -122,36 +116,34 @@ string getUserConfigFolder()
     }
 }
 
-/// Build the path for a given file name with the user home folder.
-/// This does not verify if the path exists.
-/// Windows: Typically C:\\Users\\%USERNAME%\\{filename}
-/// Posix: Typically /home/$USERNAME/{filename}
-/// Params: filename = Name of a file.
-/// Returns: Path or null on failure.
-string buildUserFile(string filename)
-{
-    string base = getHomeFolder;
-    
-    if (base is null)
-        return null;
-    
-    return buildPath(base, filename);
-}
-
-/// Build the path for a given file name and parent folder with the user data folder.
-/// This does not verify if the path exists.
-/// Windows: Typically C:\\Users\\%USERNAME%\\AppData\\Roaming\\{appname}\\{filename}
-/// Posix: Typically /home/$USERNAME/.config/{appname}/{filename}
+/// Attempt to find existing config file on the system.
 /// Params:
-///     appname = Name of the app. This acts as the parent folder.
-///     filename = Name of a file.
-/// Returns: Path or null on failure.
-string buildUserAppFile(string appname, string filename)
+///     appname = Application name, used for user config folder.
+///     filename = File to get.
+/// Returns: Path to config file, or null.
+string findConfig(string appname, string filename)
 {
-    string base = getUserConfigFolder;
+    import std.file : exists;
     
-    if (base is null)
-        return null;
+    // 1. Check in app config directory
+    string appdir = getUserConfigFolder;
+    if (appdir)
+    {
+        string path = buildPath(appdir, appname, filename);
+        if (exists(path))
+            return path;
+    }
     
-    return buildPath(base, appname, filename);
+    // 2. Check in user home folder
+    string homedir = getHomeFolder();
+    if (homedir)
+    {
+        string path = buildPath(homedir, filename);
+        if (exists(path))
+            return path;
+    }
+    
+    // 3. Check in system folder (TODO)
+    
+    return null;
 }
