@@ -38,6 +38,9 @@ struct RC
     
     /// Number of characters to fill when printing row address.
     int address_spacing = 11;
+    
+    /// On terminal resize, automatically set number of columns to fit screen.
+    bool autoresize;
 }
 
 /// Return true/false given sting input.
@@ -91,11 +94,11 @@ struct Config
     void function(ref RC, string) impl; /// Implementation function
 }
 /// Available configurations.
-immutable Config[] configurations = [
+immutable Config[] configurations = [ // Try keeping this ascending by name!
     {
-        "columns", "Number of elements to show on a row",
-        "Number", "16",
-        &configuration_columns
+        "address-spacing", "Left row address spacing in characters",
+        "Number", "11",
+        &configuration_address_spacing
     },
     {
         "addressing", "Addressing offset format displayed",
@@ -103,14 +106,19 @@ immutable Config[] configurations = [
         &configuration_addressing
     },
     {
-        "address-spacing", "Left row address spacing in characters",
-        "Number", "11",
-        &configuration_address_spacing
+        "autoresize", "If set, automatically resize columns to fit screen",
+        "Boolean", `"off"`,
+        &configuration_autoresize
     },
     {
         "charset", "Character set",
         `"ascii", "cp437", "mac", "ebcdic"`, `"ascii"`,
         &configuration_charset
+    },
+    {
+        "columns", "Number of elements to show on a row",
+        "Number", "16",
+        &configuration_columns
     },
 ];
 unittest
@@ -165,6 +173,11 @@ unittest
     
     configRC(rc, "charset", "ebcdic");
     assert(rc.charset == CharacterSet.ebcdic);
+}
+
+void configuration_autoresize(ref RC rc, string value)
+{
+    rc.autoresize = boolean(value);
 }
 
 void configuration_columns(ref RC rc, string value)

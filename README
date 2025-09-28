@@ -163,7 +163,7 @@ For example, changing the character set:
 Many of these configuration parameters can be set using the Command-Line
 Interface. For example, "columns" is mapped to "-c" and "--columns="
 
-To view available commands, execute `ddhx --help-configs`.
+To view available configuration options, execute `ddhx --help-configs`.
 
 //
 // Compiling & Debugging

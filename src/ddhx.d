@@ -346,6 +346,10 @@ Lread:
 
 void onresize()
 {
+    // If autoresize configuration is enabled, automatically set columns
+    if (g_session.rc.autoresize)
+        autosize(g_session, null);
+    
     update(g_session);
 }
 

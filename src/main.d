@@ -127,6 +127,11 @@ void main(string[] args)
         //
         // Runtime configuration
         //
+        "autoresize",   "Automatically resize columns on dimension change",
+            ()
+            {
+                rc.autoresize = true;
+            },
         "c|columns",    "Set columns per row (default: 16)",
             (string _, string val)
             {
