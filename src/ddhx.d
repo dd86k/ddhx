@@ -1117,13 +1117,6 @@ void goto_(Session *session, string[] args)
     if (off.length == 0)
         return; // special since it will happen often to cancel
     
-    // Keywords
-    switch (off) {
-    case "end", "eof":   move_abs_end(session, null); return;
-    case "start", "sof": move_abs_start(session, null); return;
-    default:
-    }
-    
     // Number
     switch (off[0]) {
     case '+':
