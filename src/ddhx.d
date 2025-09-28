@@ -7,14 +7,11 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-import std.format;
-import std.range;
-import std.stdio;
+import std.stdio : readln;
 import std.string;
 import os.terminal;
 import configuration;
 import doceditor;
-import document;
 import logger;
 import transcoder;
 
@@ -80,28 +77,28 @@ struct Session
 private __gshared // globals have the ugly "g_" prefix to be told apart
 {
     // Editor status
-    int _estatus;
+    int g_status;
     // Updated at render
-    int _erows;
+    int g_rows;
     
     // HACK: Global for screen resize events
     Session *g_session;
     
-    string _emessagebuf;
+    string g_messagebuf;
     
     // TODO: Should be turned into a "reader" (struct+function)
     //       Allows additional unittests and settings (e.g., RTL).
     // location where edit started
-    long _editcurpos;
+    long g_editcurpos;
     // position of digit for edit, starting at most-significant digit
-    size_t _editdigit;
+    size_t g_editdigit;
     // 
-    ubyte[8] _editbuf;
+    ubyte[8] g_editbuf;
     
     /// Registered commands
-    void function(Session*, string[])[string] _ecommands;
+    void function(Session*, string[])[string] g_commands;
     /// Registered shortcuts
-    void function(Session*, string[])[int] _ekeys;
+    void function(Session*, string[])[int] g_keys;
 }
 
 /// Represents a command with a name (required), a shortcut, and a function
@@ -114,15 +111,9 @@ struct Command
     void function(Session*, string[]) impl; /// Implementation
 }
 
-// NOTE: __gshared usage for default_commands
-//       When using immutable, windows-11-arm builds (using LDC) tests are passing,
-//       but then the program exits with with STATUS_HEAP_CORRUPTION.
-//       No issue when running with the --ver switch, so probably an edge case with
-//       unittests. Anyway, it was fine with __gshared, so use that.
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
 // - "search|search-front" (Ctrl+F and/or '/'): Forward search
 // - "search-back" (Ctrl+B and/or '?'): Backward search
-// - "refresh" (Ctrl+L): Refresh screen
 // - "toggle-*" (Alt+Key): Hiding/showing panels
 // - "save-settings": Save session settings into .ddhxrc
 // - "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
@@ -194,13 +185,13 @@ unittest
         // Needs an implementation function
         assert(command.impl, "missing impl: "~command.name);
         
-        if (command.name in _ecommands)
+        if (command.name in g_commands)
             assert(false, "dupe name: "~command.name);
-        _ecommands[command.name] = command.impl;
+        g_commands[command.name] = command.impl;
         
-        if (command.key in _ekeys)
+        if (command.key in g_keys)
             assert(false, "dupe key: "~command.name);
-        _ekeys[command.key] = command.impl;
+        g_keys[command.key] = command.impl;
     }
 }
 
@@ -212,7 +203,7 @@ unittest
 ///     initmsg = Initial message.
 void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
 {
-    _estatus = UINIT; // init here since message could be called later
+    g_status = UINIT; // init here since message could be called later
     
     g_session = new Session(rc);
     g_session.target = path;
@@ -228,14 +219,23 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
     // Setup default commands and shortcuts
     foreach (command; default_commands)
     {
-        _ecommands[command.name] = command.impl;
+        g_commands[command.name] = command.impl;
         
         if (command.key)
-            _ekeys[command.key] = command.impl;
+            g_keys[command.key] = command.impl;
+    }
+    
+    debug
+    {
+        g_commands["test-error"] =
+        (Session*, string[])
+        {
+            throw new Exception("error test");
+        };
     }
     
     // Special keybinds with no attached commands
-    _ekeys[Key.Enter] = &prompt_command;
+    g_keys[Key.Enter] = &prompt_command;
     
     loop(g_session);
     
@@ -255,7 +255,7 @@ Lread:
     switch (input.type) {
     case InputType.keyDown:
         // Key mapped to command
-        auto fn = input.key in _ekeys;
+        auto fn = input.key in g_keys;
         if (fn)
         {
             log("key=%s (%d)", input.key, input.key);
@@ -296,26 +296,26 @@ Lread:
             break;
         }
         
-        if (_editdigit == 0) // start new edit
+        if (g_editdigit == 0) // start new edit
         {
-            _editcurpos = session.position_cursor;
+            g_editcurpos = session.position_cursor;
             import core.stdc.string : memset;
-            memset(_editbuf.ptr, 0, _editbuf.length);
+            memset(g_editbuf.ptr, 0, g_editbuf.length);
         }
         
-        _estatus |= UEDITING;
-        shfdata(_editbuf.ptr, _editbuf.length, session.rc.data_type, kv, _editdigit++);
+        g_status |= UEDITING;
+        shfdata(g_editbuf.ptr, g_editbuf.length, session.rc.data_type, kv, g_editdigit++);
         
         DataSpec spec = dataSpec(session.rc.data_type);
         int chars = spec.spacing;
         
         // If entered an edit fully or cursor position changed,
         // add edit into history stack
-        if (_editdigit >= chars)
+        if (g_editdigit >= chars)
         {
             // TODO: multi-byte edits
-            g_session.editor.overwrite(_editcurpos, _editbuf.ptr, ubyte.sizeof);
-            _editdigit = 0;
+            g_session.editor.overwrite(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+            g_editdigit = 0;
             move_right(g_session, null);
         }
         break;
@@ -335,10 +335,10 @@ void onresize()
 void bind(int key, string name)
 {
     import std.conv : text;
-    void function(Session*,string[]) *func = name in _ecommands;
+    void function(Session*,string[]) *func = name in g_commands;
     if (func == null)
         throw new Exception(text("Command not found: '", name, "'"));
-    _ekeys[key] = *func;
+    g_keys[key] = *func;
 }
 
 // Invoke command prompt
@@ -347,7 +347,7 @@ string promptline(string text)
     assert(text, "Prompt text missing");
     assert(text.length, "Prompt text required"); // disallow empty
     
-    _estatus |= UHEADER; // Needs to be repainted anyway
+    g_status |= UHEADER; // Needs to be repainted anyway
     
     // Clear upper space
     TerminalSize tsize = terminalSize();
@@ -374,7 +374,7 @@ string promptline(string text)
     // Force update view if prompt+line overflows to view,
     // since we're currently reading lines at the top of screen
     if (text.length + line.length >= tcols)
-        _estatus |= UVIEW;
+        g_status |= UVIEW;
     
     return line;
 }
@@ -383,7 +383,7 @@ int promptkey(string text)
     assert(text, "Prompt text missing");
     assert(text.length, "Prompt text required"); // disallow empty
     
-    _estatus |= UHEADER; // Needs to be repainted anyway
+    g_status |= UHEADER; // Needs to be repainted anyway
     
     // Clear upper space
     TerminalSize tsize = terminalSize();
@@ -519,10 +519,10 @@ void moveabs(Session *session, long pos)
 {
     // If the cursor position changed while editing... Just save the edit.
     // Both _editdigit and _editcurpos are set by the editor reliably.
-    if (_editdigit && _editcurpos != pos)
+    if (g_editdigit && g_editcurpos != pos)
     {
-        _editdigit = 0;
-        session.editor.overwrite(_editcurpos, _editbuf.ptr, ubyte.sizeof);
+        g_editdigit = 0;
+        session.editor.overwrite(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
     }
     
     // Can't go beyond file
@@ -539,7 +539,7 @@ void moveabs(Session *session, long pos)
     // Adjust base (camera/view) position if the moved cursor (new position)
     // is behind or ahead of the view.
     import utils : align64down, align64up;
-    int count = session.rc.columns * _erows;
+    int count = session.rc.columns * g_rows;
     if (pos < session.position_view) // cursor is behind view
     {
         session.position_view = align64down(pos, session.rc.columns);
@@ -550,7 +550,7 @@ void moveabs(Session *session, long pos)
     }
     
     session.position_cursor = pos;
-    _estatus |= UVIEW | USTATUSBAR;
+    g_status |= UVIEW | USTATUSBAR;
 }
 
 // Send a message within the editor to be displayed.
@@ -564,8 +564,8 @@ void message(A...)(string fmt, A args)
     
     try
     {
-        _emessagebuf = format(fmt, args);
-        _estatus |= UMESSAGE;
+        g_messagebuf = format(fmt, args);
+        g_status |= UMESSAGE;
     }
     catch (Exception ex)
     {
@@ -611,7 +611,7 @@ void update_view(Session *session, TerminalSize termsize)
     debug sw.start();
     
     int cols        = session.rc.columns;
-    int rows        = _erows = termsize.rows - 2;
+    int rows        = g_rows = termsize.rows - 2;
     int count       = rows * cols;
     long curpos     = session.position_cursor;
     long basepos    = session.position_view;
@@ -661,12 +661,12 @@ void update_view(Session *session, TerminalSize termsize)
             
             if (highlight) terminalInvertColor();
             
-            if (_editdigit && highlight) // apply current edit at position
+            if (g_editdigit && highlight) // apply current edit at position
             {
                 dfmt.skip();
                 
                 w += terminalWrite(
-                    formatData(txtbuf[], _editbuf.ptr, _editbuf.length, session.rc.data_type)
+                    formatData(txtbuf[], g_editbuf.ptr, g_editbuf.length, session.rc.data_type)
                 );
             }
             else if (i < reslen) // apply data
@@ -730,9 +730,9 @@ void update_status(Session *session, TerminalSize termsize)
     // If there is a pending message, print that.
     // Otherwise, print status bar using the message buffer space.
     string msg = void;
-    if (_estatus & UMESSAGE)
+    if (g_status & UMESSAGE)
     {
-        msg = _emessagebuf;
+        msg = g_messagebuf;
     }
     else
     {
@@ -782,7 +782,7 @@ void update(Session *session)
     TerminalSize termsize = terminalSize();
     
     // Number of effective rows for data view
-    _erows = termsize.rows - 2;
+    g_rows = termsize.rows - 2;
     
     update_header(session, termsize);
     
@@ -790,13 +790,15 @@ void update(Session *session)
     
     update_status(session, termsize);
     
-    _estatus = 0;
+    g_status = 0;
 }
 
 //
 // ANCHOR Commands
 //
 
+// TODO: args[0] could be prompt shortcut
+//       ie, "/" for forward search.
 // Run command
 void prompt_command(Session *session, string[] args)
 {
@@ -811,24 +813,20 @@ void prompt_command(Session *session, string[] args)
         return;
     
     log("command='%s'", argv);
-    string argv0 = argv[0];
+    string name = argv[0];
     argv = argv.length > 1 ? argv[1..$] : null;
     
-    // Command
-    const(void function(Session*, string[])) *com = argv0 in _ecommands;
-    if (com)
+    // Get command by its name
+    const(void function(Session*, string[])) *com = name in g_commands;
+    if (com == null)
     {
-        try (*com)(session, argv);
-        catch (Exception ex)
-        {
-            log("%s", ex);
-            message(ex.msg);
-        }
+        import std.conv : text;
+        throw new Exception(text("command not found: ", name));
     }
-    else
-    {
-        message("command not found: '%s'", argv0);
-    }
+    
+    // Run command, it's ok if it throws, it's covered by a key operation,
+    // including command prompt (Return)
+    (*com)(session, argv);
 }
 
 // Move back a single item
@@ -863,12 +861,12 @@ void move_pg_up(Session *session, string[] args)
     if (session.position_cursor == 0)
         return;
     
-    moverel(session, -(_erows * session.rc.columns));
+    moverel(session, -(g_rows * session.rc.columns));
 }
 // Move forward a page
 void move_pg_down(Session *session, string[] args)
 {
-    moverel(session, +(_erows * session.rc.columns));
+    moverel(session, +(g_rows * session.rc.columns));
 }
 // Move to start of line
 void move_ln_start(Session *session, string[] args) // move to start of line
@@ -1030,7 +1028,7 @@ void view_up(Session *session, string[] args)
 // Move view down
 void view_down(Session *session, string[] args)
 {
-    int count = session.rc.columns * _erows;
+    int count = session.rc.columns * g_rows;
     long max = session.editor.currentSize - count;
     if (session.position_view > max)
         return;
@@ -1051,7 +1049,7 @@ void change_writemode(Session *session, string[] args)
         session.rc.writemode = WritingMode.insert;
         break;
     }
-    _estatus |= USTATUSBAR;
+    g_status |= USTATUSBAR;
 }
 
 // Refresh screen

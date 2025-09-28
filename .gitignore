@@ -23,6 +23,7 @@ __test__*__
 # Project
 .ddhxrc
 *.log
+*.patch
 
 # Personal
 perso/

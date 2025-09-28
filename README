@@ -163,23 +163,7 @@ For example, changing the character set:
 Many of these configuration parameters can be set using the Command-Line
 Interface. For example, "columns" is mapped to "-c" and "--columns="
 
-Fields:
-"columns"
-    Number of elements to show on a row
-    Argument: Number
-    Default: 16
-"address-type", "address"
-    Change displayed address type
-    Argument: "hex", "dec", or "oct"
-    Default: "hex"
-"address-spacing"
-    Change how much spacing the left address column takes
-    Argument: Number
-    Default: 11 (upto 0xfffffffffff, so ~16 TiB)
-"charset"
-    Change displayed character set
-    Argument: "ascii", "cp437", "mac", or "ebcdic"
-    Default: "ascii"
+To view available commands, execute `ddhx --help-configs`.
 
 //
 // Compiling & Debugging
