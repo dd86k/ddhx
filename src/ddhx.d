@@ -74,6 +74,15 @@ struct Session
     string target;
 }
 
+private
+struct Keybind
+{
+    /// Function implementing command
+    void function(Session*, string[]) impl;
+    /// Parameters to add
+    string[] parameters;
+}
+
 private __gshared // globals have the ugly "g_" prefix to be told apart
 {
     // Editor status
@@ -98,7 +107,7 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     /// Registered commands
     void function(Session*, string[])[string] g_commands;
     /// Registered shortcuts
-    void function(Session*, string[])[int] g_keys;
+    Keybind[int] g_keys;
 }
 
 /// Represents a command with a name (required), a shortcut, and a function
@@ -181,6 +190,8 @@ immutable Command[] default_commands = [
         Mod.alt|Key.R,          &autosize },
     { "set",                "Set a configuration value",
         0,                      &set },
+    { "bind",               "Bind a shortcut to an action",
+        0,                      &bind },
     { "quit",               "Quit program",
         Key.Q,                  &quit },
 ];
@@ -195,13 +206,19 @@ unittest
         // Needs an implementation function
         assert(command.impl, "missing impl: "~command.name);
         
+        // Check if command name is duplicated
         if (command.name in g_commands)
             assert(false, "dupe name: "~command.name);
         g_commands[command.name] = command.impl;
         
+        // No need to check key if unset
+        if (command.key == 0)
+            continue;
+        
+        // Otherwise, check if shortcut is duplicated
         if (command.key in g_keys)
             assert(false, "dupe key: "~command.name);
-        g_keys[command.key] = command.impl;
+        g_keys[command.key] = Keybind( command.impl, null );
     }
 }
 
@@ -232,7 +249,7 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
         g_commands[command.name] = command.impl;
         
         if (command.key)
-            g_keys[command.key] = command.impl;
+            g_keys[command.key] = Keybind( command.impl, null );
     }
     
     // Add commands and shortcuts for debug builds.
@@ -246,14 +263,16 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
         
         // ^H is binded to something on my terminal... No idea what.
         g_keys[Mod.ctrl|Key.J] =
-        (Session*, string[])
-        {
-            throw new Exception("error test");
-        };
+        Keybind((Session*, string[])
+            {
+                throw new Exception("error test");
+            },
+            null
+        );
     }
     
     // Special keybinds with no attached commands
-    g_keys[Key.Enter] = &prompt_command;
+    g_keys[Key.Enter] = Keybind( &prompt_command, null );
     
     loop(g_session);
     
@@ -273,11 +292,11 @@ Lread:
     switch (input.type) {
     case InputType.keyDown:
         // Key mapped to command
-        auto fn = input.key in g_keys;
-        if (fn)
+        const(Keybind) *k = input.key in g_keys;
+        if (k)
         {
             log("key=%s (%d)", input.key, input.key);
-            try (*fn)(session, null);
+            try k.impl(session, cast(string[])k.parameters);
             catch (Exception ex)
             {
                 log("%s", ex);
@@ -353,14 +372,83 @@ void onresize()
     update(g_session);
 }
 
-// Bind a shortcut to a command
-void bind(int key, string name)
+// Bind a key to a command with default set of parameters
+void bindkey(int key, string command, string[] parameters)
 {
     import std.conv : text;
-    void function(Session*,string[]) *func = name in g_commands;
-    if (func == null)
-        throw new Exception(text("Command not found: '", name, "'"));
-    g_keys[key] = *func;
+    
+    log(`key=%d command="%s" params="%s"`, key, command, parameters);
+    
+    void function(Session*, string[]) *impl = command in g_commands;
+    if (impl == null)
+        throw new Exception(text("Unknown command: ", command));
+    
+    g_keys[key] = Keybind( *impl, parameters );
+}
+
+// Return key value from string interpretation
+int keybind(string value)
+{
+    import std.string : startsWith;
+    
+    int mod; /// modificators
+    
+    static immutable string ctrlpfx = "ctrl+";
+    if (startsWith(value, ctrlpfx))
+    {
+        mod |= Mod.ctrl;
+        value = value[ctrlpfx.length..$];
+    }
+    
+    static immutable string altpfx = "alt+";
+    if (startsWith(value, altpfx))
+    {
+        mod |= Mod.alt;
+        value = value[altpfx.length..$];
+    }
+    
+    static immutable string shiftpfx = "shift+";
+    if (startsWith(value, shiftpfx))
+    {
+        mod |= Mod.shift;
+        value = value[shiftpfx.length..$];
+    }
+    
+    if (value.length == 0)
+        throw new Exception("Expected key, got empty");
+    
+    int c = value[0];
+    if (value.length == 1 && c >= 'a' && c <= 'z')
+        return mod | (c - 32);
+    else if (value.length == 1 && c >= '0' && c <= '9') // NOTE: '0'==Key.D0
+        return mod | c;
+    
+    switch (value) {
+    case "insert":      return mod | Key.Insert;
+    case "home":        return mod | Key.Home;
+    case "page-up":     return mod | Key.PageUp;
+    case "page-down":   return mod | Key.PageDown;
+    case "delete":      return mod | Key.Delete;
+    case "left-arrow":  return mod | Key.LeftArrow;
+    case "right-arrow": return mod | Key.RightArrow;
+    case "up-arrow":    return mod | Key.UpArrow;
+    case "down-arrow":  return mod | Key.DownArrow;
+    default:
+        throw new Exception("Unknown key");
+    }
+}
+unittest
+{
+    assert(keybind("a")             == Key.A);
+    assert(keybind("alt+a")         == Mod.alt+Key.A);
+    assert(keybind("ctrl+a")        == Mod.ctrl+Key.A);
+    assert(keybind("shift+a")       == Mod.shift+Key.A);
+    assert(keybind("ctrl+0")        == Mod.ctrl+Key.D0);
+    assert(keybind("ctrl+insert")   == Mod.ctrl+Key.Insert);
+    assert(keybind("ctrl+home")     == Mod.ctrl+Key.Home);
+    assert(keybind("page-up")       == Key.PageUp);
+    assert(keybind("shift+page-up") == Mod.shift+Key.PageUp);
+    assert(keybind("delete")        == Key.Delete);
 }
 
 // Invoke command prompt
@@ -1265,17 +1353,28 @@ void save_as(Session *session, string[] args)
 // Set runtime config
 void set(Session *session, string[] args)
 {
-    string setting = arg(args, 0, "setting: ");
+    string setting = arg(args, 0, "Setting: ");
     if (setting.length == 0)
         throw new Exception("Canceled");
     
-    string value = arg(args, 1, "value: ");
+    string value = arg(args, 1, "Value: ");
     if (value.length == 0)
         throw new Exception("Canceled");
     
     configRC(session.rc, setting, value);
 }
 
+// Bind key to action (command + parameters)
+void bind(Session *session, string[] args)
+{
+    int key = keybind( arg(args, 0, "Key: ") );
+    // BUG: promptline returns as one string, so "goto +32" might happen
+    string command = arg(args, 1, "Command: ");
+    
+    bindkey(key, command, args.length >= 2 ? args[2..$] : null);
+}
+
+// Quit app
 void quit(Session *session, string[] args)
 {
     if (session.editor.edited())
