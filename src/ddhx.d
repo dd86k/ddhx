@@ -112,36 +112,46 @@ struct Command
 }
 
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
-// - "search|search-front" (Ctrl+F and/or '/'): Forward search
-// - "search-back" (Ctrl+B and/or '?'): Backward search
+// - "find" (Ctrl+F and/or '/'): Forward find
+// - "find-back" (Ctrl+B and/or '?'): Backward search
+// - "find-next" (prefill with Ctrl+F): Find next instance for find
+// - "find-prev" (prefill with Ctrl+F): Find next instance for find-back
 // - "toggle-*" (Alt+Key): Hiding/showing panels
 // - "save-settings": Save session settings into .ddhxrc
 // - "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
+// - "backspace" (Backspace): Delete elements backwards
+// - "delete" (Delete): Delete elements forward
+// - "bind": Bind shortcuts ("bind ctrl+5 goto +50")
+// NOTE: Command names
+//       Because navigation keys are the most essential, they get short names.
+//       For example, mpv uses LEFT and RIGHT to bind to "seek -10" and "seek 10".
+//       Here, both "bind ctrl+9 right" and "bind ctrl+9 goto +1" are both valid.
+//       Otherwise, it's better to name them "do-thing" syntax.
 /// List of default commands and shortcuts
 immutable Command[] default_commands = [
-    { "cursor-left",        "Navigate one element back",
+    { "left",               "Navigate one element back",
         Key.LeftArrow,          &move_left },
-    { "cursor-right",       "Navigate one element forward",
+    { "right",              "Navigate one element forward",
         Key.RightArrow,         &move_right },
-    { "cursor-up",          "Navigate one line back",
+    { "up",                 "Navigate one line back",
         Key.UpArrow,            &move_up },
-    { "cursor-down",        "Navigate one line forward",
+    { "down",               "Navigate one line forward",
         Key.DownArrow,          &move_down },
-    { "cursor-page-up",     "Navigate one screen page back",
-        Key.PageUp,             &move_pg_up },
-    { "cursor-page-down",   "Navigate one screen page forward",
-        Key.PageDown,           &move_pg_down },
-    { "cursor-home",        "Navigate to start of line",
+    { "home",               "Navigate to start of line",
         Key.Home,               &move_ln_start },
-    { "cursor-end",         "Navigate to end of line",
+    { "end",                "Navigate to end of line",
         Key.End,                &move_ln_end },
-    { "cursor-sof",         "Navigate to start of document",
+    { "top",                "Navigate to start (top) of document",
         Mod.ctrl|Key.Home,      &move_abs_start },
-    { "cursor-eof",         "Navigate to end of document",
+    { "bottom",             "Navigate to end (bottom) of document",
         Mod.ctrl|Key.End,       &move_abs_end },
-    { "cursor-skip-back",   "Skip forward to different element",
+    { "page-up",            "Navigate one screen page back",
+        Key.PageUp,             &move_pg_up },
+    { "page-down",          "Navigate one screen page forward",
+        Key.PageDown,           &move_pg_down },
+    { "skip-back",          "Skip backward to different element",
         Mod.ctrl|Key.LeftArrow, &move_skip_backward },
-    { "cursor-skip-front",  "Skip backward to different element",
+    { "skip-front",         "Skip forward to different element",
         Mod.ctrl|Key.RightArrow,&move_skip_forward },
     { "view-up",            "Move view up a row",
         Mod.ctrl|Key.UpArrow,   &view_up },
@@ -149,7 +159,7 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.DownArrow, &view_down },
     { "change-panel",       "Switch to another data panel",
         Key.Tab,                &change_panel },
-    { "change-writemode",   "Switch writing mode (overwrite, insert)",
+    { "change-mode",        "Change writing mode (between overwrite and insert)",
         Key.Insert,             &change_writemode },
     { "save",               "Save document to file",
         Mod.ctrl|Key.S,         &save },
@@ -206,8 +216,8 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
     g_status = UINIT; // init here since message could be called later
     
     g_session = new Session(rc);
-    g_session.target = path;
-    g_session.editor = editor;
+    g_session.target = path;    // assign target path, NULL unsets this
+    g_session.editor = editor;  // assign editor instance
     
     message(initmsg);
     
@@ -225,9 +235,17 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
             g_keys[command.key] = command.impl;
     }
     
+    // Add commands and shortcuts for debug builds.
     debug
     {
         g_commands["test-error"] =
+        (Session*, string[])
+        {
+            throw new Exception("error test");
+        };
+        
+        // ^H is binded to something on my terminal... No idea what.
+        g_keys[Mod.ctrl|Key.J] =
         (Session*, string[])
         {
             throw new Exception("error test");
@@ -1062,6 +1080,9 @@ void refresh(Session *session, string[] args)
 // Change active panel
 void change_panel(Session *session, string[] args)
 {
+    // TODO: First parameter should be a panel panel
+    //       By default, just cycle
+    
     session.panel++;
     if (session.panel >= PanelType.max + 1)
         session.panel = PanelType.init;
