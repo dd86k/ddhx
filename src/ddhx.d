@@ -192,6 +192,10 @@ immutable Command[] default_commands = [
         0,                      &set },
     { "bind",               "Bind a shortcut to an action",
         0,                      &bind },
+    { "unbind",             "Remove or reset a bind shortcut",
+        0,                      &unbind },
+    { "reset-keys",         "Reset all binded keys to default",
+        0,                      &reset_keys },
     { "quit",               "Quit program",
         Key.Q,                  &quit },
 ];
@@ -384,6 +388,29 @@ void bindkey(int key, string command, string[] parameters)
         throw new Exception(text("Unknown command: ", command));
     
     g_keys[key] = Keybind( *impl, parameters );
+}
+
+// Unbind/reset key
+void unbindkey(int key)
+{
+    Keybind *k = key in g_keys;
+    if (k == null) // nothing to unbind
+        return;
+    
+    // Check commands for a default keybind
+    foreach (command; default_commands)
+    {
+        // Reset keybind to its default
+        if (command.key == key)
+        {
+            k.impl = command.impl;
+            k.parameters = null;
+            return;
+        }
+    }
+    
+    // If key is not part of default keybinds, remove from active set
+    g_keys.remove(key);
 }
 
 // Return key value from string interpretation
@@ -1071,6 +1098,9 @@ void move_skip_backward(Session *session, string[] args)
     moveabs(session, curpos);
 }
 
+// TODO: Skip by selection (argument takes precedence)
+//       ubyte[] selected = selection();
+//       if (selected) needle = selected;
 // Move to different element forward
 void move_skip_forward(Session *session, string[] args)
 {
@@ -1078,7 +1108,7 @@ void move_skip_forward(Session *session, string[] args)
     import core.stdc.stdlib : malloc, free;
     
     size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
-    long curpos = session.position_cursor;
+    long curpos  = session.position_cursor;
     long docsize = session.editor.size();
     
     // Already at the end of document, nothing to do
@@ -1372,6 +1402,27 @@ void bind(Session *session, string[] args)
     string command = arg(args, 1, "Command: ");
     
     bindkey(key, command, args.length >= 2 ? args[2..$] : null);
+    message("Key binded");
+}
+
+// Unbind key
+void unbind(Session *session, string[] args)
+{
+    int key = keybind( arg(args, 0, "Key: ") );
+    unbindkey(key);
+    message("Key unbinded");
+}
+
+// Reset all keys
+void reset_keys(Session *session, string[] args)
+{
+    g_keys.clear();
+    foreach (command; default_commands)
+    {
+        if (command.key)
+            g_keys[command.key] = Keybind( command.impl, null );
+    }
+    message("All keys reset");
 }
 
 // Quit app
