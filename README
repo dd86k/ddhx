@@ -73,11 +73,10 @@ This list may change at any given time without notice.
 - [ ] Support insertions
 - [ ] Support deletions
 - [ ] Config file support
-- [ ] "bind" command: map command to shortcut
+- [x] "bind" command: map command to shortcut
 
 Future:
 - [ ] Support searching
-- [ ] Non-interactive session (--dump)
 - [ ] Support for other single-byte data types in view (d8, o8)
 - [ ] Support for multi-byte data types in view (d16, f32, etc.)
 - [ ] Insert characters
@@ -137,17 +136,23 @@ Examples of using "goto":
 "goto 0x10"
     Go to position 16 bytes (using hexadecimal) within document.
 "goto +020"
-    Go forward 16 bytes (using octal).
+    Go forward 16 bytes (using octal) from current position.
 "goto -5"
-    Go backward 5 bytes (using decimal).
+    Go backward 5 bytes (using decimal) from current position.
 "goto %45"
-    Go to position 45% within document.
+    Go to position 45% within document (45% of total size).
 
 To view available commands, execute `ddhx --help-commands`.
 
 //
-// Default keybinds
+// Keybinds
 //
+
+New keybinds can be set at runtime using the "bind" command.
+
+For example "bind right-arrow goto +32" will bind the right arrow key to
+"goto +32", which will make it jump 32 bytes ahead. To unbind it, use
+"unbind right-arrow" or "reset-keys" to reset all keybindings.
 
 To view default keybinds, execute `ddhx --help-keys`.
 
