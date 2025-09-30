@@ -51,6 +51,22 @@ private enum PanelType
     text,
 }
 
+private
+struct Keybind
+{
+    /// Function implementing command
+    void function(Session*, string[]) impl;
+    /// Parameters to add
+    string[] parameters;
+}
+
+private
+struct Selection
+{
+    long anchor;    /// original position when started
+    int status;
+}
+
 /// Editor session.
 //
 // Because Editor mostly exists for ddhx (editor) and RC can be manually
@@ -75,22 +91,6 @@ struct Session
     
     /// Target file.
     string target;
-}
-
-private
-struct Keybind
-{
-    /// Function implementing command
-    void function(Session*, string[]) impl;
-    /// Parameters to add
-    string[] parameters;
-}
-
-private
-struct Selection
-{
-    long anchor; /// original position when started
-    int status;
 }
 
 private __gshared // globals have the ugly "g_" prefix to be told apart
@@ -136,7 +136,17 @@ struct Command
 }
 
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
-// - "find" (Ctrl+F and/or '/'): Forward find
+// - "find": Forward find (Ctrl+F and/or '/')
+//           Should use type prefixes:
+//           x: or 0x   - Hexadecimal byte(s) (x:ff or 0xff)
+//           d:         - Decimal byte(s) (d:255)
+//           s: or "    - ASCII/UTF-8 string (s:hello or "hello")
+//           u16:       - 16-bit unsigned integer
+//           u32:       - 32-bit unsigned integer
+//           i16:       - 16-bit signed integer
+//           i32:       - 32-bit signed integer
+//           f32:       - 32-bit float
+//           f64:       - 64-bit double
 // - "find-back" (Ctrl+B and/or '?'): Backward search
 // - "find-next" (prefill with Ctrl+F): Find next instance for find
 // - "find-prev" (prefill with Ctrl+F): Find next instance for find-back
@@ -146,6 +156,10 @@ struct Command
 // - "backspace" (Backspace): Delete elements before cursor position
 // - "delete" (Delete): Delete elements at cursor position
 // - "fill": Fill selection/range with bytes (overwrite only)
+// - "hash": Hash selection with result in status
+//           Mostly checksums and digests under 256 bits.
+//           80 columns -> 40 bytes -> 320 bits.
+// - "save-status": Save status/message content into file...?
 // NOTE: Command names
 //       Because navigation keys are the most essential, they get short names.
 //       For example, mpv uses LEFT and RIGHT to bind to "seek -10" and "seek 10".
@@ -374,6 +388,9 @@ Lread:
         case WritingMode.overwrite:
             break;
         }
+        
+        // We have a valid key and mode, so disrupt selection
+        session.selection.status = 0;
         
         if (g_editdigit == 0) // start new edit
         {
@@ -838,7 +855,7 @@ void update_view(Session *session, TerminalSize termsize)
             int p0 = min(viewpos, selectpos);
             int p1 = max(viewpos, selectpos);
             
-            if (session.selection.status && i >= p0 && i <= p1 && panel == PanelType.data)
+            if (session.selection.status && i >= p0 && i < p1 && panel == PanelType.data)
             {
                 // hack for not making the first spacer inverted
                 // somehow allows spacer for new lines to be
@@ -891,7 +908,7 @@ void update_view(Session *session, TerminalSize termsize)
             int p0 = min(viewpos, selectpos);
             int p1 = max(viewpos, selectpos);
             
-            if (session.selection.status && i >= p0 && i <= p1 && panel == PanelType.text)
+            if (session.selection.status && i >= p0 && i < p1 && panel == PanelType.text)
             {
                 terminalInvertColor();
                 string c = transcode(result[i], session.rc.charset);
@@ -1325,6 +1342,9 @@ bool selected(Session *session, ref long start, ref long end)
     {
         start = min(session.selection.anchor, session.position_cursor);
         end   = max(session.selection.anchor, session.position_cursor);
+        
+        if (end >= session.editor.size())
+            end--;
     }
     return session.selection.status != 0;
 }
