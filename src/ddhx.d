@@ -63,6 +63,9 @@ struct Session
     /// 
     DocEditor editor;
     
+    /// Active selection
+    Selection selection;
+    
     /// Logical position at the start of the view.
     long position_view;
     /// Logical position of the cursor in the editor.
@@ -83,11 +86,23 @@ struct Keybind
     string[] parameters;
 }
 
+private
+struct Selection
+{
+    long anchor; /// original position when started
+    int status;
+}
+
 private __gshared // globals have the ugly "g_" prefix to be told apart
 {
     // Editor status
+    //
+    // Reset every update
     int g_status;
-    // Updated at render
+    
+    // Number of effective rows for view
+    // 
+    // Updated every update
     int g_rows;
     
     // HACK: Global for screen resize events
@@ -128,76 +143,99 @@ struct Command
 // - "toggle-*" (Alt+Key): Hiding/showing panels
 // - "save-settings": Save session settings into .ddhxrc
 // - "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
-// - "backspace" (Backspace): Delete elements backwards
-// - "delete" (Delete): Delete elements forward
-// - "bind": Bind shortcuts ("bind ctrl+5 goto +50")
+// - "backspace" (Backspace): Delete elements before cursor position
+// - "delete" (Delete): Delete elements at cursor position
+// - "fill": Fill selection/range with bytes (overwrite only)
 // NOTE: Command names
 //       Because navigation keys are the most essential, they get short names.
 //       For example, mpv uses LEFT and RIGHT to bind to "seek -10" and "seek 10".
 //       Here, both "bind ctrl+9 right" and "bind ctrl+9 goto +1" are both valid.
 //       Otherwise, it's better to name them "do-thing" syntax.
+// NOTE: Command designs
+//       - Names: If commonly used (ie, navigation), one word
+//       - Selection: command parameters are prioritized over selections
 /// List of default commands and shortcuts
 immutable Command[] default_commands = [
-    { "left",               "Navigate one element back",
-        Key.LeftArrow,          &move_left },
-    { "right",              "Navigate one element forward",
-        Key.RightArrow,         &move_right },
-    { "up",                 "Navigate one line back",
-        Key.UpArrow,            &move_up },
-    { "down",               "Navigate one line forward",
-        Key.DownArrow,          &move_down },
-    { "home",               "Navigate to start of line",
-        Key.Home,               &move_ln_start },
-    { "end",                "Navigate to end of line",
-        Key.End,                &move_ln_end },
-    { "top",                "Navigate to start (top) of document",
-        Mod.ctrl|Key.Home,      &move_abs_start },
-    { "bottom",             "Navigate to end (bottom) of document",
-        Mod.ctrl|Key.End,       &move_abs_end },
-    { "page-up",            "Navigate one screen page back",
-        Key.PageUp,             &move_pg_up },
-    { "page-down",          "Navigate one screen page forward",
-        Key.PageDown,           &move_pg_down },
-    { "skip-back",          "Skip backward to different element",
-        Mod.ctrl|Key.LeftArrow, &move_skip_backward },
-    { "skip-front",         "Skip forward to different element",
-        Mod.ctrl|Key.RightArrow,&move_skip_forward },
-    { "view-up",            "Move view up a row",
-        Mod.ctrl|Key.UpArrow,   &view_up },
-    { "view-down",          "Move view down a row",
-        Mod.ctrl|Key.DownArrow, &view_down },
-    { "change-panel",       "Switch to another data panel",
-        Key.Tab,                &change_panel },
-    { "change-mode",        "Change writing mode (between overwrite and insert)",
-        Key.Insert,             &change_writemode },
-    { "save",               "Save document to file",
-        Mod.ctrl|Key.S,         &save },
-    { "save-as",            "Save document as a different file",
-        Mod.ctrl|Key.O,         &save_as },
-    { "undo",               "Undo last edit",
-        Mod.ctrl|Key.U,         &undo },
-    { "redo",               "Redo previously undone edit",
-        Mod.ctrl|Key.R,         &redo },
-    { "goto",               "Navigate or jump to a specific position",
-        Mod.ctrl|Key.G,         &goto_ },
-    { "report-position",    "Report cursor position on screen",
-        Mod.ctrl|Key.P,         &report_position },
-    { "report-name",        "Report document name on screen",
-        Mod.ctrl|Key.N,         &report_name },
-    { "refresh",            "Refresh entire screen",
-        Mod.ctrl|Key.L,         &refresh },
-    { "autosize",           "Automatically set column size depending of screen",
-        Mod.alt|Key.R,          &autosize },
-    { "set",                "Set a configuration value",
-        0,                      &set },
-    { "bind",               "Bind a shortcut to an action",
-        0,                      &bind },
-    { "unbind",             "Remove or reset a bind shortcut",
-        0,                      &unbind },
-    { "reset-keys",         "Reset all binded keys to default",
-        0,                      &reset_keys },
-    { "quit",               "Quit program",
-        Key.Q,                  &quit },
+    { "left",                       "Navigate one element back",
+        Key.LeftArrow,              &move_left },
+    { "right",                      "Navigate one element forward",
+        Key.RightArrow,             &move_right },
+    { "up",                         "Navigate one line back",
+        Key.UpArrow,                &move_up },
+    { "down",                       "Navigate one line forward",
+        Key.DownArrow,              &move_down },
+    { "home",                       "Navigate to start of line",
+        Key.Home,                   &move_ln_start },
+    { "end",                        "Navigate to end of line",
+        Key.End,                    &move_ln_end },
+    { "top",                        "Navigate to start (top) of document",
+        Mod.ctrl|Key.Home,          &move_abs_start },
+    { "bottom",                     "Navigate to end (bottom) of document",
+        Mod.ctrl|Key.End,           &move_abs_end },
+    { "page-up",                    "Navigate one screen page back",
+        Key.PageUp,                 &move_pg_up },
+    { "page-down",                  "Navigate one screen page forward",
+        Key.PageDown,               &move_pg_down },
+    { "skip-back",                  "Skip backward to different element",
+        Mod.ctrl|Key.LeftArrow,     &move_skip_backward },
+    { "skip-front",                 "Skip forward to different element",
+        Mod.ctrl|Key.RightArrow,    &move_skip_forward },
+    { "view-up",                    "Move view up a row",
+        Mod.ctrl|Key.UpArrow,       &view_up },
+    { "view-down",                  "Move view down a row",
+        Mod.ctrl|Key.DownArrow,     &view_down },
+    // Selections
+    { "select-left",                "Extend selection one element back",
+        Mod.shift|Key.LeftArrow,    &select_left },
+    { "select-right",               "Extend selection one element forward", 
+        Mod.shift|Key.RightArrow,   &select_right },
+    { "select-up",                  "Extend selection one line up",
+        Mod.shift|Key.UpArrow,      &select_up },
+    { "select-down",                "Extend selection one line down",
+        Mod.shift|Key.DownArrow,    &select_down },
+    /*{ "select-home",                "Extend selection to start of line",
+        Mod.shift|Key.Home,         &select_home },
+    { "select-end",                 "Extend selection to end of line",
+        Mod.shift|Key.End,          &select_end },
+    { "select-top",                 "Extend selection to start of document",
+        Mod.ctrl|Mod.shift|Key.Home,&select_top },
+    { "select-bottom",              "Extend selection to end of document",
+        Mod.ctrl|Mod.shift|Key.End, &select_bottom },
+    { "select-all",                 "Select entire document",
+        Mod.ctrl|Key.A,             &select_all },*/
+    //
+    { "change-panel",               "Switch to another data panel",
+        Key.Tab,                    &change_panel },
+    { "change-mode",                "Change writing mode (between overwrite and insert)",
+        Key.Insert,                 &change_writemode },
+    { "save",                       "Save document to file",
+        Mod.ctrl|Key.S,             &save },
+    { "save-as",                    "Save document as a different file",
+        Mod.ctrl|Key.O,             &save_as },
+    { "undo",                       "Undo last edit",
+        Mod.ctrl|Key.U,             &undo },
+    { "redo",                       "Redo previously undone edit",
+        Mod.ctrl|Key.R,             &redo },
+    { "goto",                       "Navigate or jump to a specific position",
+        Mod.ctrl|Key.G,             &goto_ },
+    { "report-position",            "Report cursor position on screen",
+        Mod.ctrl|Key.P,             &report_position },
+    { "report-name",                "Report document name on screen",
+        Mod.ctrl|Key.N,             &report_name },
+    { "refresh",                    "Refresh entire screen",
+        Mod.ctrl|Key.L,             &refresh },
+    { "autosize",                   "Automatically set column size depending of screen",
+        Mod.alt|Key.R,              &autosize },
+    { "set",                        "Set a configuration value",
+        0,                          &set },
+    { "bind",                       "Bind a shortcut to an action",
+        0,                          &bind },
+    { "unbind",                     "Remove or reset a bind shortcut",
+        0,                          &unbind },
+    { "reset-keys",                 "Reset all binded keys to default",
+        0,                          &reset_keys },
+    { "quit",                       "Quit program",
+        Key.Q,                      &quit },
 ];
 /// Check if command names or shortcuts are duplicated
 unittest
@@ -740,16 +778,16 @@ void update_header(Session *session, TerminalSize termsize)
 // Render view with data on screen
 void update_view(Session *session, TerminalSize termsize)
 {
-    if (termsize.rows < 4)
+    if (termsize.rows < 3)
         return;
     
     import std.datetime.stopwatch : StopWatch, Duration;
     debug StopWatch sw;
     debug sw.start();
     
-    int cols        = session.rc.columns;
-    int rows        = g_rows = termsize.rows - 2;
-    int count       = rows * cols;
+    int cols        = session.rc.columns;   /// elements per row
+    int rows        = g_rows;               /// rows to render
+    int count       = rows * cols;          /// elements on screen
     long curpos     = session.position_cursor;
     long basepos    = session.position_view;
     
@@ -764,10 +802,10 @@ void update_view(Session *session, TerminalSize termsize)
     //       allocation alive and simply resize it (either pool or realloc).
     // NOTE: new T[x] calls memset(3), wasting some cpu time
     __gshared ubyte[] viewbuf;
-    if (viewbuf.length != count)
+    if (viewbuf.length != count) // only resize if required
         viewbuf.length = count;
-    ubyte[] result = session.editor.view(basepos, viewbuf);
-    int reslen     = cast(int)result.length; // * bytesize
+    ubyte[] result  = session.editor.view(basepos, viewbuf);
+    int readlen     = cast(int)result.length; // * bytesize
     
     // Render view
     char[32] txtbuf = void;
@@ -776,9 +814,12 @@ void update_view(Session *session, TerminalSize termsize)
     int datawidth   = dataSpec(session.rc.data_type).spacing; // data element width
     int addspacing  = session.rc.address_spacing;
     PanelType panel = session.panel;
+    int selectpos   = cast(int)(session.selection.anchor - address); // select start rel to view
+    log("address=%d viewpos=%d cols=%d rows=%d count=%d Dwidth=%d readlen=%d panel=%s "~
+        "select.anchor=%d select.status=%#x selectpos=%d",
+        address, viewpos, cols, rows, count, datawidth, readlen, panel,
+        session.selection.anchor, session.selection.status, selectpos);
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
-    log("address=%d viewpos=%d cols=%d datawidth=%d count=%d reslen=%d",
-        address, viewpos, cols, datawidth, count, reslen);
     for (int row; row < rows; ++row, address += cols)
     {
         // '\n' could count as a character, avoid using it
@@ -791,6 +832,25 @@ void update_view(Session *session, TerminalSize termsize)
         for (int col; col < cols; ++col)
         {
             int i = (row * cols) + col;
+            
+            import std.algorithm.comparison : min, max;
+            
+            int p0 = min(viewpos, selectpos);
+            int p1 = max(viewpos, selectpos);
+            
+            if (session.selection.status && i >= p0 && i <= p1 && panel == PanelType.data)
+            {
+                // hack for not making the first spacer inverted
+                // somehow allows spacer for new lines to be
+                if (i == p0)
+                    w += terminalWrite(" "); // data-data spacer
+                terminalInvertColor();
+                if (i != p0)
+                    w += terminalWrite(" "); // data-data spacer
+                w += terminalWrite(dfmt.formatdata());
+                terminalResetColor();
+                continue;
+            }
             
             bool highlight = i == viewpos && panel == PanelType.data;
             
@@ -806,7 +866,7 @@ void update_view(Session *session, TerminalSize termsize)
                     formatData(txtbuf[], g_editbuf.ptr, g_editbuf.length, session.rc.data_type)
                 );
             }
-            else if (i < reslen) // apply data
+            else if (i < readlen) // apply data
             {
                 w += terminalWrite(dfmt.formatdata());
             }
@@ -826,11 +886,25 @@ void update_view(Session *session, TerminalSize termsize)
         {
             int i = (row * cols) + col;
             
+            import std.algorithm.comparison : min, max;
+            
+            int p0 = min(viewpos, selectpos);
+            int p1 = max(viewpos, selectpos);
+            
+            if (session.selection.status && i >= p0 && i <= p1 && panel == PanelType.text)
+            {
+                terminalInvertColor();
+                string c = transcode(result[i], session.rc.charset);
+                w += terminalWrite(c ? c : ".");
+                terminalResetColor();
+                continue;
+            }
+            
             bool highlight = i == viewpos && panel == PanelType.text;
             
             if (highlight) terminalInvertColor();
             
-            if (i < reslen)
+            if (i < readlen)
             {
                 // NOTE: Escape codes do not seem to be a worry with tests
                 string c = transcode(result[i], session.rc.charset);
@@ -864,6 +938,11 @@ void update_status(Session *session, TerminalSize termsize)
     // If crashes, at this point, fuck it just use a heap buffer starting at 4K.
     char[512] statusbuf = void;
     
+    char[32] buf0 = void; // cursor address or selection start buffer
+    char[32] buf1 = void; // selection end buffer
+    
+    long select_start = void, select_end = void;
+    
     // If there is a pending message, print that.
     // Otherwise, print status bar using the message buffer space.
     string msg = void;
@@ -871,10 +950,16 @@ void update_status(Session *session, TerminalSize termsize)
     {
         msg = g_messagebuf;
     }
+    else if (selected(session, select_start, select_end))
+    {
+        string start = formatAddress(buf0, select_start, 1, session.rc.address_type);
+        string end   = formatAddress(buf1, select_end,   1, session.rc.address_type);
+        msg = cast(string)sformat(statusbuf, "SEL: %s-%s (%d Bytes)",
+            start, end, select_end - select_start + 1);
+    }
     else
     {
-        char[32] curbuf = void; // cursor address
-        string curstr = formatAddress(curbuf, session.position_cursor, 8, session.rc.address_type);
+        string curstr = formatAddress(buf0, session.position_cursor, 8, session.rc.address_type);
         
         msg = cast(string)sformat(statusbuf, "%c %s | %3s | %8s | %s",
             session.editor.edited() ? '*' : ' ',
@@ -922,9 +1007,7 @@ void update(Session *session)
     g_rows = termsize.rows - 2;
     
     update_header(session, termsize);
-    
     update_view(session, termsize);
-    
     update_status(session, termsize);
     
     g_status = 0;
@@ -969,6 +1052,7 @@ void prompt_command(Session *session, string[] args)
 // Move back a single item
 void move_left(Session *session, string[] args)
 {
+    session.selection.status = 0;
     if (session.position_cursor == 0)
         return;
     
@@ -977,11 +1061,13 @@ void move_left(Session *session, string[] args)
 // Move forward a single item
 void move_right(Session *session, string[] args)
 {
+    session.selection.status = 0;
     moverel(session, +1);
 }
 // Move back a row
 void move_up(Session *session, string[] args)
 {
+    session.selection.status = 0;
     if (session.position_cursor == 0)
         return;
     
@@ -990,11 +1076,13 @@ void move_up(Session *session, string[] args)
 // Move forward a row
 void move_down(Session *session, string[] args)
 {
+    session.selection.status = 0;
     moverel(session, +session.rc.columns);
 }
 // Move back a page
 void move_pg_up(Session *session, string[] args)
 {
+    session.selection.status = 0;
     if (session.position_cursor == 0)
         return;
     
@@ -1003,26 +1091,31 @@ void move_pg_up(Session *session, string[] args)
 // Move forward a page
 void move_pg_down(Session *session, string[] args)
 {
+    session.selection.status = 0;
     moverel(session, +(g_rows * session.rc.columns));
 }
 // Move to start of line
 void move_ln_start(Session *session, string[] args) // move to start of line
 {
+    session.selection.status = 0;
     moverel(session, -(session.position_cursor % session.rc.columns));
 }
 // Move to end of line
 void move_ln_end(Session *session, string[] args) // move to end of line
 {
+    session.selection.status = 0;
     moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
 }
 // Move to absolute start of document
 void move_abs_start(Session *session, string[] args)
 {
+    session.selection.status = 0;
     moveabs(session, 0);
 }
 // Move to absolute end of document
 void move_abs_end(Session *session, string[] args)
 {
+    session.selection.status = 0;
     moveabs(session, session.editor.currentSize());
 }
 
@@ -1036,7 +1129,6 @@ void move_skip_backward(Session *session, string[] args)
     import core.stdc.string : memcmp;
     import core.stdc.stdlib : malloc, free;
     
-    size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
     long curpos = session.position_cursor;
     
     // Nothing to really do... so avoid the necessary work
@@ -1048,22 +1140,41 @@ void move_skip_backward(Session *session, string[] args)
     if (session.position_cursor == session.editor.currentSize())
         --curpos;
     
-    // Get current element
-    ubyte buffer = void;
-    ubyte[] needle = session.editor.view(curpos, &buffer, elemsize);
-    if (needle.length < elemsize)
-        return; // Nothing to do
+    // Use selection if active, otherwise use current element highlighted by
+    // cursor
+    ubyte[] needle;
+    long select_start = void, select_end = void;
+    if (selected(session, select_start, select_end))
+    {
+        size_t size = cast(size_t)(select_end - select_start + 1);
+        needle.length = size;
+        needle = session.editor.view(curpos, needle);
+        if (needle.length < size)
+            return; // Nothing to do
+    }
+    else
+    {
+        // Get current element
+        ubyte buffer = void;
+        needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
+        if (needle.length < ubyte.sizeof)
+            return; // Nothing to do
+    }
+    
+    session.selection.status = 0;
     
     // Position cursor at its starting line. If there isn't different
     // data anyway, it would already be moved and ready next time
     // the command is hit.
-    curpos -= elemsize;
+    curpos -= needle.length;
     
     // See notes in move_skip_forward
-    ubyte[] haybuffer = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
-    if (haybuffer is null)
+    ubyte[] hay = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
+    if (hay is null)
         throw new Exception("error: Out of memory");
-    scope(exit) free(haybuffer.ptr);
+    scope(exit) free(hay.ptr);
+    
+    log("needle=[%(%#x,%)]", needle);
     
     // 
     long base = curpos;
@@ -1073,19 +1184,22 @@ void move_skip_backward(Session *session, string[] args)
         if (base < 0)
             base = 0;
         
-        ubyte[] haystack = session.editor.view(base, haybuffer);
-        if (haystack.length < elemsize)
+        ubyte[] haystack = session.editor.view(base, hay);
+        if (haystack.length < needle.length)
         {
             // somehow haystack is smaller than needle, so give up
             // move by needle size backward
-            moveabs(session, curpos - elemsize);
+            moveabs(session, curpos - needle.length);
             return;
         }
         
-        for (size_t o = cast(size_t)(curpos - base); o > 0; --o, --curpos)
+        for (size_t o = cast(size_t)(curpos - base); o > 0; o -= needle.length, curpos -= needle.length)
         {
-            if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+            if (memcmp(needle.ptr, haystack.ptr + o, needle.length))
             {
+                // hack: cursor alignment to multi-byte select
+                if (needle.length > 1) 
+                    curpos += cast(int)needle.length - 1;
                 break loop;
             }
         }
@@ -1107,7 +1221,6 @@ void move_skip_forward(Session *session, string[] args)
     import core.stdc.string : memcmp;
     import core.stdc.stdlib : malloc, free;
     
-    size_t elemsize = ubyte.sizeof; // temp until multibyte stuff
     long curpos  = session.position_cursor;
     long docsize = session.editor.size();
     
@@ -1115,42 +1228,66 @@ void move_skip_forward(Session *session, string[] args)
     if (curpos == docsize)
         return;
     
-    // Get current element
-    ubyte buffer = void;
-    ubyte[] needle = session.editor.view(curpos, &buffer, elemsize);
-    if (needle.length < elemsize)
-        return; // Nothing to do
+    // Use selection if active, otherwise use current element highlighted by
+    // cursor
+    ubyte[] needle;
+    long select_start = void, select_end = void;
+    if (selected(session, select_start, select_end))
+    {
+        size_t size = cast(size_t)(select_end - select_start + 1);
+        needle.length = size;
+        needle = session.editor.view(curpos, needle);
+        if (needle.length < size)
+            return; // Nothing to do
+    }
+    else
+    {
+        // Get current element
+        ubyte buffer = void;
+        needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
+        if (needle.length < ubyte.sizeof)
+            return; // Nothing to do
+    }
     
-    curpos += elemsize;
+    session.selection.status = 0;
+    
+    curpos += needle.length;
     
     // TODO: Eventually re-visit need of malloc vs. array allocation
     // Throwing on malloc failure is weird... but uses less memory than a search buffer
-    ubyte[] haybuffer = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
-    if (haybuffer is null)
+    ubyte[] hay = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
+    if (hay is null)
         throw new Exception("error: Out of memory");
-    scope(exit) free(haybuffer.ptr);
+    scope(exit) free(hay.ptr);
+    
+    log("needle=[%(%#x,%)]", needle);
     
     // 
     loop: do
     {
-        ubyte[] haystack = session.editor.view(curpos, haybuffer);
-        if (haystack.length < elemsize)
+        ubyte[] haystack = session.editor.view(curpos, hay);
+        if (haystack.length < needle.length)
         {
             moveabs(session, curpos);
             return; // Nothing to do, but move by an element
         }
         
-        for (size_t o; o < haystack.length; ++o, ++curpos)
+        for (size_t o; o < haystack.length; o += needle.length, curpos += needle.length)
         {
-            if (memcmp(needle.ptr, haystack.ptr + o, elemsize))
+            if (memcmp(needle.ptr, haystack.ptr + o, needle.length))
             {
+                // hack: cursor alignment to multi-byte select
+                if (needle.length > 1) 
+                    curpos++;
                 break loop;
             }
         }
     }
     while (curpos < docsize);
     
-    // If we reached end of buffer (EOF in the future), move there
+    // Move even if nothing found, since it is the intent.
+    // In a text editor, if Ctrl+Right is hit (imagine a long line of same
+    // characters) the cursor still moves to the end of the document.
     moveabs(session, curpos);
 }
 
@@ -1175,6 +1312,74 @@ void view_down(Session *session, string[] args)
     
     session.position_view += session.rc.columns;
 }
+
+//
+// Selection
+//
+
+bool selected(Session *session, ref long start, ref long end)
+{
+    import std.algorithm.comparison : min, max;
+    // Assuming a branch is cheaper than calling min+max
+    if (session.selection.status)
+    {
+        start = min(session.selection.anchor, session.position_cursor);
+        end   = max(session.selection.anchor, session.position_cursor);
+    }
+    return session.selection.status != 0;
+}
+
+// Expand selection backward
+void select_left(Session *session, string[] args)
+{
+    if (!session.selection.status)
+    {
+        session.selection.status = 1;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moverel(session, -1);
+}
+
+// Expand selection forward
+void select_right(Session *session, string[] args)
+{
+    if (!session.selection.status)
+    {
+        session.selection.status = 1;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moverel(session, +1);
+}
+
+// Expand selection back a line
+void select_up(Session *session, string[] args)
+{
+    if (!session.selection.status)
+    {
+        session.selection.status = 1;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moverel(session, -session.rc.columns);
+}
+
+// Expand selection forward a line
+void select_down(Session *session, string[] args)
+{
+    if (!session.selection.status)
+    {
+        session.selection.status = 1;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moverel(session, +session.rc.columns);
+}
+
+//
+// Etc
+//
 
 // Change writing mode
 void change_writemode(Session *session, string[] args)
@@ -1279,8 +1484,18 @@ void goto_(Session *session, string[] args)
 // Report cursor position on screen
 void report_position(Session *session, string[] args)
 {
-    long curpos  = session.position_cursor;
     long docsize = session.editor.currentSize;
+    long select_start = void, select_end = void;
+    if (selected(session, select_start, select_end))
+    {
+        message("%d-%d B (%f%%-%f%%)",
+            select_start,
+            select_end,
+            cast(float)select_start / docsize * 100,
+            cast(float)select_end   / docsize * 100);
+        return;
+    }
+    long curpos  = session.position_cursor;
     message("%d / %d B (%f%%)",
         curpos,
         docsize,
