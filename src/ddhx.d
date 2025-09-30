@@ -193,11 +193,11 @@ immutable Command[] default_commands = [
         Mod.shift|Key.UpArrow,      &select_up },
     { "select-down",                "Extend selection one line down",
         Mod.shift|Key.DownArrow,    &select_down },
-    /*{ "select-home",                "Extend selection to start of line",
+    { "select-home",                "Extend selection to start of line",
         Mod.shift|Key.Home,         &select_home },
     { "select-end",                 "Extend selection to end of line",
         Mod.shift|Key.End,          &select_end },
-    { "select-top",                 "Extend selection to start of document",
+    /*{ "select-top",                 "Extend selection to start of document",
         Mod.ctrl|Mod.shift|Key.Home,&select_top },
     { "select-bottom",              "Extend selection to end of document",
         Mod.ctrl|Mod.shift|Key.End, &select_bottom },
@@ -1375,6 +1375,30 @@ void select_down(Session *session, string[] args)
     }
     
     moverel(session, +session.rc.columns);
+}
+
+// Expand selection towards end of line
+void select_home(Session *session, string[] args)
+{
+    if (!session.selection.status)
+    {
+        session.selection.status = 1;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moverel(session, -(session.position_cursor % session.rc.columns));
+}
+
+// Expand selection forward a line
+void select_end(Session *session, string[] args)
+{
+    if (!session.selection.status)
+    {
+        session.selection.status = 1;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
 }
 
 //
