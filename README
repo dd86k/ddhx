@@ -48,10 +48,13 @@ This software is provided with NO WARANTY as it is marked as EXPERIMENTAL.
 ALWAYS make backups of your files before editing them.
 
 This is a Work In Progress (WIP). Everything was rewritten from scratch
-in attempts in version 0.5 to have editing features.
+in version 0.5 to have editing features. It will be buggy!
 
 It also outputs UTF-8. You might want to stick to the ASCII charset
 setting if your terminal or console lacks UTF-8 capabilities.
+
+Some terminals capture some shortcuts. Thankfully, shortcuts can be
+bind to other keys, and commands remain available as an alternative.
 
 //
 // Roadmap
@@ -60,8 +63,8 @@ setting if your terminal or console lacks UTF-8 capabilities.
 This list may change at any given time without notice.
 
 0.5:
-- [x] Support overwrites
-- [x] Support appends
+- [x] Overwrite data
+- [x] Append data
 - [x] Save new buffer to file
 - [x] Save existing file
 - [x] History undo/redo
@@ -70,19 +73,22 @@ This list may change at any given time without notice.
 - [x] Skip to different element (or byte) (Ctrl+Left/Right)
 
 0.6:
-- [ ] Support insertions
-- [ ] Support deletions
-- [ ] Config file support
+- [ ] Insert data
+- [ ] Delete data
+- [x] Support selecting data
+- [ ] Config file
 - [x] "bind" command: map command to shortcut
 
-Future:
-- [ ] Support searching
-- [ ] Support for other single-byte data types in view (d8, o8)
-- [ ] Support for multi-byte data types in view (d16, f32, etc.)
+Wishlist:
+- [ ] Searching ("find" + text transcode)
+- [ ] Other single-byte data types in view (d8, o8)
+- [ ] Multi-byte data types (d16, f32, etc.)
 - [ ] Insert characters
-- [ ] Insert patterns (e.g., zeros, etc.)
-- [ ] Insert file
-- [ ] Select multiple elements, copy, and paste
+- [ ] Insert range ("fill")
+- [ ] Insert file ("insert-file" depends on mode)
+- [ ] Copy & paste ("paste" depends on mode)
+- [ ] Bookmarks / Annotations
+- [ ] Export range
 
 //
 // Usage
@@ -102,16 +108,20 @@ Open an existing or create a new file at this location:
 Create a new document from stream data:
   $ echo test | ddhx -
 
+The command-line interface matches POSIX guidelines.
+
+To view available start options, execute `ddhx --help`.
+
 Minimum recommended terminal size is 80x24 characters.
+
+//
+// Editing
+//
 
 Navigation can be done using keybinds or commands. Editing is done directly
 using the A to F and 0 to 9 keys. And saving is default mapped to Ctrl+S.
 
 Currently, only overwrite and append operations are supported.
-
-The command-line interface matches POSIX guidelines.
-
-To view available start options, execute `ddhx --help`.
 
 //
 // Commands
@@ -171,7 +181,7 @@ Interface. For example, "columns" is mapped to "-c" and "--columns="
 To view available configuration options, execute `ddhx --help-configs`.
 
 //
-// Compiling & Debugging
+// Compiling
 //
 
 To compile this project, you'll need a D compiler and DUB.
@@ -185,9 +195,15 @@ Compile a debug build:
 Compile a release build using a specified compiler:
   $ dub build -b release --compiler=ldc2
 
+//
+// Debugging
+//
+
+Run unit tests (useful for new platforms):
+  $ dub test
 Run unit tests with log traces:
   $ dub test --d-version=Trace
 
-ddhx comes with a few debugging options:
+ddhx comes with these command-line options to help debugging:
   --log=FILENAME to store debugging logs. Useful for reporting bugs.
   --chunksize=N to specify a different size/alignment of edit chunks.
