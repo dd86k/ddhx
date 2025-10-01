@@ -249,7 +249,7 @@ immutable Command[] default_commands = [
     { "reset-keys",                 "Reset all binded keys to default",
         0,                          &reset_keys },
     { "quit",                       "Quit program",
-        Key.Q,                      &quit },
+        Mod.ctrl|Key.Q,             &quit },
 ];
 /// Check if command names or shortcuts are duplicated
 unittest
