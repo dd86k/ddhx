@@ -828,18 +828,25 @@ void update_view(Session *session, TerminalSize termsize)
     ubyte[] result  = session.editor.view(basepos, viewbuf);
     int readlen     = cast(int)result.length; // * bytesize
     
+    long address    = basepos;
+    
+    // Selection stuff
+    long select_start = void, select_end = void;
+    long slsz = selection(session, select_start, select_end);
+    int sl0   = cast(int)(select_start - address);
+    int sl1   = cast(int)(select_end   - address);
+    
     // Render view
     char[32] txtbuf = void;
-    long address    = basepos;
     int viewpos     = cast(int)(curpos - address); // relative cursor position in view
     int datawidth   = dataSpec(session.rc.data_type).spacing; // data element width
     int addspacing  = session.rc.address_spacing;
     PanelType panel = session.panel;
-    int selectpos   = cast(int)(session.selection.anchor - address); // select start rel to view
-    log("address=%d viewpos=%d cols=%d rows=%d count=%d Dwidth=%d readlen=%d panel=%s "~
-        "select.anchor=%d select.status=%#x selectpos=%d",
-        address, viewpos, cols, rows, count, datawidth, readlen, panel,
-        session.selection.anchor, session.selection.status, selectpos);
+    if (logEnabled) // branch avoids pushing all of this for nothing
+        log("address=%d viewpos=%d cols=%d rows=%d count=%d Dwidth=%d readlen=%d panel=%s "~
+            "select.anchor=%d select.status=%#x sl0=%d sl1=%d",
+            address, viewpos, cols, rows, count, datawidth, readlen, panel,
+            session.selection.anchor, session.selection.status, sl0, sl1);
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     for (int row; row < rows; ++row, address += cols)
     {
@@ -856,18 +863,15 @@ void update_view(Session *session, TerminalSize termsize)
             
             import std.algorithm.comparison : min, max;
             
-            int p0 = min(viewpos, selectpos);
-            int p1 = max(viewpos, selectpos);
-            
-            if (session.selection.status && i >= p0 && i < p1 && panel == PanelType.data)
+            if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.data)
             {
                 // hack for not making the first spacer inverted
                 // somehow allows spacer for new lines to be
-                if (i == p0)
-                    w += terminalWrite(" "); // data-data spacer
-                terminalInvertColor();
-                if (i != p0)
-                    w += terminalWrite(" "); // data-data spacer
+                if (i != sl0)
+                    terminalInvertColor();
+                w += terminalWrite(" "); // data-data spacer
+                if (i == sl0)
+                    terminalInvertColor();
                 w += terminalWrite(dfmt.formatdata());
                 terminalResetColor();
                 continue;
@@ -909,10 +913,7 @@ void update_view(Session *session, TerminalSize termsize)
             
             import std.algorithm.comparison : min, max;
             
-            int p0 = min(viewpos, selectpos);
-            int p1 = max(viewpos, selectpos);
-            
-            if (session.selection.status && i >= p0 && i < p1 && panel == PanelType.text)
+            if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.text)
             {
                 terminalInvertColor();
                 string c = transcode(result[i], session.rc.charset);
