@@ -53,8 +53,8 @@ in version 0.5 to have editing features. It will be buggy!
 It also outputs UTF-8. You might want to stick to the ASCII charset
 setting if your terminal or console lacks UTF-8 capabilities.
 
-Some terminals capture some shortcuts. Thankfully, shortcuts can be
-bind to other keys, and commands remain available as an alternative.
+Some terminals may capture some shortcuts. Thankfully, keys can be rebinded,
+and commands remain available as an alternative.
 
 //
 // Roadmap
@@ -78,9 +78,9 @@ This list may change at any given time without notice.
 - [x] Support selecting data
 - [ ] Config file
 - [x] "bind" command: map command to shortcut
+- [x] Searching ("find" command)
 
 Wishlist:
-- [ ] Searching ("find" + text transcode)
 - [ ] Other single-byte data types in view (d8, o8)
 - [ ] Multi-byte data types (d16, f32, etc.)
 - [ ] Insert characters
@@ -114,12 +114,50 @@ To view available start options, execute `ddhx --help`.
 
 Minimum recommended terminal size is 80x24 characters.
 
-//
-// Editing
-//
+// Navigation
 
-Navigation can be done using keybinds or commands. Editing is done directly
-using the A to F and 0 to 9 keys. And saving is default mapped to Ctrl+S.
+Navigation is primarily done using the arrow keys.
+
+Page Up and Down are used to move the cursor across the screen.
+
+Home and End are used to move the cursor to the start or end of line. Using
+Ctrl with Home or End moves the cursor to the start or end of the document.
+
+It's possible to skip the same data using Ctrl+Left/Right. Selecting a range
+will make this the needle, and skip data until a different pattern is met.
+
+Ctrl+Up/Down can be used to move the view.
+
+New keybinds can be set at runtime using the "bind" command (vim example):
+  >bind h left
+  >bind j down
+  >bind k up
+  >bind l right
+
+Another example, "bind right-arrow goto +32" will bind the right arrow key to
+"goto +32", which will make it jump 32 bytes ahead. To unbind it, use
+"unbind right-arrow" or "reset-keys" to reset all keybindings.
+
+To view default keybinds, execute `ddhx --help-keys`.
+
+// Searching
+
+Searching can be done using the "find" and "find-back" commands.
+
+For example, looking for `\0\0hi "dd"!`:
+  >find x:00 00 "s:hi \"dd\"!"
+  >find x:00 00 68 69 20 22 64 64 22 21
+
+Here are supported prefixes:
+  x: and 0x - Hexadecimal (currently only 8-bit unsigned)
+  d:        - Decimal (currently only 8-bit signed)
+  s:        - String (currently ASCII only)
+
+// Editing
+
+Editing is done directly using the A to F and 0 to 9 keys.
+
+Saving is default mapped to Ctrl+S, and Save As mapped to Ctrl+O.
 
 Currently, only overwrite and append operations are supported.
 
@@ -155,28 +193,17 @@ Examples of using "goto":
 To view available commands, execute `ddhx --help-commands`.
 
 //
-// Keybinds
-//
-
-New keybinds can be set at runtime using the "bind" command.
-
-For example "bind right-arrow goto +32" will bind the right arrow key to
-"goto +32", which will make it jump 32 bytes ahead. To unbind it, use
-"unbind right-arrow" or "reset-keys" to reset all keybindings.
-
-To view default keybinds, execute `ddhx --help-keys`.
-
-//
 // Configuration
 //
 
 The editor can be configured at runtime using the "set" command.
 
 For example, changing the character set:
-  "set charset mac"
+  >set charset mac
 
 Many of these configuration parameters can be set using the Command-Line
-Interface. For example, "columns" is mapped to "-c" and "--columns="
+Interface. For example, both "-c" and "--columns=" map to the "columns"
+configuration.
 
 To view available configuration options, execute `ddhx --help-configs`.
 
