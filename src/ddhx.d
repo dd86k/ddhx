@@ -217,11 +217,15 @@ immutable Command[] default_commands = [
         Mod.ctrl|Mod.shift|Key.End, &select_bottom },
     { "select-all",                 "Select entire document",
         Mod.ctrl|Key.A,             &select_all },*/
-    //
+    // Actions
     { "change-panel",               "Switch to another data panel",
         Key.Tab,                    &change_panel },
     { "change-mode",                "Change writing mode (between overwrite and insert)",
         Key.Insert,                 &change_writemode },
+    { "find",                       "Find a pattern in the document",
+        Mod.ctrl|Key.F,             &find },
+    { "find-back",                  "Find a pattern in the document backward",
+        Mod.ctrl|Mod.shift|Key.F,   &find_back },
     { "save",                       "Save document to file",
         Mod.ctrl|Key.S,             &save },
     { "save-as",                    "Save document as a different file",
@@ -1030,6 +1034,117 @@ void update(Session *session)
     g_status = 0;
 }
 
+enum {
+    /// Search for different needle value, not an exact one.
+    SEARCH_DIFF     = 1,
+    /// Search in reverse, not forward.
+    SEARCH_REVERSE  = 2,
+    /// Instead of returning -1, return the position when the search ended.
+    SEARCH_LASTPOS  = 4,
+    /// Search is done aligned to the size of the needle.
+    SEARCH_ALIGNED  = 8,
+    // Wrap search.
+    //SEARCH_WRAP     = 16,
+}
+
+/// Search for data.
+///
+/// This function does not rely on the cursor position nor does it change it,
+/// because command implementations might use the result differently.
+///
+/// Returning the position allows for specific error messages when a search
+/// returns -1 (error: not found), or forced to return where the position is
+/// after the search is concluded.
+/// Params:
+///     session = Current session.
+///     needle = Data to compare against.
+///     position = Starting position.
+///     flags = Operation flags.
+/// Returns: Found position, or -1. SEARCH_LASTPOS overrides returning -1.
+long search(Session *session, ubyte[] needle, long position, int flags)
+{
+    import core.stdc.stdlib : malloc, free;
+    import core.stdc.string : memcmp;
+    import std.exception : enforce;
+    
+    enforce(needle, "Need needle");
+    
+    // Throwing on malloc failure is weird... but uses less memory than a search buffer
+    ubyte[] hay = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
+    if (hay is null)
+        throw new Exception("error: Out of memory");
+    scope(exit) free(hay.ptr);
+    
+    log("position=%d flags=%#x needle=[%(%#x,%)]", position, flags, needle);
+    
+    int diff = flags & SEARCH_DIFF;
+    size_t alignment = flags & SEARCH_ALIGNED ? needle.length : 1;
+    //ubyte first = needle[0];
+    
+    debug import std.datetime.stopwatch : StopWatch;
+    debug StopWatch sw;
+    debug sw.start;
+    
+    if (flags & SEARCH_REVERSE)
+    {
+        long base = position;
+        do
+        {
+            base -= SEARCH_SIZE;
+            if (base < 0)
+                base = 0;
+            
+            ubyte[] haystack = session.editor.view(base, hay);
+            if (haystack.length < needle.length)
+            {
+                // somehow haystack is smaller than needle
+                return -2;
+            }
+            
+            for (size_t o = cast(size_t)(position - base); o > 0; o -= alignment, position -= alignment)
+            {
+                int r = memcmp(needle.ptr, haystack.ptr + o, needle.length);
+                
+                // if memcmp=0 (exact)   != diff=1 -> SKIP
+                // if memcmp=-1/1 (diff) != diff=0 -> SKIP
+                if ((diff == 0 && r != 0) || (diff && r == 0))
+                    continue;
+                
+                return position;
+            }
+        }
+        while (base > 0);
+    }
+    else // forward
+    {
+        long docsize = session.editor.size();
+        do
+        {
+            ubyte[] haystack = session.editor.view(position, hay);
+            if (haystack.length < needle.length)
+                return -2;
+            
+            for (size_t o; o < haystack.length; o += alignment, position += alignment)
+            {
+                int r = memcmp(needle.ptr, haystack.ptr + o, needle.length);
+                
+                // if memcmp=0 (exact)   != diff=1 -> SKIP
+                // if memcmp=-1/1 (diff) != diff=0 -> SKIP
+                if ((diff == 0 && r != 0) || (diff && r == 0))
+                    continue;
+                
+                return position;
+            }
+        }
+        while (position < docsize);
+    }
+    
+    debug sw.stop();
+    debug log("search=%s", sw.peek());
+    
+    return flags & SEARCH_LASTPOS ? position : -1;
+}
+
 //
 // ANCHOR Commands
 //
@@ -1180,53 +1295,12 @@ void move_skip_backward(Session *session, string[] args)
     
     session.selection.status = 0;
     
-    // Position cursor at its starting line. If there isn't different
-    // data anyway, it would already be moved and ready next time
-    // the command is hit.
-    curpos -= needle.length;
-    
-    // See notes in move_skip_forward
-    ubyte[] hay = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
-    if (hay is null)
-        throw new Exception("error: Out of memory");
-    scope(exit) free(hay.ptr);
-    
-    log("needle=[%(%#x,%)]", needle);
-    
-    // 
-    long base = curpos;
-    loop: do
-    {
-        base -= SEARCH_SIZE;
-        if (base < 0)
-            base = 0;
-        
-        ubyte[] haystack = session.editor.view(base, hay);
-        if (haystack.length < needle.length)
-        {
-            // somehow haystack is smaller than needle, so give up
-            // move by needle size backward
-            moveabs(session, curpos - needle.length);
-            return;
-        }
-        
-        for (size_t o = cast(size_t)(curpos - base); o > 0; o -= needle.length, curpos -= needle.length)
-        {
-            if (memcmp(needle.ptr, haystack.ptr + o, needle.length))
-            {
-                // hack: cursor alignment to multi-byte select
-                if (needle.length > 1) 
-                    curpos += cast(int)needle.length - 1;
-                break loop;
-            }
-        }
-    }
-    while (base > 0);
-    
     // Move even if nothing found, since it is the intent.
     // In a text editor, if Ctrl+Left is hit (imagine a long line of same
     // characters) the cursor still moves to the start of the document.
-    moveabs(session, curpos);
+    moveabs(session,
+        search(session, needle, curpos - needle.length,
+            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE));
 }
 
 // TODO: Skip by selection (argument takes precedence)
@@ -1268,44 +1342,9 @@ void move_skip_forward(Session *session, string[] args)
     
     session.selection.status = 0;
     
-    curpos += needle.length;
-    
-    // TODO: Eventually re-visit need of malloc vs. array allocation
-    // Throwing on malloc failure is weird... but uses less memory than a search buffer
-    ubyte[] hay = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
-    if (hay is null)
-        throw new Exception("error: Out of memory");
-    scope(exit) free(hay.ptr);
-    
-    log("needle=[%(%#x,%)]", needle);
-    
-    // 
-    loop: do
-    {
-        ubyte[] haystack = session.editor.view(curpos, hay);
-        if (haystack.length < needle.length)
-        {
-            moveabs(session, curpos);
-            return; // Nothing to do, but move by an element
-        }
-        
-        for (size_t o; o < haystack.length; o += needle.length, curpos += needle.length)
-        {
-            if (memcmp(needle.ptr, haystack.ptr + o, needle.length))
-            {
-                // hack: cursor alignment to multi-byte select
-                if (needle.length > 1) 
-                    curpos++;
-                break loop;
-            }
-        }
-    }
-    while (curpos < docsize);
-    
-    // Move even if nothing found, since it is the intent.
-    // In a text editor, if Ctrl+Right is hit (imagine a long line of same
-    // characters) the cursor still moves to the end of the document.
-    moveabs(session, curpos);
+    moveabs(session,
+        search(session, needle, curpos + needle.length,
+            SEARCH_LASTPOS|SEARCH_DIFF));
 }
 
 // Move view up
@@ -1317,6 +1356,7 @@ void view_up(Session *session, string[] args)
     session.position_view -= session.rc.columns;
     if (session.position_view < 0)
         session.position_view = 0;
+    g_status |= UVIEW;
 }
 
 // Move view down
@@ -1328,16 +1368,36 @@ void view_down(Session *session, string[] args)
         return;
     
     session.position_view += session.rc.columns;
+    g_status |= UVIEW;
 }
 
 //
 // Selection
 //
 
+// Get selection start and its size
+long selection(Session *session, ref long start, ref long end)
+{
+    import std.algorithm.comparison : min, max;
+    
+    if (session.selection.status == 0)
+        return 0;
+    
+    start = min(session.selection.anchor, session.position_cursor);
+    end   = max(session.selection.anchor, session.position_cursor);
+    
+    if (end >= session.editor.size())
+        end--;
+    
+    // Return long, functions may use it differently.
+    return end - start + 1;
+}
+
+// Return: Size of selection
+// TODO: deprecate...
 bool selected(Session *session, ref long start, ref long end)
 {
     import std.algorithm.comparison : min, max;
-    // Assuming a branch is cheaper than calling min+max
     if (session.selection.status)
     {
         start = min(session.selection.anchor, session.position_cursor);
@@ -1682,6 +1742,203 @@ void reset_keys(Session *session, string[] args)
             g_keys[command.key] = Keybind( command.impl, null );
     }
     message("All keys reset");
+}
+
+// Temp enum until DataType improves
+enum PatternType
+{
+    unknown,
+    hex,
+    dec,
+    string_,
+}
+// Recognize pattern input, slice input for later interpretation
+PatternType patternpfx(ref string input)
+{
+    import std.string : startsWith;
+    
+    // Detect prefix
+    static immutable pfxHex0 = `x:`;
+    static immutable pfxHex1 = `0x`;
+    static immutable pfxStr0 = `s:`;
+    static immutable pfxDec0 = `d:`;
+    if (startsWith(input, pfxHex0) || startsWith(input, pfxHex1))
+    {
+        input = input[pfxHex1.length..$];
+        return PatternType.hex;
+    }
+    else if (startsWith(input, pfxStr0))
+    {
+        input = input[pfxStr0.length..$];
+        return PatternType.string_;
+    }
+    else if (startsWith(input, pfxDec0))
+    {
+        input = input[pfxDec0.length..$];
+        return PatternType.dec;
+    }
+    
+    return PatternType.unknown;
+}
+unittest
+{
+    string p0 = "0x00";
+    assert(patternpfx(p0) == PatternType.hex);
+    assert(p0 == "00");
+    
+    p0 = `x:00`;
+    assert(patternpfx(p0) == PatternType.hex);
+    assert(p0 == "00");
+    
+    p0 = `x:ff`;
+    assert(patternpfx(p0) == PatternType.hex);
+    assert(p0 == "ff");
+    
+    p0 = `s:hello`;
+    assert(patternpfx(p0) == PatternType.string_);
+    assert(p0 == "hello");
+}
+
+ubyte[] pattern(CharacterSet charset, string[] args...)
+{
+    import std.format : unformatValue, singleSpec;
+    import std.conv : text;
+    ubyte[] needle;
+    PatternType last;
+    foreach (string arg; args)
+    {
+        string orig = arg;
+        PatternType next = patternpfx(arg);
+    Lretry:
+        final switch (next) {
+        case PatternType.hex:
+            static immutable auto xspec = singleSpec("%x");
+            ulong b = unformatValue!ulong(arg, xspec);
+            needle ~= cast(ubyte)b;
+            break;
+        case PatternType.dec:
+            static immutable auto dspec = singleSpec("%d");
+            long b = unformatValue!long(arg, dspec);
+            needle ~= cast(byte)b;
+            break;
+        case PatternType.string_:
+            // TODO: Transcode
+            needle ~= arg;
+            break;
+        case PatternType.unknown:
+            if (last)
+            {
+                next = last;
+                goto Lretry;
+            }
+            throw new Exception(text("Unknown pattern prefix: ", orig));
+        }
+        last = next;
+    }
+    return needle;
+}
+unittest
+{
+    assert(pattern(CharacterSet.ascii, "0x00")          == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "x:00")          == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "x:00","00")     == [ 0, 0 ]);
+    assert(pattern(CharacterSet.ascii, "s:test")        == "test");
+    assert(pattern(CharacterSet.ascii, "x:0","s:test")  == "\0test");
+    assert(pattern(CharacterSet.ascii, "x:0","0","s:test") == "\0\0test");
+}
+
+//
+void find(Session *session, string[] args)
+{
+    long select_start = void, select_end = void;
+    bool s = selected(session, select_start, select_end);
+    
+    ubyte[] needle;
+    // If arguments: Take those before selection
+    if (args && args.length > 0)
+    {
+        needle = pattern(session.rc.charset, args);
+    }
+    else if (s) // selection
+    {
+        size_t size = cast(size_t)(select_end - select_start + 1);
+        needle.length = size;
+        needle = session.editor.view(session.position_cursor, needle);
+        if (needle.length < size)
+            return; // Nothing to do
+    }
+    else // TODO: Ask using arg() + arguments()
+        throw new Exception("Need find info");
+    
+    // TODO: Fix selection cursor fault (if cursor is already forward)
+    session.selection.status = 0;
+    long p = search(session, needle, session.position_cursor + needle.length, 0);
+    if (p < 0)
+        throw new Exception("Not found");
+    
+    moveabs(session, p);
+    
+    char[32] buf = void;
+    string a = void;
+    final switch (session.rc.address_type) {
+    case AddressType.hex:
+        a = cast(string)sformat(buf, "%#x", p);
+        break;
+    case AddressType.dec:
+        a = cast(string)sformat(buf, "%d", p);
+        break;
+    case AddressType.oct:
+        a = cast(string)sformat(buf, "%o", p);
+        break;
+    }
+    message("Found at %s", a);
+}
+
+//
+void find_back(Session *session, string[] args)
+{
+    long select_start = void, select_end = void;
+    bool s = selected(session, select_start, select_end);
+    
+    ubyte[] needle;
+    // If arguments: Take those before selection
+    if (args && args.length > 0)
+    {
+        needle = pattern(session.rc.charset, args);
+    }
+    else if (s) // selection
+    {
+        size_t size = cast(size_t)(select_end - select_start + 1);
+        needle.length = size;
+        needle = session.editor.view(session.position_cursor, needle);
+        if (needle.length < size)
+            return; // Nothing to do
+    }
+    else // TODO: Ask using arg() + arguments()
+        throw new Exception("Need find info");
+    
+    // TODO: Fix selection cursor fault (if cursor is already behind)
+    session.selection.status = 0;
+    long p = search(session, needle, session.position_cursor - needle.length, SEARCH_REVERSE);
+    if (p < 0)
+        throw new Exception("Not found");
+    
+    moveabs(session, p);
+    
+    char[32] buf = void;
+    string a = void;
+    final switch (session.rc.address_type) {
+    case AddressType.hex:
+        a = cast(string)sformat(buf, "%#x", p);
+        break;
+    case AddressType.dec:
+        a = cast(string)sformat(buf, "%d", p);
+        break;
+    case AddressType.oct:
+        a = cast(string)sformat(buf, "%o", p);
+        break;
+    }
+    message("Found at %s", a);
 }
 
 // Quit app
