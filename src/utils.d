@@ -15,55 +15,72 @@ string[] arguments(const(char)[] buffer)
 {
     import std.string : strip;
     import std.ascii : isControl, isWhite;
-    // NOTE: Using split/splitter would destroy quoted arguments
-    
-    // TODO: Escape characters (with '\\')
+    import std.array : appender;
     
     buffer = strip(buffer);
     
     if (buffer.length == 0) return [];
     
     string[] results;
-    const size_t buflen = buffer.length;
-    char delim = void;
+    auto argBuf = appender!string();
+    bool inQuote = false;
+    char quoteChar;
     
-    for (size_t index, start; index < buflen; ++index)
+    for (size_t i; i < buffer.length; ++i)
     {
-        char c = buffer[index];
+        char c = buffer[i];
         
-        if (isControl(c) || isWhite(c))
+        // Skip leading whitespace when not in a quote
+        if (!inQuote && (isControl(c) || isWhite(c)))
+        {
+            // If we have accumulated text, save it
+            if (argBuf.data.length > 0)
+            {
+                results ~= argBuf.data;
+                argBuf = appender!string(); // Create new appender
+            }
             continue;
-        
-        switch (c) {
-        case '"', '\'':
-            delim = c;
-            
-            for (start = ++index, ++index; index < buflen; ++index)
-            {
-                c = buffer[index];
-                if (c == delim)
-                    break;
-            }
-            
-            results ~= cast(string)buffer[start..(index++)];
-            break;
-        default:
-            for (start = index, ++index; index < buflen; ++index)
-            {
-                c = buffer[index]; 
-                if (isControl(c) || isWhite(c))
-                    break;
-            }
-            
-            results ~= cast(string)buffer[start..index];
         }
+        
+        // Handle escape character
+        if (c == '\\' && i + 1 < buffer.length)
+        {
+            char next = buffer[i + 1];
+            // Escape next character if it's a quote, backslash, or we're in a quote
+            if (next == '"' || next == '\'' || next == '\\' || inQuote)
+            {
+                argBuf.put(next);
+                ++i; // Skip the escaped character
+                continue;
+            }
+        }
+        
+        // Handle quotes
+        if ((c == '"' || c == '\'') && !inQuote)
+        {
+            inQuote = true;
+            quoteChar = c;
+            continue;
+        }
+        else if (inQuote && c == quoteChar)
+        {
+            inQuote = false;
+            continue;
+        }
+        
+        // Regular character - add to buffer
+        argBuf.put(c);
     }
+    
+    // Add any remaining argument
+    if (argBuf.data.length > 0)
+        results ~= argBuf.data;
     
     return results;
 }
+
 @system unittest
 {
-    // TODO: Test nested string quotes
     assert(arguments("") == []);
     assert(arguments("\n") == []);
     assert(arguments("a") == [ "a" ]);
@@ -81,7 +98,22 @@ string[] arguments(const(char)[] buffer)
     assert(arguments(`/type 'yes string'`) == [ "/type", "yes string" ]);
     assert(arguments(`/type "yes string"`) == [ "/type", "yes string" ]);
     assert(arguments(`A           B`) == [ "A", "B" ]);
-    //assert(arguments(`tab\tmoment`) == [ "tab", "moment" ]);
+    
+    // Escape tests
+    assert(arguments(`a \"b c\" d`) == [ "a", `"b`, `c"`, "d" ]);
+    assert(arguments(`a "b \"c\" d"`) == [ "a", `b "c" d` ]);
+    assert(arguments(`a 'b \'c\' d'`) == [ "a", `b 'c' d` ]);
+    assert(arguments(`test\\ value`) == [ `test\`, "value" ]);
+    assert(arguments(`test\\value`) == [ `test\value` ]);
+    assert(arguments(`"test\\"`) == [ `test\` ]);
+    assert(arguments(`'test\\'`) == [ `test\` ]);
+    assert(arguments(`a\\ b`) == [ `a\`, "b" ]);
+    assert(arguments(`"a\\ b"`) == [ `a\ b` ]);
+    assert(arguments(`\"a\"`) == [ `"a"` ]);
+    
+    // Nested/mixed quotes
+    assert(arguments(`a "b 'c' d" e`) == [ "a", `b 'c' d`, "e" ]);
+    assert(arguments(`a 'b "c" d' e`) == [ "a", `b "c" d`, "e" ]);
 }
 
 /// Parse string as hexadecimal, decimal, or octal.
