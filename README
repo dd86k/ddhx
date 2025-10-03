@@ -43,7 +43,7 @@ Title font: Shaded Blocky (FIGlet)
 *                                    NOTICE                                    *
 ********************************************************************************
 
-This software is provided with NO WARANTY as it is marked as EXPERIMENTAL.
+This software is provided with NO WARRANTY as it is marked as EXPERIMENTAL.
 
 ALWAYS make backups of your files before editing them.
 
@@ -97,7 +97,7 @@ Wishlist:
 ddhx aims to be a small and easy-to-use visual hexadecimal editor. For that
 purpose, there are multiple ways of using the editor.
 
-Sypnopsis:
+Synopsis:
   ddhx [OPTIONS] [FILE|-]
   ddhx {-h|--help|--version|--ver}
 
@@ -113,6 +113,8 @@ The command-line interface matches POSIX guidelines.
 To view available start options, execute `ddhx --help`.
 
 Minimum recommended terminal size is 80x24 characters.
+
+To quit the edit, use Ctrl+Q, or "quit" command.
 
 // Navigation
 
@@ -138,13 +140,17 @@ Another example, "bind right-arrow goto +32" will bind the right arrow key to
 "goto +32", which will make it jump 32 bytes ahead. To unbind it, use
 "unbind right-arrow" or "reset-keys" to reset all keybindings.
 
+Selecting data is done using Shift and navigation keys. Some commands
+support selection (such as the skip and find commands, to allow quicker
+operations).
+
 To view default keybinds, execute `ddhx --help-keys`.
 
 // Searching
 
 Searching can be done using the "find" and "find-back" commands.
 
-For example, looking for `\0\0hi "dd"!`:
+For example, looking for `\0\0hi "dd"!` (these are equivalent):
   >find x:00 00 "s:hi \"dd\"!"
   >find x:00 00 68 69 20 22 64 64 22 21
 
@@ -181,13 +187,13 @@ has the shortcut of Ctrl+G. In the case of "goto", it accepts decimal, octal,
 and hexadecimal values.
 
 Examples of using "goto":
-"goto 0x10"
+  >goto 0x10
     Go to position 16 bytes (using hexadecimal) within document.
-"goto +020"
+  >goto +020
     Go forward 16 bytes (using octal) from current position.
-"goto -5"
+  >goto -5
     Go backward 5 bytes (using decimal) from current position.
-"goto %45"
+  >goto %45
     Go to position 45% within document (45% of total size).
 
 To view available commands, execute `ddhx --help-commands`.
@@ -200,6 +206,8 @@ The editor can be configured at runtime using the "set" command.
 
 For example, changing the character set:
   >set charset mac
+
+Runtime configurations do not persist across sessions.
 
 Many of these configuration parameters can be set using the Command-Line
 Interface. For example, both "-c" and "--columns=" map to the "columns"
