@@ -967,17 +967,17 @@ void update_status(Session *session, TerminalSize termsize)
     
     // If there is a pending message, print that.
     // Otherwise, print status bar using the message buffer space.
+    long selectlen = selection(session, select_start, select_end);
     string msg = void;
     if (g_status & UMESSAGE)
     {
         msg = g_messagebuf;
     }
-    else if (selected(session, select_start, select_end))
+    else if (selectlen)
     {
         string start = formatAddress(buf0, select_start, 1, session.rc.address_type);
         string end   = formatAddress(buf1, select_end,   1, session.rc.address_type);
-        msg = cast(string)sformat(statusbuf, "SEL: %s-%s (%d Bytes)",
-            start, end, select_end - select_start + 1);
+        msg = cast(string)sformat(statusbuf, "SEL: %s-%s (%d Bytes)", start, end, selectlen);
     }
     else
     {
@@ -1277,21 +1277,24 @@ void move_skip_backward(Session *session, string[] args)
     // cursor
     ubyte[] needle;
     long select_start = void, select_end = void;
-    if (selected(session, select_start, select_end))
+    long selectlen = selection(session, select_start, select_end);
+    if (selectlen)
     {
-        size_t size = cast(size_t)(select_end - select_start + 1);
-        needle.length = size;
-        needle = session.editor.view(curpos, needle);
-        if (needle.length < size)
+        if (selectlen > MiB!256)
+            throw new Exception("Selection too big");
+        needle.length = cast(size_t)selectlen;
+        needle = session.editor.view(select_start, needle);
+        if (needle.length < selectlen)
             return; // Nothing to do
     }
-    else
+    else // by cursor position
     {
         // Get current element
         ubyte buffer = void;
         needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
         if (needle.length < ubyte.sizeof)
             return; // Nothing to do
+        select_start = curpos;
     }
     
     session.selection.status = 0;
@@ -1300,13 +1303,15 @@ void move_skip_backward(Session *session, string[] args)
     // In a text editor, if Ctrl+Left is hit (imagine a long line of same
     // characters) the cursor still moves to the start of the document.
     moveabs(session,
-        search(session, needle, curpos - needle.length,
-            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE));
+        search(session, needle, select_start - needle.length,
+            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED));
 }
 
-// TODO: Skip by selection (argument takes precedence)
-//       ubyte[] selected = selection();
-//       if (selected) needle = selected;
+template MiB(int base)
+{
+    enum MiB = cast(long)base * 1024 * 1024;
+}
+
 // Move to different element forward
 void move_skip_forward(Session *session, string[] args)
 {
@@ -1324,28 +1329,31 @@ void move_skip_forward(Session *session, string[] args)
     // cursor
     ubyte[] needle;
     long select_start = void, select_end = void;
-    if (selected(session, select_start, select_end))
+    long selectlen = selection(session, select_start, select_end);
+    if (selectlen)
     {
-        size_t size = cast(size_t)(select_end - select_start + 1);
-        needle.length = size;
-        needle = session.editor.view(curpos, needle);
-        if (needle.length < size)
+        if (selectlen > MiB!256)
+            throw new Exception("Selection too big");
+        needle.length = cast(size_t)selectlen;
+        needle = session.editor.view(select_start, needle);
+        if (needle.length < selectlen)
             return; // Nothing to do
     }
-    else
+    else // by cursor position
     {
         // Get current element
         ubyte buffer = void;
         needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
         if (needle.length < ubyte.sizeof)
             return; // Nothing to do
+        select_start = curpos;
     }
     
     session.selection.status = 0;
     
     moveabs(session,
-        search(session, needle, curpos + needle.length,
-            SEARCH_LASTPOS|SEARCH_DIFF));
+        search(session, needle, select_start + needle.length,
+            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED));
 }
 
 // Move view up
@@ -1376,7 +1384,13 @@ void view_down(Session *session, string[] args)
 // Selection
 //
 
-// Get selection start and its size
+// Force unselection
+void unselect(Session *session)
+{
+    session.selection.status = 0;
+}
+
+// Get selection start, end, and its size
 long selection(Session *session, ref long start, ref long end)
 {
     import std.algorithm.comparison : min, max;
@@ -1392,22 +1406,6 @@ long selection(Session *session, ref long start, ref long end)
     
     // Return long, functions may use it differently.
     return end - start + 1;
-}
-
-// Return: Size of selection
-// TODO: deprecate...
-bool selected(Session *session, ref long start, ref long end)
-{
-    import std.algorithm.comparison : min, max;
-    if (session.selection.status)
-    {
-        start = min(session.selection.anchor, session.position_cursor);
-        end   = max(session.selection.anchor, session.position_cursor);
-        
-        if (end >= session.editor.size())
-            end--;
-    }
-    return session.selection.status != 0;
 }
 
 // Expand selection backward
@@ -1591,7 +1589,8 @@ void report_position(Session *session, string[] args)
 {
     long docsize = session.editor.currentSize;
     long select_start = void, select_end = void;
-    if (selected(session, select_start, select_end))
+    long selectlen = selection(session, select_start, select_end);
+    if (selectlen)
     {
         message("%d-%d B (%f%%-%f%%)",
             select_start,
@@ -1852,28 +1851,30 @@ unittest
 void find(Session *session, string[] args)
 {
     long select_start = void, select_end = void;
-    bool s = selected(session, select_start, select_end);
+    long selectlen = selection(session, select_start, select_end);
     
     ubyte[] needle;
     // If arguments: Take those before selection
     if (args && args.length > 0)
     {
         needle = pattern(session.rc.charset, args);
+        select_start = session.position_cursor + needle.length;
     }
-    else if (s) // selection
+    else if (selectlen) // selection
     {
-        size_t size = cast(size_t)(select_end - select_start + 1);
-        needle.length = size;
-        needle = session.editor.view(session.position_cursor, needle);
-        if (needle.length < size)
+        if (selectlen > MiB!256)
+            throw new Exception("Selection too big");
+        needle.length = cast(size_t)selectlen;
+        needle = session.editor.view(select_start, needle);
+        if (needle.length < selectlen)
             return; // Nothing to do
+        select_start += needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
     
-    // TODO: Fix selection cursor fault (if cursor is already forward)
-    session.selection.status = 0;
-    long p = search(session, needle, session.position_cursor + needle.length, 0);
+    unselect(session);
+    long p = search(session, needle, select_start, 0);
     if (p < 0)
         throw new Exception("Not found");
     
@@ -1899,28 +1900,30 @@ void find(Session *session, string[] args)
 void find_back(Session *session, string[] args)
 {
     long select_start = void, select_end = void;
-    bool s = selected(session, select_start, select_end);
+    long selectlen = selection(session, select_start, select_end);
     
     ubyte[] needle;
     // If arguments: Take those before selection
     if (args && args.length > 0)
     {
         needle = pattern(session.rc.charset, args);
+        select_start = session.position_cursor - needle.length;
     }
-    else if (s) // selection
+    else if (selectlen) // selection
     {
-        size_t size = cast(size_t)(select_end - select_start + 1);
-        needle.length = size;
-        needle = session.editor.view(session.position_cursor, needle);
-        if (needle.length < size)
+        if (selectlen > MiB!256)
+            throw new Exception("Selection too big");
+        needle.length = cast(size_t)selectlen;
+        needle = session.editor.view(select_start, needle);
+        if (needle.length < selectlen)
             return; // Nothing to do
+        select_start -= needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
     
-    // TODO: Fix selection cursor fault (if cursor is already behind)
-    session.selection.status = 0;
-    long p = search(session, needle, session.position_cursor - needle.length, SEARCH_REVERSE);
+    unselect(session);
+    long p = search(session, needle, select_start, SEARCH_REVERSE);
     if (p < 0)
         throw new Exception("Not found");
     
