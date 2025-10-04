@@ -1025,6 +1025,9 @@ Lread:
             event.key = c | Mod.shift;
         else if (c < 32) // ctrl key
             event.key = (c + 64) | Mod.ctrl;
+        // vt220: alt+a (\0341) to alt+z (\0372)
+        else if (c >= 225 && c <= 250)
+            event.key = c | Mod.alt;
         else
             event.key = c;
             
