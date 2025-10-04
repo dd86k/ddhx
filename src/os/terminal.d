@@ -12,6 +12,11 @@ module os.terminal;
 //       "xterm", "xterm-color", "xterm-256color", "tmux-256color",
 //       "linux", "vt100", "vt220", "wsvt25" (netbsd10), "screen", etc.
 //       Or $COLORTERM ("truecolor", etc.)
+// TODO: Consider supporting Kitty progressive key inputs
+//       Format: \033[CODE;MODIFIERS;EVENTu
+//       Example: \033[97;1;3u ('a' released/keyUp)
+//       Query: \033[?u (returns support level)
+//       Enable: \033[>1u
 
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
@@ -105,81 +110,6 @@ else version (Posix)
         private extern (C) int ioctl(int fd, ulong request, ...);
     }
     
-    private
-    struct KeyInfo {
-        string text;
-        int value;
-    }
-    // TODO: Support values observed on FreeBSD
-    //       Home: "\033 [1~"
-    //       End : "\033 [4~"
-    //       '#' (us: '~') : "\043" (accidently mapped to End)
-    //       '/' (us: '#') : "\057" (accidently mapped to Help)
-    private
-    immutable KeyInfo[] keyInputsVTE = [
-        // text         Key value
-        { "\033[A",     Key.UpArrow },
-        { "\033[1;2A",  Key.UpArrow | Mod.shift },
-        { "\033[1;3A",  Key.UpArrow | Mod.alt },
-        { "\033[1;5A",  Key.UpArrow | Mod.ctrl },
-        { "\033[A:4A",  Key.UpArrow | Mod.shift | Mod.alt },
-        { "\033[B",     Key.DownArrow },
-        { "\033[1;2B",  Key.DownArrow | Mod.shift },
-        { "\033[1;3B",  Key.DownArrow | Mod.alt },
-        { "\033[1;5B",  Key.DownArrow | Mod.ctrl },
-        { "\033[A:4B",  Key.DownArrow | Mod.shift | Mod.alt },
-        { "\033[C",     Key.RightArrow },
-        { "\033[1;2C",  Key.RightArrow | Mod.shift },
-        { "\033[1;3C",  Key.RightArrow | Mod.alt },
-        { "\033[1;5C",  Key.RightArrow | Mod.ctrl },
-        { "\033[A:4C",  Key.RightArrow | Mod.shift | Mod.alt },
-        { "\033[D",     Key.LeftArrow },
-        { "\033[1;2D",  Key.LeftArrow | Mod.shift },
-        { "\033[1;3D",  Key.LeftArrow | Mod.alt },
-        { "\033[1;5D",  Key.LeftArrow | Mod.ctrl },
-        { "\033[A:4D",  Key.LeftArrow | Mod.shift | Mod.alt },
-        { "\033[2~",    Key.Insert },
-        { "\033[2;3~",  Key.Insert | Mod.alt },
-        { "\033[3~",    Key.Delete },
-        { "\033[3;5~",  Key.Delete | Mod.ctrl },
-        { "\033[H",     Key.Home },
-        { "\033[1;3H",  Key.Home | Mod.alt },
-        { "\033[1;5H",  Key.Home | Mod.ctrl },
-        { "\033[F",     Key.End },
-        { "\033[1;3F",  Key.End | Mod.alt },
-        { "\033[1;5F",  Key.End | Mod.ctrl },
-        { "\033[5~",    Key.PageUp },
-        { "\033[5;5~",  Key.PageUp | Mod.ctrl },
-        { "\033[6~",    Key.PageDown },
-        { "\033[6;5~",  Key.PageDown | Mod.ctrl },
-        { "\033OP",     Key.F1 },
-        { "\033[1;2P",  Key.F1 | Mod.shift, },
-        { "\033[1;3R",  Key.F1 | Mod.alt, },
-        { "\033[1;5P",  Key.F1 | Mod.ctrl, },
-        { "\033OQ",     Key.F2 },
-        { "\033[1;2Q",  Key.F2 | Mod.shift },
-        { "\033OR",     Key.F3 },
-        { "\033[1;2R",  Key.F3 | Mod.shift },
-        { "\033OS",     Key.F4 },
-        { "\033[1;2S",  Key.F4 | Mod.shift },
-        { "\033[15~",   Key.F5 },
-        { "\033[15;2~", Key.F5 | Mod.shift },
-        { "\033[17~",   Key.F6 },
-        { "\033[17;2~", Key.F6 | Mod.shift },
-        { "\033[18~",   Key.F7 },
-        { "\033[18;2~", Key.F7 | Mod.shift },
-        { "\033[19~",   Key.F8 },
-        { "\033[19;2~", Key.F8 | Mod.shift },
-        { "\033[20~",   Key.F9 },
-        { "\033[20;2~", Key.F9 | Mod.shift },
-        { "\033[21~",   Key.F10 },
-        { "\033[21;2~", Key.F10 | Mod.shift },
-        { "\033[23~",   Key.F11 },
-        { "\033[23;2~", Key.F11 | Mod.shift},
-        { "\033[24~",   Key.F12 },
-        { "\033[24;2~", Key.F12 | Mod.shift },
-    ];
-    
     private __gshared termios old_ios, new_ios;
 }
 
@@ -193,8 +123,8 @@ enum TermFeat {
     inputSys    = 1,
     /// Initiate the alternative screen buffer.
     altScreen   = 1 << 1,
-    /// Initiate everything.
-    all         = 0xffff,
+    // Report key up and mouse up events
+    //inputUp     = 1 << 8,
 }
 
 private __gshared int current_features;
@@ -941,96 +871,166 @@ Lread:
             goto Lread;
         }
         
-        event.type = InputType.keyDown; // Assuming for now
-        event.key  = 0; // clear as safety measure
-        
-        switch (r) {
-        case 0: // How even
-            version (unittest) printf("stdin: empty\n");
-            goto Lread;
-        case 1: // single character
-            char c = b[0];
-            version (unittest) printf("stdin: \\0%o (%d)\n", c, c);
-            
-            // Filtering here adjusts the value only if necessary.
-            switch (c) {
-            case 0: // Ctrl+Space
-                event.key = Key.Spacebar | Mod.ctrl;
-                return event;
-            case 13:
-                event.key = Key.Enter;
-                return event;
-            case 8, 127: // ^H
-                event.key = Key.Backspace;
-                return event;
-            case 9: // Tab without control key
-                event.key = Key.Tab;
-                return event;
-            default:
-            }
-            
-            if (c >= 'a' && c <= 'z')
-                event.key = cast(ushort)(c - 32);
-            else if (c >= 'A' && c <= 'Z')
-                event.key = c | Mod.shift;
-            else if (c < 32) // ctrl key
-                event.key = (c + 64) | Mod.ctrl;
-            else
-                event.key = c;
-            return event;
-        case 2: // Usually Alt+Key encoded as \033 Key
-            switch (b[0]) {
-            case '\033':
-                char c = b[1];
-                if (c >= 'a' && c <= 'z')
-                {
-                    event.key = cast(ushort)(b[1] - 32) | Mod.alt;
-                    return event;
-                }
-                else if (c >= 'A' && c <= 'F')
-                {
-                    event.key = b[1] | Mod.alt | Mod.shift;
-                    return event;
-                }
-                break;
-            default:
-            }
-            break;
-        default:
-        }
-        
         version (unittest)
         {
             printf("stdin: ");
             for (size_t i; i < r; ++i)
             {
+                if (i) printf(", ");
                 char c = b[i];
                 if (c < 32 || c > 126) // non-printable ascii
-                    printf("\\0%o ", c);
+                    printf("\\0%o", c);
                 else
-                    cast(void)putchar(b[i]);
+                    printf("'%c'", b[i]);
             }
             cast(void)putchar('\n');
-            stdout.flush();
         }
         
-        // Make a slice of misc. input.
-        const(char)[] inputString = b[0..r];
+        event.type = InputType.keyDown; // Assuming for now
+        event.key  = 0; // clear as safety measure
         
-        // Checking for other key inputs
-        foreach (ki; keyInputsVTE)
+        if (r == 0)
         {
-            if (r != ki.text.length) continue;
-            if (inputString != ki.text) continue;
-            event.key  = ki.value;
-            return event;
+            version (unittest) printf("stdin: empty\n");
+            goto Lread;
         }
         
-        // Matched to nothing
-        goto Lread;
+        enum ESC = 0x1b;
+        
+        struct KeyInfo {
+            string text;
+            int value;
+        }
+        
+        // https://espterm.github.io/docs/espterm-xterm.html
+        switch (b[0]) {
+        case 0: // Ctrl+Space
+            event.key = Key.Spacebar | Mod.ctrl;
+            return event;
+        case 13:
+            event.key = Key.Enter;
+            return event;
+        case 8:     // ^H (ctrl+backspace)
+            event.key = Key.Backspace | Mod.ctrl;
+            return event;
+        case 9: // Tab without control key
+            // Shift+tab -> "\033[Z" (xterm)
+            event.key = Key.Tab;
+            return event;
+        case 127:
+            event.key = Key.Backspace;
+            return event;
+        case ESC: // \x1b / \033
+            if (r <= 1) // ESC only
+            {
+                event.key = Key.Escape;
+                return event;
+            }
+            
+            char[] input = b[1..r];
+            
+            // Next, detect sequence
+            switch (input[0]) {
+            case '[': // CSI, Control Sequence Introducer
+                // Detect special modifier keys if there are any
+                if (r >= 5 && b[2] == '1' && b[3] == ';')
+                {
+                    // 1;2 -> Shift
+                    // 1;3 -> Alt
+                    // 1;4 -> Shift+Alt
+                    // 1;5 -> Ctrl
+                    // 1;6 -> Ctrl+Shift
+                    // 1;7 -> Alt+Ctrl
+                    // 1;8 -> Shift+Alt+Ctrl
+                    switch (b[4]) {
+                    case '2': event.key = Mod.shift; break;
+                    case '3': event.key = Mod.alt; break;
+                    case '4': event.key = Mod.shift|Mod.alt; break;
+                    case '5': event.key = Mod.ctrl; break;
+                    case '6': event.key = Mod.ctrl|Mod.shift; break;
+                    case '7': event.key = Mod.ctrl|Mod.alt; break;
+                    case '8': event.key = Mod.ctrl|Mod.alt|Mod.shift; break;
+                    default: goto Lread; // Unknown, don't bother misreporting
+                    }
+                    input = input[4..$];
+                }
+                else
+                    input = input[1..$];
+                break;
+            case 'O': // SS3/G3 character set (application mode)
+                // WARNING: Shift+Alt+O will lead here
+                input = input[1..$];
+                break;
+            default: // Alt+KEY
+                event.key = Mod.alt | (input[0] - 32);
+                return event;
+            }
+            
+            static immutable KeyInfo[] specials = [
+                // xterm
+                { "A",      Key.UpArrow },
+                { "B",      Key.DownArrow },
+                { "C",      Key.RightArrow },
+                { "D",      Key.LeftArrow },
+                { "H",      Key.Home },
+                { "F",      Key.End },
+                { "2~",     Key.Insert },
+                { "3~",     Key.Delete },
+                { "5~",     Key.PageUp },
+                { "6~",     Key.PageDown },
+                { "P",      Key.F1 },
+                { "Q",      Key.F2 },
+                { "R",      Key.F3 },
+                { "S",      Key.F4 },
+                { "15~",    Key.F5 },
+                { "17~",    Key.F6 },
+                { "18~",    Key.F7 },
+                { "19~",    Key.F8 },
+                { "20~",    Key.F9 },
+                { "21~",    Key.F10 },
+                { "23~",    Key.F11 },
+                { "24~",    Key.F12 },
+                { "Z",      Key.Tab | Mod.shift },
+                // vt220
+                { "11~",    Key.F1 },
+                { "12~",    Key.F2 },
+                { "13~",    Key.F1 },
+                { "14~",    Key.F2 },
+                { "7~",     Key.Home },
+                { "8~",     Key.End },
+            ];
+            
+            foreach (spec; specials)
+            {
+                if (input == spec.text)
+                {
+                    event.key |= spec.value;
+                    return event;
+                }
+            }
+            goto Lread;
+        default:
+        }
+        
+        // g       -> 'g'
+        // shift+g -> 'G'
+        // ctrl+g  -> \07
+        // alt+g   -> \033 g
+        // xterm: Alt+Return -> \033 \015
+        // vt220: Alt+Return -> \0215
+        int c = b[0];
+        if (c >= 'a' && c <= 'z')
+            event.key = cast(ushort)(c - 32);
+        else if (c >= 'A' && c <= 'Z')
+            event.key = c | Mod.shift;
+        else if (c < 32) // ctrl key
+            event.key = (c + 64) | Mod.ctrl;
+        else
+            event.key = c;
+            
+        return event;
     } // version (Posix)
 }
-
 
 /// Terminal input type.
 enum InputType
