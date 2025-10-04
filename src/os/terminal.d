@@ -1027,7 +1027,7 @@ Lread:
             event.key = (c + 64) | Mod.ctrl;
         // vt220: alt+a (\0341) to alt+z (\0372)
         else if (c >= 225 && c <= 250)
-            event.key = c | Mod.alt;
+            event.key = (c - 160) | Mod.alt;
         else
             event.key = c;
             
