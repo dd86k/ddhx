@@ -110,6 +110,9 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     
     string g_messagebuf;
     
+    /// Last search needle (find-* uses this).
+    ubyte[] g_needle;
+    
     // TODO: Should be turned into a "reader" (struct+function)
     //       Allows additional unittests and settings (e.g., RTL).
     // location where edit started
@@ -136,17 +139,6 @@ struct Command
 }
 
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
-// - "find": Forward find (Ctrl+F and/or '/')
-//           Should use type prefixes:
-//           x: or 0x   - Hexadecimal byte(s) (x:ff or 0xff)
-//           d:         - Decimal byte(s) (d:255)
-//           s: or "    - ASCII/UTF-8 string (s:hello or "hello")
-//           u16:       - 16-bit unsigned integer
-//           u32:       - 32-bit unsigned integer
-//           i16:       - 16-bit signed integer
-//           i32:       - 32-bit signed integer
-//           f32:       - 32-bit float
-//           f64:       - 64-bit double
 // - "find-back" (Ctrl+B and/or '?'): Backward search
 // - "find-next" (prefill with Ctrl+F): Find next instance for find
 // - "find-prev" (prefill with Ctrl+F): Find next instance for find-back
@@ -170,6 +162,7 @@ struct Command
 //       - Selection: command parameters are prioritized over selections
 /// List of default commands and shortcuts
 immutable Command[] default_commands = [
+    // Navigation
     { "left",                       "Navigate one element back",
         Key.LeftArrow,              &move_left },
     { "right",                      "Navigate one element forward",
@@ -217,15 +210,21 @@ immutable Command[] default_commands = [
         Mod.ctrl|Mod.shift|Key.End, &select_bottom },
     { "select-all",                 "Select entire document",
         Mod.ctrl|Key.A,             &select_all },*/
-    // Actions
+    // 
     { "change-panel",               "Switch to another data panel",
         Key.Tab,                    &change_panel },
     { "change-mode",                "Change writing mode (between overwrite and insert)",
         Key.Insert,                 &change_writemode },
+    // Find
     { "find",                       "Find a pattern in the document",
         Mod.ctrl|Key.F,             &find },
     { "find-back",                  "Find a pattern in the document backward",
         Mod.ctrl|Mod.shift|Key.F,   &find_back },
+    { "find-next",                  "Repeat search",
+        Mod.ctrl|Key.G,             &find_next },
+    { "find-prev",                  "Repeat search backward",
+        Mod.shift|Key.G,            &find_prev },
+    // Actions
     { "save",                       "Save document to file",
         Mod.ctrl|Key.S,             &save },
     { "save-as",                    "Save document as a different file",
@@ -235,7 +234,7 @@ immutable Command[] default_commands = [
     { "redo",                       "Redo previously undone edit",
         Mod.ctrl|Key.R,             &redo },
     { "goto",                       "Navigate or jump to a specific position",
-        Mod.ctrl|Key.G,             &goto_ },
+        0,                          &goto_ },
     { "report-position",            "Report cursor position on screen",
         Mod.ctrl|Key.P,             &report_position },
     { "report-name",                "Report document name on screen",
@@ -1306,6 +1305,10 @@ template MiB(int base)
 {
     enum MiB = cast(long)base * 1024 * 1024;
 }
+template KiB(int base)
+{
+    enum KiB = cast(long)base * 1024;
+}
 
 // Move to different element forward
 void move_skip_forward(Session *session, string[] args)
@@ -1615,6 +1618,8 @@ void report_name(Session *session, string[] args)
 // Given parameters, suggest a number of available terminal columns.
 int suggestcols(int tcols, int aspace, int dspace)
 {
+    if (tcols < 20)
+        return 1;
     int left = tcols - (aspace + 4); // address + spaces around data
     return left / (2+dspace); // old flawed algo, temporary
 }
@@ -1624,6 +1629,7 @@ unittest
     enum D8SPACING = 3;
     assert(suggestcols(80, 11, X8SPACING) == 16); // 11 chars for address, x8 formatting
     //assert(suggestcols(80, 11, D8SPACING) == 16); // 11 chars for address, d8 formatting
+    assert(suggestcols(0, 11, X8SPACING) == 1); // 11 chars for address, x8 formatting
 }
 
 // Automatically size the number of columns that can fix on screen
@@ -1875,53 +1881,43 @@ unittest
     assert(pattern(CharacterSet.ascii, "x:0","0","s:test") == "\0\0test");
 }
 
+/// Artificial needle size limit
+enum SEARCH_LIMIT = KiB!128;
+
 //
 void find(Session *session, string[] args)
 {
     long select_start = void, select_end = void;
     long selectlen = selection(session, select_start, select_end);
     
-    ubyte[] needle;
     // If arguments: Take those before selection
     if (args && args.length > 0)
     {
-        needle = pattern(session.rc.charset, args);
-        select_start = session.position_cursor + needle.length;
+        g_needle = pattern(session.rc.charset, args);
+        select_start = session.position_cursor + g_needle.length;
     }
     else if (selectlen) // selection
     {
-        if (selectlen > MiB!256)
+        if (selectlen > SEARCH_LIMIT)
             throw new Exception("Selection too big");
-        needle.length = cast(size_t)selectlen;
-        needle = session.editor.view(select_start, needle);
-        if (needle.length < selectlen)
+        g_needle.length = cast(size_t)selectlen;
+        g_needle = session.editor.view(select_start, g_needle);
+        if (g_needle.length < selectlen)
             return; // Nothing to do
-        select_start += needle.length;
+        select_start += g_needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
     
     unselect(session);
-    long p = search(session, needle, select_start, 0);
+    long p = search(session, g_needle, select_start, 0);
     if (p < 0)
         throw new Exception("Not found");
     
     moveabs(session, p);
     
     char[32] buf = void;
-    string a = void;
-    final switch (session.rc.address_type) {
-    case AddressType.hex:
-        a = cast(string)sformat(buf, "%#x", p);
-        break;
-    case AddressType.dec:
-        a = cast(string)sformat(buf, "%d", p);
-        break;
-    case AddressType.oct:
-        a = cast(string)sformat(buf, "%o", p);
-        break;
-    }
-    message("Found at %s", a);
+    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
 }
 
 //
@@ -1930,47 +1926,68 @@ void find_back(Session *session, string[] args)
     long select_start = void, select_end = void;
     long selectlen = selection(session, select_start, select_end);
     
-    ubyte[] needle;
     // If arguments: Take those before selection
     if (args && args.length > 0)
     {
-        needle = pattern(session.rc.charset, args);
-        select_start = session.position_cursor - needle.length;
+        g_needle = pattern(session.rc.charset, args);
+        select_start = session.position_cursor - g_needle.length;
     }
     else if (selectlen) // selection
     {
-        if (selectlen > MiB!256)
+        if (selectlen > SEARCH_LIMIT)
             throw new Exception("Selection too big");
-        needle.length = cast(size_t)selectlen;
-        needle = session.editor.view(select_start, needle);
-        if (needle.length < selectlen)
+        g_needle.length = cast(size_t)selectlen;
+        g_needle = session.editor.view(select_start, g_needle);
+        if (g_needle.length < selectlen)
             return; // Nothing to do
-        select_start -= needle.length;
+        select_start -= g_needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
     
     unselect(session);
-    long p = search(session, needle, select_start, SEARCH_REVERSE);
+    long p = search(session, g_needle, select_start, SEARCH_REVERSE);
     if (p < 0)
         throw new Exception("Not found");
     
     moveabs(session, p);
     
     char[32] buf = void;
-    string a = void;
-    final switch (session.rc.address_type) {
-    case AddressType.hex:
-        a = cast(string)sformat(buf, "%#x", p);
-        break;
-    case AddressType.dec:
-        a = cast(string)sformat(buf, "%d", p);
-        break;
-    case AddressType.oct:
-        a = cast(string)sformat(buf, "%o", p);
-        break;
-    }
-    message("Found at %s", a);
+    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
+}
+
+// 
+void find_next(Session *session, string[] args)
+{
+    if (g_needle is null)
+        return;
+    
+    unselect(session);
+    long p = search(session, g_needle, session.position_cursor + g_needle.length, 0);
+    if (p < 0)
+        throw new Exception("Not found");
+    
+    moveabs(session, p);
+    
+    char[32] buf = void;
+    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
+}
+
+// 
+void find_prev(Session *session, string[] args)
+{
+    if (g_needle is null)
+        return;
+    
+    unselect(session);
+    long p = search(session, g_needle, session.position_cursor - 1, SEARCH_REVERSE);
+    if (p < 0)
+        throw new Exception("Not found");
+    
+    moveabs(session, p);
+    
+    char[32] buf = void;
+    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
 }
 
 // Quit app
