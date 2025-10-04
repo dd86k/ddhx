@@ -7,13 +7,13 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-import std.stdio : readln;
 import std.string;
 import os.terminal;
 import configuration;
 import doceditor;
 import logger;
 import transcoder;
+import std.conv : text;
 
 // TODO: Find a way to dump session data to be able to resume later
 //       Session/project whatever
@@ -298,7 +298,10 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
     
     message(initmsg);
     
-    // TODO: ^C handler
+    // TODO: Handle ^C
+    //       1. Ignore + message to really quit
+    //          Somehow re-init loop without longjmp (unavail on Windows)
+    //       2. Quit, restore IOS
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
     terminalOnResize(&onresize);
     terminalHideCursor();
@@ -321,7 +324,7 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
             throw new Exception("error test");
         };
         
-        // ^H is binded to something on my terminal... No idea what.
+        // ^H is binded to ctrl+backspace.
         g_keys[Mod.ctrl|Key.J] =
         Keybind((Session*, string[])
             {
@@ -332,6 +335,8 @@ void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
     }
     
     // Special keybinds with no attached commands
+    // TODO: Make "menu" bindable.
+    //       Return should still be provided as a fallback.
     g_keys[Key.Enter] = Keybind( &prompt_command, null );
     
     loop(g_session);
@@ -438,8 +443,6 @@ void onresize()
 // Bind a key to a command with default set of parameters
 void bindkey(int key, string command, string[] parameters)
 {
-    import std.conv : text;
-    
     log(`key=%d command="%s" params="%s"`, key, command, parameters);
     
     void function(Session*, string[]) *impl = command in g_commands;
@@ -540,6 +543,8 @@ unittest
 // Invoke command prompt
 string promptline(string text)
 {
+    import std.stdio : readln;
+
     assert(text, "Prompt text missing");
     assert(text.length, "Prompt text required"); // disallow empty
     
@@ -861,8 +866,6 @@ void update_view(Session *session, TerminalSize termsize)
         {
             int i = (row * cols) + col;
             
-            import std.algorithm.comparison : min, max;
-            
             if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.data)
             {
                 // hack for not making the first spacer inverted
@@ -910,8 +913,6 @@ void update_view(Session *session, TerminalSize termsize)
         for (int col; col < cols; ++col)
         {
             int i = (row * cols) + col;
-            
-            import std.algorithm.comparison : min, max;
             
             if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.text)
             {
@@ -1006,8 +1007,6 @@ void update_status(Session *session, TerminalSize termsize)
     }
     else // message fits on screen
     {
-        import core.stdc.string : memset;
-        
         terminalWrite(msg.ptr, msglen);
         
         // Pad to end of screen with spaces
@@ -1173,7 +1172,6 @@ void prompt_command(Session *session, string[] args)
     const(void function(Session*, string[])) *com = name in g_commands;
     if (com == null)
     {
-        import std.conv : text;
         throw new Exception(text("command not found: ", name));
     }
     
@@ -1259,9 +1257,6 @@ enum SEARCH_SIZE = 16 * 1024;
 // Move to different element backward
 void move_skip_backward(Session *session, string[] args)
 {
-    import core.stdc.string : memcmp;
-    import core.stdc.stdlib : malloc, free;
-    
     long curpos = session.position_cursor;
     
     // Nothing to really do... so avoid the necessary work
@@ -1315,9 +1310,6 @@ template MiB(int base)
 // Move to different element forward
 void move_skip_forward(Session *session, string[] args)
 {
-    import core.stdc.string : memcmp;
-    import core.stdc.stdlib : malloc, free;
-    
     long curpos  = session.position_cursor;
     long docsize = session.editor.size();
     
@@ -1563,6 +1555,7 @@ void goto_(Session *session, string[] args)
         break;
     case '%':
         import std.conv : to;
+        import utils : llpercentdiv;
         
         if (off.length <= 1) // just '%'
             throw new Exception("Need percentage number");
@@ -1576,7 +1569,6 @@ void goto_(Session *session, string[] args)
         if (per > 100) // Yeah we can't go over the document
             throw new Exception("Percentage cannot be over 100");
         
-        import utils : llpercentdiv;
         moveabs(session, llpercentdiv(session.editor.currentSize(), per));
         break;
     default:
@@ -1750,6 +1742,7 @@ enum PatternType
     unknown,
     hex,
     dec,
+    oct,
     string_,
 }
 // Recognize pattern input, slice input for later interpretation
@@ -1761,7 +1754,9 @@ PatternType patternpfx(ref string input)
     static immutable pfxHex0 = `x:`;
     static immutable pfxHex1 = `0x`;
     static immutable pfxStr0 = `s:`;
+    static immutable pfxStr1 = `"`;
     static immutable pfxDec0 = `d:`;
+    static immutable pfxOct0 = `o:`;
     if (startsWith(input, pfxHex0) || startsWith(input, pfxHex1))
     {
         input = input[pfxHex1.length..$];
@@ -1772,10 +1767,22 @@ PatternType patternpfx(ref string input)
         input = input[pfxStr0.length..$];
         return PatternType.string_;
     }
+    else if (startsWith(input, pfxStr1))
+    {
+        if (input.length < 2 || input[$-1] != '"')
+            return PatternType.unknown;
+        input = input[pfxStr1.length..$-1];
+        return PatternType.string_;
+    }
     else if (startsWith(input, pfxDec0))
     {
         input = input[pfxDec0.length..$];
         return PatternType.dec;
+    }
+    else if (startsWith(input, pfxOct0))
+    {
+        input = input[pfxOct0.length..$];
+        return PatternType.oct;
     }
     
     return PatternType.unknown;
@@ -1794,15 +1801,28 @@ unittest
     assert(patternpfx(p0) == PatternType.hex);
     assert(p0 == "ff");
     
+    p0 = `o:377`;
+    assert(patternpfx(p0) == PatternType.oct);
+    assert(p0 == "377");
+    
     p0 = `s:hello`;
     assert(patternpfx(p0) == PatternType.string_);
     assert(p0 == "hello");
+    
+    p0 = `"hello"`;
+    assert(patternpfx(p0) == PatternType.string_);
+    assert(p0 == "hello");
+    
+    p0 = `""`;
+    assert(patternpfx(p0) == PatternType.string_);
+    assert(p0 == "");
+    p0 = `"`;
+    assert(patternpfx(p0) == PatternType.unknown);
 }
 
 ubyte[] pattern(CharacterSet charset, string[] args...)
 {
     import std.format : unformatValue, singleSpec;
-    import std.conv : text;
     ubyte[] needle;
     PatternType last;
     foreach (string arg; args)
@@ -1817,9 +1837,14 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
             needle ~= cast(ubyte)b;
             break;
         case PatternType.dec:
-            static immutable auto dspec = singleSpec("%d");
+            static immutable auto dspec = singleSpec("%u");
             long b = unformatValue!long(arg, dspec);
-            needle ~= cast(byte)b;
+            needle ~= cast(ubyte)b;
+            break;
+        case PatternType.oct:
+            static immutable auto ospec = singleSpec("%o");
+            long b = unformatValue!long(arg, ospec);
+            needle ~= cast(ubyte)b;
             break;
         case PatternType.string_:
             // TODO: Transcode
@@ -1840,6 +1865,9 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
 unittest
 {
     assert(pattern(CharacterSet.ascii, "0x00")          == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "0xff")          == [ 0xff ]);
+    assert(pattern(CharacterSet.ascii, "d:255")         == [ 0xff ]);
+    assert(pattern(CharacterSet.ascii, "o:377")         == [ 0xff ]);
     assert(pattern(CharacterSet.ascii, "x:00")          == [ 0 ]);
     assert(pattern(CharacterSet.ascii, "x:00","00")     == [ 0, 0 ]);
     assert(pattern(CharacterSet.ascii, "s:test")        == "test");
