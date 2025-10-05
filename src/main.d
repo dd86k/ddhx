@@ -99,8 +99,11 @@ void printpage(string opt)
     case "help-debug":
         import platform : TARGET_TRIPLE;
         import os.path : findConfig;
+        import os.mem : syspagesize;
+        import std.conv : text;
         printfield("Compiler",  __VENDOR__~" "~DVER!__VERSION__);
         printfield("Target",    TARGET_TRIPLE);
+        printfield("Pagesize",  text(syspagesize()));
         string confpath = findConfig("ddhx", ".ddhxrc");
         printfield("Config",    confpath ? confpath : "none");
         break;
