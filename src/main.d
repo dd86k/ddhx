@@ -16,6 +16,7 @@ import configuration;
 import ddhx;
 import doceditor;
 import logger;
+import backend;
 
 private:
 
@@ -250,7 +251,8 @@ void main(string[] args)
         static immutable string MSG_NEWFILE = "(new file)";
         
         string target = args.length >= 2 ? args[1] : null;
-        DocEditor editor = new DocEditor(0, ochksize);
+        //DocEditor editor = new DocEditor(0, ochksize);
+        IDocumentEditor editor = new ChunkDocumentEditor(0, ochksize);
         string initmsg;
         
         import document.file : FileDocument;
@@ -267,7 +269,8 @@ void main(string[] args)
             {
                 doc.append(chk);
             }
-            editor.attach(doc);
+            //editor.attach(doc);
+            editor.open(doc);
             break;
         default: // assume target is file
             import std.file : exists;
@@ -276,7 +279,7 @@ void main(string[] args)
             if (target && exists(target))
             {
                 bool readonly = rc.writemode == WritingMode.readonly;
-                editor.attach(new FileDocument(target, readonly));
+                editor.open(new FileDocument(target, readonly));
                 
                 initmsg = baseName(target);
             }

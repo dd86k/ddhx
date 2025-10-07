@@ -14,6 +14,7 @@ import doceditor;
 import logger;
 import transcoder;
 import std.conv : text;
+import backend.base : IDocumentEditor;
 
 // TODO: Find a way to dump session data to be able to resume later
 //       Session/project whatever
@@ -77,7 +78,7 @@ struct Session
     RC rc;
     
     /// 
-    DocEditor editor;
+    IDocumentEditor editor;
     
     /// Active selection
     Selection selection;
@@ -287,7 +288,7 @@ unittest
 ///     rc = Copy of the RC instance.
 ///     string = Target path.
 ///     initmsg = Initial message.
-void startddhx(DocEditor editor, ref RC rc, string path, string initmsg)
+void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
 {
     g_status = UINIT; // init here since message could be called later
     
@@ -418,7 +419,7 @@ Lread:
         if (g_editdigit >= chars)
         {
             // TODO: multi-byte edits
-            g_session.editor.overwrite(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+            g_session.editor.replace(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
             g_editdigit = 0;
             move_right(g_session, null);
         }
@@ -722,11 +723,11 @@ void moveabs(Session *session, long pos)
     if (g_editdigit && g_editcurpos != pos)
     {
         g_editdigit = 0;
-        session.editor.overwrite(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+        session.editor.replace(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
     }
     
     // Can't go beyond file
-    long docsize = session.editor.currentSize;
+    long docsize = session.editor.size();
     if (pos < 0) // cursor shouldn't be negative position
         pos = 0;
     if (pos > docsize) // cursor past document
@@ -807,14 +808,15 @@ void update_view(Session *session, TerminalSize termsize)
         return;
     
     import std.datetime.stopwatch : StopWatch, Duration;
-    debug StopWatch sw;
-    debug sw.start();
     
     int cols        = session.rc.columns;   /// elements per row
     int rows        = g_rows;               /// rows to render
     int count       = rows * cols;          /// elements on screen
     long curpos     = session.position_cursor;
     long basepos    = session.position_view;
+    
+    debug StopWatch sw;
+    debug sw.start(); // For IDocumentEditor.view()
     
     // Read data
     // TODO: To avoid unecessary I/O, avoid calling .view() when:
@@ -831,6 +833,11 @@ void update_view(Session *session, TerminalSize termsize)
         viewbuf.length = count;
     ubyte[] result  = session.editor.view(basepos, viewbuf);
     int readlen     = cast(int)result.length; // * bytesize
+    
+    debug sw.stop();
+    debug log("TIME view=%s", sw.peek());
+    debug sw.reset();
+    debug sw.start();
     
     long address    = basepos;
     
@@ -1246,7 +1253,7 @@ void move_abs_start(Session *session, string[] args)
 void move_abs_end(Session *session, string[] args)
 {
     session.selection.status = 0;
-    moveabs(session, session.editor.currentSize());
+    moveabs(session, session.editor.size());
 }
 
 /// For move_diff_backward and move_diff_forward, this is the size of the
@@ -1264,7 +1271,7 @@ void move_skip_backward(Session *session, string[] args)
     
     // If cursor is at the very end of buffer, move it by one element
     // back, because there's no data where the cursor points to.
-    if (session.position_cursor == session.editor.currentSize())
+    if (session.position_cursor == session.editor.size())
         --curpos;
     
     // Use selection if active, otherwise use current element highlighted by
@@ -1367,7 +1374,7 @@ void view_up(Session *session, string[] args)
 void view_down(Session *session, string[] args)
 {
     int count = session.rc.columns * g_rows;
-    long max = session.editor.currentSize - count;
+    long max = session.editor.size() - count;
     if (session.position_view > max)
         return;
     
@@ -1516,21 +1523,17 @@ void change_panel(Session *session, string[] args)
 // 
 void undo(Session *session, string[] args)
 {
-    import patcher : Patch;
-    Patch patch = session.editor.undo();
-    
-    if (patch.size)
-        moveabs(session, patch.address);
+    long pos = session.editor.undo();
+    if (pos >= 0)
+        moveabs(session, pos);
 }
 
 // 
 void redo(Session *session, string[] args)
 {
-    import patcher : Patch;
-    Patch patch = session.editor.redo();
-    
-    if (patch.size)
-        moveabs(session, patch.address + patch.size);
+    long pos = session.editor.redo();
+    if (pos >= 0)
+        moveabs(session, pos);
 }
 
 // 
@@ -1572,7 +1575,7 @@ void goto_(Session *session, string[] args)
         if (per > 100) // Yeah we can't go over the document
             throw new Exception("Percentage cannot be over 100");
         
-        moveabs(session, llpercentdiv(session.editor.currentSize(), per));
+        moveabs(session, llpercentdiv(session.editor.size(), per));
         break;
     default:
         moveabs(session, scan(off));
@@ -1582,7 +1585,7 @@ void goto_(Session *session, string[] args)
 // Report cursor position on screen
 void report_position(Session *session, string[] args)
 {
-    long docsize = session.editor.currentSize;
+    long docsize = session.editor.size();
     long select_start = void, select_end = void;
     long selectlen = selection(session, select_start, select_end);
     if (selectlen)

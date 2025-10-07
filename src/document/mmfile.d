@@ -20,7 +20,7 @@ enum MMFlags
     readWrite = read | write,
 }
 
-// NOTE: WARNING: MmFile can be dangerous to play with
+// NOTE: WARNING: MmFile (mmap) can be dangerous to play with
 //       * size=0 loads the ENTIRE file in memory (e.g., all of 71 GiB).
 //         If size is stated, it only loads up to size, and no further
 //         data is accessible, eliminating the benefit.
