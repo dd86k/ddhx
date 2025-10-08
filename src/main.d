@@ -251,33 +251,39 @@ void main(string[] args)
         static immutable string MSG_NEWFILE = "(new file)";
         
         string target = args.length >= 2 ? args[1] : null;
-        //DocEditor editor = new DocEditor(0, ochksize);
         IDocumentEditor editor = new ChunkDocumentEditor(0, ochksize);
         string initmsg;
         
-        import document.file : FileDocument;
-        import document.memory : MemoryDocument;
+        // Imimitate GNU nano where...
+        // No args:  New empty buffer
+        // "-":      Read from stdin
+        // FILENAME: Attempt to open FILE
         switch (target) {
         case null:
+            // NOTE: Peeking stdin.
+            //       We could try peeking stdin (getchat, ungetc(c, stdin))
+            //       automatically, but might introduce unwanted behavior (implicit).
             initmsg = MSG_NEWBUF;
             break;
-        case "-": // MemoryDocument
-            target = null;
+        case "-": // In-memory buffer from stdin
+            import document.memory : MemoryDocument;
+            target = null; // unset target (no name)
             initmsg = MSG_NEWBUF;
             MemoryDocument doc = new MemoryDocument();
             foreach (const(ubyte)[] chk; stdin.byChunk(4096))
             {
                 doc.append(chk);
             }
-            //editor.attach(doc);
             editor.open(doc);
             break;
-        default: // assume target is file
+        default: // target is either file, disk (future), or PID (future)
             import std.file : exists;
-            import std.path : baseName;
             
             if (target && exists(target))
             {
+                import document.file : FileDocument;
+                import std.path : baseName;
+                
                 bool readonly = rc.writemode == WritingMode.readonly;
                 editor.open(new FileDocument(target, readonly));
                 
@@ -287,7 +293,7 @@ void main(string[] args)
             {
                 initmsg = MSG_NEWFILE;
             }
-            else // new buffer
+            else // new empty buffer
             {
                 initmsg = MSG_NEWBUF;
             }

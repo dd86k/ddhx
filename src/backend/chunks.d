@@ -1,4 +1,4 @@
-/// Backend implementing a chunk-based data structure.
+/// Editor backend implementing an in-memory chunk-based data structure.
 ///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
@@ -62,6 +62,7 @@ struct Patch
 }
 
 /// Manages the storage of patches.
+private
 class PatchManager
 {
     /// Create a new PatchManager.
@@ -164,6 +165,7 @@ unittest
 {
     static immutable ubyte[] data0 = [ 0xfe ];
     
+    // Just insert patches to see if they are held in memory
     scope PatchManager patches = new PatchManager();
     patches.insert(0, Patch(0, PatchType.replace, 0, 1, data0.ptr, null));
     patches.insert(1, Patch(1, PatchType.replace, 0, 1, data0.ptr, null));
@@ -211,6 +213,7 @@ struct Chunk
 // Caller is responsible for populating data into chunks
 //
 // NOTE: For simplicity, chunks are SIZE aligned.
+private
 class ChunkManager
 {
     // chksize = Size of chunk, smaller uses less memory but might be more fragmented.
@@ -324,13 +327,19 @@ unittest
     assert(chunk1.used == 1);
 }
 
+/// Document editor implemented using in-memory-aligned chunks.
 class ChunkDocumentEditor : IDocumentEditor
 {
+    /// Create a new instance with default allocation sizes.
     this()
     {
         this(0, 0);
     }
     
+    /// Create a new instance with specified allocation sizes.
+    /// Params:
+    ///     pbufsz = Initial size of the data buffer (default=0).
+    ///     chkinc = Chunk size (defaults to page size).
     this(size_t pbufsz, size_t chkinc)
     {
         import os.mem : syspagesize;
@@ -342,6 +351,9 @@ class ChunkDocumentEditor : IDocumentEditor
         chunks  = new ChunkManager(chkinc);
     }
     
+    /// Open document.
+    /// Params: doc = Document.
+    /// Returns: Class instance.
     typeof(this) open(IDocument doc)
     {
         basedoc = doc;
@@ -355,7 +367,8 @@ class ChunkDocumentEditor : IDocumentEditor
         return this;
     }
     
-    /// Current size of the document, including edits
+    /// Current size of the document, including edits.
+    /// Returns: Size in Bytes.
     long size()
     {
         return logical_size;
@@ -364,6 +377,7 @@ class ChunkDocumentEditor : IDocumentEditor
     alias currentSize = size; // Older alias
     
     /// Save as file to a specified location.
+    /// Throws: I/O error or enforcement.
     /// Params: target = File system path.
     void save(string target)
     {
@@ -491,6 +505,7 @@ class ChunkDocumentEditor : IDocumentEditor
     }
     
     /// View the content of the document with all modifications.
+    /// Throws: Enforcement.
     /// Params:
     ///   position = Base position for viewing buffer.
     ///   buffer = Viewing buffer.
@@ -565,8 +580,9 @@ class ChunkDocumentEditor : IDocumentEditor
         return buffer[0..l];
     }
     
-    // Returns true if document was edited (with new changes pending)
-    // since the last time it was opened or saved.
+    /// Returns true if document was edited (with new changes pending)
+    /// since the last time it was opened or saved.
+    /// Returns: True if edited since last save.
     bool edited()
     {
         // If current history index is different from the index where
@@ -574,7 +590,12 @@ class ChunkDocumentEditor : IDocumentEditor
         return historyidx != historysavedidx;
     }
     
-    // Create a new patch where data is being overwritten
+    /// Create a new patch where data is being overwritten.
+    /// Throws: Enforcement.
+    /// Params:
+    ///     pos = Base position.
+    ///     data = Data.
+    ///     len = Data length.
     void replace(long pos, const(void) *data, size_t len)
     {
         enforce(pos >= 0,            "assert: pos >= 0");
@@ -663,6 +684,9 @@ class ChunkDocumentEditor : IDocumentEditor
     // TODO: addPatch(...)
     // TODO: removePatch(...)
     
+    /// Undo last edit.
+    /// Throws: Enforcement.
+    /// Returns: Base position of edit, or -1 if no more edits.
     long undo()
     {
         if (historyidx <= 0)
@@ -706,6 +730,9 @@ class ChunkDocumentEditor : IDocumentEditor
         return patch.address;
     }
     
+    /// Redo last edit.
+    /// Throws: Enforcement.
+    /// Returns: Base position + length of edit, or -1 if no more edits.
     long redo()
     {
         if (historyidx >= patches.count())

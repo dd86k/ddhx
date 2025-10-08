@@ -44,9 +44,7 @@ void editorTests(T : IDocumentEditor)()
         &test_save!T,
     ];
     static foreach (test; tests)
-    {
         test();
-    }
     
     // Tests with document
     static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row

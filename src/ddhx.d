@@ -815,8 +815,10 @@ void update_view(Session *session, TerminalSize termsize)
     long curpos     = session.position_cursor;
     long basepos    = session.position_view;
     
+    bool logging = logEnabled();
+    
     debug StopWatch sw;
-    debug sw.start(); // For IDocumentEditor.view()
+    debug if (logging) sw.start(); // For IDocumentEditor.view()
     
     // Read data
     // TODO: To avoid unecessary I/O, avoid calling .view() when:
@@ -834,10 +836,13 @@ void update_view(Session *session, TerminalSize termsize)
     ubyte[] result  = session.editor.view(basepos, viewbuf);
     int readlen     = cast(int)result.length; // * bytesize
     
-    debug sw.stop();
-    debug log("TIME view=%s", sw.peek());
-    debug sw.reset();
-    debug sw.start();
+    debug if (logging)
+    {
+        sw.stop();
+        log("TIME view=%s", sw.peek());
+        sw.reset();
+        sw.start();
+    }
     
     long address    = basepos;
     
@@ -853,7 +858,7 @@ void update_view(Session *session, TerminalSize termsize)
     int datawidth   = dataSpec(session.rc.data_type).spacing; // data element width
     int addspacing  = session.rc.address_spacing;
     PanelType panel = session.panel;
-    if (logEnabled) // branch avoids pushing all of this for nothing
+    if (logging) // branch avoids pushing all of this for nothing
         log("address=%d viewpos=%d cols=%d rows=%d count=%d Dwidth=%d readlen=%d panel=%s "~
             "select.anchor=%d select.status=%#x sl0=%d sl1=%d",
             address, viewpos, cols, rows, count, datawidth, readlen, panel,
@@ -953,8 +958,11 @@ void update_view(Session *session, TerminalSize termsize)
             terminalWriteChar(' ', f);
     }
     
-    debug sw.stop();
-    debug log("TIME update_view=%s", sw.peek());
+    debug if (logging)
+    {
+        sw.stop();
+        log("TIME update_view=%s", sw.peek());
+    }
 }
 
 // Render status bar on screen
