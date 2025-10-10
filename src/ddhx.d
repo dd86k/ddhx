@@ -726,11 +726,15 @@ void moveabs(Session *session, long pos)
         session.editor.replace(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
     }
     
-    // Can't go beyond file
     long docsize = session.editor.size();
-    if (pos < 0) // cursor shouldn't be negative position
+    // Cursor obviously cannot be of negative value
+    if (pos < 0)
         pos = 0;
-    if (pos > docsize) // cursor past document
+    // Fix when cursor is attempting to select non-existant data
+    else if (session.selection.status && pos >= docsize)
+        pos = docsize - 1;
+    // Fix when cursor is past playable area (doc size + EOF)
+    else if (pos > docsize)
         pos = docsize;
     
     // No need to update if it's at the same place
@@ -807,16 +811,15 @@ void update_view(Session *session, TerminalSize termsize)
     if (termsize.rows < 3)
         return;
     
-    import std.datetime.stopwatch : StopWatch, Duration;
+    int cols        = session.rc.columns;       /// elements per row
+    int rows        = g_rows;                   /// rows to render
+    int count       = rows * cols;              /// elements on screen
+    long curpos     = session.position_cursor;  /// Cursor position
+    long address    = session.position_view;    /// Base address
     
-    int cols        = session.rc.columns;   /// elements per row
-    int rows        = g_rows;               /// rows to render
-    int count       = rows * cols;          /// elements on screen
-    long curpos     = session.position_cursor;
-    long basepos    = session.position_view;
+    bool logging    = logEnabled();
     
-    bool logging = logEnabled();
-    
+    debug import std.datetime.stopwatch : StopWatch, Duration;
     debug StopWatch sw;
     debug if (logging) sw.start(); // For IDocumentEditor.view()
     
@@ -833,7 +836,7 @@ void update_view(Session *session, TerminalSize termsize)
     __gshared ubyte[] viewbuf;
     if (viewbuf.length != count) // only resize if required
         viewbuf.length = count;
-    ubyte[] result  = session.editor.view(basepos, viewbuf);
+    ubyte[] result  = session.editor.view(address, viewbuf);
     int readlen     = cast(int)result.length; // * bytesize
     
     debug if (logging)
@@ -844,11 +847,9 @@ void update_view(Session *session, TerminalSize termsize)
         sw.start();
     }
     
-    long address    = basepos;
-    
     // Selection stuff
     long select_start = void, select_end = void;
-    long slsz = selection(session, select_start, select_end);
+    cast(void)selection(session, select_start, select_end); // Size not used...
     int sl0   = cast(int)(select_start - address);
     int sl1   = cast(int)(select_end   - address);
     
@@ -869,7 +870,7 @@ void update_view(Session *session, TerminalSize termsize)
         // '\n' could count as a character, avoid using it
         terminalCursor(0, row + 1);
         
-        string addr = formatAddress(txtbuf[], address, addspacing, session.rc.address_type);
+        string addr = formatAddress(txtbuf, address, addspacing, session.rc.address_type);
         size_t w = terminalWrite(addr, " "); // row address + spacer
         
         // Render view data
@@ -879,18 +880,16 @@ void update_view(Session *session, TerminalSize termsize)
             
             if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.data)
             {
-                // hack for not making the first spacer inverted
-                // somehow allows spacer for new lines to be
-                if (i != sl0)
-                    terminalInvertColor();
+                // Depending where spacer is placed, invert its color earlier
+                if (i != sl0) terminalInvertColor();
                 w += terminalWrite(" "); // data-data spacer
-                if (i == sl0)
-                    terminalInvertColor();
+                if (i == sl0) terminalInvertColor();
                 w += terminalWrite(dfmt.formatdata());
                 terminalResetColor();
                 continue;
             }
             
+            // BUG: When i == viewpos && we have selection, cursor renders
             bool highlight = i == viewpos && panel == PanelType.data;
             
             w += terminalWrite(" "); // data-data spacer
