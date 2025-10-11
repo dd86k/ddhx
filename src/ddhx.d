@@ -1543,50 +1543,97 @@ void redo(Session *session, string[] args)
         moveabs(session, pos);
 }
 
+union B // Used in goto for now.
+{
+    ubyte[8] buf;
+    long    u64;
+    uint    u32;
+    ushort  u16;
+    ubyte   u8;
+    alias buf this;
+}
 // 
 void goto_(Session *session, string[] args)
 {
     import utils : scan;
     
-    string off = arg(args, 0, "offset: ");
-    if (off.length == 0)
-        return; // special since it will happen often to cancel
+    long position = void;
+    bool absolute = void;
     
-    // Number
-    switch (off[0]) {
-    case '+':
-        if (off.length <= 1)
-            throw new Exception("Incomplete number");
+    // Selection
+    long sel0 = void, sel1 = void;
+    long sellen = selection(session, sel0, sel1);
+    if (sellen)
+    {
+        if (sellen > long.sizeof)
+            throw new Exception("Selection too large");
         
-        moverel(session, scan(off[1..$]));
-        break;
-    case '-':
-        if (off.length <= 1)
-            throw new Exception("Incomplete number");
+        B b; // Let it .init (eq. to {0})
         
-        moverel(session, -scan(off[1..$]));
-        break;
-    case '%':
-        import std.conv : to;
-        import utils : llpercentdiv;
+        ubyte[] sel = session.editor.view(sel0, b.ptr, cast(size_t)sellen);
         
-        if (off.length <= 1) // just '%'
-            throw new Exception("Need percentage number");
+        absolute = true;
         
-        // Didn't want to over-complicate myself with floats, so int it is for now.
-        // Also, there are functions to do integer division with rem.
-        //
-        // Otherwise, I'd have to deal with floats, single-precision (float) only
-        // have a mantissa of 23 bits and doubles have a mantissa of 53 bits.
-        uint per = to!uint(off[1..$]);
-        if (per > 100) // Yeah we can't go over the document
-            throw new Exception("Percentage cannot be over 100");
-        
-        moveabs(session, llpercentdiv(session.editor.size(), per));
-        break;
-    default:
-        moveabs(session, scan(off));
+        if (sel.length > uint.sizeof) // same as selection length but.. size_t
+            position = b.u64;
+        else if (sel.length > ushort.sizeof)
+            position = b.u32;
+        else if (sel.length > ubyte.sizeof)
+            position = b.u16;
+        else
+            position = b.u8;
     }
+    else
+    {
+        string off = arg(args, 0, "offset: ");
+        if (off.length == 0)
+            return; // special since it will happen often to cancel
+        // Number
+        switch (off[0]) {
+        case '+':
+            if (off.length <= 1)
+                throw new Exception("Incomplete number");
+            position = scan(off[1..$]);
+            absolute = false;
+            break;
+        case '-':
+            if (off.length <= 1)
+                throw new Exception("Incomplete number");
+            position = -scan(off[1..$]);
+            absolute = false;
+            break;
+        case '%':
+            import std.conv : to;
+            import utils : llpercentdiv;
+            
+            if (off.length <= 1) // just '%'
+                throw new Exception("Need percentage number");
+            
+            // Didn't want to over-complicate myself with floats, so int it is for now.
+            // Also, there are functions to do integer division with rem.
+            //
+            // Otherwise, I'd have to deal with floats, single-precision (float) only
+            // have a mantissa of 23 bits and doubles have a mantissa of 53 bits.
+            uint per = to!uint(off[1..$]);
+            if (per > 100) // Yeah we can't go over the document
+                throw new Exception("Percentage cannot be over 100");
+            position = llpercentdiv(session.editor.size(), per);
+            absolute = true;
+            break;
+        default:
+            position = scan(off);
+            absolute = true;
+        }
+    }
+    
+    // Force selection off, we're navigating somewhere
+    unselect(session);
+    
+    // Let's fucking go!
+    if (absolute)
+        moveabs(session, position);
+    else
+        moverel(session, position);
 }
 
 // Report cursor position on screen
