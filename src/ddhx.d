@@ -220,7 +220,7 @@ immutable Command[] default_commands = [
     { "find",                       "Find a pattern in the document",
         Mod.ctrl|Key.F,             &find },
     { "find-back",                  "Find a pattern in the document backward",
-        Mod.ctrl|Mod.shift|Key.F,   &find_back },
+        Mod.ctrl|Key.B,             &find_back },
     { "find-next",                  "Repeat search",
         Mod.ctrl|Key.X,             &find_next },
     { "find-prev",                  "Repeat search backward",
