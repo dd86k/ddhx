@@ -129,7 +129,7 @@ void main(string[] args)
         // Secret options
         "assistant",    "", &printpage,
         //
-        // Runtime configuration
+        // Configuration
         //
         "autoresize",   "Automatically resize columns on dimension change",
             ()
@@ -164,18 +164,13 @@ void main(string[] args)
             {
                 configRC(rc, "charset", val);
             },
-        //
-        // Editor configuration
-        //
         "R|readonly",   "Open file as read-only and restrict editing",
             ()
             {
                 rc.writemode = WritingMode.readonly;
             },
-        //"s|seek",       "Seek at position", &rc.seek,
-        //"l|length",     "Maximum amount of data to read", &rc.len,
-        //"I|norc",       "Use defaults and ignore user configuration files", &onorc,
-        //"f|rcfile",     "Use supplied file for options", &orc,
+        "I|norc",       "Use defaults and ignore user configuration files", &onorc,
+        "f|rcfile",     "Use supplied file for options", &orc,
         //
         // Debugging options
         //
@@ -210,6 +205,7 @@ void main(string[] args)
         exit(EXIT_FAILURE);
     }
     
+    // -h|--help, artifact of std.getopt.
     if (res.helpWanted)
     {
         // Replace default help line
@@ -234,16 +230,22 @@ void main(string[] args)
         exit(EXIT_SUCCESS);
     }
     
-    /*
-    if (orc) // specified RC path
+    // Load config file after defaults when able. Spouting an error here is
+    // more important to have a functioning editor, before loading document.
+    import std.file : readText;
+    initdefaults();
+    if (orc) // Load specified RC by path
     {
-        loadRC(rc, orc);
+    Lload:
+        loadRC(rc, readText(orc));
     }
-    else if (onorc == false) // noRC==false: Allowed to use default config if exists
+    else if (onorc == false) // norc==true means to NOT load user configs
     {
-        // TODO: Find default config and load it
+        import os.path : findConfig;
+        orc = findConfig("ddhx", ".ddhxrc");
+        if (orc) // we got config, load
+            goto Lload;
     }
-    */
     
     try
     {

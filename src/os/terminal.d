@@ -1227,3 +1227,72 @@ struct TerminalSize
     /// Terminal height in character rows
     int rows;
 }
+
+/// Return key value from string interpretation.
+/// Throws: Exception.
+/// Params:
+///     value = String value.
+/// Returns: Keys.
+int terminal_keybind(string value)
+{
+    import std.string : startsWith;
+    
+    int mod; /// modificators
+    
+    static immutable string ctrlpfx = "ctrl+";
+    if (startsWith(value, ctrlpfx))
+    {
+        mod |= Mod.ctrl;
+        value = value[ctrlpfx.length..$];
+    }
+    
+    static immutable string altpfx = "alt+";
+    if (startsWith(value, altpfx))
+    {
+        mod |= Mod.alt;
+        value = value[altpfx.length..$];
+    }
+    
+    static immutable string shiftpfx = "shift+";
+    if (startsWith(value, shiftpfx))
+    {
+        mod |= Mod.shift;
+        value = value[shiftpfx.length..$];
+    }
+    
+    if (value.length == 0)
+        throw new Exception("Expected key, got empty");
+    
+    int c = value[0];
+    if (value.length == 1 && c >= 'a' && c <= 'z')
+        return mod | (c - 32);
+    else if (value.length == 1 && c >= '0' && c <= '9') // NOTE: '0'==Key.D0
+        return mod | c;
+    
+    switch (value) {
+    case "insert":      return mod | Key.Insert;
+    case "home":        return mod | Key.Home;
+    case "page-up":     return mod | Key.PageUp;
+    case "page-down":   return mod | Key.PageDown;
+    case "delete":      return mod | Key.Delete;
+    case "left-arrow":  return mod | Key.LeftArrow;
+    case "right-arrow": return mod | Key.RightArrow;
+    case "up-arrow":    return mod | Key.UpArrow;
+    case "down-arrow":  return mod | Key.DownArrow;
+    default:
+        throw new Exception("Unknown key");
+    }
+}
+unittest
+{
+    assert(terminal_keybind("a")             == Key.A);
+    assert(terminal_keybind("alt+a")         == Mod.alt+Key.A);
+    assert(terminal_keybind("ctrl+a")        == Mod.ctrl+Key.A);
+    assert(terminal_keybind("shift+a")       == Mod.shift+Key.A);
+    assert(terminal_keybind("ctrl+0")        == Mod.ctrl+Key.D0);
+    assert(terminal_keybind("ctrl+insert")   == Mod.ctrl+Key.Insert);
+    assert(terminal_keybind("ctrl+home")     == Mod.ctrl+Key.Home);
+    assert(terminal_keybind("page-up")       == Key.PageUp);
+    assert(terminal_keybind("shift+page-up") == Mod.shift+Key.PageUp);
+    assert(terminal_keybind("delete")        == Key.Delete);
+}

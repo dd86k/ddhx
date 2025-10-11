@@ -35,39 +35,37 @@ import std.path : buildPath;
 /// Returns: Path or null on failure.
 string getHomeFolder()
 {
-    version (Windows)
+version (Windows)
+{
+    // 1. %USERPROFILE%
+    if (string userprofile = environment.get("USERPROFILE"))
+        return userprofile;
+    // 2. %HOMEDRIVE% and %HOMEPATH%
+    string homedrive = environment.get("HOMEDRIVE");
+    string homepath  = environment.get("HOMEPATH");
+    if (homedrive && homepath)
+        return homedrive ~ homepath;
+    // 3. SHGetFolderPath
+    wchar *buffer = cast(wchar*)malloc(1024);
+    assert(buffer, "malloc failed");
+    scope(exit) free(buffer); // transcode allocates, so it's safe to free
+    if (SHGetFolderPathW(null, CSIDL_PROFILE, null, 0, buffer) == S_OK)
     {
-        // 1. %USERPROFILE%
-        if (string userprofile = environment.get("USERPROFILE"))
-            return userprofile;
-        // 2. %HOMEDRIVE% and %HOMEPATH%
-        string homedrive = environment.get("HOMEDRIVE");
-        string homepath  = environment.get("HOMEPATH");
-        if (homedrive && homepath)
-            return homedrive ~ homepath;
-        // 3. SHGetFolderPath
-        wchar *buffer = cast(wchar*)malloc(1024);
-        assert(buffer, "malloc failed");
-        scope(exit) free(buffer); // transcode allocates, so it's safe to free
-        if (SHGetFolderPathW(null, CSIDL_PROFILE, null, 0, buffer) == S_OK)
-        {
-            string path;
-            transcode(buffer[0..wcslen(buffer)], path);
-            return path;
-        }
+        string path;
+        transcode(buffer[0..wcslen(buffer)], path);
+        return path;
     }
-    else version (Posix)
-    {
-        // 1. $HOME
-        if (string home = environment.get("HOME"))
-            return home;
-        // 2. getpwuid+getuid
-        passwd *wd = getpwuid(getuid());
-        if (wd && wd.pw_dir)
-        {
-            return cast(string)wd.pw_dir[0..strlen(wd.pw_dir)];
-        }
-    }
+}
+else version (Posix)
+{
+    // 1. $HOME
+    if (string home = environment.get("HOME"))
+        return home;
+    // 2. getpwuid+getuid
+    passwd *wd = getpwuid(getuid());
+    if (wd && wd.pw_dir)
+        return cast(string)wd.pw_dir[0..strlen(wd.pw_dir)];
+}
     
     return null;
 }
@@ -79,41 +77,39 @@ string getHomeFolder()
 /// Returns: Path or null on failure.
 string getUserConfigFolder()
 {
-    version (Windows)
+version (Windows)
+{
+    // 1. %LOCALAPPDATA%
+    if (string localappdata = environment.get("LOCALAPPDATA"))
+        return localappdata;
+    // 2. SHGetFolderPath
+    wchar *buffer = cast(wchar*)malloc(1024);
+    assert(buffer, "malloc failed");
+    scope(exit) free(buffer); // transcode allocates
+    if (SHGetFolderPathW(null, CSIDL_LOCAL_APPDATA, null, 0, buffer) == S_OK)
     {
-        // 1. %LOCALAPPDATA%
-        if (string localappdata = environment.get("LOCALAPPDATA"))
-            return localappdata;
-        // 2. SHGetFolderPath
-        wchar *buffer = cast(wchar*)malloc(1024);
-        assert(buffer, "malloc failed");
-        scope(exit) free(buffer); // transcode allocates
-        if (SHGetFolderPathW(null, CSIDL_LOCAL_APPDATA, null, 0, buffer) == S_OK)
-        {
-            string path;
-            transcode(buffer[0..wcslen(buffer)], path);
-            return path;
-        }
+        string path;
+        transcode(buffer[0..wcslen(buffer)], path);
+        return path;
     }
-    else version (Posix)
-    {
-        if (string xdg_config_home = environment.get("XDG_CONFIG_HOME"))
-            return xdg_config_home;
-    }
+}
+else version (Posix)
+{
+    if (string xdg_config_home = environment.get("XDG_CONFIG_HOME"))
+        return xdg_config_home;
+}
     
     // Fallback
     string base = getHomeFolder;
     if (base is null)
         return null;
     
-    version (Windows)
-    {
-        return buildPath(base, "AppData", "Local");
-    }
-    else version (Posix)
-    {
-        return buildPath(base, ".config");
-    }
+version (Windows)
+    return buildPath(base, "AppData", "Local");
+else version (Posix)
+    return buildPath(base, ".config");
+else
+    return null;
 }
 
 /// Attempt to find existing config file on the system.
@@ -126,7 +122,7 @@ string findConfig(string appname, string filename)
     import std.file : exists;
     
     // 1. Check in app config directory
-    string appdir = getUserConfigFolder;
+    string appdir = getUserConfigFolder();
     if (appdir)
     {
         string path = buildPath(appdir, appname, filename);
@@ -134,7 +130,7 @@ string findConfig(string appname, string filename)
             return path;
     }
     
-    // 2. Check in user home folder
+    // 2. Check in user home folder directly
     string homedir = getHomeFolder();
     if (homedir)
     {

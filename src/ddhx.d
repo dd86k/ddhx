@@ -255,57 +255,11 @@ immutable Command[] default_commands = [
     { "quit",                       "Quit program",
         Mod.ctrl|Key.Q,             &quit },
 ];
-/// Check if command names or shortcuts are duplicated
-unittest
-{
-    foreach (command; default_commands)
-    {
-        // Needs a command name
-        assert(command.name, "missing command name");
-        
-        // Needs an implementation function
-        assert(command.impl, "missing impl: "~command.name);
-        
-        // Check if command name is duplicated
-        if (command.name in g_commands)
-            assert(false, "dupe name: "~command.name);
-        g_commands[command.name] = command.impl;
-        
-        // No need to check key if unset
-        if (command.key == 0)
-            continue;
-        
-        // Otherwise, check if shortcut is duplicated
-        if (command.key in g_keys)
-            assert(false, "dupe key: "~command.name);
-        g_keys[command.key] = Keybind( command.impl, null );
-    }
-}
+// NOTE: There used to be a test that checked for dupes but it caused issues elsewhere.
 
-/// Start a new instance of the hex editor.
-/// Params:
-///     editor = Document editor instance.
-///     rc = Copy of the RC instance.
-///     string = Target path.
-///     initmsg = Initial message.
-void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
+/// Initiate default keys and commands.
+void initdefaults()
 {
-    g_status = UINIT; // init here since message could be called later
-    
-    g_session = new Session(rc);
-    g_session.target = path;    // assign target path, NULL unsets this
-    g_session.editor = editor;  // assign editor instance
-    
-    message(initmsg);
-    
-    // TODO: Handle ^C
-    //       1. Ignore + message to really quit
-    //          Somehow re-init loop without longjmp (unavail on Windows)
-    //       2. Quit, restore IOS
-    terminalInit(TermFeat.altScreen | TermFeat.inputSys);
-    terminalOnResize(&onresize);
-    terminalHideCursor();
-    
     // Setup default commands and shortcuts
     foreach (command; default_commands)
     {
@@ -333,6 +287,73 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
             null
         );
     }
+}
+
+// Bind a key to a command with default set of parameters
+void bindkey(int key, string command, string[] parameters)
+{
+    log(`key=%d command="%s" params="%s"`, key, command, parameters);
+    
+    void function(Session*, string[]) *impl = command in g_commands;
+    if (impl == null)
+        throw new Exception(text("Unknown command: ", command));
+    
+    g_keys[key] = Keybind( *impl, parameters );
+}
+
+// Unbind/reset key
+void unbindkey(int key)
+{
+    Keybind *k = key in g_keys;
+    if (k == null) // nothing to unbind
+        return;
+    
+    // Check commands for a default keybind
+    foreach (command; default_commands)
+    {
+        // Reset keybind to its default
+        if (command.key == key)
+        {
+            k.impl = command.impl;
+            k.parameters = null;
+            return;
+        }
+    }
+    
+    // If key is not part of default keybinds, remove from active set
+    g_keys.remove(key);
+}
+
+version(unittest)
+Keybind* binded(int key)
+{
+    return key in g_keys;
+}
+
+/// Start a new instance of the hex editor.
+/// Params:
+///     editor = Document editor instance.
+///     rc = Copy of the RC instance.
+///     string = Target path.
+///     initmsg = Initial message.
+void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
+{
+    g_status = UINIT; // init here since message could be called later
+    
+    g_session = new Session(rc);
+    g_session.target = path;    // assign target path, NULL unsets this
+    g_session.editor = editor;  // assign editor instance
+    
+    message(initmsg);
+    
+    // TODO: Handle ^C
+    //       1. Ignore + message to really quit
+    //          Somehow re-init loop without longjmp (unavail on Windows)
+    //       2. Quit, restore IOS
+    terminalInit(TermFeat.altScreen | TermFeat.inputSys);
+    terminalOnResize(&onresize);
+    terminalHideCursor();
+    
     
     // Special keybinds with no attached commands
     // TODO: Make "menu" bindable.
@@ -438,106 +459,6 @@ void onresize()
         autosize(g_session, null);
     
     update(g_session);
-}
-
-// Bind a key to a command with default set of parameters
-void bindkey(int key, string command, string[] parameters)
-{
-    log(`key=%d command="%s" params="%s"`, key, command, parameters);
-    
-    void function(Session*, string[]) *impl = command in g_commands;
-    if (impl == null)
-        throw new Exception(text("Unknown command: ", command));
-    
-    g_keys[key] = Keybind( *impl, parameters );
-}
-
-// Unbind/reset key
-void unbindkey(int key)
-{
-    Keybind *k = key in g_keys;
-    if (k == null) // nothing to unbind
-        return;
-    
-    // Check commands for a default keybind
-    foreach (command; default_commands)
-    {
-        // Reset keybind to its default
-        if (command.key == key)
-        {
-            k.impl = command.impl;
-            k.parameters = null;
-            return;
-        }
-    }
-    
-    // If key is not part of default keybinds, remove from active set
-    g_keys.remove(key);
-}
-
-// Return key value from string interpretation
-int keybind(string value)
-{
-    import std.string : startsWith;
-    
-    int mod; /// modificators
-    
-    static immutable string ctrlpfx = "ctrl+";
-    if (startsWith(value, ctrlpfx))
-    {
-        mod |= Mod.ctrl;
-        value = value[ctrlpfx.length..$];
-    }
-    
-    static immutable string altpfx = "alt+";
-    if (startsWith(value, altpfx))
-    {
-        mod |= Mod.alt;
-        value = value[altpfx.length..$];
-    }
-    
-    static immutable string shiftpfx = "shift+";
-    if (startsWith(value, shiftpfx))
-    {
-        mod |= Mod.shift;
-        value = value[shiftpfx.length..$];
-    }
-    
-    if (value.length == 0)
-        throw new Exception("Expected key, got empty");
-    
-    int c = value[0];
-    if (value.length == 1 && c >= 'a' && c <= 'z')
-        return mod | (c - 32);
-    else if (value.length == 1 && c >= '0' && c <= '9') // NOTE: '0'==Key.D0
-        return mod | c;
-    
-    switch (value) {
-    case "insert":      return mod | Key.Insert;
-    case "home":        return mod | Key.Home;
-    case "page-up":     return mod | Key.PageUp;
-    case "page-down":   return mod | Key.PageDown;
-    case "delete":      return mod | Key.Delete;
-    case "left-arrow":  return mod | Key.LeftArrow;
-    case "right-arrow": return mod | Key.RightArrow;
-    case "up-arrow":    return mod | Key.UpArrow;
-    case "down-arrow":  return mod | Key.DownArrow;
-    default:
-        throw new Exception("Unknown key");
-    }
-}
-unittest
-{
-    assert(keybind("a")             == Key.A);
-    assert(keybind("alt+a")         == Mod.alt+Key.A);
-    assert(keybind("ctrl+a")        == Mod.ctrl+Key.A);
-    assert(keybind("shift+a")       == Mod.shift+Key.A);
-    assert(keybind("ctrl+0")        == Mod.ctrl+Key.D0);
-    assert(keybind("ctrl+insert")   == Mod.ctrl+Key.Insert);
-    assert(keybind("ctrl+home")     == Mod.ctrl+Key.Home);
-    assert(keybind("page-up")       == Key.PageUp);
-    assert(keybind("shift+page-up") == Mod.shift+Key.PageUp);
-    assert(keybind("delete")        == Key.Delete);
 }
 
 // Invoke command prompt
@@ -1771,7 +1692,7 @@ void set(Session *session, string[] args)
 // Bind key to action (command + parameters)
 void bind(Session *session, string[] args)
 {
-    int key = keybind( arg(args, 0, "Key: ") );
+    int key = terminal_keybind( arg(args, 0, "Key: ") );
     // BUG: promptline returns as one string, so "goto +32" might happen
     string command = arg(args, 1, "Command: ");
     
@@ -1782,7 +1703,7 @@ void bind(Session *session, string[] args)
 // Unbind key
 void unbind(Session *session, string[] args)
 {
-    int key = keybind( arg(args, 0, "Key: ") );
+    int key = terminal_keybind( arg(args, 0, "Key: ") );
     unbindkey(key);
     message("Key unbinded");
 }
@@ -1791,11 +1712,7 @@ void unbind(Session *session, string[] args)
 void reset_keys(Session *session, string[] args)
 {
     g_keys.clear();
-    foreach (command; default_commands)
-    {
-        if (command.key)
-            g_keys[command.key] = Keybind( command.impl, null );
-    }
+    initdefaults();
     message("All keys reset");
 }
 

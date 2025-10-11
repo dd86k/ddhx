@@ -12,10 +12,6 @@ import transcoder : CharacterSet, selectCharacterSet;
 import doceditor : WritingMode, AddressType, DataType;
 import std.conv : text, to;
 
-// TODO: autosize (with --autosize)
-//       When set, automatically resize width (columns).
-//       Practically, at startup and when terminal is resized.
-
 /// Editor configuration
 struct RC
 {
@@ -41,6 +37,15 @@ struct RC
     
     /// On terminal resize, automatically set number of columns to fit screen.
     bool autoresize;
+    
+    // Fixes when RC file has config and CLI already set a field.
+    bool address_type_set;  // @suppress(dscanner.style.undocumented_declaration)
+    bool data_type_set;     // @suppress(dscanner.style.undocumented_declaration)
+    bool charset_set;       // @suppress(dscanner.style.undocumented_declaration)
+    bool writemode_set;     // @suppress(dscanner.style.undocumented_declaration)
+    bool columns_set;       // @suppress(dscanner.style.undocumented_declaration)
+    bool address_spacing_set; // @suppress(dscanner.style.undocumented_declaration)
+    bool autoresize_set;    // @suppress(dscanner.style.undocumented_declaration)
 }
 
 /// Return true/false given sting input.
@@ -74,13 +79,73 @@ unittest
     catch (Exception) {}
 }
 
-/// Load a configuration from a target file path.
+/// Load a configuration from text.
 /// Params:
 ///     rc = RC instance reference.
-///     path = File path.
-void loadRC(ref RC rc, string path) // @suppress(dscanner.style.doc_missing_throw)
+///     text = Configuration text.
+void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_throw)
 {
-    throw new Exception("TODO");
+    import utils : arguments;
+    import ddhx  : bindkey;
+    import os.terminal : terminal_keybind;
+    // NOTE: The strategy is to only update value in RC if they're default.
+    //       Otherwise, if the value is different than default, then it was set
+    //       at the command-line, and thus should not be changed.
+    import std.string : lineSplitter;
+    foreach (ref string line; lineSplitter(text))
+    {
+        if (line.length == 0 || line[0] == '#')
+            continue;
+        
+        string[] args = arguments(line);
+        if (args.length < 2)
+            throw new Exception("Missing value");
+        
+        // Special
+        switch (args[0]) {
+        case "bind":
+            if (args.length < 3)
+                throw new Exception("Missing command");
+            bindkey(
+                terminal_keybind( args[1] ),
+                args[2],
+                args.length > 3 ? args[3..$] : null);
+            continue;
+        default:
+        }
+        
+        // Config
+        configRC(rc, args[0], args[1], true);
+    }
+}
+unittest
+{
+    import ddhx : initdefaults, binded;
+    import os.terminal : terminal_keybind;
+    
+    initdefaults(); // bindkey depends on g_commands (command names)
+    
+    // Check defaults
+    RC rc;
+    int key = terminal_keybind("j");
+    assert(rc.columns == 16);
+    assert(rc.autoresize == false);
+    assert(binded(key) == null);
+    
+    // Emulate CLI change, before config
+    configuration_columns(rc, "6");
+    configuration_charset(rc, "ascii");
+    
+    // Load and check
+    loadRC(rc,
+`columns 20
+autoresize on
+charset ebcdic
+bind j left`);
+    assert(rc.columns == 6); // Untouched by config file
+    assert(rc.autoresize); // Touched by config
+    assert(rc.charset == CharacterSet.ascii);
+    assert(binded(key));
 }
 
 /// Describes a configuration.
@@ -91,7 +156,7 @@ struct Config
     string availvalues; /// Available values or expected type
     string defaultval;  /// Default value
     
-    void function(ref RC, string) impl; /// Implementation function
+    void function(ref RC, string val, bool rc) impl; /// Implementation function
 }
 /// Available configurations.
 immutable Config[] configurations = [ // Try keeping this ascending by name!
@@ -144,14 +209,15 @@ unittest
 ///     rc = RC instance reference.
 ///     field = Setting name.
 ///     value = New value.
+///     conf = Loading from RC. If set, do not change if already set.
 /// Throws: Exception when a setting or value is invalid.
-void configRC(ref RC rc, string field, string value)
+void configRC(ref RC rc, string field, string value, bool conf = false)
 {
     foreach (config; configurations)
     {
         if (config.name == field)
         {
-            config.impl(rc, value);
+            config.impl(rc, value, conf);
             return;
         }
     }
@@ -175,44 +241,62 @@ unittest
     assert(rc.charset == CharacterSet.ebcdic);
 }
 
-void configuration_autoresize(ref RC rc, string value)
+void configuration_autoresize(ref RC rc, string value, bool conf = false)
 {
+    if (conf && rc.autoresize_set)
+        return;
+    
     rc.autoresize = boolean(value);
+    rc.autoresize_set = true;
 }
 
-void configuration_columns(ref RC rc, string value)
+void configuration_columns(ref RC rc, string value, bool conf = false)
 {
+    if (conf && rc.columns_set)
+        return;
+    
     int cols = to!int(value);
     if (cols <= 0)
         throw new Exception("Cannot have negative or zero columns");
     rc.columns = cols;
+    rc.columns_set = true;
 }
 
-void configuration_addressing(ref RC rc, string value)
+void configuration_addressing(ref RC rc, string value, bool conf = false)
 {
+    if (conf && rc.address_type_set)
+        return;
+    
     if (value is null || value.length == 0)
-        goto Lerror;
+    Lerror:
+        throw new Exception(text("Unknown address type: ", value));
     
     switch (value[0]) { // cheap "startsWith"
-    case 'h': rc.address_type = AddressType.hex; return;
-    case 'd': rc.address_type = AddressType.dec; return;
-    case 'o': rc.address_type = AddressType.oct; return;
-    default:
+    case 'h': rc.address_type = AddressType.hex; break;
+    case 'd': rc.address_type = AddressType.dec; break;
+    case 'o': rc.address_type = AddressType.oct; break;
+    default: goto Lerror;
     }
-    
-Lerror:
-    throw new Exception(text("Unknown address type: ", value));
+    rc.address_type_set = true;
 }
 
-void configuration_address_spacing(ref RC rc, string value)
+void configuration_address_spacing(ref RC rc, string value, bool conf = false)
 {
+    if (conf && rc.address_spacing_set)
+        return;
+    
     int spacing = to!int(value);
     if (spacing < 3) // due to offset indicator ("hex",etc.)
         throw new Exception("Can't have address spacing lower than 3");
     rc.address_spacing = spacing;
+    rc.address_spacing_set = true;
 }
 
-void configuration_charset(ref RC rc, string value)
+void configuration_charset(ref RC rc, string value, bool conf = false)
 {
+    if (conf && rc.charset_set)
+        return;
+    
     rc.charset = selectCharacterSet(value);
+    rc.charset_set = true;
 }
