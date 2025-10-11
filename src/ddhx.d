@@ -1879,6 +1879,8 @@ unittest
     p0 = `""`;
     assert(patternpfx(p0) == PatternType.string_);
     assert(p0 == "");
+    p0 = `"a`;
+    assert(patternpfx(p0) == PatternType.unknown);
     p0 = `"`;
     assert(patternpfx(p0) == PatternType.unknown);
 }
@@ -1910,6 +1912,8 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
             needle ~= cast(ubyte)b;
             break;
         case PatternType.string_:
+            if (arg.length == 0)
+                throw new Exception("String is empty");
             // TODO: Transcode
             needle ~= arg;
             break;
