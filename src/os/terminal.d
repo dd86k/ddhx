@@ -1299,6 +1299,20 @@ int terminal_keybind(string value)
     case "right-arrow": return mod | Key.RightArrow;
     case "up-arrow":    return mod | Key.UpArrow;
     case "down-arrow":  return mod | Key.DownArrow;
+    case "tab":         return mod | Key.Tab;
+    case "backspace":   return mod | Key.Backspace;
+    case "f1":          return mod | Key.F1;
+    case "f2":          return mod | Key.F2;
+    case "f3":          return mod | Key.F3;
+    case "f4":          return mod | Key.F4;
+    case "f5":          return mod | Key.F5;
+    case "f6":          return mod | Key.F6;
+    case "f7":          return mod | Key.F7;
+    case "f8":          return mod | Key.F8;
+    case "f9":          return mod | Key.F9;
+    case "f10":         return mod | Key.F10;
+    case "f11":         return mod | Key.F11;
+    case "f12":         return mod | Key.F12;
     default:
         throw new Exception("Unknown key");
     }
@@ -1315,4 +1329,5 @@ unittest
     assert(terminal_keybind("page-up")       == Key.PageUp);
     assert(terminal_keybind("shift+page-up") == Mod.shift+Key.PageUp);
     assert(terminal_keybind("delete")        == Key.Delete);
+    assert(terminal_keybind("f1")            == Key.F1);
 }

@@ -983,6 +983,9 @@ enum {
     //SEARCH_WRAP     = 16,
 }
 
+/// Search buffer (haystack) size.
+enum SEARCH_SIZE = 16 * 1024;
+
 /// Search for data.
 ///
 /// This function does not rely on the cursor position nor does it change it,
@@ -1015,7 +1018,6 @@ long search(Session *session, ubyte[] needle, long position, int flags)
     
     int diff = flags & SEARCH_DIFF;
     size_t alignment = flags & SEARCH_ALIGNED ? needle.length : 1;
-    //ubyte first = needle[0];
     
     debug import std.datetime.stopwatch : StopWatch;
     debug StopWatch sw;
@@ -1185,10 +1187,6 @@ void move_abs_end(Session *session, string[] args)
     session.selection.status = 0;
     moveabs(session, session.editor.size());
 }
-
-/// For move_diff_backward and move_diff_forward, this is the size of the
-/// search buffer (haystack).
-enum SEARCH_SIZE = 16 * 1024;
 
 // Move to different element backward
 void move_skip_backward(Session *session, string[] args)
@@ -1861,7 +1859,7 @@ unittest
     assert(pattern(CharacterSet.ascii, "x:0","0","s:test") == "\0\0test");
 }
 
-/// Artificial needle size limit
+/// Artificial needle size limit for find/find-back.
 enum SEARCH_LIMIT = KiB!128;
 
 //
