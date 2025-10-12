@@ -354,11 +354,20 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     terminalOnResize(&onresize);
     terminalHideCursor();
     
-    
     // Special keybinds with no attached commands
     // TODO: Make "menu" bindable.
     //       Return should still be provided as a fallback.
     g_keys[Key.Enter] = Keybind( &prompt_command, null );
+    
+    // HACK: New input system tweaks fixes weird Shift+Arrow fuckery in conhost,
+    //       but also captures Ctrl+C. Annoyingly, force quit when that happens.
+    version (Windows)
+    g_keys[Mod.ctrl|Key.C] = Keybind(
+        (Session*, string[])
+        {
+            import core.stdc.stdlib : exit;
+            exit(0);
+        }, null);
     
     loop(g_session);
     
@@ -464,8 +473,6 @@ void onresize()
 // Invoke command prompt
 string promptline(string text)
 {
-    import std.stdio : readln;
-
     assert(text, "Prompt text missing");
     assert(text.length, "Prompt text required"); // disallow empty
     
@@ -486,12 +493,7 @@ string promptline(string text)
     terminalWrite(text);
     
     // Read line
-    terminalPauseInput();
-    terminalShowCursor();
-    import std.string : chomp;
-    string line = chomp(readln());
-    terminalHideCursor();
-    terminalResumeInput();
+    string line = terminalReadline();
     
     // Force update view if prompt+line overflows to view,
     // since we're currently reading lines at the top of screen

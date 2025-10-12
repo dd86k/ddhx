@@ -5,9 +5,6 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module os.terminal;
 
-// TODO: terminalReadline(int limit = 0)
-//       automatically pause/resume input
-//       limit=0 -> OS/host stdin default
 // TODO: Switch capabilities depending on $TERM
 //       "xterm", "xterm-color", "xterm-256color", "tmux-256color",
 //       "linux", "vt100", "vt220", "wsvt25" (netbsd10), "screen", etc.
@@ -38,9 +35,15 @@ version (Windows)
     import core.sys.windows.windef; // HANDLE, USHORT, DWORD
     import std.windows.syserror : WindowsException;
     private enum CP_UTF8 = 65_001;
+    // ENABLE_PROCESSED_INPUT
+    //   If set, allows the weird shift+arrow shit.
+    //   If unset, captures Ctrl+C as a keystroke.
+    // Desired input if enabling input feature
+    private enum CONSOLE_MODE_INPUT = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
     private __gshared HANDLE hIn, hOut;
     private __gshared DWORD oldCP;
     private __gshared WORD oldAttr;
+    private __gshared DWORD oldMode;
 }
 else version (Posix)
 {
@@ -140,18 +143,17 @@ void terminalInit(int features = 0)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi = void;
         
+        GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &oldMode);
+        
         if (features & TermFeat.inputSys)
         {
-            //NOTE: Re-opening stdin before new screen fixes quite a few things
-            //      - usage with CreateConsoleScreenBuffer
-            //      - readln (for menu)
-            //      - receiving key input when stdin was used for reading a buffer
-            hIn = CreateFileA("CONIN$", GENERIC_READ, 0, null, OPEN_EXISTING, 0, null);
-            if (hIn == INVALID_HANDLE_VALUE)
-                throw new WindowsException(GetLastError);
-            SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
-            stdin.windowsHandleOpen(hIn, "r");
-            SetStdHandle(STD_INPUT_HANDLE, hIn);
+            // NOTE: There used to be a "hack" using CreateFileA("CONIN$", but that
+            //       caused more pain than anything.
+            //       So, terminalReadline was introduced that automatically applies the "pause" for
+            //       input, where it re-establishes the old mode for STD_INPUT_HANDLE, and "resumes"
+            //       using the desired flags.
+            hIn = GetStdHandle(STD_INPUT_HANDLE);
+            SetConsoleMode(hIn, CONSOLE_MODE_INPUT);
         }
         else
         {
@@ -165,15 +167,15 @@ void terminalInit(int features = 0)
             //
             
             hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-            if (hIn == INVALID_HANDLE_VALUE)
-                throw new WindowsException(GetLastError());
+            if (hOut == INVALID_HANDLE_VALUE)
+                throw new OSException("GetStdHandle");
             
             if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
-                throw new WindowsException(GetLastError());
+                throw new OSException("GetConsoleScreenBufferInfo");
             
             DWORD attr = void;
             if (GetConsoleMode(hOut, &attr) == FALSE)
-                throw new WindowsException(GetLastError());
+                throw new OSException("GetConsoleMode");
             
             hOut = CreateConsoleScreenBuffer(
                 GENERIC_READ | GENERIC_WRITE,    // dwDesiredAccess
@@ -183,7 +185,7 @@ void terminalInit(int features = 0)
                 null,    // lpScreenBufferData
             );
             if (hOut == INVALID_HANDLE_VALUE)
-                throw new WindowsException(GetLastError());
+                throw new OSException("CreateConsoleScreenBuffer");
             
             stdout.flush;
             stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
@@ -193,7 +195,7 @@ void terminalInit(int features = 0)
             SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT);
             
             if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
-                throw new WindowsException(GetLastError());
+                throw new OSException("SetConsoleActiveScreenBuffer");
         }
         else
         {
@@ -261,17 +263,12 @@ void terminalInit(int features = 0)
         }
     } // version (Posix)
     
-    // fixes weird cursor positions with alt buffer using (D) stdout
+    // fixes weird cursor positions with alt buffer using (D) stdout,
+    // which shouldn't be used, but who knows when someone would.
     stdout.setvbuf(0, _IONBF);
     
-    // NOTE: Does not work with exceptions
-    //atexit(&terminalQuit);
-}
-
-private extern (C)
-void terminalQuit()
-{
-    terminalRestore();
+    // NOTE: atexit(3) does not work with exceptions or signals (ie, SIGINT).
+    //       Avoid using it. Useless.
 }
 
 /// Restore older environment
@@ -279,6 +276,8 @@ void terminalRestore()
 {
     version (Windows)
     {
+        // Neither shells or consoles will reset the codepage, but will reset
+        // to the previous mode, that's why it's not called here.
         SetConsoleOutputCP(oldCP); // unconditionally
     }
     else version (Posix)
@@ -326,14 +325,20 @@ void terminalResized(int signo, siginfo_t *info, void *content)
 }
 
 /// Pause terminal input. (On POSIX, this restores the old IOS)
+private
 void terminalPauseInput()
 {
+    version (Windows)
+        SetConsoleMode(hIn, oldMode);
     version (Posix)
         cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 }
 /// Resume terminal input. (On POSIX, this restores the old IOS)
+private
 void terminalResumeInput()
 {
+    version (Windows)
+        SetConsoleMode(hIn, CONSOLE_MODE_INPUT);
     version (Posix)
         cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
 }
@@ -421,10 +426,13 @@ void terminalHideCursor()
 {
     version (Windows)
     {
+        // NOTE: Works in conhost, OpenConsole, and Windows Terminal.
+        //       ConsoleZ won't take it.
+        //       Anyway, if these were to fail, don't report issue.
         CONSOLE_CURSOR_INFO cci = void;
-        GetConsoleCursorInfo(hOut, &cci);
+        cast(void)GetConsoleCursorInfo(hOut, &cci);
         cci.bVisible = FALSE;
-        SetConsoleCursorInfo(hOut, &cci);
+        cast(void)SetConsoleCursorInfo(hOut, &cci);
     }
     else version (Posix)
     {
@@ -437,9 +445,9 @@ void terminalShowCursor()
     version (Windows)
     {
         CONSOLE_CURSOR_INFO cci = void;
-        GetConsoleCursorInfo(hOut, &cci);
+        cast(void)GetConsoleCursorInfo(hOut, &cci);
         cci.bVisible = TRUE;
-        SetConsoleCursorInfo(hOut, &cci);
+        cast(void)SetConsoleCursorInfo(hOut, &cci);
     }
     else version (Posix)
     {
@@ -655,19 +663,6 @@ void terminalInvertColor()
     else version (Posix)
     {
         terminalWrite("\033[7m");
-    }
-}
-/// Underline.
-/// Bugs: Does not work on Windows Terminal. See https://github.com/microsoft/terminal/issues/8037
-void terminalUnderline()
-{
-    version (Windows)
-    {
-        SetConsoleTextAttribute(hOut, oldAttr | COMMON_LVB_UNDERSCORE);
-    }
-    else version (Posix)
-    {
-        terminalWrite("\033[4m");
     }
 }
 /// Reset color.
@@ -1033,6 +1028,31 @@ Lread:
             
         return event;
     } // version (Posix)
+}
+
+/// Read a line.
+/// Params: flags = Read flags.
+/// Returns: String without newline.
+string terminalReadline(int flags = 0)
+{
+    import std.stdio : readln;
+    import std.string : chomp;
+    
+    if (current_features & TermFeat.inputSys)
+    {
+        terminalPauseInput();
+        terminalShowCursor();
+    }
+    
+    string line = chomp( readln() );
+    
+    if (current_features & TermFeat.inputSys)
+    {
+        terminalHideCursor();
+        terminalResumeInput();
+    }
+    
+    return line;
 }
 
 /// Terminal input type.
