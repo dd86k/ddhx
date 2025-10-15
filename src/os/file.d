@@ -151,7 +151,7 @@ struct OSFile
                 null,           // hTemplateFile
             );
             if (handle == INVALID_HANDLE_VALUE)
-                throw new OSException("Couldn't open file");
+                throw new OSException("CreateFileW");
         }
         else version (Posix)
         {
@@ -165,7 +165,7 @@ struct OSFile
                 oflags |= O_RDONLY;
             handle = .open(path.toStringz, oflags);
             if (handle < 0)
-                throw new OSException("Couldn't open file");
+                throw new OSException("open");
         }
     }
     
@@ -181,12 +181,12 @@ struct OSFile
             LARGE_INTEGER i = void;
             i.QuadPart = pos;
             if (SetFilePointerEx(handle, i, &i, origin) == FALSE)
-                throw new OSException("Couldn't seek");
+                throw new OSException("SetFilePointerEx");
         }
         else version (Posix)
         {
             if (lseek(handle, pos, origin) < 0)
-                throw new OSException("Couldn't seek");
+                throw new OSException("lseek");
         }
         else static assert(0, "Implement OSFile.seek");
     }
@@ -217,7 +217,7 @@ struct OSFile
         {
             LARGE_INTEGER li = void;
             if (GetFileSizeEx(handle, &li) == FALSE)
-                throw new OSException("Couldn't get file size");
+                throw new OSException("GetFileSizeEx");
             return li.QuadPart;
         }
         else version (Posix)
@@ -235,7 +235,7 @@ struct OSFile
                 // fstat(2) sets st_size to 0 on block devices
                 long s = void;
                 if (ioctl(handle, BLOCKSIZE, &s) < 0)
-                    throw new OSException("Couldn't get file size");
+                    throw new OSException("ioctl(BLOCKSIZE)");
                 return s;
             default:
                 import std.conv : text;
@@ -264,14 +264,14 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (ReadFile(handle, buffer, len, &len, null) == FALSE)
-                throw new OSException("Couldn't read from file");
+                throw new OSException("ReadFile");
             return (cast(ubyte*)buffer)[0..len];
         }
         else version (Posix)
         {
             ssize_t len = .read(handle, buffer, size);
             if (len < 0)
-                throw new OSException("Couldn't read from file");
+                throw new OSException("read");
             return (cast(ubyte*)buffer)[0..len];
         }
     }
@@ -296,14 +296,14 @@ struct OSFile
         {
             uint len = cast(uint)size;
             if (WriteFile(handle, data, len, &len, null) == FALSE)
-                throw new OSException("Couldn't write to file");
+                throw new OSException("WriteFile");
             return len; // 0 on error anyway
         }
         else version (Posix)
         {
             ssize_t len = .write(handle, data, size);
             if (len < 0)
-                throw new OSException("Couldn't write to file");
+                throw new OSException("write");
             return len;
         }
     }
@@ -366,7 +366,7 @@ version (Windows)
     ULARGE_INTEGER avail;
     BOOL err = GetDiskFreeSpaceExW(path.tempCStringW(), &avail, null, null);
     if (err == FALSE)
-        throw new OSException("Failed to get free available space");
+        throw new OSException("GetDiskFreeSpaceExW");
     
     return avail.QuadPart;
 }
@@ -378,7 +378,7 @@ else version (FreeBSD)
     statfs_t stats;
     int err = statfs(path.tempCString(), &stats);
     if (err < 0)
-        throw new OSException("Failed to get free available space");
+        throw new OSException("statfs");
 
     return stats.f_bavail * stats.f_bsize;
 }
@@ -390,7 +390,7 @@ else version (Posix)
     statvfs_t stats;
     int err = statvfs(path.tempCString(), &stats);
     if (err < 0)
-        throw new OSException("Failed to get free available space");
+        throw new OSException("statvfs");
 
     return stats.f_bavail * stats.f_frsize;
 }

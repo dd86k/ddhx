@@ -252,7 +252,7 @@ void terminalInit(int features = 0)
             //new_ios.c_cc[VTIME] = 0;
             //if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios) < 0)
             if (tcsetattr(STDIN_FILENO, TCSANOW, &new_ios) < 0)
-                throw new OSException("tcsetattr(STDIN_FILENO) failed");
+                throw new OSException("tcsetattr(STDIN_FILENO)");
         }
         
         if (features & TermFeat.altScreen)
@@ -391,7 +391,7 @@ TerminalSize terminalSize()
         //       Reply: ESC [ 8 ; ROWS ; COLUMNS t
         winsize ws = void;
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0)
-            throw new OSException("ioctl(STDOUT_FILENO, TIOCGWINSZ) failed");
+            throw new OSException("ioctl(STDOUT_FILENO, TIOCGWINSZ)");
         size.rows    = ws.ws_row;
         size.columns = ws.ws_col;
     } else static assert(0, "terminalSize: Not implemented");
@@ -712,14 +712,14 @@ size_t terminalWrite(const(void) *data, size_t size)
         uint written = void;
         BOOL r = WriteFile(hOut, data, cast(uint)size, &written, null);
         if (r == FALSE)
-            throw new OSException("WriteFile failed");
+            throw new OSException("WriteFile");
         return written;
     }
     else version (Posix)
     {
         ssize_t written = write(STDOUT_FILENO, data, size);
         if (written < 0)
-            throw new OSException("write failed");
+            throw new OSException("write");
         return written;
     }
 }

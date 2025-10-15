@@ -395,6 +395,11 @@ Lread:
             catch (Exception ex)
             {
                 log("%s", ex);
+                // "error: " is not prepended, because a message is already
+                // an indicator that something happened.
+                // For example, "Not implemented" is self-descriptive enough
+                // to say "oh yeah, that's an error".
+                // Plus, likely a waste of space.
                 message(ex.msg);
             }
             goto Lupdate;
