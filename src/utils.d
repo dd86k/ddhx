@@ -22,7 +22,7 @@ string[] arguments(const(char)[] buffer)
     if (buffer.length == 0) return [];
     
     string[] results;
-    auto argBuf = appender!string();
+    scope auto argBuf = appender!string();
     bool inQuote = false;
     char quoteChar;
     

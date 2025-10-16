@@ -11,6 +11,7 @@ module main;
 //       module (and package modules) when running 'dub test'.
 
 import std.stdio, std.getopt;
+import std.process : environment;
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
 import configuration;
 import ddhx;
@@ -117,7 +118,6 @@ void main(string[] args)
     enum SECRETCOUNT = 1;
     
     RC rc;
-    size_t ochksize = 4096;
     string orc; /// Use this rc file instead
     bool onorc; /// Do not use rc file if it exists, force defaults
     GetoptResult res = void;
@@ -172,23 +172,6 @@ void main(string[] args)
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,
         //
-        // Debugging options
-        //
-        "log",          "Debugging: Enable tracing to this file",
-            (string _, string val)
-            {
-                logStart(val);
-            },
-        "chunksize",    "Debugging: Set in-memory patch chunks to this size",
-            (string _, string val)
-            {
-                import utils : parsebin;
-                ulong sz = parsebin(val);
-                if (sz > 64 * 1024 * 1024) // 64 MiB
-                    throw new Exception("Chunk size SHOULD be lower than 64 MiB");
-                ochksize = cast(size_t)sz;
-            },
-        //
         // Pages
         //
         "version",      "Print the version page and exit", &printpage,
@@ -230,6 +213,11 @@ void main(string[] args)
         exit(EXIT_SUCCESS);
     }
     
+    if (string logpath = environment.get("DDHX_LOG"))
+    {
+        logStart(logpath);
+    }
+    
     // Load config file after defaults when able. Spouting an error here is
     // more important to have a functioning editor, before loading document.
     import std.file : readText;
@@ -247,62 +235,87 @@ void main(string[] args)
             goto Lload;
     }
     
-    try
-    {
-        static immutable string MSG_NEWBUF  = "(new buffer)";
-        static immutable string MSG_NEWFILE = "(new file)";
-        
-        string target = args.length >= 2 ? args[1] : null;
-        IDocumentEditor editor = new ChunkDocumentEditor(0, ochksize);
-        string initmsg;
-        
-        // Imimitate GNU nano where...
-        // No args:  New empty buffer
-        // "-":      Read from stdin
-        // FILENAME: Attempt to open FILE
-        switch (target) {
-        case null:
-            // NOTE: Peeking stdin.
-            //       We could try peeking stdin (getchat, ungetc(c, stdin))
-            //       automatically, but might introduce unwanted behavior (implicit).
-            initmsg = MSG_NEWBUF;
-            break;
-        case "-": // In-memory buffer from stdin
-            import document.memory : MemoryDocument;
-            target = null; // unset target (no name)
-            initmsg = MSG_NEWBUF;
-            MemoryDocument doc = new MemoryDocument();
-            foreach (const(ubyte)[] chk; stdin.byChunk(4096))
-            {
-                doc.append(chk);
-            }
-            editor.open(doc);
-            break;
-        default: // target is either file, disk (future), or PID (future)
-            import std.file : exists;
-            
-            if (target && exists(target))
-            {
-                import document.file : FileDocument;
-                import std.path : baseName;
-                
-                bool readonly = rc.writemode == WritingMode.readonly;
-                editor.open(new FileDocument(target, readonly));
-                
-                initmsg = baseName(target);
-            }
-            else if (target)
-            {
-                initmsg = MSG_NEWFILE;
-            }
-            else // new empty buffer
-            {
-                initmsg = MSG_NEWBUF;
-            }
-        }
+    static immutable string MSG_NEWBUF  = "(new buffer)";
+    static immutable string MSG_NEWFILE = "(new file)";
     
-        startddhx(editor, rc, target, initmsg);
+    // Select editor backend, this allows transitioning between two
+    // backends (implementations) easier.
+    IDocumentEditor editor;
+    switch (environment.get("DDHX_BACKEND")) {
+    case "pl":
+        editor = new PieceDocumentEditor();
+        break;
+    default:
+        size_t chksize;
+        if (string strsize = environment.get("DDHX_CHUNKSIZE"))
+        {
+            import utils : parsebin;
+            ulong sz = parsebin(strsize);
+            if (sz > 64 * 1024 * 1024) // 64 MiB
+                throw new Exception("Chunk size SHOULD be lower than 64 MiB");
+            chksize = cast(size_t)sz;
+        }
+        editor = new ChunkDocumentEditor(0, chksize);
     }
+    
+    // Imimitate GNU nano where...
+    // No args:  New empty buffer
+    // "-":      Read from stdin
+    // FILENAME: Attempt to open FILE
+    string target = args.length >= 2 ? args[1] : null;
+    string initmsg;
+    switch (target) {
+    case null:
+        // NOTE: Peeking stdin.
+        //       We could try peeking stdin (getchar + ungetc(c, stdin)),
+        //       but that might introduce unwanted implicit behavior.
+        //       It's safer and more consistent to demand "-" for stdin.
+        initmsg = MSG_NEWBUF;
+        break;
+    case "-": // In-memory buffer from stdin
+        import document.memory : MemoryDocument;
+        target = null; // unset target (no name)
+        MemoryDocument doc = new MemoryDocument();
+        foreach (const(ubyte)[] chk; stdin.byChunk(4096))
+        {
+            doc.append(chk);
+        }
+        editor.open(doc);
+        initmsg = MSG_NEWBUF;
+        break;
+    default: // target is set, to either: file, disk (future), or PID (future)
+        import std.file : exists;
+        
+        // Thanks to the null case, there is no need to check if target
+        // is null (unset).
+        // NOTE: exists(string) doesn't play well with \\.\PhysicalDriveN
+        //
+        //       Introducing a special Windows-only drive syntax (e.g, mapping
+        //       "C:" to "\\.\PhysicalDrive0") would be simpler than trying to
+        //       open the drive and be confused how to handle failures (can't
+        //       assume we can save using basename either).
+        //
+        //       Either way, ddhx doesn't officially currently support disk editing.
+        if (exists(target))
+        {
+            import document.file : FileDocument;
+            import std.path : baseName;
+            
+            bool readonly = rc.writemode == WritingMode.readonly;
+            editor.open(new FileDocument(target, readonly));
+            
+            initmsg = baseName(target);
+        }
+        else
+        {
+            initmsg = MSG_NEWFILE;
+        }
+    }
+    
+    assert(editor,  "Forgot editor?");
+    assert(initmsg, "Forgot initmsg?");
+    
+    try startddhx(editor, rc, target, initmsg);
     catch (Exception ex)
     {
         writeln(); // if cursor was at some weird place
