@@ -52,11 +52,13 @@ private enum PanelType
     text,
 }
 
+private alias command_func = void function(Session*, string[]);
+
 private
 struct Keybind
 {
     /// Function implementing command
-    void function(Session*, string[]) impl;
+    command_func impl;
     /// Parameters to add
     string[] parameters;
 }
@@ -124,7 +126,7 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     ubyte[8] g_editbuf;
     
     /// Registered commands
-    void function(Session*, string[])[string] g_commands;
+    command_func[string] g_commands;
     /// Registered shortcuts
     Keybind[int] g_keys;
 }
@@ -136,7 +138,7 @@ struct Command
     string name;        /// Command short name
     string description; /// Short description
     int key;            /// Default shortcut
-    void function(Session*, string[]) impl; /// Implementation
+    command_func impl; /// Implementation
 }
 
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
@@ -192,6 +194,11 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.UpArrow,       &view_up },
     { "view-down",                  "Move view down a row",
         Mod.ctrl|Key.DownArrow,     &view_down },
+    // Deletions
+    /*{ "delete",                     "Delete data from position",
+        Key.Delete,                 &delete_front },
+    { "delete-back",                "Delete data from position backward",
+        Key.Backspace,              &delete_back },*/
     // Selections
     { "select-left",                "Extend selection one element back",
         Mod.shift|Key.LeftArrow,    &select_left },
@@ -334,7 +341,7 @@ Keybind* binded(int key)
 /// Params:
 ///     editor = Document editor instance.
 ///     rc = Copy of the RC instance.
-///     string = Target path.
+///     path = Target path.
 ///     initmsg = Initial message.
 void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
 {
@@ -422,15 +429,11 @@ Lread:
         }
         
         // Check if the writing mode is valid
-        final switch (session.rc.writemode) {
+        switch (session.rc.writemode) {
         case WritingMode.readonly:
             message("Can't edit in read-only mode");
             goto Lupdate;
-        case WritingMode.insert: // temp for msg
-            message("TODO: Insert mode");
-            goto Lupdate;
-        case WritingMode.overwrite:
-            break;
+        default:
         }
         
         // We have a valid key and mode, so disrupt selection
@@ -471,6 +474,8 @@ void onresize()
     // If autoresize configuration is enabled, automatically set columns
     if (g_session.rc.autoresize)
         autosize(g_session, null);
+    
+    g_status |= UVIEW; // view buffer size will be updated
     
     update(g_session);
 }
@@ -651,7 +656,11 @@ void moveabs(Session *session, long pos)
     if (g_editdigit && g_editcurpos != pos)
     {
         g_editdigit = 0;
-        session.editor.replace(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+        if (session.rc.writemode == WritingMode.overwrite)
+            session.editor.replace(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+        else
+            session.editor.insert(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+        g_status |= UVIEW; // new data
     }
     
     long docsize = session.editor.size();
@@ -676,14 +685,16 @@ void moveabs(Session *session, long pos)
     if (pos < session.position_view) // cursor is behind view
     {
         session.position_view = align64down(pos, session.rc.columns);
+        g_status |= UVIEW; // missing data
     }
     else if (pos >= session.position_view + count) // cursor is ahead of view
     {
         session.position_view = align64up(pos - count + 1, session.rc.columns);
+        g_status |= UVIEW; // missing data
     }
     
     session.position_cursor = pos;
-    g_status |= UVIEW | USTATUSBAR;
+    g_status |= USTATUSBAR;
 }
 
 // Send a message within the editor to be displayed.
@@ -749,31 +760,40 @@ void update_view(Session *session, TerminalSize termsize)
     
     debug import std.datetime.stopwatch : StopWatch, Duration;
     debug StopWatch sw;
-    debug if (logging) sw.start(); // For IDocumentEditor.view()
     
-    // Read data
-    // TODO: To avoid unecessary I/O, avoid calling .view() when:
-    //       - position is the same as the last call
-    //       - count is the same as the last call
-    //       - no edits have been made (+ undo/redo)
-    //       Could rely on UVIEW status
-    // NOTE: scope T[] allocations does nothing
+    // Read data from editor
+    // NOTE: To avoid unecessary I/O, call .view() when:
+    //       - base position changed (when base pos changes, set UVIEW)
+    //       - read size changed (resize event, set UVIEW flag)
+    //       - new edit (set UVIEW when inserting/replacing/deleting)
+    //       - undo or redo (set UVIEW)
+    //       Basically, could rely on UVIEW flag.
+    // NOTE: scope array allocations does nothing.
     //       This is a non-issue since the conservative GC will keep the
     //       allocation alive and simply resize it (either pool or realloc).
-    // NOTE: new T[x] calls memset(3), wasting some cpu time
+    // NOTE: new expression clears memory (memset).
+    //       Unwanted, so avoid it to avoid wasting cpu time.
     __gshared ubyte[] viewbuf;
-    if (viewbuf.length != count) // only resize if required
-        viewbuf.length = count;
-    ubyte[] result  = session.editor.view(address, viewbuf);
-    int readlen     = cast(int)result.length; // * bytesize
-    
-    debug if (logging)
+    __gshared ubyte[] result;
+    __gshared int readlen;
+    if (g_status & UVIEW) // view data needs to be updated
     {
-        sw.stop();
-        log("TIME view=%s", sw.peek());
-        sw.reset();
-        sw.start();
+        debug if (logging) sw.start(); // For IDocumentEditor.view()
+        
+        if (viewbuf.length != count) // only resize if required
+            viewbuf.length = count;
+        result  = session.editor.view(address, viewbuf);
+        readlen = cast(int)result.length;
+        
+        debug if (logging)
+        {
+            sw.stop();
+            log("TIME view=%s", sw.peek());
+            sw.reset();
+        }
     }
+    
+    debug if (logging) sw.start();
     
     // Selection stuff
     long select_start = void, select_end = void;
@@ -1316,6 +1336,31 @@ void view_down(Session *session, string[] args)
 }
 
 //
+// Deletion
+//
+
+void delete_front(Session *session, string[] args)
+{
+    long sl0 = void, sl1 = void;
+    long slz = selection(session, sl0, sl1);
+    if (slz)
+    {
+        throw new Exception("Not implemented");
+    }
+    
+    long curpos = session.position_cursor;
+    if (curpos == session.editor.size())
+        return;
+    session.editor.remove(curpos, 1);
+}
+
+void delete_back(Session *session, string[] args)
+{
+    
+}
+
+
+//
 // Selection
 //
 
@@ -1341,6 +1386,34 @@ long selection(Session *session, ref long start, ref long end)
     
     // Return long, functions may use it differently.
     return end - start + 1;
+}
+unittest
+{
+    Session session;
+    
+    import backend.dummy : DummyDocumentEditor;
+    session.editor = new DummyDocumentEditor();
+    
+    // Not selected
+    long sl0, sl1;
+    assert(selection(&session, sl0, sl1) == 0);
+    
+    // Emulate a selection where cursor is behind anchor
+    session.selection.status = 1;
+    session.selection.anchor = 4;
+    session.position_cursor  = 2;
+    
+    assert(selection(&session, sl0, sl1) == 3);
+    assert(sl0 == 2);
+    assert(sl1 == 4);
+    
+    // Emulate a selection where only one element is selected
+    session.selection.status = 1;
+    session.selection.anchor = 2;
+    session.position_cursor  = 2;
+    assert(selection(&session, sl0, sl1) == 1);
+    assert(sl0 == 2);
+    assert(sl1 == 2);
 }
 
 // Expand selection backward
@@ -1459,6 +1532,7 @@ void undo(Session *session, string[] args)
     long pos = session.editor.undo();
     if (pos >= 0)
         moveabs(session, pos);
+    g_status |= UVIEW; // different data
 }
 
 // 
@@ -1467,6 +1541,7 @@ void redo(Session *session, string[] args)
     long pos = session.editor.redo();
     if (pos >= 0)
         moveabs(session, pos);
+    g_status |= UVIEW; // different data
 }
 
 union B // Used in goto for now.
