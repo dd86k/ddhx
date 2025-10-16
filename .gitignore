@@ -16,6 +16,7 @@ __test__*__
 *.xz
 *.bzip2
 .fuse_*
+docs/
 
 # Other editors
 *.swp
