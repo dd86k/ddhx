@@ -195,10 +195,10 @@ immutable Command[] default_commands = [
     { "view-down",                  "Move view down a row",
         Mod.ctrl|Key.DownArrow,     &view_down },
     // Deletions
-    /*{ "delete",                     "Delete data from position",
+    { "delete",                     "Delete data from position",
         Key.Delete,                 &delete_front },
     { "delete-back",                "Delete data from position backward",
-        Key.Backspace,              &delete_back },*/
+        Key.Backspace,              &delete_back },
     // Selections
     { "select-left",                "Extend selection one element back",
         Mod.shift|Key.LeftArrow,    &select_left },
@@ -456,10 +456,14 @@ Lread:
         // add edit into history stack
         if (g_editdigit >= chars)
         {
-            // TODO: multi-byte edits
-            g_session.editor.replace(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
-            g_editdigit = 0;
-            move_right(g_session, null);
+            // Forcing to move cursor forces the edit to be applied,
+            // since cursor position when starting an edit is saved
+            try move_right(g_session, null);
+            catch (Exception ex)
+            {
+                log("%s", ex);
+                message(ex.msg);
+            }
         }
         break;
     default:
@@ -767,7 +771,7 @@ void update_view(Session *session, TerminalSize termsize)
     //       - read size changed (resize event, set UVIEW flag)
     //       - new edit (set UVIEW when inserting/replacing/deleting)
     //       - undo or redo (set UVIEW)
-    //       Basically, could rely on UVIEW flag.
+    //       Basically, just rely on UVIEW flag.
     // NOTE: scope array allocations does nothing.
     //       This is a non-issue since the conservative GC will keep the
     //       allocation alive and simply resize it (either pool or realloc).
@@ -793,6 +797,13 @@ void update_view(Session *session, TerminalSize termsize)
         }
     }
     
+    // Effective number of rows to render
+    int erows = readlen / cols;
+    // If col count flush and "view incomplete", add row
+    if (readlen % cols == 0 && readlen < count) erows++;
+    // If col count not flush (near EOF) and view full, add row
+    else if (readlen % cols) erows++;
+    
     debug if (logging) sw.start();
     
     // Selection stuff
@@ -813,7 +824,9 @@ void update_view(Session *session, TerminalSize termsize)
             address, viewpos, cols, rows, count, datawidth, readlen, panel,
             session.selection.anchor, session.selection.status, sl0, sl1);
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
-    for (int row; row < rows; ++row, address += cols)
+    // TODO: Check perf timer if newline is better on Windows
+    int row;
+    for (; row < erows; ++row, address += cols)
     {
         // '\n' could count as a character, avoid using it
         terminalCursor(0, row + 1);
@@ -903,6 +916,12 @@ void update_view(Session *session, TerminalSize termsize)
         int f = termsize.columns - cast(int)w;
         if (f > 0)
             terminalWriteChar(' ', f);
+    }
+    
+    for (; row < rows; ++row)
+    {
+        terminalCursor(0, row + 1);
+        terminalWriteChar(' ', termsize.columns);
     }
     
     debug if (logging)
@@ -1348,15 +1367,28 @@ void delete_front(Session *session, string[] args)
         throw new Exception("Not implemented");
     }
     
+    // Delete element where cursor points to
     long curpos = session.position_cursor;
-    if (curpos == session.editor.size())
+    if (curpos == session.editor.size()) // nothing to delete in front
         return;
     session.editor.remove(curpos, 1);
+    g_status |= UVIEW;
 }
 
 void delete_back(Session *session, string[] args)
 {
+    long sl0 = void, sl1 = void;
+    long slz = selection(session, sl0, sl1);
+    if (slz)
+    {
+        throw new Exception("Not implemented");
+    }
     
+    // Delete element behind cursor
+    if (session.position_cursor == 0) // nothing to delete behind cursor
+        return;
+    session.editor.remove(session.position_cursor--, 1);
+    g_status |= UVIEW;
 }
 
 
@@ -1531,8 +1563,10 @@ void undo(Session *session, string[] args)
 {
     long pos = session.editor.undo();
     if (pos >= 0)
+    {
         moveabs(session, pos);
-    g_status |= UVIEW; // different data
+        g_status |= UVIEW; // new data
+    }
 }
 
 // 
@@ -1540,8 +1574,10 @@ void redo(Session *session, string[] args)
 {
     long pos = session.editor.redo();
     if (pos >= 0)
+    {
         moveabs(session, pos);
-    g_status |= UVIEW; // different data
+        g_status |= UVIEW; // new data
+    }
 }
 
 union B // Used in goto for now.
