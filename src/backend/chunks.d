@@ -678,11 +678,15 @@ class ChunkDocumentEditor : IDocumentEditor
     /// Ditto
     public alias overwrite = replace;
     
-    // TODO: insert(long pos, const(void) *data, size_t len)
-    // TODO: remove(long pos, const(void) *data, size_t len)
-    //       Because delete is (was) a reserved keyword
-    // TODO: addPatch(...)
-    // TODO: removePatch(...)
+    void insert(long, const(void)*, size_t)
+    {
+        throw new Exception("Not implemented");
+    }
+    
+    void remove(long pos, size_t len)
+    {
+        throw new Exception("Not implemented");
+    }
     
     /// Undo last edit.
     /// Throws: Enforcement.

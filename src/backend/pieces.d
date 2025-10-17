@@ -1,3 +1,9 @@
+/// Editor backend implemention using a Piece List to ease insertion and
+/// deletion operations.
+///
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module backend.pieces;
 
 import logger;
@@ -5,93 +11,463 @@ import backend.base : IDocumentEditor;
 import document.base : IDocument;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
+import std.exception : enforce;
 
+// Other interesting sources:
+// - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
+// - file: Insert file
+// - pattern: Insert pattern (e.g., 1000x 0xff) - saves memory
+private
 enum Source
 {
-    original,   /// Original document
+    document,   /// Original document
     buffer,     /// In-memory buffer
-    temp,       /// Temporary file if edit is too large
 }
 
-enum MEMORY_THRESHOLD = 64 * 1024;
+private
+struct BufferPiece
+{
+    const(void) *data;
+}
 
+private
 struct Piece
 {
     Source source;
+    long position;
+    long size;
+    
     union
     {
-        struct Original
-        {
-            long file_offset;
-            size_t length;
-        }
-        Original original;
+        BufferPiece buffer;
+    }
+    
+    // Make a new buffer piece
+    // This does not copy any actually data from the pointer, just the fields
+    static Piece makebuffer(long position, const(void) *data, size_t size)
+    {
+        Piece piece     = void;
+        piece.source    = Source.buffer;
+        piece.position  = position;
+        piece.size      = size;
+        piece.buffer.data = data;
+        return piece;
     }
 }
 
+// For RedBlackTree
+private
+struct IndexedPiece
+{
+    /// Cumulative size of ALL previous pieces to help indexing.
+    ///
+    /// If we have pieces (pos=0,size=15),(pos=15,size=30),(pos=45,size=5),
+    /// then they'd have 15, 45, and 50 cumulative sizes.
+    long cumulative;
+    Piece piece;
+}
+
+// Used in Undo/Redo operations
+private
+struct History
+{
+    long start, end;
+}
+
+/// Document editor implementing a Piece List with RedBlackTree for indexing.
 class PieceDocumentEditor : IDocumentEditor
 {
+    /// New document editor with a new empty buffer.
+    this(int flags = 0)
+    {
+        import os.mem : syspagesize;
+        pagesize = syspagesize();
+    }
+    
+    /// Open document.
+    /// Params: doc = IDocument-based document.
+    /// Returns: Instance of this.
     typeof(this) open(IDocument doc)
     {
-        throw new Exception(ENOTIMPL);
+        basedoc = doc;
+        snapshots.clear();
+        logical_size = doc.size();
+        IndexedPiece indexed = IndexedPiece(
+            logical_size,
+            Piece(Source.document, 0, logical_size)
+        );
+        Tree snapshot = new Tree(indexed);
+        snapshots.insert(snapshot);
+        snapshot_index++;
+        return this;
     }
-
+    
     long size()
     {
         return logical_size;
     }
-
+    
     void save(string target)
     {
         throw new Exception(ENOTIMPL);
     }
-
-    ubyte[] view(long position, void* data, size_t size)
+    
+    ubyte[] view(long position, void* buffer, size_t size)
     {
-        throw new Exception(ENOTIMPL);
+        return view(position, (cast(ubyte*)buffer)[0..size]);
     }
-
+    
     ubyte[] view(long position, ubyte[] buffer)
     {
-        throw new Exception(ENOTIMPL);
-    }
+        // If new buffer without any edits.
+        if (snapshots.length == 0)
+            return [];
+        
+        /*
+        View function for range [P, P + length):
 
+        1. Traverse the tree comparing P against cumulative sizes to find the
+           first piece that overlaps
+        2. Iterate forward through pieces, accumulating their content into the
+           view buffer
+        3. Stop when you've covered the entire range
+        */
+        
+        log("Si=%u Sc=%u Hi=%u Hc=%u", snapshot_index, snapshots.length, history_index, history.length);
+        
+        size_t bi; /// buffer index (for slicing)
+        Tree indexes = snapshots[snapshot_index - 1];
+        //IndexedPiece previous;
+        long previous;
+        foreach (index; indexes[])
+        {
+            if (bi >= buffer.length)
+            {
+                // TODO: Consider cutting to buffer length
+                break;
+            }
+            
+            // Need piece where position fits in cumulative
+            if (index.cumulative <= position)
+            {
+                previous = index.cumulative;
+                continue;
+            }
+            
+            long lpos = position + bi; // logical position
+            size_t want = buffer.length - bi; // need to fill
+            
+            import std.algorithm.comparison : min, max;
+            
+            long piece_start = previous;
+            long piece_end   = index.cumulative;
+            long read_start  = max(position, piece_start) - piece_start;
+            long read_end    = min(position + buffer.length, piece_end) - piece_start;
+            long read_length = read_end - read_start;
+            
+            size_t rdlen = cast(size_t)read_length;
+            
+            log("PIECE lpos=%d want=%u Ps=%d Pe=%d Rs=%d Re=%d Rl=%d P=%s r=%u",
+                lpos, want,
+                piece_start, piece_end,
+                read_start, read_end, read_length,
+                index,
+                rdlen);
+            
+            final switch (index.piece.source) {
+            case Source.document:
+                assert(basedoc); // need document
+                size_t len = basedoc.readAt(index.piece.position + read_start, buffer[bi..bi+rdlen]).length;
+                bi += len;
+                break;
+            case Source.buffer:
+                assert(add_buffer); // needs to be init
+                assert(add_size);   // need data
+                import core.stdc.string : memcpy;
+                memcpy(buffer.ptr + bi, index.piece.buffer.data + read_start, rdlen);
+                bi += rdlen;
+                break;
+            }
+            
+            previous = index.cumulative;
+        }
+        
+        return buffer[0..bi];
+    }
+    
     bool edited()
     {
-        return history_idx != history_idx_saved;
+        return history_index != history_saved;
     }
-
+    
     void replace(long position, const(void)* data, size_t len)
     {
+        // Insert a new piece by replacing found piece(s)
+        // Cheaping out with an Deletion+Insert is just asking for trouble
+        // if there are two snapshots from one operation.
         throw new Exception(ENOTIMPL);
     }
+    
+    void insert(long position, const(void)* data, size_t len)
+    {
+        enforce(position <= logical_size, "position <= logical_size (past EOF)");
+        enforce(data, "data != NULL");
+        enforce(len,  "len > 0");
+        
+        // Make piece
+        void *buf = bufferAdd( data, len );
+        Piece piece = Piece.makebuffer( position, buf, len );
+        
+        // Add to undo stack
+        if (history_index < history.length) // replace
+            history[history_index] = History(position, position + len);
+        else // append
+            history.insert( History(position, position + len) );
+        history_index++;
+        
+        // new buffer with no edits yet
+        if (snapshots.length == 0)
+        {
+            // First edit with no document needs to be at position 0.
+            enforce(position == 0, "assert: insert(position==0)");
+            
+            // Start new snapshot series
+            log("FIRST IndexedPiece=%s", IndexedPiece( len, piece ));
+            snapshots.insert( new Tree( IndexedPiece( len, piece ) ) );
+            snapshot_index++;
+            
+            logical_size = len;
+            return;
+        }
+        
+        // Optimization: Insert at SOF, only middle (new) and right pieces affected
+        if (position == 0)
+        {
+            Tree oldtree = snapshots[snapshot_index - 1];
+            Tree newtree = new Tree();
+            
+            // Insert starting piece
+            newtree.insert(IndexedPiece(len, piece));
+            // Insert other pieces while adjusting their cumulative size
+            foreach (indexed; oldtree)
+                newtree.insert(IndexedPiece(indexed.cumulative + len, indexed.piece));
+            
+            logical_size += len;
+            
+            snapshots.insert( newtree );
+            snapshot_index++;
+            return;
+        }
+        // Optimization: Insert at EOF, middle (new) piece needed
+        else if (position == logical_size)
+        {
+            Tree oldtree = snapshots[snapshot_index - 1];
+            Tree newtree = new Tree();
+            
+            logical_size += len;
+            
+            // Insert other pieces, need to adjust cumulative size
+            foreach (indexed; oldtree)
+                newtree.insert(IndexedPiece(indexed.cumulative, indexed.piece));
+            
+            // Insert at end, no need to update nodes
+            newtree.insert(IndexedPiece(logical_size, piece));
+            
+            snapshots.insert( newtree );
+            snapshot_index++;
+            return;
+        }
+        
+        /*
+        Insertion at document position P with N bytes:
 
+        1. Traverse the tree comparing P against cumulative sizes to find
+           which piece contains position P
+        2. Split that piece if necessary (the piece might span before and after P)
+        3. Insert your new piece (with the added content) into the tree
+        4. Rebuild/update cumulative sizes for affected nodes
+        */
+        Tree oldtree = snapshots[snapshot_index - 1];
+        Tree newtree = new Tree();
+        IndexedPiece previous;
+        foreach (index; oldtree)
+        {
+            if (index.cumulative < position) // add as-is
+            {
+                previous = index;
+                newtree.insert( index );
+                continue;
+            }
+            
+            // 2. Get the offset that might land within a piece
+            long piece_offset = position - previous.cumulative;
+            
+            // 3. Insert piece, either if:
+            //    (a) It needs splitting a piece or;
+            //    (b) Needs to be inserted at the end of one.
+            if (piece_offset > 0 && piece_offset < index.piece.size) // insert left, middle, right pieces
+            {
+                // Adjust found piece... By cutting it into LEFT and RIGHT pieces
+                long right_len = index.piece.size - piece_offset;
+                Piece left = void, right = void;
+                // left:  Piece(found.piece.source, found.piece.offset, piece_offset)
+                // right: Piece(found.piece.source, found.piece.offset + piece_offset, found.piece.size - piece_offset)
+                final switch (index.piece.source) {
+                case Source.document:
+                    left  = Piece(Source.document, index.piece.position, piece_offset);
+                    right = Piece(Source.document, index.piece.position + piece_offset, right_len);
+                    break;
+                case Source.buffer:
+                    left  = Piece.makebuffer(index.piece.position, index.piece.buffer.data, piece_offset);
+                    right = Piece.makebuffer(index.piece.position + piece_offset, index.piece.buffer.data + piece_offset, right_len);
+                }
+                
+                // Now, we need to insert left, new, and right pieces...
+                long cumulative = previous.cumulative + piece_offset;
+                newtree.insert([
+                    IndexedPiece(cumulative, left),
+                    IndexedPiece(cumulative + len, piece),
+                    IndexedPiece(cumulative + len + right_len, right)
+                ]);
+            }
+            else // Insert at boundary of pieces
+            {
+                newtree.insert(IndexedPiece(previous.cumulative + len, piece));
+            }
+        }
+        
+        logical_size += len;
+        
+        if (snapshot_index < snapshots.length) // replace
+            snapshots[snapshot_index] = newtree;
+        else // append
+            snapshots.insert( newtree );
+        snapshot_index++;
+    }
+    
+    /// Remove data foward from a position for a length of bytes.
+    /// Throws: Exception.
+    /// Params:
+    ///     position = Base position.
+    ///     len = Number of bytes to delete.
+    void remove(long position, size_t len)
+    {
+        throw new Exception(ENOTIMPL);
+    }
+    
+    /// Undo last modification.
+    /// Returns: Suggested position of the cursor for this modification.
     long undo()
     {
-        throw new Exception(ENOTIMPL);
+        if (history_index <= 0)
+            return -1;
+        
+        snapshot_index--;
+        return history[ --history_index ].start;
     }
-
+    
+    /// Redo last undone modification.
+    /// Returns: Suggested position of the cursor for this modification. (Position+Length)
     long redo()
     {
-        throw new Exception(ENOTIMPL);
+        if (history_index >= history.length)
+            return -1;
+        
+        snapshot_index++;
+        return history[ --history_index ].end;
     }
-
+    
 private:
+    /// Base document to apply edits on.
+    ///
+    /// Nullable.
     IDocument basedoc;
+    
+    /// Logical size of our document.
     long logical_size;
     
-    size_t history_idx;
-    size_t history_idx_saved;
-    
-    ubyte[] add_buffer;
-    Array!Piece pieces;
-    RedBlackTree!long indexed;
-    
     static immutable string ENOTIMPL = "Not implemented";
+    
+    //
+    // Undo-Redo stack
+    //
+    
+    /// History of pieces inserted.
+    Array!History history;
+    /// History index used when performing an undo or redo.
+    size_t history_index;
+    /// Index used when saving. This is set to history_index, and is used
+    /// to know when the document was edited.
+    size_t history_saved;
+    
+    //
+    // Piece list
+    //
+    
+    /// Tree format
+    alias Tree = RedBlackTree!(IndexedPiece, "a.cumulative < b.cumulative");
+    /// Snapshot system
+    ///
+    /// When an operation is performed (overwrite, insert, delete), a new
+    /// snapshot is created, for easier undo/redo operations.
+    ///
+    /// NOTE: Snapshot performance.
+    ///       
+    ///       Due to RedBlackTree's usage of [private struct] Range(T).front()
+    ///       (used in opSlice, lowerBounds, upperBounds, etc.), all elements
+    ///       are passed *by value*, so it is not possible to modify these
+    ///       elements as-is (using foreach + ref) without removing+insertion.
+    ///       Which, could mean a shallow dupe (O(n)), remove (O(log n)), and
+    ///       insert (O(log n)) possibly all elements -> Might be O(n²).
+    ///       
+    ///       So, each new snapshots are created from scratch, and this rebuild
+    ///       should be around O(n log n), and possibly better.
+    ///       
+    ///       Other optimizations (deltas, array of pointers, etc.) could be
+    ///       explored later, but it's more important to have something that
+    ///       works.
+    Array!Tree snapshots;
+    /// Current snapshot index. Not synced with historical index, because
+    /// snapshots can contain a document piece without edits, which counts
+    /// towards the total amount of snapshots.
+    size_t snapshot_index;
+    
+    //
+    // Add buffer
+    //
+    
+    // 
+    ubyte[] add_buffer;
+    // Size of add buffer
+    size_t add_size;
+    // 
+    size_t pagesize;
+    
+    //
+    void* bufferAdd(const(void) *data, size_t len)
+    {
+        if (add_buffer.length == 0)
+        {
+            add_buffer.length = pagesize;
+        }
+        
+        if (add_size + len >= add_buffer.length)
+        {
+            add_buffer.length += pagesize;
+        }
+        
+        import core.stdc.string : memcpy;
+        void *ptr = add_buffer.ptr + add_size;
+        memcpy(ptr, data, len);
+        
+        add_size += len;
+        
+        return ptr;
+    }
 }
 
 /// New empty document
-/*unittest
+unittest
 {
     log("TEST-0001");
     
@@ -100,42 +476,43 @@ private:
     ubyte[32] buffer;
     
     log("Initial read");
-    assert(e.view(0, buffer[]) == []);
     assert(e.edited() == false);
     assert(e.size() == 0);
+    assert(e.view(0, buffer) == []);
     
-    log("Write data at position 0");
-    string data0 = "test";
-    e.replace(0, data0.ptr, data0.length);
+    string data = "hi";
+    e.insert(0, data.ptr, data.length);
     assert(e.edited());
-    assert(e.view(0, buffer[0..4]) == data0);
-    assert(e.view(0, buffer[])     == data0);
-    assert(e.size() == 4);
+    assert(e.size() == 2);
+    assert(e.view(0, buffer) == data);
+}
+
+/// with document
+unittest
+{
+    import document.memory : MemoryDocument;
     
-    log("Emulate an overwrite edit");
-    char c = 's';
-    e.replace(3, &c, char.sizeof);
-    assert(e.view(0, buffer[]) == "tess");
-    assert(e.size() == 4);
+    log("TEST-0002");
     
-    log("Another...");
-    e.replace(1, &c, char.sizeof);
-    assert(e.view(0, buffer[]) == "tsss");
-    assert(e.size() == 4);
+    static immutable ubyte[] data  = cast(immutable(ubyte)[])"hello";
+    static immutable ubyte[] data1 = cast(immutable(ubyte)[])"hi, ";
     
-    static immutable string path = "tmp_empty";
-    log("Saving to %s", path);
-    e.save(path); // throws if it needs to, stopping tests
+    scope PieceDocumentEditor e = new PieceDocumentEditor().open(new MemoryDocument(data));
     
-    // Needs to be readable after saving, obviously
-    assert(e.view(0, buffer[]) == "tsss");
-    assert(e.size() == 4);
+    ubyte[32] buffer;
+    log("Initial read");
+    assert(e.edited() == false);
+    assert(e.size() == data.length);
+    assert(e.view(0, buffer) == data);
     
-    import std.file : remove;
-    remove(path);
+    e.insert(0, data1.ptr, data1.length);
+    assert(e.edited());
+    assert(e.size() == data.length + data1.length);
+    assert(e.view(0, buffer) == data1~data); // "hi, hello"
 }
 
 /// Emulate editing an existing document
+/*
 unittest
 {
     import document.memory : MemoryDocument;
@@ -531,3 +908,6 @@ unittest
          'l',  'l',  'l',  'o'                          // <- chunk 1
     ]);
 }*/
+
+/// Common tests
+//unittest { editorTests!ChunkDocumentEditor(); }

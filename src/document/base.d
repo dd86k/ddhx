@@ -12,4 +12,6 @@ interface IDocument
     long size();
     /// Read at this position.
     ubyte[] readAt(long at, ubyte[] buf);
+    // TODO: string type()
+    //       Short identifier on type: "file", "storage", "process", etc.
 }

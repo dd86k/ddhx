@@ -1,24 +1,39 @@
+/// Base interface to implemement a document editor.
+///
+/// Copyright: dd86k <dd@dax.moe>
+/// License: MIT
+/// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module backend.base;
 
 import document.base : IDocument;
 
 interface IDocumentEditor
 {
-    // Open document, forget all previous edits
+    /// Open with document.
     typeof(this) open(IDocument);
     
+    /// Return size of document, with edits, in bytes.
     long size();
     
+    /// Save document to file path.
     void save(string target);
     
+    // TODO: Change ubyte[] to either const(ubyte)[] or immutable(ubyte)[]
+    
+    /// View document at position using buffer.
     ubyte[] view(long position, void *data, size_t size);
+    /// Ditto.
     ubyte[] view(long position, ubyte[] buffer);
     
+    /// Returns true if the document was edited since last open/save.
     bool edited();
     
+    /// Replace (overwrite) data.
     void replace(long position, const(void) *data, size_t len);
-    //void insert(long position, const(void) *data, size_t len);
-    //void remove(long position, size_t len);
+    /// Insert data.
+    void insert(long position, const(void) *data, size_t len);
+    /// Delete data.
+    void remove(long position, size_t len);
     
     /// Returns: Position
     long undo();
@@ -73,7 +88,7 @@ void test_empty(T : IDocumentEditor)()
 {
     scope T e = new T();
     ubyte[32] buffer;
-    assert(e.view(0, buffer[]) == []);
+    assert(e.view(0, buffer) == []);
     assert(e.edited() == false);
     assert(e.size() == 0);
 }
