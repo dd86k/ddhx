@@ -238,14 +238,14 @@ void main(string[] args)
     static immutable string MSG_NEWBUF  = "(new buffer)";
     static immutable string MSG_NEWFILE = "(new file)";
     
-    // Select editor backend, this allows transitioning between two
+    // Select editor backend, this allows transitioning between multiple
     // backends (implementations) easier.
     IDocumentEditor editor;
-    switch (environment.get("DDHX_BACKEND")) {
-    case "pl":
+    switch (environment.get("DDHX_BACKEND", "chunk")) {
+    case "piece":
         editor = new PieceDocumentEditor();
         break;
-    default:
+    case "chunk":
         size_t chksize;
         if (string strsize = environment.get("DDHX_CHUNKSIZE"))
         {
@@ -256,12 +256,16 @@ void main(string[] args)
             chksize = cast(size_t)sz;
         }
         editor = new ChunkDocumentEditor(0, chksize);
+        break;
+    default:
+        throw new Exception("Backend does not exist");
     }
+    assert(editor, "editor?");
     
-    // Imimitate GNU nano where...
-    // No args:  New empty buffer
-    // "-":      Read from stdin
-    // FILENAME: Attempt to open FILE
+    // Open buffer or file where (imitating GUN nano):
+    // - No args:  New empty buffer
+    // - "-":      Read from stdin
+    // - FILENAME: Attempt to open FILE
     string target = args.length >= 2 ? args[1] : null;
     string initmsg;
     switch (target) {
@@ -311,8 +315,6 @@ void main(string[] args)
             initmsg = MSG_NEWFILE;
         }
     }
-    
-    assert(editor,  "Forgot editor?");
     assert(initmsg, "Forgot initmsg?");
     
     try startddhx(editor, rc, target, initmsg);
