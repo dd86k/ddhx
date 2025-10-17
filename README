@@ -64,7 +64,12 @@ automatically.
 
 // Input
 
-On POSIX platforms, the editor supports xterm and vt220 input sequences.
+On POSIX platforms, the editor supports xterm and vt220 sequences.
+
+On POSIX platforms, the app assumes these keys:
+- ^H (\010) for Ctrl+Backspace;
+- DEL (0x7f) for Backspace;
+- "\033[3~" for Delete.
 
 Not all key combinations can be detected by terminal applications. Your 
 terminal emulator or framebuffer may intercept certain shortcuts for its own
@@ -72,8 +77,8 @@ features. For example, VTE-based terminals (GNOME Terminal, Terminator, Tilix)
 often capture Ctrl+Shift+Arrow keys for tab/pane navigation. Or Shift+PageUp
 to scroll the framebuffer upwards.
 
-If a shortcut doesn't work, the "bind" command allows binding a shortcut to a
-command: `bind alt+e select-end`. Commands can still be executed from the
+If a shortcut doesn't work, the "bind" command allows binding a command to a
+shortcut: `bind alt+e select-end`. Commands can still be executed from the
 command prompt.
 
 //
@@ -115,6 +120,7 @@ Wishlist:
 - [ ] Disk document type
 - [ ] Search by charset
 - [ ] Inspect data panel
+- [ ] Patch system
 
 //
 // Usage
@@ -140,21 +146,23 @@ To view available start options, execute `ddhx --help`.
 
 Minimum recommended terminal size is 80x24 characters.
 
-To quit the editor, use Ctrl+Q, or "quit" command.
+To quit the editor, use Ctrl+Q, or use the "quit" command.
 
 // Navigation
 
-Navigation is primarily done using the arrow keys.
+Arrow keys for basic navigation.
 
-Page Up and Down are used to move the cursor across the screen.
+Page Up/Down are used to move the cursor across the screen.
 
-Home and End are used to move the cursor to the start or end of line. Using
-Ctrl with Home or End moves the cursor to the start or end of the document.
+Home/End to move to start or end of row.
 
-It's possible to skip the same data using Ctrl+Left/Right. Selecting a range
-will make this the needle, and skip data until a different pattern is met.
+Ctrl+Home/End to move to start or end of document.
 
-Ctrl+Up/Down can be used to move the view.
+Ctrl+Left/Right can be used to skip over data (ie, same bytes or patterns).
+
+Ctrl+Up/Down can be used to move the view higher or lower.
+
+Shift + navigation key to start a selection.
 
 New keybinds can be set at runtime using the "bind" command (vim example):
   >bind h left
@@ -165,10 +173,6 @@ New keybinds can be set at runtime using the "bind" command (vim example):
 Another example, "bind right-arrow goto +32" will bind the right arrow key to
 "goto +32", which will make it jump 32 bytes ahead. To unbind it, use
 "unbind right-arrow" or "reset-keys" to reset all keybindings.
-
-Selecting data is done using Shift and navigation keys. Some commands
-support selection (such as the skip and find commands, to allow quicker
-operations).
 
 To view default keybinds, execute `ddhx --help-keys`.
 
@@ -187,6 +191,14 @@ Here are supported prefixes:
   o:        - Octal (currently only 8-bit unsigned)
   s: and "  - String (currently ASCII only)
 
+Practical example: PDF
+
+Use the "find s:endstream" comand to search for string "endstream", then hit
+Ctrl+N ("find-next") to go to next result or Shift+N ("find-prev") to go to
+the previous result.
+
+LIMITATION: Search does not wrap and depends on cursor position.
+
 // Editing
 
 Editing is done directly using the A to F and 0 to 9 keys.
@@ -198,6 +210,8 @@ Currently, only overwrite and append operations are supported.
 //
 // Commands
 //
+
+All actions are mapped to command names. Some shortcuts are mapped to commands.
 
 Commands can be executed using the command prompt within the editor.
 
@@ -267,6 +281,11 @@ Run unit tests (useful for new platforms):
 Run unit tests with log traces:
   $ dub test --d-version=Trace
 
-ddhx comes with these command-line options to help debugging:
-  --log=FILENAME to store debugging logs. Useful for reporting bugs.
-  --chunksize=N to specify a different size/alignment of edit chunks.
+Environment variables:
+- DDHX_LOG=PATH
+  - If set, start logging to PATH.
+- DDHX_BACKEND=BACKEND
+  - If set, forces BACKEND to be selected, if it exists.
+  - Backends: "chunk" (default), "piece"
+- DDHX_CHUNKSIZE=SIZE
+  - If set, sets chunk size to SIZE (binary suffix) for the chunk backend.
