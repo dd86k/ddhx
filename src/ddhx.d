@@ -826,15 +826,23 @@ void update_view(Session *session, TerminalSize termsize)
             address, viewpos, cols, rows, count, datawidth, readlen, panel,
             session.selection.anchor, session.selection.status, sl0, sl1);
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
-    // TODO: Check perf timer if newline is better on Windows
+    
+    import utils : BufferedWriter;
+    BufferedWriter!((void *data, size_t size) {
+        terminalWrite(data, size);
+    }) buffwriter;
     int row;
     for (; row < erows; ++row, address += cols)
     {
-        // '\n' could count as a character, avoid using it
+        // '\n' counts as a character (on conhost), avoid using it
         terminalCursor(0, row + 1);
         
+        buffwriter.clear();
+        
         string addr = formatAddress(txtbuf, address, addspacing, session.rc.address_type);
-        size_t w = terminalWrite(addr, " "); // row address + spacer
+        //size_t w = terminalWrite(addr, " "); // row address + spacer
+        buffwriter.put(addr);
+        buffwriter.put(" ");
         
         // Render view data
         for (int col; col < cols; ++col)
@@ -843,11 +851,12 @@ void update_view(Session *session, TerminalSize termsize)
             
             if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.data)
             {
+                buffwriter.flush;
                 // Depending where spacer is placed, invert its color earlier
                 if (i != sl0) terminalInvertColor();
-                w += terminalWrite(" "); // data-data spacer
+                /*w += */terminalWrite(" "); // data-data spacer
                 if (i == sl0) terminalInvertColor();
-                w += terminalWrite(dfmt.formatdata());
+                /*w += */terminalWrite(dfmt.formatdata());
                 terminalResetColor();
                 continue;
             }
@@ -855,32 +864,45 @@ void update_view(Session *session, TerminalSize termsize)
             // BUG: When i == viewpos && we have selection, cursor renders
             bool highlight = i == viewpos && panel == PanelType.data;
             
-            w += terminalWrite(" "); // data-data spacer
+            //w += terminalWrite(" "); // data-data spacer
+            buffwriter.put(" ");
             
-            if (highlight) terminalInvertColor();
+            if (highlight)
+            {
+                buffwriter.flush();
+                terminalInvertColor();
+            }
             
             if (g_editdigit && highlight) // apply current edit at position
             {
                 dfmt.skip();
-                
-                w += terminalWrite(
-                    formatData(txtbuf[], g_editbuf.ptr, g_editbuf.length, session.rc.data_type)
+                /*w += */terminalWrite(
+                    formatData(txtbuf, g_editbuf.ptr, g_editbuf.length, session.rc.data_type)
                 );
             }
             else if (i < readlen) // apply data
             {
-                w += terminalWrite(dfmt.formatdata());
+                //w += terminalWrite(dfmt.formatdata());
+                if (highlight)
+                    terminalWrite(dfmt.formatdata());
+                else
+                    buffwriter.put(dfmt.formatdata());
             }
             else // no data, print spacer
             {
-                w += terminalWriteChar(' ', datawidth);
+                //w += terminalWriteChar(' ', datawidth);
+                if (highlight)
+                    terminalWriteChar(' ', datawidth);
+                else
+                    buffwriter.put(' ', datawidth);
             }
             
             if (highlight) terminalResetColor();
         }
         
         // data-text spacer
-        w += terminalWrite("  ");
+        //w += terminalWrite("  ");
+        buffwriter.put(' ', 2);
         
         // Render character data
         for (int col; col < cols; ++col)
@@ -889,41 +911,62 @@ void update_view(Session *session, TerminalSize termsize)
             
             if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.text)
             {
+                buffwriter.flush();
                 terminalInvertColor();
                 string c = transcode(result[i], session.rc.charset);
-                w += terminalWrite(c ? c : ".");
+                /*w += */terminalWrite(c ? c : ".");
                 terminalResetColor();
                 continue;
             }
             
             bool highlight = i == viewpos && panel == PanelType.text;
             
-            if (highlight) terminalInvertColor();
+            if (highlight)
+            {
+                buffwriter.flush();
+                terminalInvertColor();
+            }
             
             if (i < readlen)
             {
                 // NOTE: Escape codes do not seem to be a worry with tests
                 string c = transcode(result[i], session.rc.charset);
-                w += terminalWrite(c ? c : ".");
+                //w += terminalWrite(c ? c : ".");
+                if (highlight)
+                    terminalWrite(c ? c : ".");
+                else
+                    buffwriter.put(c ? c : ".");
             }
             else // no data
             {
-                w += terminalWrite(" ");
+                //w += terminalWrite(" ");
+                if (highlight)
+                    terminalWrite(" ");
+                else
+                    buffwriter.put(' ', 1);
             }
             
             if (highlight) terminalResetColor();
         }
         
         // Fill rest of spaces
-        int f = termsize.columns - cast(int)w;
+        // NOTE: Commented because of other fuckery around cursor
+        //       Don't want to deal with it now and this shit is after
+        //       character column -- empty space. This is also semi-useless.
+        /*int f = termsize.columns - cast(int)buffwriter.length();
         if (f > 0)
-            terminalWriteChar(' ', f);
+            buffwriter.put(' ', f);*/
+        
+        buffwriter.flush;
     }
     
+    // NOTE: terminalWriteChar does buffering on its own
+    //       Increased stack buffer size from 32 to 128 to help
+    int tcols = termsize.columns - 1;
     for (; row < rows; ++row)
     {
         terminalCursor(0, row + 1);
-        terminalWriteChar(' ', termsize.columns);
+        terminalWriteChar(' ', tcols);
     }
     
     debug if (logging)

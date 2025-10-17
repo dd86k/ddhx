@@ -290,3 +290,143 @@ unittest
     assert(llpercentdiv(1000,  50) == 500);
     assert(llpercentdiv(1000, 100) == 1000);
 }
+
+/// Simple buffered writer structure with custom flush function
+/// Params:
+///     FLUSHER = Flush function.
+///     SIZE = Size of the buffer.
+struct BufferedWriter(void function(void*,size_t) FLUSHER, size_t SIZE = 2048)
+{
+    private ubyte[SIZE] buffer;
+    private size_t index;
+    private void function(void*,size_t) flusher = FLUSHER;
+    
+    /// Append data to the buffer
+    /// Automatically flushes if buffer would overflow
+    void put(scope const(ubyte)[] data)
+    {
+        if (data.length > SIZE)
+        {
+            flush();
+            flusher(cast(void*)data.ptr, data.length);
+            return;
+        }
+        
+        if (data.length + index > SIZE)
+        {
+            size_t avail = available();
+            buffer[index .. index + avail] = data[0 .. avail];
+            index += avail;
+            flush();
+            data = data[avail .. $];
+        }
+        
+        buffer[index .. index + data.length] = data[];
+        index += data.length;
+    }
+    
+    /// Append a string to the buffer
+    void put(scope const(char)[] str)
+    {
+        put(cast(const(ubyte)[])str);
+    }
+    
+    void put(char c, size_t count)
+    {
+        
+        if (count == 0) return;
+        
+        // Handle large counts that exceed buffer
+        if (count > SIZE)
+        {
+            flush();
+            
+            buffer[] = c;
+            
+            while (count > SIZE)
+            {
+                flusher(buffer.ptr, SIZE);
+                count -= SIZE;
+            }
+            
+            if (count > 0)
+            {
+                flusher(buffer.ptr, count);
+            }
+            return;
+        }
+        
+        // Normal case - fits in buffer (possibly after flush)
+        if (count + index > SIZE)
+        {
+            flush();
+        }
+        
+        buffer[index .. index + count] = c;
+        index += count;
+    }
+    
+    /// Write buffered data to stdout
+    void flush()
+    {
+        if (index > 0)
+        {
+            size_t len = index;
+            index = 0;
+            flusher(buffer.ptr, len);
+        }
+    }
+    
+    /// Clear buffer without flushing
+    void clear()
+    {
+        index = 0;
+    }
+    
+    /// Returns number of bytes currently in buffer
+    size_t length() const
+    {
+        return index;
+    }
+    
+    /// Returns remaining space in buffer
+    size_t available() const
+    {
+        return SIZE - index;
+    }
+    
+    /// Returns true if buffer is empty
+    bool empty() const
+    {
+        return index == 0;
+    }
+}
+unittest
+{
+    BufferedWriter!((void *data, size_t size) {
+        assert(data);
+        assert(size == 3);
+    }, 16) buffwriter0;
+    buffwriter0.put("gay");
+    assert(buffwriter0.index == 3);
+    assert(buffwriter0.buffer[0..3] == "gay");
+    buffwriter0.flush();
+    
+    // Incoming data too large to hold into buffer
+    string str2 = "very long string that flushes once"; // 34
+    BufferedWriter!((void *data, size_t size) {
+        assert(data);
+        assert(size == 34);
+    }, 16) buffwriter1;
+    buffwriter1.put(str2);
+    assert(buffwriter1.index == 0);
+    
+    // 
+    BufferedWriter!((void *data, size_t size) {
+        assert(data);
+        assert(size == 16);
+    }, 16) buffwriter2;
+    buffwriter2.put("1234567890");
+    buffwriter2.put("1234567890");
+    assert(buffwriter2.index == 4);
+}
