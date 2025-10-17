@@ -729,11 +729,17 @@ void update_header(Session *session, TerminalSize termsize)
 {
     terminalCursor(0, 0);
     
+    import utils : BufferedWriter;
+    BufferedWriter!((void *data, size_t size) {
+        terminalWrite(data, size);
+    }) buffwriter;
+    
     // Print spacers and current address type
     string atype = addressTypeToString(session.rc.address_type);
     int prespaces = session.rc.address_spacing - cast(int)atype.length;
-    size_t l = terminalWriteChar(' ', prespaces); // Print x spaces before address type
-    l += terminalWrite(atype, " "); // print address type + spacer
+    buffwriter.put(' ', prespaces);
+    buffwriter.put(atype);
+    buffwriter.put(' ', 1);
     
     int cols = session.rc.columns;
     int cwidth = dataSpec(session.rc.data_type).spacing; // data width spec (for alignment with col headers)
@@ -741,13 +747,16 @@ void update_header(Session *session, TerminalSize termsize)
     for (int col; col < cols; ++col)
     {
         string chdr = formatAddress(buf[], col, cwidth, session.rc.address_type);
-        l += terminalWrite(" ", chdr); // spacer + column header
+        buffwriter.put(' ', 1);
+        buffwriter.put(chdr);
     }
     
     // Fill rest of upper bar with spaces
-    int rem = termsize.columns - cast(int)l - 1;
+    int rem = termsize.columns - cast(int)buffwriter.length() - 1;
     if (rem > 0)
-        terminalWriteChar(' ', rem);
+        buffwriter.put(' ', rem);
+    
+    buffwriter.flush();
 }
 
 // Render view with data on screen
