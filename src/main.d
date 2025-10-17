@@ -90,12 +90,16 @@ void printpage(string opt)
         }
         break;
     case "help-configs":
+        // TODO: Consider renaming to "help-config"
+        //       And print possible locations that configs could be found
+        //       by the system
         foreach (conf; configurations)
         {
             writeln(conf.name);
             writeln('\t', conf.description);
             writeln('\t', "Values: ", conf.availvalues);
             writeln('\t', "Default: ", conf.defaultval);
+            writeln;
         }
         break;
     case "help-debug":

@@ -247,6 +247,8 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.P,             &report_position },
     { "report-name",                "Report document name on screen",
         0,                          &report_name },
+    { "report-version",             "Report ddhx version on screen",
+        0,                          &report_version },
     { "refresh",                    "Refresh entire screen",
         Mod.ctrl|Key.L,             &refresh },
     { "autosize",                   "Automatically set column size depending of screen",
@@ -1707,6 +1709,12 @@ void report_name(Session *session, string[] args)
     }
     
     message( baseName(session.target) );
+}
+
+// Report program version on screen
+void report_version(Session *session, string[] args)
+{
+    message( DDHX_VERSION );
 }
 
 // Given parameters, suggest a number of available terminal columns.
