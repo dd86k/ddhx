@@ -35,15 +35,15 @@ version (Windows)
     import core.sys.windows.windef; // HANDLE, USHORT, DWORD
     import std.windows.syserror : WindowsException;
     private enum CP_UTF8 = 65_001;
-    // ENABLE_PROCESSED_INPUT
+    // CONSOLE_MODE_INPUT: Used for raw input (so setup and resuming)
+    // ENABLE_PROCESSED_INPUT:
     //   If set, allows the weird shift+arrow shit.
     //   If unset, captures Ctrl+C as a keystroke.
-    // Desired input if enabling input feature
     private enum CONSOLE_MODE_INPUT = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
     private __gshared HANDLE hIn, hOut;
-    private __gshared DWORD oldCP;
-    private __gshared WORD oldAttr;
-    private __gshared DWORD oldMode;
+    private __gshared DWORD oldCP; // Old CodePage
+    private __gshared WORD oldAttr; // Old console attributes
+    private __gshared DWORD oldMode; // Old console mode
 }
 else version (Posix)
 {
@@ -58,7 +58,7 @@ else version (Posix)
     import core.sys.posix.sys.types : ssize_t;
     
     private enum NULL_SIGACTION = cast(sigaction_t*)0;
-    private enum SIGWINCH = 28;
+    private enum SIGWINCH = 28; // Window resize signal
     
     // Bionic depends on the Linux system it's compiled on.
     // But Glibc and Musl have the same settings, so does Bionic.
@@ -145,6 +145,7 @@ void terminalInit(int features = 0)
         
         GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &oldMode);
         
+        // Setup "raw" input system
         if (features & TermFeat.inputSys)
         {
             // NOTE: There used to be a "hack" using CreateFileA("CONIN$", but that
@@ -160,40 +161,33 @@ void terminalInit(int features = 0)
             hIn = GetStdHandle(STD_INPUT_HANDLE);
         }
         
+        // Use alternative screen buffer
         if (features & TermFeat.altScreen)
         {
-            //
-            // Setting up stdout
-            //
-            
-            hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-            if (hOut == INVALID_HANDLE_VALUE)
-                throw new OSException("GetStdHandle");
-            
-            if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
-                throw new OSException("GetConsoleScreenBufferInfo");
-            
-            DWORD attr = void;
-            if (GetConsoleMode(hOut, &attr) == FALSE)
-                throw new OSException("GetConsoleMode");
-            
             hOut = CreateConsoleScreenBuffer(
-                GENERIC_READ | GENERIC_WRITE,    // dwDesiredAccess
-                FILE_SHARE_READ | FILE_SHARE_WRITE,    // dwShareMode
-                null,    // lpSecurityAttributes
-                CONSOLE_TEXTMODE_BUFFER,    // dwFlags
-                null,    // lpScreenBufferData
+                GENERIC_READ | GENERIC_WRITE,       // dwDesiredAccess
+                FILE_SHARE_READ | FILE_SHARE_WRITE, // dwShareMode
+                null,                               // lpSecurityAttributes
+                CONSOLE_TEXTMODE_BUFFER,            // dwFlags
+                null,                               // lpScreenBufferData
             );
             if (hOut == INVALID_HANDLE_VALUE)
                 throw new OSException("CreateConsoleScreenBuffer");
             
+            // Switch stdout to new buffer
             stdout.flush;
-            stdout.windowsHandleOpen(hOut, "wb"); // fixes using write functions
+            stdout.windowsHandleOpen(hOut, "wb"); // fixes using Phobos write functions
+            SetStdHandle(STD_OUTPUT_HANDLE, hOut); // forgot what this fixes
             
-            SetStdHandle(STD_OUTPUT_HANDLE, hOut);
-            SetConsoleScreenBufferSize(hOut, csbi.dwSize);
-            SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT);
+            // We need processed ouput to have basic shit like backspace
+            // for readln.
+            DWORD attr = void;
+            if (GetConsoleMode(hOut, &attr) == FALSE)
+                throw new OSException("GetConsoleMode");
+            if (SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT) == FALSE)
+                throw new OSException("SetConsoleMode");
             
+            // Switch to alternative screen
             if (SetConsoleActiveScreenBuffer(hOut) == FALSE)
                 throw new OSException("SetConsoleActiveScreenBuffer");
         }
@@ -207,7 +201,7 @@ void terminalInit(int features = 0)
         // LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
         oldCP = GetConsoleOutputCP();
         if (SetConsoleOutputCP(CP_UTF8) == FALSE)
-            throw new WindowsException(GetLastError());
+            throw new OSException("SetConsoleOutputCP");
         
         // Get current attributes (colors)
         GetConsoleScreenBufferInfo(hOut, &csbi);
@@ -215,6 +209,7 @@ void terminalInit(int features = 0)
     }
     else version (Posix)
     {
+        // Setup "raw" input system
         if (features & TermFeat.inputSys)
         {
             // Should it re-open tty by default?
@@ -255,6 +250,7 @@ void terminalInit(int features = 0)
                 throw new OSException("tcsetattr(STDIN_FILENO)");
         }
         
+        // Use alternative screen buffer
         if (features & TermFeat.altScreen)
         {
             // change to alternative screen buffer
@@ -732,7 +728,7 @@ size_t terminalWrite(const(void) *data, size_t size)
 size_t terminalWriteChar(int chr, int amount)
 {
     import core.stdc.string : memset;
-    enum B = 32;
+    enum B = 128;
     char[B] buf = void;
     memset(buf.ptr, chr, B); // fill buf with char
     
