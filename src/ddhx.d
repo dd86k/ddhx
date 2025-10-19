@@ -715,7 +715,7 @@ void message(A...)(string fmt, A args)
     try
     {
         g_messagebuf = format(fmt, args);
-        g_status |= UMESSAGE;
+        g_status |= UMESSAGE | USTATUSBAR;
     }
     catch (Exception ex)
     {
