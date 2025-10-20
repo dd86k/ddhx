@@ -602,7 +602,7 @@ unittest
     assert(e.undo() < 0); // No undo operations available
     
     // Redo all
-    assert(e.redo() == insert1.length) // insert1 + doc (notice: SOF edit)
+    assert(e.redo() == insert1.length); // insert1 + doc (notice: SOF edit)
     assert(e.redo() == insert1.length + data.length + insert2.length); // insert1 + doc + insert2
     assert(e.redo() < 0); // No redo operations available
 }
