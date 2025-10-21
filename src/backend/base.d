@@ -111,6 +111,9 @@ void test_replace(T : IDocumentEditor)()
     ubyte[32] buffer;
     string data0 = "test";
     e.replace(0, data0.ptr, data0.length);
+    assert(e.edited());
+    assert(e.size() == 4);
+    assert(e.view(0, buffer) == "test");
     char c = 's';
     e.replace(3, &c, char.sizeof);
     assert(e.edited());
@@ -174,22 +177,20 @@ void test_save(T : IDocumentEditor)()
     string data0 = "test";
     e.replace(0, data0.ptr, data0.length);
     
-    static immutable string path = "tmp_empty";
+    static immutable string path = "test_tmp_test0";
     try
     {
         e.save(path);
         string t = readText(path);
         if (t != data0)
-            throw new Exception(text("Got only ", t.length, " bytes"));
+            throw new Exception(text(path, ": readText(path) != data0, got: \"", t, "\""));
     }
     catch (Exception ex)
     {
         throw ex;
     }
-    finally
-    {
-        remove(path);
-    }
+    try remove(path); // remove and don't complain
+    catch (Exception) {}
 }
 
 //

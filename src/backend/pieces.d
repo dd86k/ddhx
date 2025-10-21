@@ -12,6 +12,7 @@ import document.base : IDocument;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
 import std.exception : enforce;
+import std.algorithm.comparison : min, max;
 
 // TODO: Piece coalescing
 //       Could be useful to save the last piece for each operation.
@@ -20,7 +21,9 @@ import std.exception : enforce;
 // TODO: Snapshot commit (idea to explore later)
 //       Right now, the idea is to do one edit, and save the snapshot.
 //       However, what would we do if we wanted to do multiple operations
-//       as one? (e.g., remove+replace) 
+//       as one (e.g., a patch)?
+//       Need to figure out RBTree cloning. For chunk, maybe save number
+//       of history action (e.g., 3 undos for this patch).
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
@@ -39,7 +42,7 @@ struct BufferPiece
     /// Pointer to data.
     const(void) *data;
     /// Size of the data inserted into the buffer. Must not change.
-    size_t size;
+    size_t ogsize;
 }
 
 private
@@ -62,8 +65,8 @@ struct Piece
         piece.source    = Source.buffer;
         piece.position  = position;
         piece.size      = size;
-        piece.buffer.data = data;
-        piece.buffer.size = size;
+        piece.buffer.data   = data;
+        piece.buffer.ogsize = size;
         return piece;
     }
 }
@@ -130,6 +133,8 @@ class PieceDocumentEditor : IDocumentEditor
         return this;
     }
     
+    /// Total size of document in bytes with edits.
+    /// Returns: Size of current document.
     long size()
     {
         if (snapshots.length == 0)
@@ -139,7 +144,69 @@ class PieceDocumentEditor : IDocumentEditor
     
     void save(string target)
     {
-        throw new Exception(ENOTIMPL);
+        // If new buffer without any edits.
+        if (snapshots.length == 0)
+            return;
+        // HACK: some edge case bullshit
+        //       Turn into function?
+        if (snapshot_index == 0 && basedoc is null)
+            return;
+        
+        import std.stdio : File;
+        
+        ubyte[] buffer;
+        buffer.length = 16 * 1024;
+        
+        File output = File(target, "w");
+        
+        Snapshot snapshot = currentSnapshot();
+        long previous;
+        long position;
+        foreach (index; snapshot.pieces)
+        {
+            long piece_start = previous;
+            long piece_end   = index.cumulative;
+            long read_start  = max(position, piece_start) - piece_start;
+            long read_end    = min(position + buffer.length, piece_end) - piece_start;
+            long read_length = read_end - read_start;
+            
+            size_t rdlen = cast(size_t)read_length;
+            
+            size_t want = min(buffer.length, index.piece.size);
+            
+            final switch (index.piece.source) {
+            case Source.document:
+                log("PIECE:DOCUMENT position=%d Ps=%d Pe=%d Rs=%d Re=%d Rl=%u C=%d",
+                    position,
+                    piece_start, piece_end,
+                    read_start, read_end, read_length,
+                    index.cumulative);
+                assert(basedoc); // need document
+                
+                ubyte[] res = basedoc.readAt(index.piece.position + read_start, buffer[0..want]);
+                position += res.length;
+                
+                output.rawWrite(res);
+                break;
+            case Source.buffer:
+                log("PIECE:BUFFER position=%d Ps=%d Pe=%d Rs=%d Re=%d Rl=%u C=%d",
+                    position,
+                    piece_start, piece_end,
+                    read_start, read_end, read_length,
+                    index.cumulative);
+                assert(add_buffer, "add_buffer"); // needs to be init
+                assert(add_size, "add_size");   // need data
+                assert(index.piece.buffer.data, "buffer.data"); // Need buffer pointer
+                
+                import core.stdc.string : memcpy;
+                memcpy(buffer.ptr, index.piece.buffer.data + read_start, want);
+                
+                output.rawWrite(buffer[0..want]);
+                break;
+            }
+            
+            previous = index.cumulative;
+        }
     }
     
     ubyte[] view(long position, void* buffer, size_t size)
@@ -151,6 +218,9 @@ class PieceDocumentEditor : IDocumentEditor
     {
         // If new buffer without any edits.
         if (snapshots.length == 0)
+            return [];
+        // HACK: some edge case bullshit
+        if (snapshot_index == 0 && basedoc is null)
             return [];
         
         /*
@@ -168,8 +238,9 @@ class PieceDocumentEditor : IDocumentEditor
         size_t bi; /// buffer index (for slicing)
         Tree indexes = currentSnapshot().pieces;
         long previous; /// previous piece's cumulative size
-        foreach (index; indexes[])
+        foreach (index; indexes.upperBound(IndexedPiece(position)))
         {
+            // View buffer full
             if (bi >= buffer.length)
             {
                 // TODO: Consider cutting to buffer length
@@ -185,8 +256,6 @@ class PieceDocumentEditor : IDocumentEditor
             
             long lpos = position + bi; // logical position
             size_t want = buffer.length - bi; // need to fill
-            
-            import std.algorithm.comparison : min, max;
             
             long piece_start = previous;
             long piece_end   = index.cumulative;
@@ -213,9 +282,9 @@ class PieceDocumentEditor : IDocumentEditor
                     piece_start, piece_end,
                     read_start, read_end, read_length,
                     index.cumulative);
-                assert(add_buffer); // needs to be init
-                assert(add_size);   // need data
-                assert(index.piece.buffer.data); // Need buffer pointer
+                assert(add_buffer, "add_buffer"); // needs to be init
+                assert(add_size, "add_size");   // need data
+                assert(index.piece.buffer.data, "buffer.data"); // Need buffer pointer
                 import core.stdc.string : memcpy;
                 memcpy(buffer.ptr + bi, index.piece.buffer.data + read_start, rdlen);
                 bi += rdlen;
@@ -237,20 +306,145 @@ class PieceDocumentEditor : IDocumentEditor
     
     void replace(long position, const(void)* data, size_t len)
     {
+        enforce(position >= 0, "position >= 0");
+        enforce(data, "data != NULL");
+        enforce(len,  "len > 0");
+        
         // Example overwrite operation
         //
         // Replace(P, L)
-        //     |
-        //     +--------------+
-        //     |              |
+        //      |
+        //      +-------------+
+        //      |             |
         // +-------+-------+-------+
         // | Piece | Piece | Piece |
         // +-------+-------+-------+
-        // vvvvvvvvvvvvvvvvvvvvvvvvv
-        // +---+--------------+----+
-        // |   | New piece    |    |
-        // +---+--------------+----+
-        throw new Exception(ENOTIMPL);
+        //  v v v v v v v v v v v v
+        // +----+-------------+----+
+        // | Pi | New piece   | Pi |
+        // +----+-------------+----+
+        
+        // Make piece
+        Piece piece = Piece.makebuffer( position, bufferAdd(data, len), len );
+        
+        // Optimization: No snapshots, no documents opened
+        if (snapshots.length == 0)
+        {
+            // First edit with no document needs to be at position 0.
+            enforce(position == 0, "assert: insert(position==0)");
+            
+            Snapshot snap = Snapshot( 0, len, len, new Tree(IndexedPiece(len, piece)) );
+            
+            addSnapshot(snap);
+            return;
+        }
+        
+        /// Current snapshot to work with
+        Snapshot cur_snap = currentSnapshot();
+        
+        enforce(position <= cur_snap.logical_size, "position <= current.logical_size");
+        
+        /// New snapshot to be added
+        Snapshot new_snap = Snapshot( position, position+len, cur_snap.logical_size, new Tree() );
+        
+        // Optimization: Insert at EOF, middle (new) piece needed
+        if (position == cur_snap.logical_size)
+        {
+            // Insert other pieces, need to adjust cumulative size
+            foreach (idx; cur_snap.pieces)
+                new_snap.pieces.insert(IndexedPiece(idx.cumulative, idx.piece));
+            
+            // Insert at end, no need to update nodes
+            new_snap.pieces.insert(IndexedPiece(cur_snap.logical_size+len, piece));
+            
+            addSnapshot(new_snap);
+            return;
+        }
+        
+        // Clone unaffected pieces
+        //new_snap.pieces.insert(cur_snap.pieces.lowerBound(needle));
+        
+        // Adjust logical size and get size delta
+        long overwritten = min(len, cur_snap.logical_size - position);
+        long delta = len - overwritten;
+        new_snap.logical_size += delta; // relative position
+        
+        // Let's replace affected pieces
+        long new_cumulative = position + len; /// affected cumulative size for incoming piece
+        long previous; /// previous cumulative size
+        bool inserted;
+        foreach (index; cur_snap.pieces)//.upperBound(needle))
+        {
+            // Add "left" (lower) pieces
+            if (index.cumulative < position)
+            {
+                new_snap.pieces.insert( index );
+                continue;
+            }
+            
+            // Possible situations:
+            //     |--- Replace ---|
+            // +-----------------------+
+            // | Piece                 |
+            // +-----------------------+
+            // +-----------+-----------+
+            // | Piece     | Piece     |
+            // +-----------+-----------+
+            // +---------+---+---------+
+            // | Piece   | P | Piece   |
+            // +---------+---+---------+
+            // piece start: previous
+            // piece end  : index.cumulative
+            
+            // If this piece overlaps with new piece
+            if (previous < new_cumulative && index.cumulative > position)
+            {
+                // Check for left portion of piece to cut into
+                if (previous < position)
+                {
+                    //      | Piece offset
+                    // +----v--------------+
+                    // | Piece             |
+                    // +-------------------+
+                    // ^ Position          ^ Cumulative
+                    // Keep left portion of this piece
+                    long keep = position - previous; /// size to keep, piece offset
+                    Piece left = index.piece;
+                    left.size = keep;
+                    //Piece left = Piece(index.piece.source, index.piece.position, keep);
+                    // Create trimmed left piece and insert
+                    // IndexedPiece(prevCumulative + keepSize, trimmed_left_piece)
+                    new_snap.pieces.insert(IndexedPiece(previous + keep, left));
+                }
+                
+                // If new piece wasn't inserted yet
+                if (inserted == false)
+                {
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative, piece));
+                    inserted = true;
+                }
+                
+                // Check for right portion of piece to cut into
+                // piece_end > new_piece.cumulative
+                if (index.cumulative > new_cumulative)
+                {
+                    long skip = new_cumulative - previous;
+                    long keep = index.cumulative - new_cumulative;
+                    Piece right = trimPiece(index.piece, skip, keep);
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative + keep + delta, right));
+                }
+            }
+            else // Insert almost as-is, if new piece is last, it'll need its size changed
+            {
+                new_snap.pieces.insert(IndexedPiece(index.cumulative + delta, index.piece));
+            }
+            
+            
+            previous = index.cumulative;
+        }
+        
+        // Add snapshot
+        addSnapshot(new_snap);
     }
     
     void insert(long position, const(void)* data, size_t len)
@@ -287,8 +481,8 @@ class PieceDocumentEditor : IDocumentEditor
         {
             // Insert other pieces while adjusting their cumulative size
             // RBTree will balance it out
-            foreach (idx; cur_snap.pieces)
-                new_snap.pieces.insert( IndexedPiece(idx.cumulative + len, idx.piece) );
+            foreach (index; cur_snap.pieces)
+                new_snap.pieces.insert( IndexedPiece(index.cumulative + len, index.piece) );
             
             // Insert starting piece (after adjustments to try for O(1))
             new_snap.pieces.insert( IndexedPiece(len, piece) );
@@ -300,8 +494,8 @@ class PieceDocumentEditor : IDocumentEditor
         else if (position == cur_snap.logical_size)
         {
             // Insert other pieces, need to adjust cumulative size
-            foreach (idx; cur_snap.pieces)
-                new_snap.pieces.insert(IndexedPiece(idx.cumulative, idx.piece));
+            foreach (index; cur_snap.pieces)
+                new_snap.pieces.insert(IndexedPiece(index.cumulative, index.piece));
             
             // Insert at end, no need to update nodes
             new_snap.pieces.insert(IndexedPiece(cur_snap.logical_size+len, piece));
@@ -319,18 +513,18 @@ class PieceDocumentEditor : IDocumentEditor
         3. Insert your new piece (with the added content) into the tree
         4. Rebuild/update cumulative sizes for affected nodes
         */
-        IndexedPiece previous;
+        long previous; /// previous cumulative size
         foreach (index; cur_snap.pieces)
         {
             if (index.cumulative < position) // add as-is
             {
-                previous = index;
+                previous = index.cumulative;
                 new_snap.pieces.insert( index );
                 continue;
             }
             
             // 2. Get the offset that might land within a piece
-            long piece_offset = position - previous.cumulative;
+            long piece_offset = position - previous;
             
             // 3. Insert piece, either if:
             //    (a) It needs splitting a piece or;
@@ -353,7 +547,7 @@ class PieceDocumentEditor : IDocumentEditor
                 }
                 
                 // Now, we need to insert left, new, and right pieces...
-                long cumulative = previous.cumulative + piece_offset;
+                long cumulative = previous + piece_offset;
                 new_snap.pieces.insert([
                     IndexedPiece(cumulative, left),
                     IndexedPiece(cumulative + len, piece),
@@ -362,7 +556,7 @@ class PieceDocumentEditor : IDocumentEditor
             }
             else // Insert at boundary of pieces
             {
-                new_snap.pieces.insert( IndexedPiece(previous.cumulative + len, piece) );
+                new_snap.pieces.insert( IndexedPiece(previous + len, piece) );
             }
         }
         
@@ -377,7 +571,71 @@ class PieceDocumentEditor : IDocumentEditor
     ///     len = Number of bytes to delete.
     void remove(long position, size_t len)
     {
-        throw new Exception(ENOTIMPL);
+        // Nothing to remove if there is nothing to remove!
+        if (snapshots.length == 0)
+            return;
+        
+        enforce(position >= 0, "position >= 0");
+        
+        Snapshot cur_snap = currentSnapshot();
+        
+        // Editors should avoid deleting nothing at EOF...
+        enforce(position < cur_snap.logical_size, "position <= cur_snap.logical_size");
+        
+        // Clamp removal to actual document size
+        long newlen = min(len, cur_snap.logical_size - position);
+        // Detla of size
+        long delta = len - newlen;
+        // End position
+        long end = position + len;
+        
+        Snapshot new_snap = Snapshot(position, end, cur_snap.logical_size - newlen, new Tree());
+        
+        long previous;
+        foreach (index; cur_snap.pieces)
+        {
+            long piece_start = previous;
+            long piece_end   = index.cumulative;
+            
+            // Overlaps
+            if (piece_start < end && piece_end > position)
+            {
+                // Keep left portion (before removal)
+                if (piece_start < position)
+                {
+                    // trim and insert
+                    long keep = position - previous; /// size to keep, piece offset
+                    Piece left = index.piece;
+                    left.size = keep;
+                    //Piece left = Piece(index.piece.source, index.piece.position, keep);
+                    new_snap.pieces.insert(IndexedPiece(previous + keep, left));
+                }
+                
+                // Keep right portion (after removal)
+                if (piece_end > end)
+                {
+                    // trim and insert
+                    long skip = end - previous;
+                    long keep = index.cumulative - end;
+                    Piece right = trimPiece(index.piece, skip, keep);
+                    new_snap.pieces.insert(IndexedPiece(end + keep + delta, right));
+                }
+                
+                // Middle portion gets deleted (not inserted)
+            }
+            else if (piece_end <= position)
+            {
+                new_snap.pieces.insert(index); // before removal
+            }
+            else // after removal
+            {
+                new_snap.pieces.insert(IndexedPiece(index.cumulative - len, index.piece));
+            }
+            
+            previous = index.cumulative;
+        }
+        
+        addSnapshot(new_snap);
     }
     
     /// Undo last modification.
@@ -421,6 +679,23 @@ private:
     
     static immutable string ENOTIMPL = "Not implemented";
     
+    // Optimize right-side trim operation
+    Piece trimPiece(Piece piece, long skip, long keep)
+    {
+        // NOTE: piece here is NOT ref and new instance is returned
+        piece.position += skip;
+        piece.size = keep;
+        switch (piece.source) { // Adjust piece offsets before re-inerting
+        case Source.buffer:
+            with (piece.buffer)
+                assert(data + skip <= data + ogsize, "data + skip <= data + ogsize");
+            piece.buffer.data += skip;
+            break;
+        default:
+        }
+        return piece;
+    }
+    
     /// Snapshot system
     ///
     /// When an operation is performed (overwrite, insert, delete), a new
@@ -453,11 +728,12 @@ private:
     /// Returns: Snapshot
     Snapshot currentSnapshot()
     {
-        return snapshots[ snapshot_index-1 ];
+        // Zero-check is cheap hack...
+        return snapshots[ snapshot_index == 0 ? 0 : snapshot_index-1 ];
     }
     
     /// Add snapshot to our list.
-    /// Params: New snapshot
+    /// Params: snapshot = New snapshot
     void addSnapshot(Snapshot snapshot)
     {
         if (snapshot_index < snapshots.length) // replace
@@ -559,7 +835,6 @@ unittest
     log("TEST-0002");
     
     static immutable string data = "hello";
-    
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(cast(ubyte[])data)
     );
@@ -614,412 +889,83 @@ unittest
     
     log("TEST-0003");
     
-    static immutable string data = "very long string!";
-    
+    static immutable string data = "very good string!";
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(cast(ubyte[])data)
     );
     
-    
-}
-
-/// Emulate editing an existing document
-/*
-unittest
-{
-    import document.memory : MemoryDocument;
-    
-    log("TEST-0002");
-    
-    static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
-    ];
-    enum DLEN = data.length;
-    
     ubyte[32] buffer;
     
-    scope MemoryDocument doc = new MemoryDocument(data);
-    
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(doc);
-    assert(e.edited() == false);
-    assert(e.view(0, buffer[])          == data);
-    assert(e.view(0, buffer[0..4])      == data[0..4]);
-    assert(e.view(DLEN-4, buffer[0..4]) == data[$-4..$]);
-    assert(e.size() == data.length);
-    
-    ubyte[48] buffer2;
-    assert(e.view(0,  buffer2[]) == data);
-    assert(e.view(16, buffer2[0..16]) == data[16..$]);
-    assert(e.size() == data.length);
-    
-    static immutable string edit0 = "aaaa";
-    e.replace(4, edit0.ptr, edit0.length);
+    string ovr1 = "long";
+    e.replace(5, ovr1.ptr, ovr1.length);
     assert(e.edited());
-    assert(e.view(4, buffer[0..4]) == edit0);
-    assert(e.view(0, buffer[0..4]) == data[0..4]);
-    assert(e.view(8, buffer[8..$]) == data[8..$]);
-    assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
     assert(e.size() == data.length);
-    
-    assert(e.view(0, buffer2[]) == data[0..4]~cast(ubyte[])edit0~data[8..$]);
-    assert(e.size() == data.length);
-    assert(e.view(8, buffer2[]) == data[8..$]);
-    assert(e.size() == data.length);
-    
-    static immutable string path = "tmp_doc";
-    e.save(path); // throws if it needs to, stopping tests
-    
-    // Needs to be readable after saving, obviously
-    assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
-    assert(e.size() == data.length);
-    
-    import std.file : remove;
-    remove(path);
+    assert(e.view(0, buffer) == "very long string!");
 }
 
-/// Test undo/redo
-unittest
-{
-    log("TEST-0003");
-    
-    scope PieceDocumentEditor e = new PieceDocumentEditor();
-    
-    char a = 'a';
-    e.replace(0, &a, char.sizeof);
-    char b = 'b';
-    e.replace(1, &b, char.sizeof);
-    
-    ubyte[4] buf = void;
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
-    
-    e.undo();
-    assert(e.view(0, buf[]) == "a");
-    assert(e.size() == 1);
-    e.redo();
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
-    try e.redo(); catch (Exception) {} // over
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
-    e.undo();
-    e.undo();
-    assert(e.view(0, buf[]) == []);
-    assert(e.size() == 0);
-    try e.undo(); catch (Exception) {} // over
-    assert(e.view(0, buf[]) == []);
-    assert(e.size() == 0);
-    e.redo();
-    e.redo();
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
-}
-
-/// Test undo/redo with document
+/// Remove with document
 unittest
 {
     import document.memory : MemoryDocument;
     
     log("TEST-0004");
     
-    scope MemoryDocument doc = new MemoryDocument([ 'd', 'd' ]);
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(doc);
+    static immutable string data = "very good string!";
+    scope PieceDocumentEditor e = new PieceDocumentEditor().open(
+        new MemoryDocument(cast(ubyte[])data)
+    );
     
-    ubyte[4] buf = void;
-    assert(e.view(0, buf[]) == "dd");
-    assert(e.size() == 2);
-    
-    char a = 'a';
-    e.replace(0, &a, char.sizeof);
-    char b = 'b';
-    e.replace(1, &b, char.sizeof);
-    
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
-    
-    // Undo and redo once
-    e.undo();
-    assert(e.view(0, buf[]) == "ad");
-    assert(e.size() == 2);
-    e.redo();
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
-    
-    // Overdoing redo
-    try e.redo(); catch (Exception) {}
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
-    
-    // Undo all
-    e.undo();
-    e.undo();
-    assert(e.view(0, buf[]) == "dd");
-    assert(e.size() == 2);
-    
-    // Overdoing undo
-    try e.undo(); catch (Exception) {}
-    assert(e.view(0, buf[]) == "dd");
-    assert(e.size() == 2);
-    
-    // Redo all
-    e.redo();
-    e.redo();
-    assert(e.view(0, buf[]) == "ab");
-    assert(e.size() == 2);
+    e.remove(9, " string".length);
+    assert(e.edited());
+    string result = "very good!";
+    ubyte[32] buffer;
+    assert(e.size() == result.length);
+    assert(e.view(0, buffer) == result);
 }
 
-/// Test undo/redo with larger document
-unittest
+/// Offset view
+/*unittest
 {
     import document.memory : MemoryDocument;
     
+    static immutable ubyte[] data = [ // 5 * 10 bytes
+    //  0   1   2   3   4  5  6   7   8   9
+        4,  7,  9, 13, 17, 3, 4,  5, 13, 15, // 10
+        4,  5,  8, 16, 18, 1, 2,  5,  8, 10, // 20
+        1,  3,  6, 11, 16, 1, 2,  3,  7,  9, // 30
+        2,  5, 10, 12, 19, 4, 9, 11, 15, 16, // 40
+        3,  5,  6,  9, 10, 2, 3,  7,  8,  9, // 50
+    ];
+    scope PieceDocumentEditor e = new PieceDocumentEditor().open(
+        new MemoryDocument(data)
+    );
+    
     log("TEST-0005");
     
-    // new operator memset's to 0
-    enum DOC_SIZE = 8000;
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(new ubyte[DOC_SIZE]));
+    ubyte b = 0xff;
+    e.replace(10, &b, ubyte.sizeof);
     
-    ubyte[32] buf = void;
-    assert(e.view(40, buf[0..4]) == [ 0, 0, 0, 0 ]);
-    assert(e.size() == 8000);
-    
-    char a = 0xff;
-    e.replace(41, &a, char.sizeof);
-    e.replace(42, &a, char.sizeof);
-    assert(e.view(40, buf[0..4]) == [ 0, 0xff, 0xff, 0 ]);
-    assert(e.size() == 8000);
-    
-    e.undo();
-    assert(e.view(40, buf[0..4]) == [ 0, 0xff, 0, 0 ]);
-    assert(e.size() == 8000);
-    
-    e.undo();
-    assert(e.view(40, buf[0..4]) == [ 0, 0, 0, 0 ]);
-    assert(e.size() == 8000);
-    
-    e.replace(41, &a, char.sizeof);
-    e.replace(42, &a, char.sizeof);
-    e.replace(43, &a, char.sizeof);
-    e.replace(44, &a, char.sizeof);
-    e.undo();
-    e.undo();
-    e.undo();
-    e.undo();
-    assert(e.view(40, buf[0..8]) == [ 0, 0, 0, 0, 0, 0, 0, 0 ]);
-    assert(e.size() == 8000);
+    e.insert(
 }
 
-/// Test appending to a document with undo/redo
+/// Mix replace, insert, and deletions
 unittest
 {
     import document.memory : MemoryDocument;
     
     log("TEST-0006");
     
-    static immutable ubyte[] data = [ 0xf2, 0x49, 0xe6, 0xea ];
+    static immutable string data = "very good string!";
+    scope PieceDocumentEditor e = new PieceDocumentEditor().open(
+        new MemoryDocument(cast(ubyte[])data)
+    );
     
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(data));
     
-    ubyte d = 0xff;
-    e.replace(data.length    , &d, ubyte.sizeof);
-    e.replace(data.length + 1, &d, ubyte.sizeof);
-    e.replace(data.length + 2, &d, ubyte.sizeof);
-    e.replace(data.length + 3, &d, ubyte.sizeof);
-    
-    ubyte[32] buf = void;
-    assert(e.view(0, buf[0..8]) == [ 0xf2, 0x49, 0xe6, 0xea, 0xff, 0xff, 0xff, 0xff ]);
-}
-
-/// Test reading past edited chunk sizes
-unittest
-{
-    import document.memory : MemoryDocument;
-    
-    log("TEST-0007");
-    
-    static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
-    ];
-    
-    // Chunk size of 16 forces .view() to get more information beyond
-    // edited chunk by reading the original doc for the view buffer.
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(data));
-    
-    ubyte[32] buf = void;
-    assert(e.view(0, buf) == data);
-    
-    ubyte ff = 0xff;
-    e.replace(19, &ff, ubyte.sizeof);
-    assert(e.view(0, buf) == [ // 32 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf, // <-+- doc
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <-´
-        0x0e, 0xce, 0xb1, 0xff, 0xe4, 0xc6, 0xd4, 0x36, // <-+- chunk
-        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41, // <-´
-    ]);
-}
-
-/// Rendering edit chunk before source document
-unittest
-{
-    import document.memory : MemoryDocument;
-    
-    log("TEST-0008");
-    
-    static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
-    ];
-    
-    // Chunk size of 16 forces .view() to get more information beyond
-    // edited chunk by reading the original doc for the view buffer.
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(data));
-    
-    ubyte[32] buf = void;
-    assert(e.view(0, buf) == data);
-    
-    ubyte ff = 0xff;
-    e.replace(3, &ff, ubyte.sizeof);
-    assert(e.view(0, buf) == [ // 32 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xff, 0x32, 0xb0, 0x90, 0xcf, // <-+- chunk
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <-´
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36, // <-+- doc
-        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41, // <-´
-    ]);
-}
-
-/// Rendering source document before chunk mid-view
-///
-/// This is an issue when the view function starts with the source
-/// document, but doesn't see the edited chunk ahead, skipping it
-/// entirely, especially with an offset
-unittest
-{
-    import document.memory : MemoryDocument;
-    
-    log("TEST-0009");
-    
-    static immutable ubyte[] data = [ // 32 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0x41,
-    ];
-    
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(data));
-    
-    ubyte[32] buf = void;
-    assert(e.view(16, buf[0..16]) == data[16..$]);
-    
-    ubyte ff = 0xff;
-    e.replace(cast(int)data.length-1, &ff, ubyte.sizeof);
-    
-    assert(e.view(16,  buf[0..16]) == [
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36, // <- doc
-        0xe1, 0xe6, 0xd5, 0xb7, 0xad, 0xe3, 0x16, 0xff, // <- chunk
-    ]);
-}
-
-/// Append data to end of chunk with a source document
-unittest
-{
-    import document.memory : MemoryDocument;
-    
-    log("TEST-0010");
-    
-    static immutable ubyte[] data = [ // 28 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 
-    ];
-    
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(data));
-    
-    ubyte[32] buf = void;
-    assert(e.view(16, buf[0..16]) == data[16..$]);
-    
-    ubyte ff = 0xff;
-    e.replace(cast(int)data.length, &ff, ubyte.sizeof);
-    
-    assert(e.view(0,  buf) == [ // 29 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 0xff
-    ]);
-    assert(e.view(8,  buf) == [
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 0xff
-    ]);
-    assert(e.view(16,  buf) == [
-        0x0e, 0xce, 0xb1, 0x6b, 0xe4, 0xc6, 0xd4, 0x36,
-        0xe1, 0xe6, 0xd5, 0xb7, 0xff
-    ]);
-    assert(e.view(24,  buf) == [
-        0xe1, 0xe6, 0xd5, 0xb7, 0xff
-    ]);
-}
-
-// TODO: TEST-0011 (test disabled until relevant)
-//       Editor can only edit single bytes right now...
-//       If you enable this test, it might pass and silently fail
-/// Replace data across two chunks
-unittest
-{
-    import document.memory : MemoryDocument;
-    
-    log("TEST-0011");
-    
-    static immutable ubyte[] data = [ // 16 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90, 0xcf,
-        0x96, 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a,
-    ];
-    
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(data));
-    
-    ubyte[16] buffer;
-    
-    string s = "hi";
-    e.replace(7, s.ptr, s.length);
-    assert(e.view(0, buffer) == [ // 16 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90,  'h', // <- chunk 0
-         'i', 0xf6, 0xba, 0x97, 0x34, 0x2b, 0x5d, 0x0a, // <- chunk 1
-    ]);
-}
-
-// TODO: TEST-0012 (test disabled until relevant)
-//       Editor can only edit single bytes right now...
-/// Append to a chunk so much it overflows to another chunk
-unittest
-{
-    import document.memory : MemoryDocument;
-    
-    log("TEST-0012");
-    
-    static immutable ubyte[] data = [ // 7 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0, 0x90,
-    ];
-    
-    scope PieceDocumentEditor e = new PieceDocumentEditor().attach(new MemoryDocument(data));
-    
-    ubyte[16] buffer;
-    
-    string s = "hello";
-    e.replace(6, s.ptr, s.length);
-    assert(e.view(0, buffer) == [ // 16 bytes, 8 bytes per row
-        0xf2, 0x49, 0xe6, 0xea, 0x32, 0xb0,  'h',  'e', // <- chunk 0
-         'l',  'l',  'l',  'o'                          // <- chunk 1
-    ]);
 }*/
 
 /// Common tests
-//unittest { editorTests!ChunkDocumentEditor(); }
+unittest
+{
+    import backend.base : editorTests;
+    editorTests!PieceDocumentEditor();
+}
