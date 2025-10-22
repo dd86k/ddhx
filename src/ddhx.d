@@ -254,6 +254,8 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.L,             &refresh },
     { "autosize",                   "Automatically set column size depending of screen",
         Mod.alt|Key.R,              &autosize },
+    { "export-range",               "Export selected range to file",
+        0,                          &export_range },
     { "set",                        "Set a configuration value",
         0,                          &set },
     { "bind",                       "Bind a shortcut to an action",
@@ -1795,6 +1797,50 @@ void autosize(Session *session, string[] args)
     TerminalSize tsize = terminalSize();
     
     session.rc.columns = suggestcols(tsize.columns, adspacing, spec.spacing);
+}
+
+// Export selected range to file
+void export_range(Session *session, string[] args)
+{
+    long sel_start = void, sel_end = void;
+    long sellen = selection(session, sel_start, sel_end);
+    if (sellen <= 0)
+        throw new Exception("Need selection");
+    
+    // TODO: Check if target exists
+    string name = arg(args, 0, "Name: ");
+    if (name is null || name.length == 0)
+        return;
+    
+    import std.stdio : File;
+    File output = File(name, "w");
+    
+    // Re-using search alloc func because lazy
+    enum EXPORT_SIZE = 4096; // export buffer, tend to be smaller
+    import core.stdc.stdlib : malloc, free;
+    ubyte[] buf = (cast(ubyte*)malloc(EXPORT_SIZE))[0..EXPORT_SIZE];
+    if (buf is null)
+        throw new Exception("error: Out of memory");
+    scope(exit) free(buf.ptr);
+    
+    // HACK: end is inclusive. D ranges are not.
+    sel_end++;
+    
+    import std.algorithm.comparison : min;
+    while (sel_start < sel_end)
+    {
+        long left = sel_end - sel_start;
+        long want = min(left, EXPORT_SIZE);
+        ubyte[] res = session.editor.view(sel_start, buf.ptr, cast(size_t)want);
+        
+        output.rawWrite(res);
+        sel_start += EXPORT_SIZE;
+    }
+    
+    // Unfortunately to force the message through
+    unselect(session);
+    
+    message("Saved as %s", name); // confirmation
 }
 
 // Save changes
