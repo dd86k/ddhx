@@ -65,7 +65,7 @@ struct Keybind
 }
 
 private
-struct Selection
+struct CurrentSelection
 {
     long anchor;    /// original position when started
     int status;
@@ -84,7 +84,7 @@ struct Session
     IDocumentEditor editor;
     
     /// Active selection
-    Selection selection;
+    CurrentSelection selection;
     
     /// Logical position at the start of the view.
     long position_view;
@@ -821,10 +821,9 @@ void update_view(Session *session, TerminalSize termsize)
     debug if (logging) sw.start();
     
     // Selection stuff
-    long select_start = void, select_end = void;
-    cast(void)selection(session, select_start, select_end); // Size not used...
-    int sl0   = cast(int)(select_start - address);
-    int sl1   = cast(int)(select_end   - address);
+    Selection sel = selection(session);
+    int sl0   = cast(int)(sel.start - address);
+    int sl1   = cast(int)(sel.end   - address);
     
     // Render view
     char[32] txtbuf = void;
@@ -1001,21 +1000,19 @@ void update_status(Session *session, TerminalSize termsize)
     char[32] buf0 = void; // cursor address or selection start buffer
     char[32] buf1 = void; // selection end buffer
     
-    long select_start = void, select_end = void;
-    
     // If there is a pending message, print that.
     // Otherwise, print status bar using the message buffer space.
-    long selectlen = selection(session, select_start, select_end);
+    Selection sel = selection(session);
     string msg = void;
     if (g_status & UMESSAGE)
     {
         msg = g_messagebuf;
     }
-    else if (selectlen)
+    else if (sel)
     {
-        string start = formatAddress(buf0, select_start, 1, session.rc.address_type);
-        string end   = formatAddress(buf1, select_end,   1, session.rc.address_type);
-        msg = cast(string)sformat(statusbuf, "SEL: %s-%s (%d Bytes)", start, end, selectlen);
+        string start = formatAddress(buf0, sel.start, 1, session.rc.address_type);
+        string end   = formatAddress(buf1, sel.end,   1, session.rc.address_type);
+        msg = cast(string)sformat(statusbuf, "SEL: %s-%s (%d Bytes)", start, end, sel.length);
     }
     else
     {
@@ -1302,28 +1299,26 @@ void move_skip_backward(Session *session, string[] args)
     if (session.position_cursor == session.editor.size())
         --curpos;
     
-    // Use selection if active, otherwise use current element highlighted by
-    // cursor
+    // Selection: needle
     ubyte[] needle;
-    long select_start = void, select_end = void;
-    long selectlen = selection(session, select_start, select_end);
-    if (selectlen)
+    Selection sel = selection(session);
+    if (sel)
     {
-        if (selectlen > MiB!256)
+        if (sel.length > MiB!256)
             throw new Exception("Selection too big");
-        needle.length = cast(size_t)selectlen;
-        needle = session.editor.view(select_start, needle);
-        if (needle.length < selectlen)
+        needle.length = cast(size_t)sel.length;
+        needle = session.editor.view(sel.start, needle);
+        if (needle.length < sel.length)
             return; // Nothing to do
     }
-    else // by cursor position
+    else // data by cursor position
     {
         // Get current element
         ubyte buffer = void;
         needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
         if (needle.length < ubyte.sizeof)
             return; // Nothing to do
-        select_start = curpos;
+        sel.start = curpos;
     }
     
     session.selection.status = 0;
@@ -1332,7 +1327,7 @@ void move_skip_backward(Session *session, string[] args)
     // In a text editor, if Ctrl+Left is hit (imagine a long line of same
     // characters) the cursor still moves to the start of the document.
     moveabs(session,
-        search(session, needle, select_start - needle.length,
+        search(session, needle, sel.start - needle.length,
             SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED));
 }
 
@@ -1355,34 +1350,32 @@ void move_skip_forward(Session *session, string[] args)
     if (curpos == docsize)
         return;
     
-    // Use selection if active, otherwise use current element highlighted by
-    // cursor
+    // Selection: Needle
     ubyte[] needle;
-    long select_start = void, select_end = void;
-    long selectlen = selection(session, select_start, select_end);
-    if (selectlen)
+    Selection sel = selection(session);
+    if (sel)
     {
-        if (selectlen > MiB!256)
+        if (sel.length > MiB!256)
             throw new Exception("Selection too big");
-        needle.length = cast(size_t)selectlen;
-        needle = session.editor.view(select_start, needle);
-        if (needle.length < selectlen)
+        needle.length = cast(size_t)sel.length;
+        needle = session.editor.view(sel.start, needle);
+        if (needle.length < sel.length)
             return; // Nothing to do
     }
-    else // by cursor position
+    else // data by cursor position
     {
         // Get current element
         ubyte buffer = void;
         needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
         if (needle.length < ubyte.sizeof)
             return; // Nothing to do
-        select_start = curpos;
+        sel.start = curpos;
     }
     
     session.selection.status = 0;
     
     moveabs(session,
-        search(session, needle, select_start + needle.length,
+        search(session, needle, sel.start + needle.length,
             SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED));
 }
 
@@ -1416,9 +1409,8 @@ void view_down(Session *session, string[] args)
 
 void delete_front(Session *session, string[] args)
 {
-    long sl0 = void, sl1 = void;
-    long slz = selection(session, sl0, sl1);
-    if (slz)
+    Selection sel = selection(session);
+    if (sel)
     {
         throw new Exception("Not implemented");
     }
@@ -1433,9 +1425,8 @@ void delete_front(Session *session, string[] args)
 
 void delete_back(Session *session, string[] args)
 {
-    long sl0 = void, sl1 = void;
-    long slz = selection(session, sl0, sl1);
-    if (slz)
+    Selection sel = selection(session);
+    if (sel)
     {
         throw new Exception("Not implemented");
     }
@@ -1452,56 +1443,68 @@ void delete_back(Session *session, string[] args)
 // Selection
 //
 
+/// Selection information
+struct Selection
+{
+    long start, end, length;
+    alias length this;
+}
+
 // Force unselection
 void unselect(Session *session)
 {
     session.selection.status = 0;
 }
 
-// Get selection start, end, and its size
-long selection(Session *session, ref long start, ref long end)
+// Get selection information
+Selection selection(Session *session)
 {
     import std.algorithm.comparison : min, max;
     
+    Selection sel;
     if (session.selection.status == 0)
-        return 0;
+        return sel;
     
-    start = min(session.selection.anchor, session.position_cursor);
-    end   = max(session.selection.anchor, session.position_cursor);
+    sel.start = min(session.selection.anchor, session.position_cursor);
+    sel.end   = max(session.selection.anchor, session.position_cursor);
     
-    if (end >= session.editor.size())
-        end--;
+    if (sel.end >= session.editor.size())
+        sel.end--;
     
-    // Return long, functions may use it differently.
-    return end - start + 1;
+    // End marker is inclusive
+    sel.length = sel.end - sel.start + 1;
+    
+    return sel;
 }
 unittest
 {
     Session session;
     
     import backend.dummy : DummyDocumentEditor;
-    session.editor = new DummyDocumentEditor();
+    session.editor = new DummyDocumentEditor(); // needed for length
     
     // Not selected
-    long sl0, sl1;
-    assert(selection(&session, sl0, sl1) == 0);
+    Selection sel = selection(&session);
+    assert(sel == 0);
     
     // Emulate a selection where cursor is behind anchor
     session.selection.status = 1;
     session.selection.anchor = 4;
     session.position_cursor  = 2;
     
-    assert(selection(&session, sl0, sl1) == 3);
-    assert(sl0 == 2);
-    assert(sl1 == 4);
+    sel = selection(&session);
+    assert(sel.length == 3);
+    assert(sel.start  == 2);
+    assert(sel.end    == 4);
     
     // Emulate a selection where only one element is selected
     session.selection.status = 1;
     session.selection.anchor = 2;
     session.position_cursor  = 2;
-    assert(selection(&session, sl0, sl1) == 1);
-    assert(sl0 == 2);
-    assert(sl1 == 2);
+    sel = selection(&session);
+    assert(sel.length == 1);
+    assert(sel.start  == 2);
+    assert(sel.end    == 2);
 }
 
 // Expand selection backward
@@ -1645,7 +1648,7 @@ union B // Used in goto for now.
     ubyte   u8;
     alias buf this;
 }
-// 
+// Go to position in document
 void goto_(Session *session, string[] args)
 {
     import utils : scan;
@@ -1654,24 +1657,23 @@ void goto_(Session *session, string[] args)
     bool absolute = void;
     
     // Selection
-    long sel0 = void, sel1 = void;
-    long sellen = selection(session, sel0, sel1);
-    if (sellen)
+    Selection sel = selection(session);
+    if (sel)
     {
-        if (sellen > long.sizeof)
+        if (sel.length > long.sizeof)
             throw new Exception("Selection too large");
         
-        B b; // Let it .init (eq. to {0})
+        B b; // = {0}
         
-        ubyte[] sel = session.editor.view(sel0, b.ptr, cast(size_t)sellen);
+        ubyte[] res = session.editor.view(sel.start, b.ptr, cast(size_t)sel.length);
         
         absolute = true;
         
-        if (sel.length > uint.sizeof) // same as selection length but.. size_t
+        if (res.length > uint.sizeof) // same as selection length but.. size_t
             position = b.u64;
-        else if (sel.length > ushort.sizeof)
+        else if (res.length > ushort.sizeof)
             position = b.u32;
-        else if (sel.length > ubyte.sizeof)
+        else if (res.length > ubyte.sizeof)
             position = b.u16;
         else
             position = b.u8;
@@ -1702,11 +1704,7 @@ void goto_(Session *session, string[] args)
             if (off.length <= 1) // just '%'
                 throw new Exception("Need percentage number");
             
-            // Didn't want to over-complicate myself with floats, so int it is for now.
-            // Also, there are functions to do integer division with rem.
-            //
-            // Otherwise, I'd have to deal with floats, single-precision (float) only
-            // have a mantissa of 23 bits and doubles have a mantissa of 53 bits.
+            // TODO: Support double (mantissa issue isn't real)
             uint per = to!uint(off[1..$]);
             if (per > 100) // Yeah we can't go over the document
                 throw new Exception("Percentage cannot be over 100");
@@ -1733,15 +1731,13 @@ void goto_(Session *session, string[] args)
 void report_position(Session *session, string[] args)
 {
     long docsize = session.editor.size();
-    long select_start = void, select_end = void;
-    long selectlen = selection(session, select_start, select_end);
-    if (selectlen)
+    Selection sel = selection(session);
+    if (sel)
     {
         message("%d-%d B (%f%%-%f%%)",
-            select_start,
-            select_end,
-            cast(float)select_start / docsize * 100,
-            cast(float)select_end   / docsize * 100);
+            sel.start, sel.end,
+            cast(float)sel.start / docsize * 100,
+            cast(float)sel.end   / docsize * 100);
         return;
     }
     long curpos  = session.position_cursor;
@@ -1802,9 +1798,8 @@ void autosize(Session *session, string[] args)
 // Export selected range to file
 void export_range(Session *session, string[] args)
 {
-    long sel_start = void, sel_end = void;
-    long sellen = selection(session, sel_start, sel_end);
-    if (sellen <= 0)
+    Selection sel = selection(session);
+    if (sel.length == 0)
         throw new Exception("Need selection");
     
     // TODO: Check if target exists
@@ -1824,17 +1819,17 @@ void export_range(Session *session, string[] args)
     scope(exit) free(buf.ptr);
     
     // HACK: end is inclusive. D ranges are not.
-    sel_end++;
+    sel.end++;
     
     import std.algorithm.comparison : min;
-    while (sel_start < sel_end)
+    while (sel.start < sel.end)
     {
-        long left = sel_end - sel_start;
+        long left = sel.end - sel.start;
         long want = min(left, EXPORT_SIZE);
-        ubyte[] res = session.editor.view(sel_start, buf.ptr, cast(size_t)want);
+        ubyte[] res = session.editor.view(sel.start, buf.ptr, cast(size_t)want);
         
         output.rawWrite(res);
-        sel_start += EXPORT_SIZE;
+        sel.start += EXPORT_SIZE;
     }
     
     // Unfortunately to force the message through
@@ -2087,30 +2082,29 @@ enum SEARCH_LIMIT = KiB!128;
 //
 void find(Session *session, string[] args)
 {
-    long select_start = void, select_end = void;
-    long selectlen = selection(session, select_start, select_end);
+    Selection sel = selection(session);
     
     // If arguments: Take those before selection
     if (args && args.length > 0)
     {
         g_needle = pattern(session.rc.charset, args);
-        select_start = session.position_cursor + g_needle.length;
+        sel.start = session.position_cursor + g_needle.length;
     }
-    else if (selectlen) // selection
+    else if (sel) // selection
     {
-        if (selectlen > SEARCH_LIMIT)
+        if (sel.length > SEARCH_LIMIT)
             throw new Exception("Selection too big");
-        g_needle.length = cast(size_t)selectlen;
-        g_needle = session.editor.view(select_start, g_needle);
-        if (g_needle.length < selectlen)
+        g_needle.length = cast(size_t)sel.length;
+        g_needle = session.editor.view(sel.start, g_needle);
+        if (g_needle.length < sel.length)
             return; // Nothing to do
-        select_start += g_needle.length;
+        sel.start += g_needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
     
     unselect(session);
-    long p = search(session, g_needle, select_start, 0);
+    long p = search(session, g_needle, sel.start, 0);
     if (p < 0)
         throw new Exception("Not found");
     
@@ -2123,30 +2117,29 @@ void find(Session *session, string[] args)
 //
 void find_back(Session *session, string[] args)
 {
-    long select_start = void, select_end = void;
-    long selectlen = selection(session, select_start, select_end);
+    Selection sel = selection(session);
     
     // If arguments: Take those before selection
     if (args && args.length > 0)
     {
         g_needle = pattern(session.rc.charset, args);
-        select_start = session.position_cursor - g_needle.length;
+        sel.start = session.position_cursor - g_needle.length;
     }
-    else if (selectlen) // selection
+    else if (sel) // selection
     {
-        if (selectlen > SEARCH_LIMIT)
+        if (sel.length > SEARCH_LIMIT)
             throw new Exception("Selection too big");
-        g_needle.length = cast(size_t)selectlen;
-        g_needle = session.editor.view(select_start, g_needle);
-        if (g_needle.length < selectlen)
-            return; // Nothing to do
-        select_start -= g_needle.length;
+        g_needle.length = cast(size_t)sel.length;
+        g_needle = session.editor.view(sel.start, g_needle);
+        if (g_needle.length < sel.length)
+            return; // Nothing to do, couldn't read all of needle
+        sel.start -= g_needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
     
     unselect(session);
-    long p = search(session, g_needle, select_start, SEARCH_REVERSE);
+    long p = search(session, g_needle, sel.start, SEARCH_REVERSE);
     if (p < 0)
         throw new Exception("Not found");
     
