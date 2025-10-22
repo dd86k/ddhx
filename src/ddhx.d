@@ -7,14 +7,15 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-import std.string;
-import os.terminal;
+import backend.base : IDocumentEditor;
 import configuration;
 import doceditor;
 import logger;
-import transcoder;
+import os.terminal;
+import platform : assertion;
 import std.conv : text;
-import backend.base : IDocumentEditor;
+import std.string;
+import transcoder;
 
 // TODO: Find a way to dump session data to be able to resume later
 //       Session/project whatever
@@ -1102,9 +1103,8 @@ long search(Session *session, ubyte[] needle, long position, int flags)
 {
     import core.stdc.stdlib : malloc, free;
     import core.stdc.string : memcmp;
-    import std.exception : enforce;
     
-    enforce(needle, "Need needle");
+    assertion(needle, "Need needle");
     
     // Throwing on malloc failure is weird... but uses less memory than a search buffer
     ubyte[] hay = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];

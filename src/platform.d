@@ -5,6 +5,21 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module platform;
 
+import std.exception : enforce;
+
+/// Soft assertion exception class.
+///
+/// Mostly used to prefix "assert: " to messages.
+public class Assert : Exception
+{
+    this(string msg, // @suppress(dscanner.style.undocumented_declaration)
+        string _file = __FILE__, size_t _line = __LINE__)
+    {
+        super("assert: "~msg, _file, _line);
+    }
+}
+public alias assertion = enforce!Assert;
+
 // Target architecture
 version (X86)
     enum TARGET_PLATFORM = "x86";	/// Platform string

@@ -9,9 +9,9 @@ module backend.pieces;
 import std.algorithm.comparison : min, max;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
-import std.exception : enforce;
 import backend.base : IDocumentEditor;
 import document.base : IDocument;
+import platform : assertion;
 import logger;
 
 // TODO: Piece coalescing
@@ -306,9 +306,9 @@ class PieceDocumentEditor : IDocumentEditor
     
     void replace(long position, const(void)* data, size_t len)
     {
-        enforce(position >= 0, "position >= 0");
-        enforce(data, "data != NULL");
-        enforce(len,  "len > 0");
+        assertion(position >= 0, "position >= 0");
+        assertion(data, "data != NULL");
+        assertion(len,  "len > 0");
         
         // Example overwrite operation
         //
@@ -331,7 +331,7 @@ class PieceDocumentEditor : IDocumentEditor
         if (snapshots.length == 0)
         {
             // First edit with no document needs to be at position 0.
-            enforce(position == 0, "assert: insert(position==0)");
+            assertion(position == 0, "insert(position==0)");
             
             Snapshot snap = Snapshot( 0, len, len, new Tree(IndexedPiece(len, piece)) );
             
@@ -342,7 +342,7 @@ class PieceDocumentEditor : IDocumentEditor
         /// Current snapshot to work with
         Snapshot cur_snap = currentSnapshot();
         
-        enforce(position <= cur_snap.logical_size, "position <= current.logical_size");
+        assertion(position <= cur_snap.logical_size, "position <= current.logical_size");
         
         /// New snapshot to be added
         Snapshot new_snap = Snapshot( position, position+len, cur_snap.logical_size, new Tree() );
@@ -453,9 +453,9 @@ class PieceDocumentEditor : IDocumentEditor
     
     void insert(long position, const(void)* data, size_t len)
     {
-        enforce(position >= 0, "position >= 0");
-        enforce(data, "data != NULL");
-        enforce(len,  "len > 0");
+        assertion(position >= 0, "position >= 0");
+        assertion(data, "data != NULL");
+        assertion(len,  "len > 0");
         
         // Make piece
         Piece piece = Piece.makebuffer( position, bufferAdd(data, len), len );
@@ -464,7 +464,7 @@ class PieceDocumentEditor : IDocumentEditor
         if (snapshots.length == 0)
         {
             // First edit with no document needs to be at position 0.
-            enforce(position == 0, "assert: insert(position==0)");
+            assertion(position == 0, "insert(position==0)");
             
             Snapshot snap = Snapshot( 0, len, len, new Tree(IndexedPiece(len, piece)) );
             
@@ -475,7 +475,7 @@ class PieceDocumentEditor : IDocumentEditor
         /// Current snapshot to work with
         Snapshot cur_snap = currentSnapshot();
         
-        enforce(position <= cur_snap.logical_size, "position <= current.logical_size");
+        assertion(position <= cur_snap.logical_size, "position <= current.logical_size");
         
         /// New snapshot to be added
         Snapshot new_snap = Snapshot( position, position+len, cur_snap.logical_size+len, new Tree() );
@@ -579,12 +579,12 @@ class PieceDocumentEditor : IDocumentEditor
         if (snapshots.length == 0)
             return;
         
-        enforce(position >= 0, "position >= 0");
+        assertion(position >= 0, "position >= 0");
         
         Snapshot cur_snap = currentSnapshot();
         
         // Editors should avoid deleting nothing at EOF...
-        enforce(position < cur_snap.logical_size, "position <= cur_snap.logical_size");
+        assertion(position < cur_snap.logical_size, "position <= cur_snap.logical_size");
         
         // Clamp removal to actual document size
         long newlen = min(len, cur_snap.logical_size - position);
@@ -765,17 +765,17 @@ private:
         {
             // Cumulative needs to be monotonically increasing, although
             // redblack tree handles this
-            enforce(previous_cumulative < indexed.cumulative,
+            assertion(previous_cumulative < indexed.cumulative,
                 text("Cumulative mismatch (piece#=", piece_count, "): ",
                     previous_cumulative, " >= ", indexed.cumulative));
             
             // Piece size must be set
-            enforce(indexed.piece.size > 0,
+            assertion(indexed.piece.size > 0,
                 text("Piece size unset (piece#=", piece_count, ")"));
             
             // Check for gap introduced by piece size vs. indexed cumulative size
             long piece_cumulative = previous_cumulative + indexed.piece.size;
-            enforce(indexed.cumulative == piece_cumulative,
+            assertion(indexed.cumulative == piece_cumulative,
                 text("Gap found (piece#=", piece_count, "): ",
                     indexed.cumulative, " != ", piece_cumulative));
             
@@ -785,12 +785,12 @@ private:
         }
         
         // Last cumulative must match logical size of snapshot
-        enforce(previous_cumulative == snapshot.logical_size,
+        assertion(previous_cumulative == snapshot.logical_size,
             text("Size mismatch: ",
                 previous_cumulative, " == ", snapshot.logical_size));
         
         // Cumulative piece size must match logical size of snapshot
-        enforce(total_size == snapshot.logical_size,
+        assertion(total_size == snapshot.logical_size,
             text("Total size mismatch: ",
                 total_size, " != ", snapshot.logical_size));
     }

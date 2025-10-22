@@ -17,7 +17,7 @@ module backend.chunks;
 //         are unique. (based on their position)
 
 import std.container.array  : Array;
-import std.exception : enforce;
+import platform : assertion;
 import core.stdc.string : memcpy;
 import core.stdc.stdlib : malloc, free;
 import utils : align64down;
@@ -142,8 +142,8 @@ private:
         
         // NOTE: System needs data
         //       data-less inserts (e.g., 1000 of this type) are not supported
-        enforce(patch.newdata, "assert: patch.newdata");
-        //enforce(patch.olddata, "assert: patch.olddata");
+        assertion(patch.newdata, "patch.newdata");
+        //assertion(patch.olddata, "patch.olddata");
         
         // Copy its data into buffers
         void *buf0 = patch_buffer.ptr + patch_used;
@@ -228,7 +228,7 @@ class ChunkManager
     {
         // Using malloc eases memory management
         void *data = malloc(param_size);
-        enforce(data, "assert: ChunkManager.create:malloc");
+        assertion(data, "ChunkManager.create:malloc");
         
         long basepos = align64down(position, param_size);
         chunks[basepos] = Chunk(basepos, data, param_size, 0, 0, 0);
@@ -246,8 +246,8 @@ class ChunkManager
     // Remove chunk
     void remove(Chunk *chunk)
     {
-        enforce(chunk,      "chunk != null");
-        enforce(chunk.data, "chunk.data != null");
+        assertion(chunk,      "chunk != null");
+        assertion(chunk.data, "chunk.data != null");
         
         free(chunk.data);
         
@@ -392,8 +392,8 @@ class ChunkDocumentEditor : IDocumentEditor
         //       Using assert will stop the program completely,
         //       which would not appear in logs (if enabled).
         //       This also allows the error message to be seen.
-        enforce(target != null,    "assert: target is NULL");
-        enforce(target.length > 0, "assert: target is EMPTY");
+        assertion(target != null,    "target is NULL");
+        assertion(target.length > 0, "target is EMPTY");
         
         import std.stdio : File;
         import std.conv  : text;
@@ -405,7 +405,7 @@ class ChunkDocumentEditor : IDocumentEditor
         ulong avail = availableDiskSpace(target);
         ulong need  = logical_size * 2;
         log("avail=%u need=%u", avail, need);
-        enforce(avail >= need, text(need - avail, " B required"));
+        assertion(avail >= need, text(need - avail, " B required"));
         
         // Because tmpnam(3), tempnam(3), and mktemp(3) are all deprecated for
         // security and usability issues, a temporary file is used.
@@ -452,15 +452,15 @@ class ChunkDocumentEditor : IDocumentEditor
         // If not all bytes were written, either due to the disk being full
         // or it being our fault, do not continue!
         log("Wrote %d B out of %d B", newsize, logical_size);
-        enforce(newsize == logical_size, text("Only wrote ", logical_size, "/", newsize, " B of data"));
+        assertion(newsize == logical_size, text("Only wrote ", logical_size, "/", newsize, " B of data"));
         
         tempfile.rewind();
-        enforce(tempfile.tell == 0, "assert: File.rewind() != 0");
+        assertion(tempfile.tell == 0, "File.rewind() != 0");
         
         // Check disk space again for target, just in case.
         // The exception (message) gives it chance to save it elsewhere.
         avail = availableDiskSpace(target);
-        enforce(avail >= logical_size, text("Need ", logical_size - avail, " B of disk space"));
+        assertion(avail >= logical_size, text("Need ", logical_size - avail, " B of disk space"));
         
         // Temporary file should now be fully written, time to overwrite target
         // reading from temporary file.
@@ -512,10 +512,10 @@ class ChunkDocumentEditor : IDocumentEditor
     /// Returns: Array of bytes with edits.
     ubyte[] view(long position, ubyte[] buffer)
     {
-        enforce(buffer,            "assert: buffer");
-        enforce(buffer.length > 0, "assert: buffer.length > 0");
-        enforce(position >= 0,     "assert: position >= 0");
-        enforce(position <= logical_size, "assert: position <= logical_size");
+        assertion(buffer,            "buffer");
+        assertion(buffer.length > 0, "buffer.length > 0");
+        assertion(position >= 0,     "position >= 0");
+        assertion(position <= logical_size, "position <= logical_size");
         
         import core.stdc.string : memcpy, memset;
         
@@ -576,7 +576,7 @@ class ChunkDocumentEditor : IDocumentEditor
         }
         log("l=%u", l);
         
-        enforce(l <= buffer.length, "assert: l <= buffer.length");
+        assertion(l <= buffer.length, "l <= buffer.length");
         return buffer[0..l];
     }
     
@@ -598,8 +598,8 @@ class ChunkDocumentEditor : IDocumentEditor
     ///     len = Data length.
     void replace(long pos, const(void) *data, size_t len)
     {
-        enforce(pos >= 0,            "assert: pos >= 0");
-        enforce(pos <= logical_size, "assert: pos <= logical_size");
+        assertion(pos >= 0,            "pos >= 0");
+        assertion(pos <= logical_size, "pos <= logical_size");
         
         Patch patch = Patch(pos, PatchType.replace, 0, len, data, null);
         
@@ -626,7 +626,7 @@ class ChunkDocumentEditor : IDocumentEditor
         else // create new chunk and populate it
         {
             chunk = chunks.create(pos);
-            enforce(chunk, "assert: chunks.create(pos) != null");
+            assertion(chunk, "chunks.create(pos) != null");
             
             // If we have a base document, populate chunk with its data
             if (basedoc)
@@ -670,7 +670,7 @@ class ChunkDocumentEditor : IDocumentEditor
         }
         else // data overflows chunk
         {
-            throw new Exception("assert: Chunk overflow");
+            throw new Exception("Chunk overflow");
         }
         
         log("chunk=%s", *chunk);
@@ -698,12 +698,12 @@ class ChunkDocumentEditor : IDocumentEditor
         
         Patch patch = patches[historyidx - 1];
         // WTF did i forget
-        //enforce(patch.olddata, "assert: patch.olddata != NULL");
+        //assertion(patch.olddata, "patch.olddata != NULL");
         
         Chunk *chunk = chunks.locate(patch.address);
         
         // WTF if that happens
-        enforce(chunk, "assert: chunk != NULL");
+        assertion(chunk, "chunk != NULL");
         
         log("patch=%s chunk=%s", patch, *chunk);
         
@@ -744,12 +744,12 @@ class ChunkDocumentEditor : IDocumentEditor
         
         Patch patch = patches[historyidx];
         // WTF did i forget
-        //enforce(patch.olddata, "assert: patch.olddata != NULL");
+        //assertion(patch.olddata, "patch.olddata != NULL");
         
         Chunk *chunk = chunks.locate(patch.address);
         
         // WTF if that happens
-        enforce(chunk, "assert: chunk != NULL");
+        assertion(chunk, "chunk != NULL");
         
         log("patch=%s chunk=%s", patch, *chunk);
         

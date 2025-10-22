@@ -7,7 +7,7 @@ module doceditor;
 
 import document.base : IDocument;
 import logger;
-import std.exception : enforce;
+import platform : assertion;
 import std.format;
 import transcoder : CharacterSet;
 
@@ -153,7 +153,7 @@ string formatData(char[] buf, void *dat, size_t len, DataType type)
 {
     final switch (type) {
     case DataType.x8:
-        enforce(len >= ubyte.sizeof, "length ran out");
+        assertion(len >= ubyte.sizeof, "length ran out");
         return formatx8(buf, *cast(ubyte*)dat, true);
     }
 }

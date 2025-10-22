@@ -165,11 +165,11 @@ long scan(scope string input)
 /// Throws: Exception or ConvException on error.
 ulong parsebin(scope string input)
 {
-    import std.exception : enforce;
+    import platform : assertion;
     import std.conv : to;
     
-    enforce(input, "input is NULL");
-    enforce(input.length, "input is EMPTY");
+    assertion(input, "input is NULL");
+    assertion(input.length, "input is EMPTY");
     
     ulong mult = 1;
     if (input.length > 1)
