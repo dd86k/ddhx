@@ -6,13 +6,13 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module backend.pieces;
 
-import logger;
-import backend.base : IDocumentEditor;
-import document.base : IDocument;
+import std.algorithm.comparison : min, max;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
 import std.exception : enforce;
-import std.algorithm.comparison : min, max;
+import backend.base : IDocumentEditor;
+import document.base : IDocument;
+import logger;
 
 // TODO: Piece coalescing
 //       Could be useful to save the last piece for each operation.
@@ -78,7 +78,7 @@ struct IndexedPiece
     /// Cumulative size of ALL previous pieces to help indexing.
     ///
     /// If we have pieces (pos=0,size=15),(pos=15,size=30),(pos=45,size=5),
-    /// then they'd have 15, 45, and 50 cumulative sizes.
+    /// then they'd have 15, 45, and 50 cumulative sizes respectfully.
     long cumulative;
     Piece piece;
 }
@@ -434,9 +434,13 @@ class PieceDocumentEditor : IDocumentEditor
                     new_snap.pieces.insert(IndexedPiece(new_cumulative + keep + delta, right));
                 }
             }
-            else // Insert almost as-is, if new piece is last, it'll need its size changed
+            else if (inserted)
             {
                 new_snap.pieces.insert(IndexedPiece(index.cumulative + delta, index.piece));
+            }
+            else // Insert almost as-is, if new piece is last, it'll need its size changed
+            {
+                new_snap.pieces.insert(index);
             }
             
             
@@ -556,7 +560,7 @@ class PieceDocumentEditor : IDocumentEditor
             }
             else // Insert at boundary of pieces
             {
-                new_snap.pieces.insert( IndexedPiece(previous + len, piece) );
+                new_snap.pieces.insert( IndexedPiece(index.cumulative + len, piece) );
             }
         }
         
@@ -585,7 +589,7 @@ class PieceDocumentEditor : IDocumentEditor
         // Clamp removal to actual document size
         long newlen = min(len, cur_snap.logical_size - position);
         // Detla of size
-        long delta = len - newlen;
+        long delta = newlen - len;
         // End position
         long end = position + len;
         
@@ -600,6 +604,8 @@ class PieceDocumentEditor : IDocumentEditor
             // Overlaps
             if (piece_start < end && piece_end > position)
             {
+                long left_end = previous; // where left piece ended
+                
                 // Keep left portion (before removal)
                 if (piece_start < position)
                 {
@@ -607,8 +613,9 @@ class PieceDocumentEditor : IDocumentEditor
                     long keep = position - previous; /// size to keep, piece offset
                     Piece left = index.piece;
                     left.size = keep;
+                    left_end = previous + keep;
                     //Piece left = Piece(index.piece.source, index.piece.position, keep);
-                    new_snap.pieces.insert(IndexedPiece(previous + keep, left));
+                    new_snap.pieces.insert(IndexedPiece(left_end, left));
                 }
                 
                 // Keep right portion (after removal)
@@ -618,7 +625,7 @@ class PieceDocumentEditor : IDocumentEditor
                     long skip = end - previous;
                     long keep = index.cumulative - end;
                     Piece right = trimPiece(index.piece, skip, keep);
-                    new_snap.pieces.insert(IndexedPiece(end + keep + delta, right));
+                    new_snap.pieces.insert(IndexedPiece(left_end + keep, right));
                 }
                 
                 // Middle portion gets deleted (not inserted)
@@ -629,7 +636,7 @@ class PieceDocumentEditor : IDocumentEditor
             }
             else // after removal
             {
-                new_snap.pieces.insert(IndexedPiece(index.cumulative - len, index.piece));
+                new_snap.pieces.insert(IndexedPiece(index.cumulative + delta, index.piece));
             }
             
             previous = index.cumulative;
@@ -741,6 +748,51 @@ private:
         else // append
             snapshots.insert( snapshot );
         snapshot_index++;
+        
+        debug ensureConsistency();
+    }
+    
+    /// Ensure pieces are consistency in the latest added snapshot
+    debug void ensureConsistency()
+    {
+        import std.conv : text;
+        Snapshot snapshot = currentSnapshot();
+        long previous_cumulative;
+        size_t piece_count;
+        long total_size; // cumulative size of *pieces*, to be compared to snapshot size
+        // NOTE: 'enforce' msg is lazy, so feel free to use text(...)
+        foreach (indexed; snapshot.pieces)
+        {
+            // Cumulative needs to be monotonically increasing, although
+            // redblack tree handles this
+            enforce(previous_cumulative < indexed.cumulative,
+                text("Cumulative mismatch (piece#=", piece_count, "): ",
+                    previous_cumulative, " >= ", indexed.cumulative));
+            
+            // Piece size must be set
+            enforce(indexed.piece.size > 0,
+                text("Piece size unset (piece#=", piece_count, ")"));
+            
+            // Check for gap introduced by piece size vs. indexed cumulative size
+            long piece_cumulative = previous_cumulative + indexed.piece.size;
+            enforce(indexed.cumulative == piece_cumulative,
+                text("Gap found (piece#=", piece_count, "): ",
+                    indexed.cumulative, " != ", piece_cumulative));
+            
+            piece_count++;
+            total_size += indexed.piece.size;
+            previous_cumulative = indexed.cumulative;
+        }
+        
+        // Last cumulative must match logical size of snapshot
+        enforce(previous_cumulative == snapshot.logical_size,
+            text("Size mismatch: ",
+                previous_cumulative, " == ", snapshot.logical_size));
+        
+        // Cumulative piece size must match logical size of snapshot
+        enforce(total_size == snapshot.logical_size,
+            text("Total size mismatch: ",
+                total_size, " != ", snapshot.logical_size));
     }
     
     //
