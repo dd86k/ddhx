@@ -229,13 +229,14 @@ void main(string[] args)
     if (orc) // Load specified RC by path
     {
     Lload:
+        log(`config_file="%s"`, orc);
         loadRC(rc, readText(orc));
     }
     else if (onorc == false) // norc==true means to NOT load user configs
     {
         import os.path : findConfig;
         orc = findConfig("ddhx", ".ddhxrc");
-        if (orc) // we got config, load
+        if (orc) // we got config path, load it
             goto Lload;
     }
     
@@ -245,7 +246,8 @@ void main(string[] args)
     // Select editor backend, this allows transitioning between multiple
     // backends (implementations) easier.
     IDocumentEditor editor;
-    switch (environment.get("DDHX_BACKEND", "chunk")) {
+    string backend = environment.get("DDHX_BACKEND", "chunk");
+    switch (backend) {
     case "piece":
         editor = new PieceDocumentEditor();
         break;
@@ -253,6 +255,7 @@ void main(string[] args)
         size_t chksize;
         if (string strsize = environment.get("DDHX_CHUNKSIZE"))
         {
+            log(`chunksize="%s"`, strsize);
             import utils : parsebin;
             ulong sz = parsebin(strsize);
             if (sz > 64 * 1024 * 1024) // 64 MiB
@@ -264,6 +267,7 @@ void main(string[] args)
     default:
         throw new Exception("Backend does not exist");
     }
+    log("backend=%s", backend);
     assert(editor, "editor?");
     
     // Open buffer or file where (imitating GUN nano):
@@ -271,6 +275,7 @@ void main(string[] args)
     // - "-":      Read from stdin
     // - FILENAME: Attempt to open FILE
     string target = args.length >= 2 ? args[1] : null;
+    log(`target="%s"`, target);
     string initmsg;
     switch (target) {
     case null:
@@ -319,6 +324,7 @@ void main(string[] args)
             initmsg = MSG_NEWFILE;
         }
     }
+    log(`initmsg="%s"`, target);
     assert(initmsg, "Forgot initmsg?");
     
     try startddhx(editor, rc, target, initmsg);
