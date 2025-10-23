@@ -143,22 +143,27 @@ void terminalInit(int features = 0)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi = void;
         
-        GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &oldMode);
+        // NOTE: There used to be a "hack" using CreateFileA("CONIN$", but that
+        //       caused more pain than anything.
+        //       So, terminalReadline was introduced that automatically applies the "pause" for
+        //       input, where it re-establishes the old mode for STD_INPUT_HANDLE, and "resumes"
+        //       using the desired flags.
+        //       No more need to re-create stdin using "CONIN$".
+        hIn = GetStdHandle(STD_INPUT_HANDLE);
+        if (hIn == INVALID_HANDLE_VALUE)
+            throw new OSException("GetStdHandle");
         
-        // Setup "raw" input system
+        if (GetConsoleMode(hIn, &oldMode) == FALSE)
+            throw new OSException("SetConsoleMode");
+        
+        // Init input system
         if (features & TermFeat.inputSys)
         {
-            // NOTE: There used to be a "hack" using CreateFileA("CONIN$", but that
-            //       caused more pain than anything.
-            //       So, terminalReadline was introduced that automatically applies the "pause" for
-            //       input, where it re-establishes the old mode for STD_INPUT_HANDLE, and "resumes"
-            //       using the desired flags.
-            hIn = GetStdHandle(STD_INPUT_HANDLE);
-            SetConsoleMode(hIn, CONSOLE_MODE_INPUT);
-        }
-        else
-        {
-            hIn = GetStdHandle(STD_INPUT_HANDLE);
+            // I don't remember why I set this up to be permanenently
+            // enabled instead of just enabling this at the "read input"
+            // function.
+            if (SetConsoleMode(hIn, CONSOLE_MODE_INPUT) == FALSE)
+                throw new OSException("SetConsoleMode");
         }
         
         // Use alternative screen buffer
@@ -177,7 +182,8 @@ void terminalInit(int features = 0)
             // Switch stdout to new buffer
             stdout.flush;
             stdout.windowsHandleOpen(hOut, "wb"); // fixes using Phobos write functions
-            SetStdHandle(STD_OUTPUT_HANDLE, hOut); // forgot what this fixes
+            if (SetStdHandle(STD_OUTPUT_HANDLE, hOut) == FALSE) // forgot what this fixes
+                throw new OSException("SetStdHandle");
             
             // We need processed ouput to have basic shit like backspace
             // for readln.
@@ -194,6 +200,8 @@ void terminalInit(int features = 0)
         else
         {
             hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+            if (hOut == INVALID_HANDLE_VALUE)
+                throw new OSException("GetStdHandle");
         }
         
         // NOTE: While Windows supports UTF-16LE (1200) and UTF-32LE,
@@ -204,7 +212,8 @@ void terminalInit(int features = 0)
             throw new OSException("SetConsoleOutputCP");
         
         // Get current attributes (colors)
-        GetConsoleScreenBufferInfo(hOut, &csbi);
+        if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
+            throw new OSException("GetConsoleScreenBufferInfo");
         oldAttr = csbi.wAttributes;
     }
     else version (Posix)
@@ -267,7 +276,9 @@ void terminalInit(int features = 0)
     //       Avoid using it. Useless.
 }
 
-/// Restore older environment
+/// Restore older environment.
+///
+/// Doesn't throw in the case where this is called when exiting.
 void terminalRestore()
 {
     version (Windows)
@@ -325,7 +336,7 @@ private
 void terminalPauseInput()
 {
     version (Windows)
-        SetConsoleMode(hIn, oldMode);
+        SetConsoleMode(hIn, oldMode); // nothrow, called fine in setup
     version (Posix)
         cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
 }
@@ -349,12 +360,9 @@ void terminalClear()
         GetConsoleScreenBufferInfo(hOut, &csbi);
         const int size = csbi.dwSize.X * csbi.dwSize.Y;
         DWORD num;
-        if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num) == 0
-            /*||
-            FillConsoleOutputAttribute(hOut, csbi.wAttributes, size, c, &num) == 0*/)
-        {
+        // No need to set attributes.
+        if (FillConsoleOutputCharacterA(hOut, ' ', size, c, &num))
             terminalCursor(0, 0);
-        }
         else // If that fails, run cls.
             system("cls");
     }
@@ -375,21 +383,39 @@ TerminalSize terminalSize()
     version (Windows)
     {
         CONSOLE_SCREEN_BUFFER_INFO c = void;
-        GetConsoleScreenBufferInfo(hOut, &c);
+        if (GetConsoleScreenBufferInfo(hOut, &c) == FALSE)
+            throw new OSException("GetConsoleScreenBufferInfo");
         size.rows    = c.srWindow.Bottom - c.srWindow.Top + 1;
         size.columns = c.srWindow.Right - c.srWindow.Left + 1;
+        
+        // TODO: Consider support for ESC[18t (Windows)
+        // NOTE: Windows Terminal supports ESC[18t
+        //       conhost/OpenConsole and ConsoleZ do not.
+        
+        // TODO: Consider saving changes from ReadConsoleInput
     }
     else version (Posix)
     {
-        // TODO: Consider using LINES and COLUMNS environment variables
-        //       as fallback if ioctl returns -1.
-        // TODO: Consider ESC [ 18 t for fallback of environment.
-        //       Reply: ESC [ 8 ; ROWS ; COLUMNS t
+        // NOTE: So far, the ioctl worked on:
+        //       - Linux, VTE
+        //       - Linux, xterm
+        //       - Linux, framebuffer
+        //       - FreeBSD, framebuffer
+        //       - OpenBSD, framebuffer
         winsize ws = void;
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0)
             throw new OSException("ioctl(STDOUT_FILENO, TIOCGWINSZ)");
         size.rows    = ws.ws_row;
         size.columns = ws.ws_col;
+        
+        // NOTE: LINES and COLUMNS variables mostly depends on shells.
+        //       SUPPORTED: Bash, ksh(ksh93), zsh, fish
+        //       UNSUPPORTED: sh, csh, dash, cmd, PowerShell
+        
+        // TODO: Consider ESC [ 18 t for fallback of environment.
+        //       Reply: ESC [ 8 ; ROWS ; COLUMNS t
+        //       Works on: Windows Terminal, VTE, xterm, NetBSD framebuffer
+        //       Doesn't: conhost, ConsoleZ, FreeBSD framebuffer (just eats output?)
     } else static assert(0, "terminalSize: Not implemented");
     return size;
 }
@@ -406,7 +432,8 @@ void terminalCursor(int x, int y)
         COORD c = void;
         c.X = cast(short)x;
         c.Y = cast(short)y;
-        SetConsoleCursorPosition(hOut, c);
+        if (SetConsoleCursorPosition(hOut, c) == FALSE)
+            throw new OSException("SetConsoleCursorPosition");
     }
     else version (Posix) // 1-based, so 0,0 needs to be output as 1,1
     {
@@ -424,7 +451,9 @@ void terminalHideCursor()
     {
         // NOTE: Works in conhost, OpenConsole, and Windows Terminal.
         //       ConsoleZ won't take it.
-        //       Anyway, if these were to fail, don't report issue.
+        //       Anyway, if these were to fail, don't report issue, since it's
+        //       more of an optional feature. But might throw and let caller
+        //       ignore on their own terms.
         CONSOLE_CURSOR_INFO cci = void;
         cast(void)GetConsoleCursorInfo(hOut, &cci);
         cci.bVisible = FALSE;
@@ -518,7 +547,8 @@ void terminalForeground(TermColor col)
         GetConsoleScreenBufferInfo(hOut, &csbi);
         WORD current = csbi.wAttributes;
         
-        SetConsoleTextAttribute(hOut, (current & 0xf0) | FGCOLORS[col]);
+        // Don't throw if failed, optional feature
+        cast(void)SetConsoleTextAttribute(hOut, (current & 0xf0) | FGCOLORS[col]);
     }
     else version (Posix)
     {
@@ -606,7 +636,7 @@ void terminalBackground(TermColor col)
         GetConsoleScreenBufferInfo(hOut, &csbi);
         WORD current = csbi.wAttributes;
         
-        SetConsoleTextAttribute(hOut, (current & 0xf) | FGCOLORS[col]);
+        cast(void)SetConsoleTextAttribute(hOut, (current & 0xf) | FGCOLORS[col]);
     }
     else version (Posix)
     {
@@ -758,7 +788,7 @@ TermInput terminalRead()
         DWORD num = void;
 Lread:
         if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
-            throw new WindowsException(GetLastError);
+            throw new OSException("ReadConsoleInputA");
         if (num == 0)
             goto Lread;
         
@@ -820,7 +850,7 @@ Lread:
                     Mouse.ScrollDown : Mouse.ScrollUp;
             }*/
         // NOTE: The console buffer is different than window resize
-        //       So, it's both misleading, and only updated after a new event enters
+        //       It is misleading. Only updated after a new event enters input queue.
         case WINDOW_BUFFER_SIZE_EVENT:
             if (terminalOnResizeEvent)
                 terminalOnResizeEvent();
@@ -849,8 +879,6 @@ Lread:
         //       Disable: ESC [ ? 1000 l
         //       b bits[1:0] 0=MB1 pressed, 1=MB2 pressed, 2=MB3 pressed, 3=release
         //       b bits[7:2] 4=Shift (bit 3), 8=Meta (bit 4), 16=Control (bit 5)
-        // TODO: Consider AA for key scanning
-        //       + Allows granular configuration depending on $TERM
         
         enum BLEN = 8;
         char[BLEN] b = void;
