@@ -5,7 +5,7 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module platform;
 
-import std.exception : enforce;
+
 
 /// Soft assertion exception class.
 ///
@@ -18,7 +18,16 @@ public class Assert : Exception
         super("assert: "~msg, _file, _line);
     }
 }
-public alias assertion = enforce!Assert;
+static if (__VERSION__ >= 2080)
+{
+    import std.exception : enforce;
+    public alias assertion = enforce!Assert;
+}
+else
+{
+    import std.exception : enforceEx;
+    public alias assertion = enforceEx!Assert;
+}
 
 // Target architecture
 version (X86)
