@@ -128,7 +128,6 @@ void main(string[] args)
     try
     {
         // TODO: --color/--no-color: Force color option (overrides rc)
-        // TODO: --help-configs: list of configurations + descriptions
         res = getopt(args, config.caseSensitive,
         // Secret options
         "assistant",    "", &printpage,

@@ -5,8 +5,6 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module platform;
 
-
-
 /// Soft assertion exception class.
 ///
 /// Mostly used to prefix "assert: " to messages.
@@ -18,7 +16,7 @@ public class Assert : Exception
         super("assert: "~msg, _file, _line);
     }
 }
-static if (__VERSION__ >= 2080)
+static if (__VERSION__ >= 2079) // eponymous std.exception.enforce
 {
     import std.exception : enforce;
     public alias assertion = enforce!Assert;

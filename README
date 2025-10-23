@@ -74,8 +74,8 @@ On POSIX platforms, the app assumes these keys:
 Not all key combinations can be detected by terminal applications. Your 
 terminal emulator or framebuffer may intercept certain shortcuts for its own
 features. For example, VTE-based terminals (GNOME Terminal, Terminator, Tilix)
-often capture Ctrl+Shift+Arrow keys for tab/pane navigation. Or Shift+PageUp
-to scroll the framebuffer upwards.
+often capture Ctrl+Shift+Arrow keys for tab/pane navigation. Most framebuffers
+will capture Shift+PageUp for scrolling the buffer upward.
 
 If a shortcut doesn't work, the "bind" command allows binding a command to a
 shortcut: `bind alt+e select-end`. Commands can still be executed from the
@@ -104,8 +104,9 @@ This list may change at any given time without notice.
 - [x] Searching ("find" command)
 
 0.7:
-- [ ] Insert data
-- [ ] Delete data
+- [*] Insert data
+- [*] Delete data
+- [x] "export-range" command
 
 Wishlist:
 - [ ] Other single-byte data types in view (d8, o8)
@@ -115,7 +116,6 @@ Wishlist:
 - [ ] Insert file ("insert-file" depends on mode)
 - [ ] Copy & paste ("paste" depends on mode)
 - [ ] Bookmarks / Annotations
-- [ ] Export range
 - [ ] Process memory document type
 - [ ] Disk document type
 - [ ] Search by charset
