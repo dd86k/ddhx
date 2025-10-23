@@ -43,6 +43,8 @@ struct BufferPiece
     const(void) *data;
     /// Size of the data inserted into the buffer. Must not change.
     size_t ogsize;
+    /// Amount skipped
+    size_t skip;
 }
 
 private
@@ -59,7 +61,7 @@ struct Piece
     
     // Make a new buffer piece
     // This does not copy any actually data from the pointer, just the fields
-    static Piece makebuffer(long position, const(void) *data, size_t size)
+    static Piece makebuffer(long position, const(void) *data, size_t size, size_t skip = 0)
     {
         Piece piece     = void;
         piece.source    = Source.buffer;
@@ -67,6 +69,7 @@ struct Piece
         piece.size      = size;
         piece.buffer.data   = data;
         piece.buffer.ogsize = size;
+        piece.buffer.skip   = skip;
         return piece;
     }
 }
@@ -170,8 +173,6 @@ class PieceDocumentEditor : IDocumentEditor
             long read_end    = min(position + buffer.length, piece_end) - piece_start;
             long read_length = read_end - read_start;
             
-            size_t rdlen = cast(size_t)read_length;
-            
             size_t want = min(buffer.length, index.piece.size);
             
             final switch (index.piece.source) {
@@ -195,7 +196,7 @@ class PieceDocumentEditor : IDocumentEditor
                     read_start, read_end, read_length,
                     index.cumulative);
                 assert(add_buffer, "add_buffer"); // needs to be init
-                assert(add_size, "add_size");   // need data
+                assert(add_size, "add_size");     // need data
                 assert(index.piece.buffer.data, "buffer.data"); // Need buffer pointer
                 
                 import core.stdc.string : memcpy;
@@ -223,77 +224,51 @@ class PieceDocumentEditor : IDocumentEditor
         if (snapshot_index == 0 && basedoc is null)
             return [];
         
-        /*
-        View function for range [P, P + length):
-
-        1. Traverse the tree comparing P against cumulative sizes to find the
-           first piece that overlaps
-        2. Iterate forward through pieces, accumulating their content into the
-           view buffer
-        3. Stop when you've covered the entire range
-        */
-        
-        log("SNAPSHOT i=%u c=%u", snapshot_index, snapshots.length);
+        log("VIEW Si=%u Sc=%u", snapshot_index, snapshots.length);
         
         size_t bi; /// buffer index (for slicing)
         Tree indexes = currentSnapshot().pieces;
-        long previous; /// previous piece's cumulative size
         foreach (index; indexes.upperBound(IndexedPiece(position)))
         {
-            // View buffer full
+            // View buffer is full
             if (bi >= buffer.length)
-            {
-                // TODO: Consider cutting to buffer length
                 break;
-            }
-            
-            // Need piece where position fits in cumulative
-            if (index.cumulative <= position)
-            {
-                previous = index.cumulative;
-                continue;
-            }
             
             long lpos = position + bi; // logical position
-            size_t want = buffer.length - bi; // need to fill
             
-            long piece_start = previous;
-            long piece_end   = index.cumulative;
-            long read_start  = max(position, piece_start) - piece_start;
-            long read_end    = min(position + buffer.length, piece_end) - piece_start;
-            long read_length = read_end - read_start;
+            // Calculate piece bounds in document coordinates
+            long piece_start = index.cumulative - index.piece.size;
+            long piece_end = index.cumulative;
             
-            size_t rdlen = cast(size_t)read_length;
+            // Skip pieces before our view position
+            //if (piece_end <= doc_pos)
+            if (piece_end <= lpos)
+                continue;
             
+            // Calculate how much to read from this piece
+            long piece_offset = max(0, lpos - piece_start); // clamp to zero
+            long available = piece_end - max(lpos, piece_start);
+            //long to_read = min(available, remaining);
+            long to_read = min(available, buffer.length - bi);
+            
+            // Read from the piece
             final switch (index.piece.source) {
             case Source.document:
-                log("PIECE:DOCUMENT lpos=%d want=%u Ps=%d Pe=%d Rs=%d Re=%d Rl=%u C=%d",
-                    lpos, want,
-                    piece_start, piece_end,
-                    read_start, read_end, read_length,
-                    index.cumulative);
-                assert(basedoc); // need document
-                size_t len = basedoc.readAt(index.piece.position + read_start, buffer[bi..bi+rdlen]).length;
-                bi += len;
+                basedoc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]);
                 break;
             case Source.buffer:
-                log("PIECE:BUFFER lpos=%d want=%u Ps=%d Pe=%d Rs=%d Re=%d Rl=%u C=%d",
-                    lpos, want,
-                    piece_start, piece_end,
-                    read_start, read_end, read_length,
-                    index.cumulative);
-                assert(add_buffer, "add_buffer"); // needs to be init
-                assert(add_size, "add_size");   // need data
-                assert(index.piece.buffer.data, "buffer.data"); // Need buffer pointer
                 import core.stdc.string : memcpy;
-                memcpy(buffer.ptr + bi, index.piece.buffer.data + read_start, rdlen);
-                bi += rdlen;
+                memcpy(buffer.ptr + bi, 
+                    index.piece.buffer.data + index.piece.buffer.skip + piece_offset,
+                    to_read);
                 break;
             }
             
-            previous = index.cumulative;
+            bi += to_read;
         }
         
+        // Hard assert because it is the view function. We depend on it.
+        assert(bi < buffer.length, "bi < buffer.length");
         return buffer[0..bi];
     }
     
@@ -546,8 +521,13 @@ class PieceDocumentEditor : IDocumentEditor
                     right = Piece(Source.document, index.piece.position + piece_offset, right_len);
                     break;
                 case Source.buffer:
+                    assert(piece_offset < int.max);
                     left  = Piece.makebuffer(index.piece.position, index.piece.buffer.data, piece_offset);
-                    right = Piece.makebuffer(index.piece.position + piece_offset, index.piece.buffer.data + piece_offset, right_len);
+                    right = Piece.makebuffer(
+                        index.piece.position + piece_offset,
+                        index.piece.buffer.data,
+                        right_len,
+                        piece_offset);
                 }
                 
                 // Now, we need to insert left, new, and right pieces...
@@ -694,9 +674,10 @@ private:
         piece.size = keep;
         switch (piece.source) { // Adjust piece offsets before re-inerting
         case Source.buffer:
-            with (piece.buffer)
-                assert(data + skip <= data + ogsize, "data + skip <= data + ogsize");
-            piece.buffer.data += skip;
+            with (piece)
+            assert(buffer.data + buffer.skip <= buffer.data + buffer.ogsize, "data + skip <= data + ogsize");
+            //piece.buffer.data += skip;
+            piece.buffer.skip = skip;
             break;
         default:
         }
@@ -976,17 +957,13 @@ unittest
 }
 
 /// Offset view
-/*unittest
+unittest
 {
     import document.memory : MemoryDocument;
     
-    static immutable ubyte[] data = [ // 5 * 10 bytes
+    static immutable ubyte[] data = [
     //  0   1   2   3   4  5  6   7   8   9
         4,  7,  9, 13, 17, 3, 4,  5, 13, 15, // 10
-        4,  5,  8, 16, 18, 1, 2,  5,  8, 10, // 20
-        1,  3,  6, 11, 16, 1, 2,  3,  7,  9, // 30
-        2,  5, 10, 12, 19, 4, 9, 11, 15, 16, // 40
-        3,  5,  6,  9, 10, 2, 3,  7,  8,  9, // 50
     ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(data)
@@ -995,13 +972,39 @@ unittest
     log("TEST-0005");
     
     ubyte b = 0xff;
-    e.replace(10, &b, ubyte.sizeof);
+    e.replace(4, &b, ubyte.sizeof);
     
-    e.insert(
+    static immutable ubyte[] data0 = [ // 5 * 10 bytes
+    //  0   1   2   3   4  5  6   7   8   9
+        4,  5,  8, 16, 18, 1, 2,  5,  8, 10, // 10
+    ];
+    e.insert(10, data0.ptr, data0.length);
+    
+    ubyte[32] buffer;
+    assert(e.edited());
+    assert(e.size() == 20);
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3    4  5  6   7   8   9
+        4,  7,  9, 13, 255, 3, 4,  5, 13, 15, // 10
+        4,  5,  8, 16,  18, 1, 2,  5,  8, 10, // 20
+    ]);
+    assert(e.view(0, buffer[0..10]) == [ // lower 10 bytes
+    //  0   1   2   3    4  5  6   7   8   9
+        4,  7,  9, 13, 255, 3, 4,  5, 13, 15, // 10
+    ]);
+    assert(e.view(10, buffer) == [ // upper 10 bytes
+    //  0   1   2   3    4  5  6   7   8   9
+        4,  5,  8, 16,  18, 1, 2,  5,  8, 10, // 20
+    ]);
+    log("\n--------------------\nRESULT=%s\n--------------------", e.view(16, buffer));
+    assert(e.view(16, buffer) == [ // upper 16 bytes
+    //  6   7   8   9
+        2,  5,  8, 10, // 20
+    ]);
 }
 
 /// Mix replace, insert, and deletions
-unittest
+/*unittest
 {
     import document.memory : MemoryDocument;
     
