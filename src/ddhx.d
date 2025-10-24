@@ -1516,7 +1516,10 @@ void delete_front(Session *session, string[] args)
     Selection sel = selection(session);
     if (sel)
     {
-        throw new Exception("Not implemented");
+        session.editor.remove(sel.start, sel.length);
+        unselect(session);
+        g_status |= UVIEW;
+        return;
     }
     
     // Delete element where cursor points to
@@ -1532,13 +1535,17 @@ void delete_back(Session *session, string[] args)
     Selection sel = selection(session);
     if (sel)
     {
-        throw new Exception("Not implemented");
+        session.editor.remove(sel.start, sel.length);
+        unselect(session);
+        g_status |= UVIEW;
+        return;
     }
     
     // Delete element behind cursor
     if (session.position_cursor == 0) // nothing to delete behind cursor
         return;
-    session.editor.remove(session.position_cursor--, 1);
+    move_left(session, null);
+    session.editor.remove(session.position_cursor, 1);
     g_status |= UVIEW;
 }
 
