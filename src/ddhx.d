@@ -1519,6 +1519,10 @@ void delete_front(Session *session, string[] args)
         session.editor.remove(sel.start, sel.length);
         unselect(session);
         g_status |= UVIEW;
+        
+        // HACK: force cursor to go back to start of selection
+        //       Fixes cursor "disappearing"
+        moveabs(session, sel.start);
         return;
     }
     
@@ -1538,13 +1542,16 @@ void delete_back(Session *session, string[] args)
         session.editor.remove(sel.start, sel.length);
         unselect(session);
         g_status |= UVIEW;
+        
+        // See HACK command in delete_front
+        moveabs(session, sel.start);
         return;
     }
     
     // Delete element behind cursor
     if (session.position_cursor == 0) // nothing to delete behind cursor
         return;
-    move_left(session, null);
+    moverel(session, -1);
     session.editor.remove(session.position_cursor, 1);
     g_status |= UVIEW;
 }
