@@ -208,7 +208,7 @@ class PieceDocumentEditor : IDocumentEditor
         }
         
         // Hard assert because it is the view function. We depend on it.
-        assert(bi < buffer.length, "bi < buffer.length");
+        assert(bi <= buffer.length, "bi < buffer.length");
         return buffer[0..bi];
     }
     
