@@ -233,23 +233,28 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.N,             &find_next },
     { "find-prev",                  "Repeat search backward",
         Mod.shift|Key.N,            &find_prev },
-    // Actions
+    // NOTE: "save-as" exists solely because it's a dedicated operation
+    //       Despite that "save" could have just gotten an optional parameter
     { "save",                       "Save document to file",
         Mod.ctrl|Key.S,             &save },
     { "save-as",                    "Save document as a different file",
         Mod.ctrl|Key.O,             &save_as },
+    // Undo-Redo
     { "undo",                       "Undo last edit",
         Mod.ctrl|Key.U,             &undo },
     { "redo",                       "Redo previously undone edit",
         Mod.ctrl|Key.R,             &redo },
+    // Position
     { "goto",                       "Navigate or jump to a specific position",
         Mod.ctrl|Key.G,             &goto_ },
+    // Reports
     { "report-position",            "Report cursor position on screen",
         Mod.ctrl|Key.P,             &report_position },
     { "report-name",                "Report document name on screen",
         0,                          &report_name },
     { "report-version",             "Report ddhx version on screen",
         0,                          &report_version },
+    // Misc actions
     { "refresh",                    "Refresh entire screen",
         Mod.ctrl|Key.L,             &refresh },
     { "autosize",                   "Automatically set column size depending of screen",
@@ -649,6 +654,105 @@ string arg(string[] args, size_t idx, string prefix)
         return promptline(prefix);
     else
         return args[idx];
+}
+
+string tempName(string basename)
+{
+    import std.random : uniform;
+    import std.format : format;
+    return format("%s.tmp-ddhx-%u", basename, uniform(10_000, 100_000)); // 10,000..99,999 incl.
+}
+
+// Save changes to this file
+void save_file(IDocumentEditor editor, string target)
+{
+    log("SAVING target=%s", target);
+    
+    // NOTE: Caller is responsible to populate target path.
+    //       Using assert will stop the program completely,
+    //       which would not appear in logs (if enabled).
+    //       This also allows the error message to be seen.
+    assertion(target != null,    "target is NULL");
+    assertion(target.length > 0, "target is EMPTY");
+    
+    import std.stdio : File;
+    import std.conv  : text;
+    import std.path : baseName, dirName, buildPath;
+    import std.file : rename, exists,
+        getAttributes, setAttributes, getTimes, setTimes;
+    import std.datetime.systime : SysTime;
+    import os.file : availableDiskSpace;
+    
+    long docsize = editor.size();
+    
+    // We need enough disk space for the temporary file
+    ulong avail = availableDiskSpace(target);
+    log("avail=%u docsize=%d", avail, docsize);
+    if (avail < docsize)
+        throw new Exception(text("Unsuficient space, need ", docsize - avail, " bytes"));
+    
+    // 1. Create a temp file into same directory (with tmp suffix)
+    string basedir = dirName(target);
+    string basenam = baseName(target);
+    string tmpname = tempName(basenam);
+    string tmppath = buildPath(basedir, tmpname);
+    log(`basedir="%s" basenam="%s" tmpname="%s" tmppath="%s"`,
+        basedir, basenam, tmpname, tmppath);
+    
+    { // scope allows earlier buffer being freed
+        // Read buffer
+        import core.stdc.stdlib : malloc, free;
+        enum BUFFER_SIZE = 16 * 1024;
+        ubyte[] buffer = (cast(ubyte*)malloc(BUFFER_SIZE))[0..BUFFER_SIZE];
+        if (buffer is null)
+            throw new Exception("error: Out of memory");
+        scope(exit) free(buffer.ptr);
+    
+        // 2. Write data
+        //    Could also do a hash and compare. Could be a debug option.
+        File fileout = File(tmppath, "w");
+        long position;
+        do
+        {
+            fileout.rawWrite( editor.view(position, buffer) );
+            position += BUFFER_SIZE;
+        }
+        while (position < docsize);
+        fileout.flush();
+        fileout.sync();
+        fileout.close();
+    }
+    
+    // 3. Copy attributes of target
+    //    NOTE: Times
+    //          POSIX only has concepts of access and modify times.
+    //          Both are irrelevant for saving, but sadly, since there are no
+    //          concepts of birth date handling (assumed read-only), then I
+    //          won't rip my hair trying to get and set it to target.
+    //          Windows... There are no std.file.setTimesWin. Don't know why.
+    bool target_exists = exists(target);
+    uint attr = void;
+    if (target_exists)
+        attr = getAttributes(target);
+    
+    // 4. Replace target
+    //    NOTE: std.file.rename
+    //          Windows: Uses MoveFileExW with MOVEFILE_REPLACE_EXISTING.
+    //                   Remember, TxF (transactional stuff) is deprecated!
+    //          POSIX: Confirmed a to be atomic on POSIX platforms.
+    rename(tmppath, target);
+    
+    // 5. Apply attributes to target
+    //    Windows: Hidden, system, etc.
+    //    POSIX: Permissions
+    if (target_exists)
+        setAttributes(target, attr);
+    editor.markSaved();
+    
+    // Generic house cleaning
+    import core.memory : GC;
+    GC.collect();
+    GC.minimize();
 }
 
 // Move the cursor relative to its position within the file
@@ -1877,7 +1981,7 @@ void save(Session *session, string[] args)
     
     // On error, an exception is thrown, where the command handler receives,
     // and displays its message.
-    session.editor.save(session.target);
+    save_file(session.editor, session.target);
     message("Saved");
 }
 

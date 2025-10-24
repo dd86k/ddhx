@@ -376,121 +376,9 @@ class ChunkDocumentEditor : IDocumentEditor
     /// Ditto
     alias currentSize = size; // Older alias
     
-    /// Save as file to a specified location.
-    /// Throws: I/O error or enforcement.
-    /// Params: target = File system path.
-    void save(string target)
+    void markSaved()
     {
-        log("target=%s logical_size=%u", target, logical_size);
-        
-        // TODO: Speedup saving
-        //       In an attempt to speed up saving (ie, with multiple gigabytes),
-        //       it might be worth file to only overwrite the target file (if it
-        //       exists) with chunks of edited data.
-        
-        // NOTE: Caller is responsible to populate target path.
-        //       Using assert will stop the program completely,
-        //       which would not appear in logs (if enabled).
-        //       This also allows the error message to be seen.
-        assertion(target != null,    "target is NULL");
-        assertion(target.length > 0, "target is EMPTY");
-        
-        import std.stdio : File;
-        import std.conv  : text;
-        import os.file : availableDiskSpace;
-        
-        // We need enough disk space for the temporary file and the target.
-        // TODO: Check disk space available separately for temp file.
-        //       The temporary file might be on another location/disk.
-        ulong avail = availableDiskSpace(target);
-        ulong need  = logical_size * 2;
-        log("avail=%u need=%u", avail, need);
-        assertion(avail >= need, text(need - avail, " B required"));
-        
-        // Because tmpnam(3), tempnam(3), and mktemp(3) are all deprecated for
-        // security and usability issues, a temporary file is used.
-        //
-        // On Linux, using tmpfile(3), a temporary file is immediately marked for
-        // deletion at its creation. So, it should be deleted if the app crashes,
-        // which is fine pre-1.0.
-        
-        // TODO: Check if target is writable (without opening file).
-        // TODO: If temp unwritable, retry temp file next to target (+suffix)
-        // Temporary file to write content and edits to.
-        // It is nameless, so do not bother getting its filename
-        File tempfile = File.tmpfile();
-        
-        // Get range of edits to apply when saving.
-        // TODO: Test without ptrdiff_t cast
-        ptrdiff_t count = cast(ptrdiff_t)historyidx - historysavedidx;
-        log("Saving with %d edits, %d Bytes...", count, logical_size);
-        
-        // Right now, the simplest implement is to write everything.
-        // We will eventually handle overwites, inserts, and deletions
-        // within the same file...
-        enum SAVEBUFSZ = 32 * 1024;
-        ubyte[] savebuf = new ubyte[SAVEBUFSZ];
-        long pos;
-        do
-        {
-            // Read and apply history.
-            ubyte[] result = view(pos, savebuf);
-            
-            // Write to temp file.
-            // Should naturally throw ErrnoException when disk is full
-            // (e.g., only wrote buffer partially).
-            tempfile.rawWrite(result);
-            
-            pos += SAVEBUFSZ;
-        }
-        while (pos < logical_size);
-        
-        tempfile.flush();
-        tempfile.sync(); // calls OS-specific flush but is it really needed?
-        long newsize = tempfile.tell;
-        
-        // If not all bytes were written, either due to the disk being full
-        // or it being our fault, do not continue!
-        log("Wrote %d B out of %d B", newsize, logical_size);
-        assertion(newsize == logical_size, text("Only wrote ", logical_size, "/", newsize, " B of data"));
-        
-        tempfile.rewind();
-        assertion(tempfile.tell == 0, "File.rewind() != 0");
-        
-        // Check disk space again for target, just in case.
-        // The exception (message) gives it chance to save it elsewhere.
-        avail = availableDiskSpace(target);
-        assertion(avail >= logical_size, text("Need ", logical_size - avail, " B of disk space"));
-        
-        // Temporary file should now be fully written, time to overwrite target
-        // reading from temporary file.
-        // Can't use std.file.copy since we don't know the name of our temporary file.
-        // And overwriting it doesn't require us to copy attributes.
-        // TODO: Manage target open failures
-        ubyte[] buffer; /// read buffer
-        buffer.length = SAVEBUFSZ;
-        File targetfile = File(target, "wb"); // overwrite target
-        do
-        {
-            ubyte[] result = tempfile.rawRead(buffer);
-            // TODO: Manage target write failures
-            targetfile.rawWrite(result);
-        }
-        while (tempfile.eof == false);
-        buffer.length = 0; // doesn't cause a realloc,
-                           // but curious if GC will pick this up
-        
-        targetfile.flush();
-        targetfile.sync();
-        targetfile.close();
-        
-        // Save index and path for future saves
         historysavedidx = historyidx;
-        
-        // In case base document was a memory buffer
-        import core.memory : GC;
-        GC.collect();
-        GC.minimize();
     }
     
     /// View the content of the document with current modifications.
@@ -824,17 +712,6 @@ unittest
     e.replace(1, &c, char.sizeof);
     assert(e.view(0, buffer[]) == "tsss");
     assert(e.currentSize() == 4);
-    
-    static immutable string path = "tmp_empty";
-    log("Saving to %s", path);
-    e.save(path); // throws if it needs to, stopping tests
-    
-    // Needs to be readable after saving, obviously
-    assert(e.view(0, buffer[]) == "tsss");
-    assert(e.currentSize() == 4);
-    
-    import std.file : remove;
-    remove(path);
 }
 
 /// Emulate editing an existing document
@@ -879,16 +756,6 @@ unittest
     assert(e.currentSize() == data.length);
     assert(e.view(8, buffer2[]) == data[8..$]);
     assert(e.currentSize() == data.length);
-    
-    static immutable string path = "tmp_doc";
-    e.save(path); // throws if it needs to, stopping tests
-    
-    // Needs to be readable after saving, obviously
-    assert(e.view(2, buffer[0..8]) == data[2..4]~cast(ubyte[])edit0~data[8..10]);
-    assert(e.currentSize() == data.length);
-    
-    import std.file : remove;
-    remove(path);
 }
 
 /// Test undo/redo

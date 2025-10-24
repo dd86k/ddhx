@@ -145,69 +145,9 @@ class PieceDocumentEditor : IDocumentEditor
         return currentSnapshot().logical_size;
     }
     
-    void save(string target)
+    void markSaved()
     {
-        // If new buffer without any edits.
-        if (snapshots.length == 0)
-            return;
-        // HACK: some edge case bullshit
-        //       Turn into function?
-        if (snapshot_index == 0 && basedoc is null)
-            return;
-        
-        import std.stdio : File;
-        
-        ubyte[] buffer;
-        buffer.length = 16 * 1024;
-        
-        File output = File(target, "w");
-        
-        Snapshot snapshot = currentSnapshot();
-        long previous;
-        long position;
-        foreach (index; snapshot.pieces)
-        {
-            long piece_start = previous;
-            long piece_end   = index.cumulative;
-            long read_start  = max(position, piece_start) - piece_start;
-            long read_end    = min(position + buffer.length, piece_end) - piece_start;
-            long read_length = read_end - read_start;
-            
-            size_t want = min(buffer.length, index.piece.size);
-            
-            final switch (index.piece.source) {
-            case Source.document:
-                log("PIECE:DOCUMENT position=%d Ps=%d Pe=%d Rs=%d Re=%d Rl=%u C=%d",
-                    position,
-                    piece_start, piece_end,
-                    read_start, read_end, read_length,
-                    index.cumulative);
-                assert(basedoc); // need document
-                
-                ubyte[] res = basedoc.readAt(index.piece.position + read_start, buffer[0..want]);
-                position += res.length;
-                
-                output.rawWrite(res);
-                break;
-            case Source.buffer:
-                log("PIECE:BUFFER position=%d Ps=%d Pe=%d Rs=%d Re=%d Rl=%u C=%d",
-                    position,
-                    piece_start, piece_end,
-                    read_start, read_end, read_length,
-                    index.cumulative);
-                assert(add_buffer, "add_buffer"); // needs to be init
-                assert(add_size, "add_size");     // need data
-                assert(index.piece.buffer.data, "buffer.data"); // Need buffer pointer
-                
-                import core.stdc.string : memcpy;
-                memcpy(buffer.ptr, index.piece.buffer.data + read_start, want);
-                
-                output.rawWrite(buffer[0..want]);
-                break;
-            }
-            
-            previous = index.cumulative;
-        }
+        snapshot_saved = snapshot_index;
     }
     
     ubyte[] view(long position, void* buffer, size_t size)

@@ -24,8 +24,8 @@ class DummyDocumentEditor : IDocumentEditor
     {
         return _data.length;
     }
-
-    void save(string target)
+    
+    void markSaved()
     {
         throw new Exception("Not implemented");
     }

@@ -15,8 +15,8 @@ interface IDocumentEditor
     /// Return size of document, with edits, in bytes.
     long size();
     
-    /// Save document to file path.
-    void save(string target);
+    /// Mark the document as saved.
+    void markSaved();
     
     // TODO: Change ubyte[] to either const(ubyte)[] or immutable(ubyte)[]
     
@@ -56,7 +56,6 @@ void editorTests(T : IDocumentEditor)()
         &test_edit!T,
         &test_replace!T,
         &test_undo_redo!T,
-        &test_save!T,
     ];
     static foreach (test; tests)
         test();
@@ -165,32 +164,6 @@ void test_undo_redo(T : IDocumentEditor)()
     
     assert(e.redo() < 0); // past limit
     assert(e.view(0, buffer) == "tsss");
-}
-// Save
-void test_save(T : IDocumentEditor)()
-{
-    import std.file : remove, readText;
-    import std.conv : text;
-    
-    scope T e = new T();
-    
-    string data0 = "test";
-    e.replace(0, data0.ptr, data0.length);
-    
-    static immutable string path = "test_tmp_test0";
-    try
-    {
-        e.save(path);
-        string t = readText(path);
-        if (t != data0)
-            throw new Exception(text(path, ": readText(path) != data0, got: \"", t, "\""));
-    }
-    catch (Exception ex)
-    {
-        throw ex;
-    }
-    try remove(path); // remove and don't complain
-    catch (Exception) {}
 }
 
 //
