@@ -219,6 +219,11 @@ class PieceDocumentEditor : IDocumentEditor
         return basedoc ? e && snapshot_index > 1 : e;
     }
     
+    /// Replace with new data at this position.
+    /// Params:
+    ///     position = Base position.
+    ///     data = Pointer to data.
+    ///     len = Length of data.
     void replace(long position, const(void)* data, size_t len)
     in (position >= 0, "position >= 0")
     in (data != null, "data != NULL")
@@ -255,72 +260,82 @@ class PieceDocumentEditor : IDocumentEditor
         // Calculate how much we're actually overwriting
         long overwritten = min(len, cur_snap.logical_size - position);
         long delta = len - overwritten;  // can be negative, zero, or positive
+        long end = position + overwritten;  // end of region being replaced
         
         Snapshot new_snap = Snapshot( 
             position, 
             position + len, 
-            cur_snap.logical_size + delta,  // adjust by delta
+            cur_snap.logical_size + delta,
             new Tree() 
         );
         
-        long new_cumulative = position + len;
-        long previous;
+        long old_cumulative;
+        long new_cumulative;
         bool inserted;
+        
         foreach (index; cur_snap.pieces)
         {
-            long piece_start = previous;
+            long piece_start = old_cumulative;
             long piece_end = index.cumulative;
             
-            // Pieces completely before the replacement - keep as-is
+            // Pieces completely before replacement
             if (piece_end <= position)
             {
                 new_snap.pieces.insert(index);
-                previous = index.cumulative;
+                old_cumulative = index.cumulative;
+                new_cumulative = index.cumulative;
                 continue;
             }
             
-            // Pieces completely after the affected region - adjust cumulative
-            if (piece_start >= new_cumulative)
+            // Pieces that overlap with replacement region
+            if (piece_start < end && piece_end > position)
             {
-                new_snap.pieces.insert(IndexedPiece(index.cumulative + delta, index.piece));
-                previous = index.cumulative;
-                continue;
+                // Keep left portion (before replacement starts)
+                if (piece_start < position)
+                {
+                    long keep = position - piece_start;
+                    Piece left = index.piece;
+                    left.size = keep;
+                    new_cumulative += keep;
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative, left));
+                }
+                
+                // Insert the new piece (only once)
+                if (!inserted)
+                {
+                    new_cumulative += len;
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative, piece));
+                    inserted = true;
+                }
+                
+                // Keep right portion (after replacement ends)
+                if (piece_end > end)
+                {
+                    long skip = end - piece_start;
+                    long keep = piece_end - end;
+                    Piece right = trimPiece(index.piece, skip, keep);
+                    new_cumulative += keep;
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative, right));
+                }
+            }
+            else  // piece_start >= end
+            {
+                // Pieces completely after replacement
+                new_cumulative += index.piece.size;
+                new_snap.pieces.insert(IndexedPiece(new_cumulative, index.piece));
             }
             
-            // This piece overlaps with the replacement region
-            
-            // Keep left portion (before replacement starts)
-            if (piece_start < position)
-            {
-                long keep = position - piece_start;
-                Piece left = index.piece;
-                left.size = keep;
-                new_snap.pieces.insert(IndexedPiece(piece_start + keep, left));
-            }
-            
-            // Insert the new piece (only once)
-            if (inserted == false)
-            {
-                new_snap.pieces.insert(IndexedPiece(new_cumulative, piece));
-                inserted = true;
-            }
-            
-            // Keep right portion (after replacement ends)
-            if (piece_end > new_cumulative)
-            {
-                long skip = new_cumulative - piece_start;
-                long keep = piece_end - new_cumulative;
-                Piece right = trimPiece(index.piece, skip, keep);
-                new_snap.pieces.insert(IndexedPiece(new_cumulative + keep, right));
-            }
-            
-            previous = index.cumulative;
+            old_cumulative = index.cumulative;
         }
         
-        // Add snapshot
         addSnapshot(new_snap);
     }
     
+    /// Insert new data at this position
+    /// Params:
+    ///     position = Base position.
+    ///     data = Data pointer.
+    ///     len = Length of data.
     void insert(long position, const(void)* data, size_t len)
     in (position >= 0, "position >= 0")
     in (data != null, "data != NULL")
@@ -334,113 +349,107 @@ class PieceDocumentEditor : IDocumentEditor
         // Optimization: No snapshots, no documents opened
         if (snapshots.length == 0)
         {
-            // First edit with no document needs to be at position 0.
             assertion(position == 0, "insert(position==0)");
-            
             Snapshot snap = Snapshot( 0, len, len, new Tree(IndexedPiece(len, piece)) );
-            
             addSnapshot(snap);
             return;
         }
         
-        /// Current snapshot to work with
         Snapshot cur_snap = currentSnapshot();
-        
         assertion(position <= cur_snap.logical_size, "position <= current.logical_size");
         
-        /// New snapshot to be added
         Snapshot new_snap = Snapshot( position, position+len, cur_snap.logical_size+len, new Tree() );
         
-        // Optimization: Insert at SOF, only middle (new) and right pieces affected
+        // Optimization: Insert at SOF
         if (position == 0)
         {
-            // Insert other pieces while adjusting their cumulative size
-            // RBTree will balance it out
             foreach (index; cur_snap.pieces)
                 new_snap.pieces.insert( IndexedPiece(index.cumulative + len, index.piece) );
-            
-            // Insert starting piece (after adjustments to try for O(1))
             new_snap.pieces.insert( IndexedPiece(len, piece) );
-            
-            addSnapshot(new_snap);
-            return;
-        }
-        // Optimization: Insert at EOF, middle (new) piece needed
-        else if (position == cur_snap.logical_size)
-        {
-            // Insert other pieces, need to adjust cumulative size
-            foreach (index; cur_snap.pieces)
-                new_snap.pieces.insert(IndexedPiece(index.cumulative, index.piece));
-            
-            // Insert at end, no need to update nodes
-            new_snap.pieces.insert(IndexedPiece(cur_snap.logical_size+len, piece));
-            
             addSnapshot(new_snap);
             return;
         }
         
-        /*
-        Insertion at document position P with N bytes:
-
-        1. Traverse the tree comparing P against cumulative sizes to find
-           which piece contains position P
-        2. Split that piece if necessary (the piece might span before and after P)
-        3. Insert your new piece (with the added content) into the tree
-        4. Rebuild/update cumulative sizes for affected nodes
-        */
-        long previous; /// previous cumulative size
+        // Optimization: Insert at EOF
+        if (position == cur_snap.logical_size)
+        {
+            foreach (index; cur_snap.pieces)
+                new_snap.pieces.insert(IndexedPiece(index.cumulative, index.piece));
+            new_snap.pieces.insert(IndexedPiece(cur_snap.logical_size+len, piece));
+            addSnapshot(new_snap);
+            return;
+        }
+        
+        // General case: insert in the middle
+        long old_cumulative;
+        long new_cumulative;
+        bool inserted;
         foreach (index; cur_snap.pieces)
         {
-            if (index.cumulative < position) // add as-is
+            // Before insertion point - keep as-is
+            if (index.cumulative <= position)
             {
-                previous = index.cumulative;
-                new_snap.pieces.insert( index );
+                new_snap.pieces.insert(index);
+                old_cumulative = index.cumulative;
+                new_cumulative = index.cumulative;
                 continue;
             }
             
-            // 2. Get the offset that might land within a piece
-            long piece_offset = position - previous;
+            // This piece contains or is after the insertion point
+            long piece_offset = position - old_cumulative;
             
-            // 3. Insert piece, either if:
-            //    (a) It needs splitting a piece or;
-            //    (b) Needs to be inserted at the end of one.
-            if (piece_offset > 0 && piece_offset < index.piece.size) // insert left, middle, right pieces
+            // Need to split this piece
+            if (!inserted && piece_offset > 0 && piece_offset < index.piece.size)
             {
-                // Adjust found piece... By cutting it into LEFT and RIGHT pieces
+                // Split into left, new, right pieces
                 long right_len = index.piece.size - piece_offset;
                 Piece left = void, right = void;
-                // left:  Piece(found.piece.source, found.piece.offset, piece_offset)
-                // right: Piece(found.piece.source, found.piece.offset + piece_offset, found.piece.size - piece_offset)
+                
                 final switch (index.piece.source) {
                 case Source.document:
                     left  = Piece(Source.document, index.piece.position, piece_offset);
                     right = Piece(Source.document, index.piece.position + piece_offset, right_len);
                     break;
                 case Source.buffer:
-                    assert(piece_offset < int.max);
-                    left  = Piece.makebuffer(index.piece.position, index.piece.buffer.data, piece_offset);
+                    left  = Piece.makebuffer(index.piece.position, index.piece.buffer.data, piece_offset, index.piece.buffer.skip);
                     right = Piece.makebuffer(
                         index.piece.position + piece_offset,
                         index.piece.buffer.data,
                         right_len,
-                        piece_offset);
+                        index.piece.buffer.skip + piece_offset);
+                    break;
                 }
                 
-                // Now, we need to insert left, new, and right pieces...
-                long cumulative = previous + piece_offset;
-                new_snap.pieces.insert([
-                    IndexedPiece(cumulative, left),
-                    IndexedPiece(cumulative + len, piece),
-                    IndexedPiece(cumulative + len + right_len, right)
-                ]);
+                // Insert left, new, right
+                new_cumulative += piece_offset;
+                new_snap.pieces.insert(IndexedPiece(new_cumulative, left));
+                
+                new_cumulative += len;
+                new_snap.pieces.insert(IndexedPiece(new_cumulative, piece));
+                
+                new_cumulative += right_len;
+                new_snap.pieces.insert(IndexedPiece(new_cumulative, right));
+                
+                inserted = true;
             }
-            else // Insert at boundary of pieces
+            else
             {
-                new_snap.pieces.insert( IndexedPiece(index.cumulative + len, piece) );
+                // Insert new piece at boundary if not yet inserted
+                if (!inserted)
+                {
+                    new_cumulative += len;
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative, piece));
+                    inserted = true;
+                }
+                
+                // Then insert current piece with adjusted cumulative
+                new_cumulative += index.piece.size;
+                new_snap.pieces.insert(IndexedPiece(new_cumulative, index.piece));
             }
+            
+            old_cumulative = index.cumulative;
         }
         
-        // Add snapshot
         addSnapshot(new_snap);
     }
     
@@ -642,7 +651,7 @@ private:
                         printTable(snapshots[snapshot_index], "OLD");
                     printTable(snapshot, "NEW");
                 }
-                throw ex;
+                throw ex; // rethrew for visibility
             }
         }
         
@@ -1071,6 +1080,33 @@ unittest
     
     // Remove everything from that range, starting with piece with first replace
     e.remove(2, 33);
+}
+
+// Delete+Overwrite
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0008");
+    
+    static immutable ubyte[] data = [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 20
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 30
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 40
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 50
+    ];
+    scope PieceDocumentEditor e = new PieceDocumentEditor().open(
+        new MemoryDocument(data)
+    );
+    
+    // Remove range 10-19
+    e.remove(10, 10);
+    
+    // Insert at that starting position
+    ubyte r0 = 0xdd;
+    e.insert(10, &r0, ubyte.sizeof);
 }
 
 /// Common tests
