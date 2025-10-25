@@ -220,24 +220,11 @@ class PieceDocumentEditor : IDocumentEditor
     }
     
     void replace(long position, const(void)* data, size_t len)
+    in (position >= 0, "position >= 0")
+    in (data != null, "data != NULL")
+    in (len > 0,  "len > 0")
     {
-        assertion(position >= 0, "position >= 0");
-        assertion(data, "data != NULL");
-        assertion(len,  "len > 0");
-        
-        // Example overwrite operation
-        //
-        // Replace(P, L)
-        //      |
-        //      +-------------+
-        //      |             |
-        // +-------+-------+-------+
-        // | Piece | Piece | Piece |
-        // +-------+-------+-------+
-        //  v v v v v v v v v v v v
-        // +----+-------------+----+
-        // | Pi | New piece   | Pi |
-        // +----+-------------+----+
+        log("REPLACE pos=%d len=%u data=%s", position, len, data);
         
         // Make piece
         Piece piece = Piece.makebuffer( position, bufferAdd(data, len), len );
@@ -245,119 +232,87 @@ class PieceDocumentEditor : IDocumentEditor
         // Optimization: No snapshots, no documents opened
         if (snapshots.length == 0)
         {
-            // First edit with no document needs to be at position 0.
-            assertion(position == 0, "insert(position==0)");
-            
+            assertion(position == 0, "position == 0");
             Snapshot snap = Snapshot( 0, len, len, new Tree(IndexedPiece(len, piece)) );
-            
             addSnapshot(snap);
             return;
         }
         
-        /// Current snapshot to work with
         Snapshot cur_snap = currentSnapshot();
-        
         assertion(position <= cur_snap.logical_size, "position <= current.logical_size");
         
-        /// New snapshot to be added
-        Snapshot new_snap = Snapshot( position, position+len, cur_snap.logical_size, new Tree() );
-        
-        // Optimization: Insert at EOF, middle (new) piece needed
+        // Optimization: Replace at EOF (treat as insert)
         if (position == cur_snap.logical_size)
         {
-            // Insert other pieces, need to adjust cumulative size
+            Snapshot snap = Snapshot( position, position+len, cur_snap.logical_size+len, new Tree() );
             foreach (idx; cur_snap.pieces)
-                new_snap.pieces.insert(IndexedPiece(idx.cumulative, idx.piece));
-            
-            // Insert at end, no need to update nodes
-            new_snap.pieces.insert(IndexedPiece(cur_snap.logical_size+len, piece));
-            
-            addSnapshot(new_snap);
+                snap.pieces.insert(IndexedPiece(idx.cumulative, idx.piece));
+            snap.pieces.insert(IndexedPiece(cur_snap.logical_size+len, piece));
+            addSnapshot(snap);
             return;
         }
         
-        // Clone unaffected pieces
-        //new_snap.pieces.insert(cur_snap.pieces.lowerBound(needle));
-        
-        // Adjust logical size and get size delta
+        // Calculate how much we're actually overwriting
         long overwritten = min(len, cur_snap.logical_size - position);
-        long delta = len - overwritten;
-        new_snap.logical_size += delta; // relative position
+        long delta = len - overwritten;  // can be negative, zero, or positive
         
-        // Let's replace affected pieces
-        long new_cumulative = position + len; /// affected cumulative size for incoming piece
-        long previous; /// previous cumulative size
+        Snapshot new_snap = Snapshot( 
+            position, 
+            position + len, 
+            cur_snap.logical_size + delta,  // adjust by delta
+            new Tree() 
+        );
+        
+        long new_cumulative = position + len;
+        long previous;
         bool inserted;
-        foreach (index; cur_snap.pieces)//.upperBound(needle))
+        foreach (index; cur_snap.pieces)
         {
-            // Add "left" (lower) pieces
-            if (index.cumulative < position)
+            long piece_start = previous;
+            long piece_end = index.cumulative;
+            
+            // Pieces completely before the replacement - keep as-is
+            if (piece_end <= position)
             {
-                new_snap.pieces.insert( index );
+                new_snap.pieces.insert(index);
+                previous = index.cumulative;
                 continue;
             }
             
-            // Possible situations:
-            //     |--- Replace ---|
-            // +-----------------------+
-            // | Piece                 |
-            // +-----------------------+
-            // +-----------+-----------+
-            // | Piece     | Piece     |
-            // +-----------+-----------+
-            // +---------+---+---------+
-            // | Piece   | P | Piece   |
-            // +---------+---+---------+
-            // piece start: previous
-            // piece end  : index.cumulative
-            
-            // If this piece overlaps with new piece
-            if (previous < new_cumulative && index.cumulative > position)
-            {
-                // Check for left portion of piece to cut into
-                if (previous < position)
-                {
-                    //      | Piece offset
-                    // +----v--------------+
-                    // | Piece             |
-                    // +-------------------+
-                    // ^ Position          ^ Cumulative
-                    // Keep left portion of this piece
-                    long keep = position - previous; /// size to keep, piece offset
-                    Piece left = index.piece;
-                    left.size = keep;
-                    //Piece left = Piece(index.piece.source, index.piece.position, keep);
-                    // Create trimmed left piece and insert
-                    // IndexedPiece(prevCumulative + keepSize, trimmed_left_piece)
-                    new_snap.pieces.insert(IndexedPiece(previous + keep, left));
-                }
-                
-                // If new piece wasn't inserted yet
-                if (inserted == false)
-                {
-                    new_snap.pieces.insert(IndexedPiece(new_cumulative, piece));
-                    inserted = true;
-                }
-                
-                // Check for right portion of piece to cut into
-                // piece_end > new_piece.cumulative
-                if (index.cumulative > new_cumulative)
-                {
-                    long skip = new_cumulative - previous;
-                    long keep = index.cumulative - new_cumulative;
-                    Piece right = trimPiece(index.piece, skip, keep);
-                    new_snap.pieces.insert(IndexedPiece(new_cumulative + keep + delta, right));
-                }
-            }
-            else if (inserted)
+            // Pieces completely after the affected region - adjust cumulative
+            if (piece_start >= new_cumulative)
             {
                 new_snap.pieces.insert(IndexedPiece(index.cumulative + delta, index.piece));
-            }
-            else // Insert almost as-is, if new piece is last, it'll need its size changed
-            {
-                new_snap.pieces.insert(index);
+                previous = index.cumulative;
+                continue;
             }
             
+            // This piece overlaps with the replacement region
+            
+            // Keep left portion (before replacement starts)
+            if (piece_start < position)
+            {
+                long keep = position - piece_start;
+                Piece left = index.piece;
+                left.size = keep;
+                new_snap.pieces.insert(IndexedPiece(piece_start + keep, left));
+            }
+            
+            // Insert the new piece (only once)
+            if (inserted == false)
+            {
+                new_snap.pieces.insert(IndexedPiece(new_cumulative, piece));
+                inserted = true;
+            }
+            
+            // Keep right portion (after replacement ends)
+            if (piece_end > new_cumulative)
+            {
+                long skip = new_cumulative - piece_start;
+                long keep = piece_end - new_cumulative;
+                Piece right = trimPiece(index.piece, skip, keep);
+                new_snap.pieces.insert(IndexedPiece(new_cumulative + keep, right));
+            }
             
             previous = index.cumulative;
         }
@@ -367,10 +322,11 @@ class PieceDocumentEditor : IDocumentEditor
     }
     
     void insert(long position, const(void)* data, size_t len)
+    in (position >= 0, "position >= 0")
+    in (data != null, "data != NULL")
+    in (len > 0, "len > 0")
     {
-        assertion(position >= 0, "position >= 0");
-        assertion(data, "data != NULL");
-        assertion(len,  "len > 0");
+        log("INSERT pos=%d len=%u data=%s", position, len, data);
         
         // Make piece
         Piece piece = Piece.makebuffer( position, bufferAdd(data, len), len );
@@ -494,72 +450,78 @@ class PieceDocumentEditor : IDocumentEditor
     ///     position = Base position.
     ///     len = Number of bytes to delete.
     void remove(long position, size_t len)
+    in (position >= 0, "position >= 0")
+    in (len > 0, "len > 0")
     {
+        log("REMOVE pos=%d len=%u", position, len);
+        
         // Nothing to remove if there is nothing to remove!
         if (snapshots.length == 0)
             return;
         
-        assertion(position >= 0, "position >= 0");
-        
         Snapshot cur_snap = currentSnapshot();
         
         // Editors should avoid deleting nothing at EOF...
-        assertion(position < cur_snap.logical_size, "position <= cur_snap.logical_size");
+        assertion(position < cur_snap.logical_size, "position < cur_snap.logical_size");
         
         // Clamp removal to actual document size
-        long newlen = min(len, cur_snap.logical_size - position);
-        // Detla of size
-        long delta = newlen - len;
-        // End position
-        long end = position + len;
+        long removed = min(len, cur_snap.logical_size - position);
+        // End position of removal
+        long end = position + removed;
         
-        Snapshot new_snap = Snapshot(position, end, cur_snap.logical_size - newlen, new Tree());
+        Snapshot new_snap = Snapshot(
+            position, 
+            end, 
+            cur_snap.logical_size - removed,
+            new Tree()
+        );
         
-        long previous;
+        long old_cumulative;  // Track position in OLD snapshot
+        long new_cumulative;  // Track position in NEW snapshot
         foreach (index; cur_snap.pieces)
         {
-            long piece_start = previous;
+            long piece_start = old_cumulative;
             long piece_end   = index.cumulative;
             
-            // Overlaps
+            // Pieces that overlap with removal region
             if (piece_start < end && piece_end > position)
             {
-                long left_end = previous; // where left piece ended
-                
-                // Keep left portion (before removal)
+                // Keep left portion (before removal starts)
                 if (piece_start < position)
                 {
-                    // trim and insert
-                    long keep = position - previous; /// size to keep, piece offset
+                    long keep = position - old_cumulative;
                     Piece left = index.piece;
                     left.size = keep;
-                    left_end = previous + keep;
-                    //Piece left = Piece(index.piece.source, index.piece.position, keep);
-                    new_snap.pieces.insert(IndexedPiece(left_end, left));
+                    new_cumulative += keep;
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative, left));
                 }
                 
-                // Keep right portion (after removal)
+                // Keep right portion (after removal ends)
                 if (piece_end > end)
                 {
-                    // trim and insert
-                    long skip = end - previous;
-                    long keep = index.cumulative - end;
+                    long skip = end - old_cumulative;
+                    long keep = piece_end - end;
                     Piece right = trimPiece(index.piece, skip, keep);
-                    new_snap.pieces.insert(IndexedPiece(left_end + keep, right));
+                    new_cumulative += keep;
+                    new_snap.pieces.insert(IndexedPiece(new_cumulative, right));
                 }
                 
                 // Middle portion gets deleted (not inserted)
             }
             else if (piece_end <= position)
             {
-                new_snap.pieces.insert(index); // before removal
+                // Pieces completely before removal - keep as-is
+                new_snap.pieces.insert(index);
+                new_cumulative = index.cumulative;
             }
-            else // after removal
+            else  // piece_start >= end
             {
-                new_snap.pieces.insert(IndexedPiece(index.cumulative + delta, index.piece));
+                // Pieces completely after removal - use NEW cumulative
+                new_cumulative += index.piece.size;
+                new_snap.pieces.insert(IndexedPiece(new_cumulative, index.piece));
             }
             
-            previous = index.cumulative;
+            old_cumulative = index.cumulative;
         }
         
         addSnapshot(new_snap);
@@ -604,8 +566,6 @@ private:
     /// Nullable.
     IDocument basedoc;
     
-    static immutable string ENOTIMPL = "Not implemented";
-    
     // Optimize right-side trim operation
     Piece trimPiece(Piece piece, long skip, long keep)
     {
@@ -614,6 +574,7 @@ private:
         piece.size = keep;
         switch (piece.source) { // Adjust piece offsets before re-inerting
         case Source.buffer:
+            // NOTE: skip is SET, not added, because the piece is recreated for snapshot
             with (piece)
             assert(buffer.data + buffer.skip <= buffer.data + buffer.ogsize, "data + skip <= data + ogsize");
             //piece.buffer.data += skip;
@@ -634,12 +595,12 @@ private:
     ///       Due to RedBlackTree's usage of [private struct] Range(T).front()
     ///       (used in opSlice, lowerBounds, upperBounds, etc.), all elements
     ///       are passed *by value*, so it is not possible to modify these
-    ///       elements as-is (using foreach + ref) without removing+insertion.
+    ///       elements as-is (even with foreach + ref) without remove+insert.
     ///       Which, could mean a shallow dupe (O(n)), remove (O(log n)), and
     ///       insert (O(log n)) possibly all elements -> Might be O(n²).
     ///       
     ///       So, each new snapshots are created from scratch, and this rebuild
-    ///       should be around O(n log n), and possibly better.
+    ///       should be around O(n log n), or possibly better.
     ///       
     ///       Other optimizations (deltas, array of pointers, etc.) could be
     ///       explored later, but it's more important to have something that
@@ -650,6 +611,8 @@ private:
     /// towards the total amount of snapshots.
     size_t snapshot_index;
     /// Snapshot index used when saving.
+    ///
+    /// Used to know if document when was document saved vs. current index.
     size_t snapshot_saved;
     
     /// Get the current snapshot.
@@ -664,40 +627,56 @@ private:
     /// Params: snapshot = New snapshot
     void addSnapshot(Snapshot snapshot)
     {
+        // Ensuring the consistency of the incoming new set of pieces
+        // makes testing more consistent in behavior, to avoid incrementing
+        // the snapshot index variable needlessly.
+        debug
+        {
+            try ensureConsistency(snapshot);
+            catch (Exception ex)
+            {
+                // If logs are enabled, print tables
+                if (logEnabled())
+                {
+                    if (snapshot_index < snapshots.length)
+                        printTable(snapshots[snapshot_index], "OLD");
+                    printTable(snapshot, "NEW");
+                }
+                throw ex;
+            }
+        }
+        
         if (snapshot_index < snapshots.length) // replace
             snapshots[snapshot_index] = snapshot;
         else // append
             snapshots.insert( snapshot );
         snapshot_index++;
-        
-        debug ensureConsistency();
     }
     
     /// Ensure pieces are consistency in the latest added snapshot
-    debug void ensureConsistency()
+    debug void ensureConsistency(Snapshot snapshot)
     {
         import std.conv : text;
-        Snapshot snapshot = currentSnapshot();
         long previous_cumulative;
-        size_t piece_count;
         long total_size; // cumulative size of *pieces*, to be compared to snapshot size
-        // NOTE: 'enforce' msg is lazy, so feel free to use text(...)
+        size_t piece_count;
+        // NOTE: 'enforce' msg is lazy evaluated, so feel free to use text(...)
         foreach (indexed; snapshot.pieces)
         {
             // Cumulative needs to be monotonically increasing, although
             // redblack tree handles this
             assertion(previous_cumulative < indexed.cumulative,
-                text("Cumulative mismatch (piece#=", piece_count, "): ",
+                text("Cumulative mismatch (piece[", piece_count, "]): ",
                     previous_cumulative, " >= ", indexed.cumulative));
             
             // Piece size must be set
             assertion(indexed.piece.size > 0,
-                text("Piece size unset (piece#=", piece_count, ")"));
+                text("Piece size unset (piece[", piece_count, "])"));
             
             // Check for gap introduced by piece size vs. indexed cumulative size
             long piece_cumulative = previous_cumulative + indexed.piece.size;
             assertion(indexed.cumulative == piece_cumulative,
-                text("Gap found (piece#=", piece_count, "): ",
+                text("Gap found (piece[", piece_count, "]): ",
                     indexed.cumulative, " != ", piece_cumulative));
             
             piece_count++;
@@ -707,13 +686,23 @@ private:
         
         // Last cumulative must match logical size of snapshot
         assertion(previous_cumulative == snapshot.logical_size,
-            text("Size mismatch: ",
-                previous_cumulative, " == ", snapshot.logical_size));
+            text("Cumulative mismatch: ", previous_cumulative, " != ", snapshot.logical_size));
         
         // Cumulative piece size must match logical size of snapshot
         assertion(total_size == snapshot.logical_size,
-            text("Total size mismatch: ",
-                total_size, " != ", snapshot.logical_size));
+            text("Logical size mismatch: ", total_size, " != ", snapshot.logical_size));
+    }
+    
+    debug void printTable(Snapshot snapshot, string name)
+    {
+        // Messy but whatever
+        log("DUMPING %s PIECES\n--------------------", name);
+        size_t n;
+        foreach (index; snapshot.pieces)
+        {
+            with (index.piece)
+            log("Piece[%u](%10s, %10d, %10d)(%d)", n++, source, position, size, index.cumulative);
+        }
     }
     
     //
@@ -936,7 +925,6 @@ unittest
     //  0   1   2   3    4  5  6   7   8   9
         4,  5,  8, 16,  18, 1, 2,  5,  8, 10, // 20
     ]);
-    log("\n--------------------\nRESULT=%s\n--------------------", e.view(16, buffer));
     assert(e.view(16, buffer) == [ // upper 16 bytes
     //  6   7   8   9
         2,  5,  8, 10, // 20
@@ -944,19 +932,146 @@ unittest
 }
 
 /// Mix replace, insert, and deletions
-/*unittest
+unittest
 {
     import document.memory : MemoryDocument;
     
     log("TEST-0006");
     
-    static immutable string data = "very good string!";
+    static immutable ubyte[] data = [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 20
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 30
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 40
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 50
+    ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
-        new MemoryDocument(cast(ubyte[])data)
+        new MemoryDocument(data)
     );
     
+    ubyte[50] buffer;
+    assert(e.edited() == false);
+    assert(e.size() == 50);
+    assert(e.view(0, buffer) == data);
     
-}*/
+    // Remove 10-19 row
+    e.remove(10, 10);
+    assert(e.edited());
+    assert(e.size() == 40);
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+    ]);
+    
+    // Replace one byte values, which tends to be problematic
+    ubyte replace0 = 86;
+    e.replace(20, &replace0, ubyte.sizeof);
+    assert(e.edited());
+    assert(e.size() == 40);
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       86, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+    ]);
+    
+    e.replace(21, &replace0, ubyte.sizeof);
+    assert(e.edited());
+    assert(e.size() == 40);
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+    ]);
+    
+    // Replace at position 0, just in case
+    e.replace(0, &replace0, ubyte.sizeof);
+    assert(e.edited());
+    assert(e.size() == 40);
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+       86,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+    ]);
+    
+    // Insert new data at start
+    static immutable ubyte[] insert0 = [
+    //  0   1   2   3   4   5   6   7   8   9
+       99, 88, 77, 66, 55, 44, 33, 22, 11, 00, // 10
+    ];
+    e.insert(0, insert0.ptr, insert0.length);
+    assert(e.edited());
+    assert(e.size() == 50);
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+       99, 88, 77, 66, 55, 44, 33, 22, 11,  0, // 10
+       86,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+    ]);
+    assert(e.view(0, buffer[0..20]) == [
+    //  0   1   2   3   4   5   6   7   8   9
+       99, 88, 77, 66, 55, 44, 33, 22, 11,  0,
+       86,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+    ]);
+    assert(e.view(30, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+       86, 86, 32, 33, 34, 35, 36, 37, 38, 39,
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+    ]);
+}
+
+/// Delete multiple pieces
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0007");
+    
+    static immutable ubyte[] data = [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
+       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 20
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 30
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 40
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 50
+    ];
+    scope PieceDocumentEditor e = new PieceDocumentEditor().open(
+        new MemoryDocument(data)
+    );
+    
+    // Emulate usage and check just in check it's the state we want
+    ubyte[64] buffer;
+    ubyte data0 = 0xee;
+    e.replace( 2, &data0, ubyte.sizeof);
+    e.replace(12, &data0, ubyte.sizeof);
+    e.insert (22, &data0, ubyte.sizeof);
+    e.insert (32, &data0, ubyte.sizeof);
+    assert(e.edited());
+    assert(e.size() == data.length + 2); // 2x 1-byte inserts
+    assert(e.view(0, buffer) == [
+    //  0   1    2   3   4   5   6   7   8   9
+        0,  1,0xee,  3,  4,  5,  6,  7,  8,  9, // 10
+       10, 11,0xee, 13, 14, 15, 16, 17, 18, 19, // 20
+       20, 21,0xee, 22, 23, 24, 25, 26, 27, 28,
+       29, 30,0xee, 31, 32, 33, 34, 35, 36, 37,
+       38, 39,  40, 41, 42, 43, 44, 45, 46, 47,
+       48, 49,
+    ]);
+    
+    // Remove everything from that range, starting with piece with first replace
+    e.remove(2, 33);
+}
 
 /// Common tests
 unittest
