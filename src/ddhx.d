@@ -2306,14 +2306,16 @@ void quit(Session *session, string[] args)
 {
     if (session.editor.edited())
     {
-        switch (promptkey("Save? (Y/N) ")) {
+        switch (promptkey("Save? (Yes/No/Cancel) ")) {
         case 'n', 'N':
             goto Lexit; // quit without saving
         case 'y', 'Y':
             save(session, null); // save and continue to quit
             break;
         default:
-            throw new Exception("Canceled");
+            // Canceling isn't an error
+            message("Canceled");
+            return;
         }
     }
     

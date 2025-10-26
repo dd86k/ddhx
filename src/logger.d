@@ -26,6 +26,7 @@ version (Trace)
         sw.start();
     }
 }
+// TODO: Consider autostart when DDHX_LOG is set (file or stderr)
 
 /// Start logging to this file.
 /// Params: file = File path.

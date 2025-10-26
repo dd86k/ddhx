@@ -15,6 +15,10 @@ module os.terminal;
 //       Query: \033[?u (returns support level)
 //       Enable: \033[>1u
 
+// NOTE: VT detection on Windows
+//       Windows Terminal sets the ENABLE_VIRTUAL_TERMINAL_PROCESSING for the
+//       output buffer by default. conhost and others don't, which is a good
+//       universal way of detecting VT sequence support.
 // NOTE: Useful links for escape codes
 //       https://man7.org/linux/man-pages/man0/termios.h.0p.html
 //       https://man7.org/linux/man-pages/man3/tcsetattr.3.html

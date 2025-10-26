@@ -21,6 +21,8 @@ import backend;
 
 private:
 
+enum DEFAULT_BACKEND = "chunk";
+
 template DVER(uint ver)
 {
     enum DVER =
@@ -245,7 +247,7 @@ void main(string[] args)
     // Select editor backend, this allows transitioning between multiple
     // backends (implementations) easier.
     IDocumentEditor editor;
-    string backend = environment.get("DDHX_BACKEND", "chunk");
+    string backend = environment.get("DDHX_BACKEND", DEFAULT_BACKEND);
     switch (backend) {
     case "piece":
         editor = new PieceDocumentEditor();
