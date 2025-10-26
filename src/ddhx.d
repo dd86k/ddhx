@@ -213,13 +213,15 @@ immutable Command[] default_commands = [
         Mod.shift|Key.Home,         &select_home },
     { "select-end",                 "Extend selection to end of line",
         Mod.shift|Key.End,          &select_end },
-    /*{ "select-top",                 "Extend selection to start of document",
+    { "select-top",                 "Extend selection to start of document",
         Mod.ctrl|Mod.shift|Key.Home,&select_top },
     { "select-bottom",              "Extend selection to end of document",
         Mod.ctrl|Mod.shift|Key.End, &select_bottom },
     { "select-all",                 "Select entire document",
-        Mod.ctrl|Key.A,             &select_all },*/
-    // 
+        Mod.ctrl|Key.A,             &select_all },
+    { "select",                     "Start a selection range",
+        0,                          &select },
+    // Mode, panel...
     { "change-panel",               "Switch to another data panel",
         Key.Tab,                    &change_panel },
     { "change-mode",                "Change writing mode (between overwrite and insert)",
@@ -1695,6 +1697,59 @@ void select_end(Session *session, string[] args)
     }
     
     moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
+}
+
+// Select from current position to start of document
+void select_top(Session *session, string[] args)
+{
+    long docsize = session.editor.size();
+    if (docsize < 1)
+        return;
+    
+    session.selection.anchor = session.position_cursor;
+    session.position_cursor  = 0;
+    session.selection.status = 1;
+}
+
+// Select from current position to end of document
+void select_bottom(Session *session, string[] args)
+{
+    long docsize = session.editor.size();
+    if (docsize < 1)
+        return;
+    
+    session.selection.anchor = session.position_cursor;
+    session.position_cursor  = docsize - 1;
+    session.selection.status = 1;
+}
+
+// Select all of document
+void select_all(Session *session, string[] args)
+{
+    long docsize = session.editor.size();
+    if (docsize < 1)
+        return;
+    
+    session.selection.anchor = 0;
+    session.position_cursor  = docsize - 1;
+    session.selection.status = 1;
+}
+
+// Start an explicit selection
+void select(Session *session, string[] args)
+{
+    string start = arg(args, 0, "Start: ");
+    if (start is null)
+        return;
+    string end   = arg(args, 1, "End: ");
+    if (end is null)
+        return;
+    
+    import utils : scan;
+    session.selection.status = 0;
+    session.selection.anchor = scan( start ); // throws if wrong
+    session.position_cursor  = scan( end );   // throws if wrong
+    session.selection.status = 1;
 }
 
 //
