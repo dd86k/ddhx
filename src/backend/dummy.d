@@ -27,7 +27,7 @@ class DummyDocumentEditor : IDocumentEditor
     
     void markSaved()
     {
-        throw new Exception("Not implemented");
+        // Do nothing
     }
 
     ubyte[] view(long position, void* data, size_t size)

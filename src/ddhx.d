@@ -756,6 +756,38 @@ void save_file(IDocumentEditor editor, string target)
     GC.collect();
     GC.minimize();
 }
+unittest
+{
+    import backend.dummy : DummyDocumentEditor;
+    import std.file : remove, readText, exists;
+    
+    static immutable path = "tmp_save_test";
+    
+    // In case residue exists from a failing test
+    if (exists(path))
+        remove(path);
+    
+    // Save file as new (target does not exist)
+    static immutable string data0 = "test data";
+    scope IDocumentEditor e0 = new DummyDocumentEditor(cast(immutable(ubyte)[])data0);
+    save_file(e0, path);
+    if (readText(path) != data0)
+    {
+        remove(path); // Let's not leave residue
+        assert(false, "Save content differs for data0");
+    }
+    
+    // Save different data to existing path (target exists)
+    static immutable string data1 = "test data again!";
+    scope IDocumentEditor e1 = new DummyDocumentEditor(cast(immutable(ubyte)[])data1);
+    save_file(e1, path);
+    if (readText(path) != data1)
+    {
+        remove(path); // Let's not leave residue
+        assert(false, "Save content differs for data1");
+    }
+    remove(path);
+}
 
 // Move the cursor relative to its position within the file
 void moverel(Session *session, long pos)
