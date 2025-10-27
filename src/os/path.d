@@ -112,6 +112,26 @@ else
     return null;
 }
 
+/// Attempt to get the system folder.
+/// Windows: Usually C:\\ProgramData
+/// Posix: Usually /etc
+/// Returns: System config path.
+string getSystemFolder()
+{
+version (Windows)
+{
+    // 1. %ProgramData%
+    if (string programdata = environment.get("ProgramData"))
+        return programdata;
+    // 2. Fallback (Windows Vista+)
+    return `C:\ProgramData`;
+}
+else version (Posix)
+{
+    return "/etc";
+}
+}
+
 /// Attempt to find existing config file on the system.
 /// Params:
 ///     appname = Application name, used for user config folder.
@@ -121,16 +141,7 @@ string findConfig(string appname, string filename)
 {
     import std.file : exists;
     
-    // 1. Check in app config directory
-    string appdir = getUserConfigFolder();
-    if (appdir)
-    {
-        string path = buildPath(appdir, appname, filename);
-        if (exists(path))
-            return path;
-    }
-    
-    // 2. Check in user home folder directly
+    // 1. Check in user home folder directly
     string homedir = getHomeFolder();
     if (homedir)
     {
@@ -139,7 +150,23 @@ string findConfig(string appname, string filename)
             return path;
     }
     
-    // 3. Check in system folder (TODO)
+    // 2. Check in app config directory
+    string appdir = getUserConfigFolder();
+    if (appdir)
+    {
+        string path = buildPath(appdir, appname, filename);
+        if (exists(path))
+            return path;
+    }
+    
+    // 3. Check in system folder
+    string sysdir = getSystemFolder();
+    if (sysdir)
+    {
+        string path = buildPath(sysdir, appname, filename);
+        if (exists(path))
+            return path;
+    }
     
     return null;
 }

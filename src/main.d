@@ -94,31 +94,38 @@ void printpage(string opt)
     case "help-config":
         import std.path : buildPath;
         import std.file : exists;
-        import os.path : findConfig, getHomeFolder, getUserConfigFolder;
+        import os.path : findConfig, getHomeFolder, getUserConfigFolder, getSystemFolder;
         
         enum SPACING0 = -10;
         
         static immutable string ACTIVE   = "(active)";
         static immutable string INACTIVE = "        ";
         
-        string homedir = getHomeFolder();
-        string appdir  = getUserConfigFolder();
         string confpath = findConfig("ddhx", ".ddhxrc");
         
         // Bastardized way of printing Type, State, and Path
         // The state is actively checked against path, null is allowed there
         writeln("Paths");
+        string homedir = getHomeFolder();
+        if (homedir) // available
+        {
+            string homepath = buildPath(homedir, ".ddhxrc");
+            bool active = homepath == confpath;
+            writefln("%*s %s %s", SPACING0, "  User", active ? ACTIVE : INACTIVE, homepath);
+        }
+        string appdir  = getUserConfigFolder();
         if (appdir) // available
         {
             string apppath = buildPath(appdir, "ddhx", ".ddhxrc");
             bool active = apppath == confpath;
             writefln("%*s %s %s", SPACING0, "  App", active ? ACTIVE : INACTIVE, apppath);
         }
-        if (homedir) // available
+        string sysdir  = getSystemFolder();
+        if (sysdir)
         {
-            string homepath = buildPath(homedir, ".ddhxrc");
-            bool active = homepath == confpath;
-            writefln("%*s %s %s", SPACING0, "  User", active ? ACTIVE : INACTIVE, homepath);
+            string syspath = buildPath(sysdir, "ddhx", ".ddhxrc");
+            bool active = syspath == confpath;
+            writefln("%*s %s %s", SPACING0, "  System", active ? ACTIVE : INACTIVE, syspath);
         }
         writeln;
         
