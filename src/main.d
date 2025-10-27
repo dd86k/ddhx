@@ -91,29 +91,54 @@ void printpage(string opt)
             printfield(command.name, command.description, SPACING);
         }
         break;
-    case "help-configs":
-        // TODO: Consider renaming to "help-config"
-        //       And print possible locations that configs could be found
-        //       by the system
+    case "help-config":
+        import std.path : buildPath;
+        import std.file : exists;
+        import os.path : findConfig, getHomeFolder, getUserConfigFolder;
+        
+        enum SPACING0 = -10;
+        
+        static immutable string ACTIVE   = "(active)";
+        static immutable string INACTIVE = "        ";
+        
+        string homedir = getHomeFolder();
+        string appdir  = getUserConfigFolder();
+        string confpath = findConfig("ddhx", ".ddhxrc");
+        
+        // Bastardized way of printing Type, State, and Path
+        // The state is actively checked against path, null is allowed there
+        writeln("Paths");
+        if (appdir) // available
+        {
+            string apppath = buildPath(appdir, "ddhx", ".ddhxrc");
+            bool active = apppath == confpath;
+            writefln("%*s %s %s", SPACING0, "  App", active ? ACTIVE : INACTIVE, apppath);
+        }
+        if (homedir) // available
+        {
+            string homepath = buildPath(homedir, ".ddhxrc");
+            bool active = homepath == confpath;
+            writefln("%*s %s %s", SPACING0, "  User", active ? ACTIVE : INACTIVE, homepath);
+        }
+        writeln;
+        
+        // Print config fields/values
+        enum SPACING1 = -20;
         foreach (conf; configurations)
         {
-            writeln(conf.name);
-            writeln('\t', conf.description);
-            writeln('\t', "Values: ", conf.availvalues);
-            writeln('\t', "Default: ", conf.defaultval);
+            writefln("%*s%s", SPACING1, conf.name, conf.description);
+            writefln("%*sValues: %s", SPACING1, "", conf.availvalues);
+            writefln("%*sDefault: %s", SPACING1, "", conf.defaultval);
             writeln;
         }
         break;
     case "help-debug":
         import platform : TARGET_TRIPLE;
-        import os.path : findConfig;
         import os.mem : syspagesize;
         import std.conv : text;
         printfield("Compiler",  __VENDOR__~" "~DVER!__VERSION__);
         printfield("Target",    TARGET_TRIPLE);
         printfield("Pagesize",  text(syspagesize()));
-        string confpath = findConfig("ddhx", ".ddhxrc");
-        printfield("Config",    confpath ? confpath : "none");
         break;
     }
     exit(EXIT_SUCCESS);
@@ -183,7 +208,7 @@ void main(string[] args)
         "ver",          "Print only the version and exit", &printpage,
         "help-keys",    "Print default shortcuts and exit", &printpage,
         "help-commands","Print commands page and exit", &printpage,
-        "help-configs", "Print configuration page and exit", &printpage,
+        "help-config",  "Print configuration page and exit", &printpage,
         "help-debug",   "Print debug page and exit", &printpage,
         );
     }

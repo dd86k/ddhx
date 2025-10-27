@@ -167,7 +167,7 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
     },
     {
         "addressing", "Addressing offset format displayed",
-        `"hexadecimal", "octal", "decimal"`, `"hex"`,
+        `"h[exadecimal]", "o[ctal]", "d[ecimal]"`, `"hexadecimal"`,
         &configuration_addressing
     },
     {
