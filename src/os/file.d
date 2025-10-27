@@ -351,11 +351,11 @@ ulong availableDiskSpace(string path)
 {
     // NOTE: std.file.cenforce is private... But we have OSException
     
-    import std.file : exists;
+    import std.file : exists, isDir;
     import std.path : dirName;
     
-    if (exists(path) == false)
-        path = dirName(path);
+    if (exists(path) == false || isDir(path) == false)
+        path = dirName(path); // force getting directory path
     
 version (Windows)
 {
