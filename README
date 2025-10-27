@@ -39,34 +39,31 @@ Currently available for Windows, macOS, Linux, and BSDs.
 License: MIT
 Title font: Shaded Blocky (FIGlet)
 
-********************************************************************************
-*                                    NOTICE                                    *
-********************************************************************************
+// FEATURES
 
-This software is provided with NO WARRANTY as it is marked as EXPERIMENTAL.
+  • Insert, overwrite, and delete operations
+  • Unlimited undo/redo
+  • Large file support
+  • Visual selection and block operations
+  • Multiple charset representations (ascii, mac, cp437, ebcdic)
+  • Search data with a powerful pattern syntax
+  • Skip identical data or repeating patterns by selection
+  • Customizable with configuration file
 
-ALWAYS make backups of your files before editing them.
-
-This is a Work In Progress (WIP). Everything was rewritten from scratch
-in version 0.5 to have editing features. It will be buggy!
-
-//
+////////////////////////////////////////////////////////////////////////////////
 // Limitations
-//
 
 // Output
 
-It currently only outputs UTF-8. You might want to stick to the ASCII charset
-setting if your terminal or console lacks UTF-8 capabilities.
-
-On Windows, the editor will attempt to use the 65001 (UTF-8) character set
-automatically.
+It currently only outputing UTF-8. You might want to stick to the ASCII charset
+if your terminal/console lacks UTF-8 capabilities. On Windows, the editor will
+attempt to use the 65001 (UTF-8) codepage automatically.
 
 // Input
 
 On POSIX platforms, the editor supports xterm and vt220 sequences.
 
-On POSIX platforms, the app assumes these keys:
+The app assumes these keys:
 - ^H (\010) for Ctrl+Backspace;
 - DEL (0x7f) for Backspace;
 - "\033[3~" for Delete.
@@ -81,9 +78,8 @@ If a shortcut doesn't work, the "bind" command allows binding a command to a
 shortcut: `bind alt+e select-end`. Commands can still be executed from the
 command prompt.
 
-//
+////////////////////////////////////////////////////////////////////////////////
 // Roadmap
-//
 
 This list may change at any given time without notice.
 
@@ -104,27 +100,26 @@ This list may change at any given time without notice.
 - [x] Searching ("find" command)
 
 0.7:
-- [*] Insert data
-- [*] Delete data
+- [x] Insert data
+- [x] Delete data
 - [x] "export-range" command
+- [ ] Insert file
+- [ ] Fill range
 
 Wishlist:
 - [ ] Other single-byte data types in view (d8, o8)
 - [ ] Multi-byte data types (d16, f32, etc.)
 - [ ] Insert characters
-- [ ] Insert range ("fill")
-- [ ] Insert file ("insert-file" depends on mode)
 - [ ] Copy & paste ("paste" depends on mode)
-- [ ] Bookmarks / Annotations
+- [ ] Bookmarks / Annotations ("bookmark-save", "bookmark-load")
 - [ ] Process memory document type
 - [ ] Disk document type
 - [ ] Search by charset
 - [ ] Inspect data panel
 - [ ] Patch system
 
-//
+////////////////////////////////////////////////////////////////////////////////
 // Usage
-//
 
 ddhx aims to be a small and easy-to-use visual hexadecimal editor. For that
 purpose, there are multiple ways of using the editor.
@@ -133,59 +128,80 @@ Synopsis:
   ddhx [OPTIONS] [FILE|-]
   ddhx {-h|--help|--version|--ver}
 
-Create a new document:
+To view available start options, execute `ddhx --help`. The command-line
+interface matches POSIX guidelines.
+
+Create a new empty document:
   $ ddhx
 Open an existing or create a new file at this location:
   $ ddhx FILENAME
 Create a new document from stream data:
   $ echo test | ddhx -
 
-The command-line interface matches POSIX guidelines.
-
-To view available start options, execute `ddhx --help`.
+To quit the editor, use Ctrl+Q, or use the "quit" command.
 
 Minimum recommended terminal size is 80x24 characters.
 
-To quit the editor, use Ctrl+Q, or use the "quit" command.
-
+////////////////////////////////////////////////////////////////////////////////
 // Navigation
 
-Arrow keys for basic navigation.
+Left/Right Arrow Keys   Move cursor by one element
+Up/Down Arrow Keys      Move cursor by a row
+Page Up/Down            Move cursor across the screen
+Home/End                Move cursor to start or end of line
+Ctrl+Home/End           Move cursor to start of end of document
+Ctrl+Left/Right         Skip over repeated bytes or patterns
+Ctrl+Up/Down            Scroll view without moving cursor
+Shift+Navigation        Extend selection while navigating
 
-Page Up/Down are used to move the cursor across the screen.
+To view all default keybindings, run: ddhx --help-keys
 
-Home/End to move to start or end of row.
+////////////////////////////////////////////////////////////////////////////////
+// Editing
 
-Ctrl+Home/End to move to start or end of document.
+a-f, 0-9                Insert or replace data at cursor position
+Tab                     Change between data and text columns
+Ctrl+S                  Save document
+Ctrl+O                  Save As another name
 
-Ctrl+Left/Right can be used to skip over data (ie, same bytes or patterns).
+////////////////////////////////////////////////////////////////////////////////
+// Key binding
 
-Ctrl+Up/Down can be used to move the view higher or lower.
+Keys can be bound to commands using the "bind" command.
 
-Shift + navigation key to start a selection.
+Usage: bind KEY COMMAND [PARAMS...]
 
-New keybinds can be set at runtime using the "bind" command (vim example):
+Vim-style navigation example:
   >bind h left
   >bind j down
   >bind k up
   >bind l right
 
-Another example, "bind right-arrow goto +32" will bind the right arrow key to
-"goto +32", which will make it jump 32 bytes ahead. To unbind it, use
-"unbind right-arrow" or "reset-keys" to reset all keybindings.
+Custom jump example:
+  >bind right-arrow goto +32
 
-To view default keybinds, execute `ddhx --help-keys`.
+This makes the right arrow jump 32 bytes ahead instead of moving one position.
 
+To remove bindings:
+  >unbind right-arrow       Remove a specific binding
+  >reset-keys               Reset all bindings to defaults
+
+Key bounds in a session are not saved. The configuration file is recommended.
+
+////////////////////////////////////////////////////////////////////////////////
 // Searching
 
-Searching can be done using the "find" and "find-back" commands.
+Finding data uses the "find" (Ctrl+F) and "find-back" (Ctrl+B) commands.
+
+Once a search needle is define, it can be re-used using "find-next" (Ctrl+N)
+and "find-prev" (Shift+N).
 
 For example, looking for `hi\0\0` (these are equivalent):
   >find s:hi x:00 00
   >find \"hi\" 0x00 00
   >find x:68 69 00 00
 
-Here are supported prefixes:
+Supported prefixes:
   x: and 0x - Hexadecimal (currently only 8-bit unsigned)
   d:        - Decimal (currently only 8-bit unsigned)
   o:        - Octal (currently only 8-bit unsigned)
@@ -199,67 +215,58 @@ the previous result.
 
 LIMITATION: Search does not wrap and depends on cursor position.
 
-// Editing
-
-Editing is done directly using the A to F and 0 to 9 keys.
-
-Saving is default mapped to Ctrl+S, and Save As mapped to Ctrl+O.
-
-Currently, only overwrite and append operations are supported.
-
-//
+////////////////////////////////////////////////////////////////////////////////
 // Commands
-//
 
-All actions are mapped to command names. Some shortcuts are mapped to commands.
+All actions in the editor are backed by commands. Commands can be executed via
+keyboard shortcuts or by typing them directly into the command prompt.
 
-Commands can be executed using the command prompt within the editor.
+Press Enter to open the command prompt, type your command, then press Enter
+again to execute it.
 
-By pressing Return, you can type a command, and then confirm it by pressing the
-Return key again.
+// Command Arguments
 
-Some commands have arguments. When these arguments are omitted, the associated
-command will prompt for these arguments.
+Commands may require arguments. If you omit them, the editor will prompt you
+for the missing values.
 
-For example, moving the cursor forward of 32 bytes:
+Example - jumping forward 32 bytes:
   >goto +0x20
 
-Typing "goto" alone will make the program ask for an offset. This command also
-has the shortcut of Ctrl+G. In the case of "goto", it accepts decimal, octal,
-and hexadecimal values.
+Typing "goto" alone will prompt for an offset. This command can also be
+triggered with Ctrl+G and accepts decimal, octal, and hexadecimal values.
 
-Examples of using "goto":
-  >goto 0x10
-    Go to position 16 bytes (using hexadecimal) within document.
-  >goto +020
-    Go forward 16 bytes (using octal) from current position.
-  >goto -5
-    Go backward 5 bytes (using decimal) from current position.
-  >goto %45
-    Go to position 45% within document (45% of total size).
+// Using "goto"
 
-To view available commands, execute `ddhx --help-commands`.
+  >goto 0x10        Jump to position 16 (hexadecimal)
+  >goto +020        Jump forward 16 bytes (octal)
+  >goto -5          Jump backward 5 bytes (decimal)
+  >goto %45         Jump to 45% through the document
 
-//
+To view all available commands, run: ddhx --help-commands
+
+////////////////////////////////////////////////////////////////////////////////
 // Configuration
-//
 
-The editor can be configured at runtime using the "set" command.
+Settings can be changed at runtime using the "set" command.
 
-For example, changing the character set:
+Example - changing the character set:
   >set charset mac
 
-Runtime configurations do not persist across sessions.
+Most settings can also be configured via command-line flags. For example, both
+"-c" and "--columns=" correspond to the "columns" setting.
 
-Many of these configuration parameters can be set using the Command-Line
-Interface. For example, both "-c" and "--columns=" map to the "columns"
-configuration.
+Runtime changes do not persist across sessions. To make settings permanent,
+add them to your configuration file at. (Use `ddhx --config-path` to see
+your system's location.)
 
-To view available configuration options, execute `ddhx --help-configs`.
+Example configuration file:
+  charset mac
+  columns 32
 
-//
+To view configuration options, run: ddhx --help-config
+
+////////////////////////////////////////////////////////////////////////////////
 // Compiling
-//
 
 To compile this project, you'll need a D compiler and DUB.
 
@@ -272,9 +279,8 @@ Compile a debug build:
 Compile a release build using a specified compiler:
   $ dub build -b release --compiler=ldc2
 
-//
+////////////////////////////////////////////////////////////////////////////////
 // Debugging
-//
 
 Run unit tests (useful for new platforms):
   $ dub test
@@ -289,3 +295,14 @@ Environment variables:
   - Backends: "chunk" (default), "piece"
 - DDHX_CHUNKSIZE=SIZE
   - If set, sets chunk size to SIZE (binary suffix) for the chunk backend.
+
+********************************************************************************
+*                                    NOTICE                                    *
+********************************************************************************
+
+This software is provided with NO WARRANTY as it is marked as EXPERIMENTAL.
+
+ALWAYS make backups of your files before editing them.
+
+This is a Work In Progress (WIP). Everything was rewritten from scratch
+in version 0.5 to have editing features. It will be buggy!
