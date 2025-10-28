@@ -8,7 +8,7 @@ module platform;
 /// Soft assertion exception class.
 ///
 /// Mostly used to prefix "assert: " to messages.
-public class Assert : Exception
+public class Assertion : Exception
 {
     this(string msg, // @suppress(dscanner.style.undocumented_declaration)
         string _file = __FILE__, size_t _line = __LINE__)
@@ -19,12 +19,12 @@ public class Assert : Exception
 static if (__VERSION__ >= 2079) // eponymous std.exception.enforce
 {
     import std.exception : enforce;
-    public alias assertion = enforce!Assert;
+    public alias assertion = enforce!Assertion;
 }
 else
 {
     import std.exception : enforceEx;
-    public alias assertion = enforceEx!Assert;
+    public alias assertion = enforceEx!Assertion;
 }
 
 /// Represents a feature not implemented, yet or never.

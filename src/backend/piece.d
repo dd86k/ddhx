@@ -233,22 +233,25 @@ class PieceDocumentEditor : IDocumentEditor
                 import core.stdc.string : memcpy, memset;
                 if (index.piece.pattern.ogsize == 1) // One byte pattern
                 {
+                    log("PATTERN SINGLE read=%d", to_read);
                     memset(buffer.ptr + bi,
                         *cast(ubyte*)index.piece.pattern.data,
                         to_read);
                 }
                 else // Multi-byte pattern
                 {
-                    size_t psize = index.piece.pattern.ogsize;
-                    long p = piece_start + piece_offset;
-                    while (p < piece_end)
+                    size_t psize = index.piece.pattern.ogsize; // pattern size
+                    log("PATTERN MULTI read=%d bi=%u", to_read, bi);
+                    long p;
+                    size_t o = bi;
+                    while (p < to_read)
                     {
-                        size_t w = min(piece_end - p, psize);
+                        size_t w = min(to_read - p, psize);
                         memcpy(
-                            buffer.ptr + bi,
+                            buffer.ptr + o,
                             index.piece.pattern.data,
-                            psize);
-                        bi += w;
+                            w);
+                        o += w;
                         p += w;
                     }
                 }
@@ -258,8 +261,9 @@ class PieceDocumentEditor : IDocumentEditor
             bi += to_read;
         }
         
-        // Hard assert because it is the view function. We depend on it.
-        assert(bi <= buffer.length, "bi < buffer.length");
+        // Soft assert to be able to catch details
+        log("bl=%u bi=%u", buffer.length, bi);
+        assertion(bi <= buffer.length, "bi <= buffer.length");
         return buffer[0..bi];
     }
     

@@ -282,6 +282,8 @@ Compile a release build using a specified compiler:
 ////////////////////////////////////////////////////////////////////////////////
 // Debugging
 
+Since things might break, there are unit testing and logging facilities.
+
 Run unit tests (useful for new platforms):
   $ dub test
 Run unit tests with log traces:
@@ -292,7 +294,7 @@ Environment variables:
   - If set, start logging to PATH.
 - DDHX_BACKEND=BACKEND
   - If set, forces BACKEND to be selected, if it exists.
-  - Backends: "chunk" (default), "piece"
+  - Backends: "piece" (default), "chunk" (older, deprecated)
 - DDHX_CHUNKSIZE=SIZE
   - If set, sets chunk size to SIZE (binary suffix) for the chunk backend.
 

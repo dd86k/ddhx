@@ -235,6 +235,11 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.N,             &find_next },
     { "find-prev",                  "Repeat search backward",
         Mod.shift|Key.N,            &find_prev },
+    // Patterns
+    { "replace",                    "Replace data using a pattern",
+        0,                          &replace_ }, // avoid Phobos comflict
+    { "insert",                     "Insert data using a pattern",
+        0,                          &insert_ }, // avoid Phobos comflict
     // NOTE: "save-as" exists solely because it's a dedicated operation
     //       Despite that "save" could have just gotten an optional parameter
     { "save",                       "Save document to file",
@@ -861,7 +866,7 @@ void message(A...)(string fmt, A args)
     catch (Exception ex)
     {
         log("%s", ex);
-        message("internal: %s", ex.msg);
+        message("%s", ex.msg);
     }
 }
 
@@ -1957,13 +1962,9 @@ void report_name(Session *session, string[] args)
 {
     import std.path : baseName;
     
-    if (session.target is null)
-    {
-        message("(new buffer)");
-        return;
-    }
-    
-    message( baseName(session.target) );
+    message( session.target is null ?
+        "(new buffer)" :
+        baseName(session.target) );
 }
 
 // Report program version on screen
@@ -2041,6 +2042,42 @@ void export_range(Session *session, string[] args)
     unselect(session);
     
     message("Saved as %s", name); // confirmation
+}
+
+// Replace using pattern
+void replace_(Session *session, string[] args)
+{
+    Selection sel = selection(session);
+    
+    if (sel)
+    {
+        if (args.length < 1)
+            throw new Exception("Need pattern");
+        ubyte[] p = pattern(session.rc.charset, args[0]);
+        session.editor.patternReplace(sel.start, sel.length, p.ptr, p.length);
+        g_status |= UVIEW | UHEADER | USTATUSBAR;
+        return;
+    }
+    
+    throw new Exception("TODO: By range");
+}
+
+// Insert using pattern
+void insert_(Session *session, string[] args)
+{
+    Selection sel = selection(session);
+    
+    if (sel)
+    {
+        if (args.length < 1)
+            throw new Exception("Need pattern");
+        ubyte[] p = pattern(session.rc.charset, args);
+        session.editor.patternInsert(sel.start, sel.length, p.ptr, p.length);
+        g_status |= UVIEW | UHEADER | USTATUSBAR;
+        return;
+    }
+    
+    throw new Exception("TODO: By range");
 }
 
 // Save changes
@@ -2280,6 +2317,26 @@ unittest
     assert(pattern(CharacterSet.ascii, "x:0","s:test")  == "\0test");
     assert(pattern(CharacterSet.ascii, "x:0","0","s:test") == "\0\0test");
 }
+
+// TODO: Range interface
+//       Syntax: START:END (inclusive)
+//       0x10:0x100, 20:$, etc.
+/*struct Range
+{
+    long start, end;
+}
+Range range(string expr)
+{
+    Range range;
+    
+    
+    
+    return range;
+}
+unittest
+{
+    assert(range("5:25") == Range( 5, 25 ));
+}*/
 
 /// Artificial needle size limit for find/find-back.
 enum SEARCH_LIMIT = KiB!128;
