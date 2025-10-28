@@ -10,6 +10,7 @@ import logger;
 import platform : assertion;
 import std.format;
 import transcoder : CharacterSet;
+import platform : NotImplementedException;
 
 /// Indicates which writing mode is active when entering data.
 enum WritingMode
@@ -208,7 +209,7 @@ struct DataFormatter
             size = ubyte.sizeof;
             break;
         default:
-            throw new Exception("Not implemented");
+            throw new NotImplementedException();
         }
     }
     

@@ -27,6 +27,16 @@ else
     public alias assertion = enforceEx!Assert;
 }
 
+/// Represents a feature not implemented, yet or never.
+public class NotImplementedException : Exception
+{
+    this( // @suppress(dscanner.style.undocumented_declaration)
+        string _file = __FILE__, size_t _line = __LINE__)
+    {
+        super("Not implemented", _file, _line);
+    }
+}
+
 // Target architecture
 version (X86)
     enum TARGET_PLATFORM = "x86";	/// Platform string

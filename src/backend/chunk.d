@@ -24,6 +24,7 @@ import utils : align64down;
 import backend.base; // + tests
 import document.base : IDocument;
 import logger;
+import platform : NotImplementedException;
 
 /// Type of patch.
 enum PatchType : short
@@ -568,12 +569,22 @@ class ChunkDocumentEditor : IDocumentEditor
     
     void insert(long, const(void)*, size_t)
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
     }
     
-    void remove(long pos, size_t len)
+    void remove(long, size_t)
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
+    }
+    
+    void patternReplace(long, long, const(void)*, size_t)
+    {
+        throw new NotImplementedException();
+    }
+    
+    void patternInsert(long, long, const(void)*, size_t)
+    {
+        throw new NotImplementedException();
     }
     
     /// Undo last edit.

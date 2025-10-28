@@ -35,6 +35,11 @@ interface IDocumentEditor
     /// Delete data.
     void remove(long position, size_t len);
     
+    /// 
+    void patternReplace(long position, long length, const(void) *data, size_t datlen);
+    /// 
+    void patternInsert(long position, long length, const(void) *data, size_t datlen);
+    
     /// Returns: Position
     long undo();
     /// Returns: Postion+Length

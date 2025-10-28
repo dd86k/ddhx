@@ -7,6 +7,7 @@ module backend.dummy;
 
 import document.base : IDocument;
 import backend.base : IDocumentEditor;
+import platform : NotImplementedException;
 
 class DummyDocumentEditor : IDocumentEditor
 {
@@ -17,7 +18,7 @@ class DummyDocumentEditor : IDocumentEditor
     
     typeof(this) open(IDocument)
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
     }
 
     long size()
@@ -47,27 +48,37 @@ class DummyDocumentEditor : IDocumentEditor
 
     void replace(long position, const(void)* data, size_t len)
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
     }
 
     void insert(long position, const(void)* data, size_t len)
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
     }
 
     void remove(long position, size_t len)
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
     }
 
     long undo()
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
     }
 
     long redo()
     {
-        throw new Exception("Not implemented");
+        throw new NotImplementedException();
+    }
+    
+    void patternInsert(long, long, const(void)*, size_t)
+    {
+        throw new NotImplementedException();
+    }
+    
+    void patternReplace(long, long, const(void)*, size_t)
+    {
+        throw new NotImplementedException();
     }
     
 private:
