@@ -1429,8 +1429,9 @@ unittest
       't'
     ]);
     
-    remove(path_replace);
-    remove(path_insert);
+    // NOTE: Crashes on windows, can't remove if file opened.
+    //remove(path_replace);
+    //remove(path_insert);
 }
 
 /// Common tests
