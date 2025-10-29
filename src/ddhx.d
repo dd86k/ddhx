@@ -235,11 +235,15 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.N,             &find_next },
     { "find-prev",                  "Repeat search backward",
         Mod.shift|Key.N,            &find_prev },
-    // Patterns
+    // Data manipulation
     { "replace",                    "Replace data using a pattern",
         0,                          &replace_ }, // avoid Phobos comflict
     { "insert",                     "Insert data using a pattern",
         0,                          &insert_ }, // avoid Phobos comflict
+    { "replace-file",               "Replace data using a file",
+        0,                          &replace_file },
+    { "insert-file",                "Insert data using a file",
+        0,                          &insert_file },
     // NOTE: "save-as" exists solely because it's a dedicated operation
     //       Despite that "save" could have just gotten an optional parameter
     { "save",                       "Save document to file",
@@ -261,13 +265,14 @@ immutable Command[] default_commands = [
         0,                          &report_name },
     { "report-version",             "Report ddhx version on screen",
         0,                          &report_version },
+    // Exports
+    { "export-range",               "Export selected range to file",
+        0,                          &export_range },
     // Misc actions
     { "refresh",                    "Refresh entire screen",
         Mod.ctrl|Key.L,             &refresh },
     { "autosize",                   "Automatically set column size depending of screen",
         Mod.alt|Key.R,              &autosize },
-    { "export-range",               "Export selected range to file",
-        0,                          &export_range },
     { "set",                        "Set a configuration value",
         0,                          &set },
     { "bind",                       "Bind a shortcut to an action",
@@ -2044,7 +2049,7 @@ void export_range(Session *session, string[] args)
     message("Saved as %s", name); // confirmation
 }
 
-// Replace using pattern
+// Replace data using pattern
 void replace_(Session *session, string[] args)
 {
     Selection sel = selection(session);
@@ -2062,7 +2067,7 @@ void replace_(Session *session, string[] args)
     throw new Exception("TODO: By range");
 }
 
-// Insert using pattern
+// Insert data using pattern
 void insert_(Session *session, string[] args)
 {
     Selection sel = selection(session);
@@ -2078,6 +2083,36 @@ void insert_(Session *session, string[] args)
     }
     
     throw new Exception("TODO: By range");
+}
+
+// Replace data using file
+void replace_file(Session *session, string[] args)
+{
+    string path = arg(args, 0, "File: ");
+    
+    import document.file : FileDocument;
+    import document.base : IDocument;
+    
+    IDocument file = new FileDocument(path, true);
+    long curpos = session.position_cursor;
+    
+    session.editor.fileReplace(curpos, file);
+    g_status |= UVIEW;
+}
+
+// Insert data using file
+void insert_file(Session *session, string[] args)
+{
+    string path = arg(args, 0, "File: ");
+    
+    import document.file : FileDocument;
+    import document.base : IDocument;
+    
+    IDocument file = new FileDocument(path, true);
+    long curpos = session.position_cursor;
+    
+    session.editor.fileInsert(curpos, file);
+    g_status |= UVIEW;
 }
 
 // Save changes

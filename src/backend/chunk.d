@@ -587,6 +587,16 @@ class ChunkDocumentEditor : IDocumentEditor
         throw new NotImplementedException();
     }
     
+    void fileReplace(long, IDocument)
+    {
+        throw new NotImplementedException();
+    }
+    
+    void fileInsert(long, IDocument)
+    {
+        throw new NotImplementedException();
+    }
+    
     /// Undo last edit.
     /// Throws: Enforcement.
     /// Returns: Base position of edit, or -1 if no more edits.

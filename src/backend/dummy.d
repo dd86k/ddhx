@@ -81,6 +81,16 @@ class DummyDocumentEditor : IDocumentEditor
         throw new NotImplementedException();
     }
     
+    void fileInsert(long, IDocument)
+    {
+        throw new NotImplementedException();
+    }
+    
+    void fileReplace(long, IDocument)
+    {
+        throw new NotImplementedException();
+    }
+    
 private:
     immutable(ubyte)[] _data;
 }

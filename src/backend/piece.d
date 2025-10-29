@@ -33,7 +33,7 @@ enum Source
     source,     /// Original source document
     buffer,     /// In-memory buffer
     pattern,    /// Repeated pattern
-    document,   /// File (or other?) document
+    document,   /// File document
 }
 
 private
@@ -68,15 +68,29 @@ struct DocumentPiece
 private
 struct Piece
 {
-    Source source;  /// Piece source. (Document, buffer, etc.)
-    long position;  /// Original position.
-    long size;      /// Piece size
+    /// Piece source. (Document, buffer, etc.)
+    Source source;
+    /// Position within the source material (file offset, buffer offset, etc.)
+    /// where this piece's data starts.
+    long position;
+    /// Size of piece
+    long size;
     
     union
     {
         BufferPiece buffer;
         PatternPiece pattern;
-        //DocumentPiece doc;
+        DocumentPiece doc;
+    }
+    
+    // Custom hash function to avoid @safe issues with union
+    size_t toHash() const nothrow @safe
+    {
+        // Hash based on source type and position
+        size_t hash = cast(size_t)source;
+        hash = hash * 31 + cast(size_t)position;
+        hash = hash * 31 + cast(size_t)size;
+        return hash;
     }
     
     // Make a new buffer piece
@@ -107,15 +121,15 @@ struct Piece
     }
     
     // Make a new doc piece
-    /*static Piece makefile(long position, long len, IDocument doc)
+    static Piece makefile(long position, long len, IDocument doc)
     {
         Piece piece     = void;
-        piece.source    = Source.pattern;
+        piece.source    = Source.document;
         piece.position  = position;
         piece.size      = len;
         piece.doc.doc   = doc;
         return piece;
-    }*/
+    }
 }
 
 // For RedBlackTree
@@ -283,7 +297,7 @@ class PieceDocumentEditor : IDocumentEditor
                 }
                 break;
             case Source.document:
-                //index.piece.doc.doc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]);
+                index.piece.doc.doc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]);
                 break;
             }
             
@@ -456,11 +470,9 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("REPLACE FILE pos=%d", position);
         
-        throw new Exception("TODO");
-        
         // Make piece
-        //Piece piece = Piece.makefile( position, doc.size(), doc );
-        //replacePiece(position, piece);
+        Piece piece = Piece.makefile( 0, doc.size(), doc );
+        replacePiece(position, piece);
     }
     
     void fileInsert(long position, IDocument doc)
@@ -469,11 +481,9 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("INSERT FILE pos=%d", position);
         
-        throw new Exception("TODO");
-        
         // Make piece
-        //Piece piece = Piece.makefile( position, doc.size(), doc );
-        //insertPiece(position, piece);
+        Piece piece = Piece.makefile( 0, doc.size(), doc );
+        insertPiece(position, piece);
     }
     
     /// Undo last modification.
@@ -530,7 +540,7 @@ private:
             //piece.buffer.data += skip;
             piece.buffer.skip = skip;
             break;
-        case Source.document: break;
+        case Source.document: break; // like source
         case Source.pattern:
             piece.pattern.skip = (piece.pattern.skip + skip) % piece.pattern.ogsize;
             break;
@@ -634,15 +644,14 @@ private:
                         (index.piece.pattern.skip + piece_offset) % index.piece.pattern.ogsize);
                     break;
                 case Source.document:
-                    throw new Exception("TODO");
-                    /*left  = Piece.makefile(
+                    left  = Piece.makefile(
                         index.piece.position,
                         piece_offset,
                         index.piece.doc.doc);
                     right = Piece.makefile(
                         index.piece.position + piece_offset,
                         right_len,
-                        index.piece.doc.doc);*/
+                        index.piece.doc.doc);
                     break;
                 }
                 
@@ -1377,15 +1386,51 @@ unittest
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 10
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 20
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
     ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(data)
     );
     
-    // TODO: FILE
+    import std.file : remove, write, tempDir, readText;
+    import std.path : buildPath;
+    import document.file : FileDocument;
+    
+    ubyte[64] buffer;
+    
+    // Replace file
+    static immutable piece_replace_0 = "piece_replace_0.tmp";
+    string path_replace = buildPath(tempDir(), piece_replace_0);
+    write(path_replace, "file replace");
+    assert(readText(path_replace) == "file replace");
+    IDocument doc_replace = new FileDocument(path_replace, true); // keep reference
+    e.fileReplace(10, doc_replace); // open readonly
+    log("FILE REPLACE=%s", e.view(0, buffer)); // TEMP TEMP TEMP
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
+      'f','i','l','e',' ','r','e','p','l','a', // 10
+      'c','e',  0,  0,  0,  0,  0,  0,  0,  0, // 20
+    ]);
+    
+    static immutable piece_insert_0  = "piece_insert_0.tmp";
+    string path_insert = buildPath(tempDir(), piece_insert_0);
+    write(path_insert, "file insert");
+    e.fileInsert(30, new FileDocument(path_insert, true)); // open readonly
+    log("FILE INSERT=%s", e.view(0, buffer)); // TEMP TEMP TEMP
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
+      'f','i','l','e',' ','r','e','p','l','a', // 10
+      'c','e',  0,  0,  0,  0,  0,  0,  0,  0, // 20
+      'f','i','l','e',' ','i','n','s','e','r', // 30
+      't'
+    ]);
+    
+    remove(path_replace);
+    remove(path_insert);
 }
 
 /// Common tests

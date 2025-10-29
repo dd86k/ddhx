@@ -35,10 +35,15 @@ interface IDocumentEditor
     /// Delete data.
     void remove(long position, size_t len);
     
-    /// 
+    /// Replace data using a pattern
     void patternReplace(long position, long length, const(void) *data, size_t datlen);
-    /// 
+    /// Insert data using a pattern
     void patternInsert(long position, long length, const(void) *data, size_t datlen);
+    
+    /// Replace data using a file
+    void fileReplace(long position, IDocument doc);
+    /// Insert data using a file
+    void fileInsert(long position, IDocument doc);
     
     /// Returns: Position
     long undo();
