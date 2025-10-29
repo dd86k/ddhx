@@ -27,14 +27,13 @@ import logger;
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
-// - file: Insert file
-// - pattern: Insert pattern (e.g., 1000x 0xff) - saves memory
 private
 enum Source
 {
     source,     /// Original source document
     buffer,     /// In-memory buffer
     pattern,    /// Repeated pattern
+    document,   /// File (or other?) document
 }
 
 private
@@ -61,6 +60,12 @@ struct PatternPiece
 }
 
 private
+struct DocumentPiece
+{
+    IDocument doc;
+}
+
+private
 struct Piece
 {
     Source source;  /// Piece source. (Document, buffer, etc.)
@@ -71,6 +76,7 @@ struct Piece
     {
         BufferPiece buffer;
         PatternPiece pattern;
+        //DocumentPiece doc;
     }
     
     // Make a new buffer piece
@@ -99,6 +105,17 @@ struct Piece
         piece.pattern.skip   = skip;
         return piece;
     }
+    
+    // Make a new doc piece
+    /*static Piece makefile(long position, long len, IDocument doc)
+    {
+        Piece piece     = void;
+        piece.source    = Source.pattern;
+        piece.position  = position;
+        piece.size      = len;
+        piece.doc.doc   = doc;
+        return piece;
+    }*/
 }
 
 // For RedBlackTree
@@ -242,19 +259,31 @@ class PieceDocumentEditor : IDocumentEditor
                 {
                     size_t psize = index.piece.pattern.ogsize; // pattern size
                     log("PATTERN MULTI read=%d bi=%u", to_read, bi);
+                    // Calculate starting offset within the pattern cycle
+                    size_t pattern_offset = (index.piece.pattern.skip + piece_offset) % psize;
+                    
                     long p;
                     size_t o = bi;
                     while (p < to_read)
                     {
-                        size_t w = min(to_read - p, psize);
+                        // How much we can copy from current position in pattern
+                        size_t available_in_pattern = psize - pattern_offset;
+                        size_t w = min(to_read - p, available_in_pattern);
+                        
                         memcpy(
                             buffer.ptr + o,
-                            index.piece.pattern.data,
+                            index.piece.pattern.data + pattern_offset,
                             w);
+                        
                         o += w;
                         p += w;
+                        // Align after first copy due to skip
+                        pattern_offset = 0;
                     }
                 }
+                break;
+            case Source.document:
+                //index.piece.doc.doc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]);
                 break;
             }
             
@@ -421,6 +450,32 @@ class PieceDocumentEditor : IDocumentEditor
         insertPiece(position, piece);
     }
     
+    void fileReplace(long position, IDocument doc)
+    in (position >= 0, "position >= 0")
+    in (doc !is null, "doc !is null")
+    {
+        log("REPLACE FILE pos=%d", position);
+        
+        throw new Exception("TODO");
+        
+        // Make piece
+        //Piece piece = Piece.makefile( position, doc.size(), doc );
+        //replacePiece(position, piece);
+    }
+    
+    void fileInsert(long position, IDocument doc)
+    in (position >= 0, "position >= 0")
+    in (doc !is null, "doc !is null")
+    {
+        log("INSERT FILE pos=%d", position);
+        
+        throw new Exception("TODO");
+        
+        // Make piece
+        //Piece piece = Piece.makefile( position, doc.size(), doc );
+        //insertPiece(position, piece);
+    }
+    
     /// Undo last modification.
     /// Returns: Suggested position of the cursor for this modification.
     long undo()
@@ -466,7 +521,8 @@ private:
         // NOTE: piece here is NOT ref and new instance is returned
         piece.position += skip;
         piece.size = keep;
-        switch (piece.source) { // Adjust piece offsets before re-inerting
+        final switch (piece.source) { // Adjust piece offsets before re-inerting
+        case Source.source: break;
         case Source.buffer:
             // NOTE: skip is SET, not added, because the piece is recreated for snapshot
             with (piece)
@@ -474,7 +530,10 @@ private:
             //piece.buffer.data += skip;
             piece.buffer.skip = skip;
             break;
-        default:
+        case Source.document: break;
+        case Source.pattern:
+            piece.pattern.skip = (piece.pattern.skip + skip) % piece.pattern.ogsize;
+            break;
         }
         return piece;
     }
@@ -561,16 +620,29 @@ private:
                         index.piece.buffer.skip + piece_offset);
                     break;
                 case Source.pattern:
-                    left  = Piece.makebuffer(
+                    left  = Piece.makepattern(
                         index.piece.position,
-                        index.piece.buffer.data,
                         piece_offset,
-                        index.piece.buffer.skip);
-                    right = Piece.makebuffer(
+                        index.piece.pattern.data,
+                        index.piece.pattern.ogsize,
+                        index.piece.pattern.skip);
+                    right = Piece.makepattern(
                         index.piece.position + piece_offset,
-                        index.piece.buffer.data,
                         right_len,
-                        index.piece.buffer.skip + piece_offset);
+                        index.piece.pattern.data,
+                        index.piece.pattern.ogsize,
+                        (index.piece.pattern.skip + piece_offset) % index.piece.pattern.ogsize);
+                    break;
+                case Source.document:
+                    throw new Exception("TODO");
+                    /*left  = Piece.makefile(
+                        index.piece.position,
+                        piece_offset,
+                        index.piece.doc.doc);
+                    right = Piece.makefile(
+                        index.piece.position + piece_offset,
+                        right_len,
+                        index.piece.doc.doc);*/
                     break;
                 }
                 
@@ -1016,7 +1088,7 @@ unittest
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4  5  6   7   8   9
-        4,  7,  9, 13, 17, 3, 4,  5, 13, 15, // 10
+        4,  7,  9, 13, 17, 3, 4,  5, 13, 15, // 0
     ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(data)
@@ -1029,7 +1101,7 @@ unittest
     
     static immutable ubyte[] data0 = [ // 5 * 10 bytes
     //  0   1   2   3   4  5  6   7   8   9
-        4,  5,  8, 16, 18, 1, 2,  5,  8, 10, // 10
+        4,  5,  8, 16, 18, 1, 2,  5,  8, 10, // 0
     ];
     e.insert(10, data0.ptr, data0.length);
     
@@ -1038,20 +1110,20 @@ unittest
     assert(e.size() == 20);
     assert(e.view(0, buffer) == [
     //  0   1   2   3    4  5  6   7   8   9
-        4,  7,  9, 13, 255, 3, 4,  5, 13, 15, // 10
-        4,  5,  8, 16,  18, 1, 2,  5,  8, 10, // 20
+        4,  7,  9, 13, 255, 3, 4,  5, 13, 15, // 0
+        4,  5,  8, 16,  18, 1, 2,  5,  8, 10, // 10
     ]);
     assert(e.view(0, buffer[0..10]) == [ // lower 10 bytes
     //  0   1   2   3    4  5  6   7   8   9
-        4,  7,  9, 13, 255, 3, 4,  5, 13, 15, // 10
+        4,  7,  9, 13, 255, 3, 4,  5, 13, 15, // 0
     ]);
     assert(e.view(10, buffer) == [ // upper 10 bytes
     //  0   1   2   3    4  5  6   7   8   9
-        4,  5,  8, 16,  18, 1, 2,  5,  8, 10, // 20
+        4,  5,  8, 16,  18, 1, 2,  5,  8, 10, // 10
     ]);
     assert(e.view(16, buffer) == [ // upper 16 bytes
     //  6   7   8   9
-        2,  5,  8, 10, // 20
+        2,  5,  8, 10, // 10
     ]);
 }
 
@@ -1064,11 +1136,11 @@ unittest
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
-       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 20
-       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 30
-       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 40
-       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 50
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 0
+       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
     ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(data)
@@ -1085,10 +1157,10 @@ unittest
     assert(e.size() == 40);
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
-       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
-       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
-       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 0
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 10
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 20
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 30
     ]);
     
     // Replace one byte values, which tends to be problematic
@@ -1098,10 +1170,10 @@ unittest
     assert(e.size() == 40);
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
-       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
-       86, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
-       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 0
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 10
+       86, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 20
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 30
     ]);
     
     e.replace(21, &replace0, ubyte.sizeof);
@@ -1109,10 +1181,10 @@ unittest
     assert(e.size() == 40);
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
-       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
-       86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 30
-       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 0
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 10
+       86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 20
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 30
     ]);
     
     // Replace at position 0, just in case
@@ -1121,10 +1193,10 @@ unittest
     assert(e.size() == 40);
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-       86,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
-       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
-       86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 30
-       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
+       86,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 0
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 10
+       86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 20
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 30
     ]);
     
     // Insert new data at start
@@ -1137,7 +1209,7 @@ unittest
     assert(e.size() == 50);
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-       99, 88, 77, 66, 55, 44, 33, 22, 11,  0, // 10
+       99, 88, 77, 66, 55, 44, 33, 22, 11,  0, // 0
        86,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
        20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
        86, 86, 32, 33, 34, 35, 36, 37, 38, 39, // 30
@@ -1164,11 +1236,11 @@ unittest
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
-       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 20
-       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 30
-       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 40
-       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 50
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 0
+       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
     ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(data)
@@ -1206,11 +1278,11 @@ unittest
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 10
-       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 20
-       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 30
-       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 40
-       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 50
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, // 0
+       10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // 10
+       20, 21, 22, 23, 24, 25, 26, 27, 28, 29, // 20
+       30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
+       40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
     ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(data)
@@ -1233,9 +1305,9 @@ unittest
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 10
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 20
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
     ];
     scope PieceDocumentEditor e = new PieceDocumentEditor().open(
         new MemoryDocument(data)
@@ -1249,9 +1321,9 @@ unittest
     assert(e.size() == data.length);
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 10
-       10, 10, 10, 10, 10, 10, 10, 10, 10, 10, // 20
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
+       10, 10, 10, 10, 10, 10, 10, 10, 10, 10, // 10
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 20
     ]);
     
     ubyte[2] f1 = [ 'N', 'O' ];
@@ -1261,11 +1333,59 @@ unittest
     assert(e.size() == data.length+10);
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 10
-       10, 10, 10, 10, 10, 10, 10, 10, 10, 10, // 20
-      'N','O','N','O','N','O','N','O','N','O', // 30
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 40
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
+       10, 10, 10, 10, 10, 10, 10, 10, 10, 10, // 10
+      'N','O','N','O','N','O','N','O','N','O', // 20
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
     ]);
+    
+    // Test if patterns hold up if cut
+    ubyte r0 = 4;
+    e.replace(10 , &r0, ubyte.sizeof);
+    assert(e.view(0, buffer) == [ // single-byte pattern
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
+        4, 10, 10, 10, 10, 10, 10, 10, 10, 10, // 10
+      'N','O','N','O','N','O','N','O','N','O', // 20
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
+    ]);
+    e.replace(20 , &r0, ubyte.sizeof);
+    log("FAILING = %s", e.view(0, buffer));
+    assert(e.view(0, buffer) == [ // multi-byte pattern
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
+        4, 10, 10, 10, 10, 10, 10, 10, 10, 10, // 10
+        4,'O','N','O','N','O','N','O','N','O', // 20
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
+    ]);
+    e.replace(29 , &r0, ubyte.sizeof);
+    assert(e.view(0, buffer) == [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
+        4, 10, 10, 10, 10, 10, 10, 10, 10, 10, // 10
+        4,'O','N','O','N','O','N','O','N',  4, // 20
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
+    ]);
+}
+
+// Files
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0010");
+    
+    static immutable ubyte[] data = [
+    //  0   1   2   3   4   5   6   7   8   9
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 10
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 20
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 30
+    ];
+    scope PieceDocumentEditor e = new PieceDocumentEditor().open(
+        new MemoryDocument(data)
+    );
+    
+    // TODO: FILE
 }
 
 /// Common tests
