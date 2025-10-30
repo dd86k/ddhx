@@ -33,7 +33,7 @@ interface IDocumentEditor
     /// Insert data.
     void insert(long position, const(void) *data, size_t len);
     /// Delete data.
-    void remove(long position, size_t len);
+    void remove(long position, long len);
     
     /// Replace data using a pattern
     void patternReplace(long position, long length, const(void) *data, size_t datlen);
@@ -183,8 +183,8 @@ void test_undo_redo(T : IDocumentEditor)()
 void test_doc(T : IDocumentEditor)(IDocument doc)
 {
     scope T e = new T().open(doc);
-    ubyte[] buffer0; buffer0.length = doc.size();
-    ubyte[] buffer1; buffer1.length = doc.size();
+    ubyte[] buffer0; buffer0.length = cast(size_t)doc.size();
+    ubyte[] buffer1; buffer1.length = cast(size_t)doc.size();
     assert(e.edited() == false);
     assert(e.view(0, buffer0) == doc.readAt(0, buffer1));
     assert(e.size() == doc.size());
@@ -192,8 +192,8 @@ void test_doc(T : IDocumentEditor)(IDocument doc)
 void test_doc_edit(T : IDocumentEditor)(IDocument doc)
 {
     scope T e = new T().open(doc);
-    ubyte[] buffer0; buffer0.length = doc.size();
-    ubyte[] buffer1; buffer1.length = doc.size();
+    ubyte[] buffer0; buffer0.length = cast(size_t)doc.size();
+    ubyte[] buffer1; buffer1.length = cast(size_t)doc.size();
     
     char c = 'c';
     e.replace(2, &c, c.sizeof);

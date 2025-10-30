@@ -56,7 +56,7 @@ class DummyDocumentEditor : IDocumentEditor
         throw new NotImplementedException();
     }
 
-    void remove(long position, size_t len)
+    void remove(long position, long len)
     {
         throw new NotImplementedException();
     }

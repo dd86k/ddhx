@@ -83,7 +83,7 @@ command prompt.
 
 This list may change at any given time without notice.
 
-0.5:
+0.5: Released!
 - [x] Overwrite data
 - [x] Append data
 - [x] Save new buffer to file
@@ -93,18 +93,18 @@ This list may change at any given time without notice.
 - [x] Standard input (stdin) support as new buffer
 - [x] Skip to different element (or byte) (Ctrl+Left/Right)
 
-0.6:
+0.6: Released!
 - [x] Support selecting data
 - [x] Config file
 - [x] "bind" command: map command to shortcut
 - [x] Searching ("find" command)
 
-0.7:
+0.7: WIP
 - [x] Insert data
 - [x] Delete data
 - [x] "export-range" command
-- [ ] Insert file
-- [ ] Fill range
+- [x] Insert/replace using file
+- [x] Insert/replace using pattern
 
 Wishlist:
 - [ ] Other single-byte data types in view (d8, o8)

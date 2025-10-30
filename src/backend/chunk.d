@@ -572,7 +572,7 @@ class ChunkDocumentEditor : IDocumentEditor
         throw new NotImplementedException();
     }
     
-    void remove(long, size_t)
+    void remove(long, long)
     {
         throw new NotImplementedException();
     }

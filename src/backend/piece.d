@@ -24,6 +24,12 @@ import logger;
 //       as one (e.g., a patch)?
 //       Need to figure out RBTree cloning. For chunk, maybe save number
 //       of history action (e.g., 3 undos for this patch).
+// TODO: Save optimization.
+//       Right now, the generic save function is pretty decent, but writes
+//       the entire file out.
+//       If we only write affected regions (pieces != source), this would be
+//       a significant performance boost, but first we need a way to relay
+//       this information, somehow.
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
@@ -246,8 +252,8 @@ class PieceDocumentEditor : IDocumentEditor
             // Calculate how much to read from this piece
             long piece_offset = max(0, lpos - piece_start); // clamp to zero
             long available = piece_end - max(lpos, piece_start);
-            //long to_read = min(available, remaining);
-            long to_read = min(available, buffer.length - bi);
+            // Assumes view buffer is ... under 2 GiB
+            size_t to_read = cast(size_t)min(available, buffer.length - bi);
             
             // Read from the piece
             final switch (index.piece.source) {
@@ -274,9 +280,9 @@ class PieceDocumentEditor : IDocumentEditor
                     size_t psize = index.piece.pattern.ogsize; // pattern size
                     log("PATTERN MULTI read=%d bi=%u", to_read, bi);
                     // Calculate starting offset within the pattern cycle
-                    size_t pattern_offset = (index.piece.pattern.skip + piece_offset) % psize;
+                    size_t pattern_offset = cast(size_t)((index.piece.pattern.skip + piece_offset) % psize);
                     
-                    long p;
+                    size_t p;
                     size_t o = bi;
                     while (p < to_read)
                     {
@@ -329,9 +335,7 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("REPLACE pos=%d len=%u data=%s", position, len, data);
         
-        // Make piece
-        Piece piece = Piece.makebuffer( position, bufferAdd(data, len), len );
-        
+        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
         replacePiece(position, piece);
     }
     
@@ -347,9 +351,7 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("INSERT pos=%d len=%u data=%s", position, len, data);
         
-        // Make piece
-        Piece piece = Piece.makebuffer( position, bufferAdd(data, len), len );
-        
+        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
         insertPiece(position, piece);
     }
     
@@ -358,7 +360,7 @@ class PieceDocumentEditor : IDocumentEditor
     /// Params:
     ///     position = Base position.
     ///     len = Number of bytes to delete.
-    void remove(long position, size_t len)
+    void remove(long position, long len)
     in (position >= 0, "position >= 0")
     in (len > 0, "len > 0")
     {
@@ -445,7 +447,7 @@ class PieceDocumentEditor : IDocumentEditor
         log("REPLACE PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
         
         // Make piece
-        Piece piece = Piece.makepattern( position, len, bufferAdd(data, datlen), datlen );
+        Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         
         replacePiece(position, piece);
     }
@@ -459,7 +461,7 @@ class PieceDocumentEditor : IDocumentEditor
         log("INSERT PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
         
         // Make piece
-        Piece piece = Piece.makepattern( position, len, bufferAdd(data, datlen), datlen );
+        Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         
         insertPiece(position, piece);
     }
@@ -520,7 +522,7 @@ class PieceDocumentEditor : IDocumentEditor
     }
     
 private:
-    /// Base document to apply edits on.
+    /// Source document to apply edits on.
     ///
     /// Nullable.
     IDocument basedoc;
@@ -528,21 +530,22 @@ private:
     // Optimize right-side trim operation
     Piece trimPiece(Piece piece, long skip, long keep)
     {
-        // NOTE: piece here is NOT ref and new instance is returned
+        // NOTE: piece struct is NOT ref and new instance is returned
+        // NOTE: skip/keep are calculated from caller, because the piece is recreated for snapshot
         piece.position += skip;
         piece.size = keep;
         final switch (piece.source) { // Adjust piece offsets before re-inerting
         case Source.source: break;
         case Source.buffer:
-            // NOTE: skip is SET, not added, because the piece is recreated for snapshot
+            assertion(skip <= uint.max, "skip <= uint.max"); // bad hack, to be reminded later
             with (piece)
-            assert(buffer.data + buffer.skip <= buffer.data + buffer.ogsize, "data + skip <= data + ogsize");
-            //piece.buffer.data += skip;
-            piece.buffer.skip = skip;
+            assertion(buffer.skip <= buffer.ogsize, "buffer.skip <= buffer.ogsize");
+            piece.buffer.skip = cast(size_t)skip;
             break;
         case Source.document: break; // like source
         case Source.pattern:
-            piece.pattern.skip = (piece.pattern.skip + skip) % piece.pattern.ogsize;
+            assertion(skip <= uint.max, "skip <= uint.max"); // bad hack, to be reminded later
+            piece.pattern.skip = cast(size_t)(piece.pattern.skip + skip) % piece.pattern.ogsize;
             break;
         }
         return piece;
@@ -621,13 +624,13 @@ private:
                     left  = Piece.makebuffer(
                         index.piece.position,
                         index.piece.buffer.data,
-                        piece_offset,
-                        index.piece.buffer.skip);
+                        cast(size_t)piece_offset,
+                        cast(size_t)index.piece.buffer.skip);
                     right = Piece.makebuffer(
                         index.piece.position + piece_offset,
                         index.piece.buffer.data,
-                        right_len,
-                        index.piece.buffer.skip + piece_offset);
+                        cast(size_t)right_len,
+                        cast(size_t)(index.piece.buffer.skip + piece_offset));
                     break;
                 case Source.pattern:
                     left  = Piece.makepattern(
@@ -641,7 +644,8 @@ private:
                         right_len,
                         index.piece.pattern.data,
                         index.piece.pattern.ogsize,
-                        (index.piece.pattern.skip + piece_offset) % index.piece.pattern.ogsize);
+                        cast(size_t)(
+                            (index.piece.pattern.skip + piece_offset) % index.piece.pattern.ogsize));
                     break;
                 case Source.document:
                     left  = Piece.makefile(
@@ -1405,34 +1409,33 @@ unittest
     string path_replace = buildPath(tempDir(), piece_replace_0);
     write(path_replace, "file replace");
     assert(readText(path_replace) == "file replace");
-    IDocument doc_replace = new FileDocument(path_replace, true); // keep reference
-    e.fileReplace(10, doc_replace); // open readonly
-    log("FILE REPLACE=%s", e.view(0, buffer)); // TEMP TEMP TEMP
+    e.fileReplace(10, new FileDocument(path_replace, true)); // open readonly
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
-      'f','i','l','e',' ','r','e','p','l','a', // 10
-      'c','e',  0,  0,  0,  0,  0,  0,  0,  0, // 20
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  // 0
+       'f','i','l','e',' ','r','e','p','l','a', // 10
+       'c','e', 0,  0,  0,  0,  0,  0,  0,  0,  // 20
     ]);
     
-    static immutable piece_insert_0  = "piece_insert_0.tmp";
+    static immutable piece_insert_0 = "piece_insert_0.tmp";
     string path_insert = buildPath(tempDir(), piece_insert_0);
     write(path_insert, "file insert");
     e.fileInsert(30, new FileDocument(path_insert, true)); // open readonly
-    log("FILE INSERT=%s", e.view(0, buffer)); // TEMP TEMP TEMP
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
-      'f','i','l','e',' ','r','e','p','l','a', // 10
-      'c','e',  0,  0,  0,  0,  0,  0,  0,  0, // 20
-      'f','i','l','e',' ','i','n','s','e','r', // 30
-      't'
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  // 0
+       'f','i','l','e',' ','r','e','p','l','a', // 10
+       'c','e', 0,  0,  0,  0,  0,  0,  0,  0,  // 20
+       'f','i','l','e',' ','i','n','s','e','r', // 30
+       't'
     ]);
     
     // NOTE: Crashes on windows, can't remove if file opened.
     //remove(path_replace);
     //remove(path_insert);
 }
+
+// TODO: Large pattern (>4 GiB) + view past that with edits
 
 /// Common tests
 unittest
