@@ -30,6 +30,15 @@ import logger;
 //       If we only write affected regions (pieces != source), this would be
 //       a significant performance boost, but first we need a way to relay
 //       this information, somehow.
+// TODO: CPU cache friendliness
+//       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
+//       Instead of an array of structures, having array of fields tend to help
+//       processor cache, in particular, architectures with cache lines of 64 Bytes.
+//       Checks (needs linux-tools-generic):
+//       - perf stat -e cache-misses,cache-references ./myapp
+//       - perf record -e cache-misses ./myapp
+//         perk report
+//       - perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
