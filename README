@@ -99,24 +99,26 @@ This list may change at any given time without notice.
 - [x] "bind" command: map command to shortcut
 - [x] Searching ("find" command)
 
-0.7: WIP
+0.7: Beta 1 released!
 - [x] Insert data
 - [x] Delete data
 - [x] "export-range" command
 - [x] Insert/replace using file
 - [x] Insert/replace using pattern
 
+0.8:
+- [ ] Copy-Paste ("paste" depends on mode)
+
 Wishlist:
-- [ ] Other single-byte data types in view (d8, o8)
-- [ ] Multi-byte data types (d16, f32, etc.)
-- [ ] Insert characters
-- [ ] Copy & paste ("paste" depends on mode)
-- [ ] Bookmarks / Annotations ("bookmark-save", "bookmark-load")
-- [ ] Process memory document type
+- [ ] Bookmarks / Annotations ("bookmark-{save|load}")
 - [ ] Disk document type
-- [ ] Search by charset
-- [ ] Inspect data panel
+- [ ] Insert characters
+- [ ] Inspect data panel (could replace text panel)
+- [ ] Multi-byte data types (d16, f32, etc.)
+- [ ] Other single-byte data types in view (d8, o8)
 - [ ] Patch system
+- [ ] Process memory document type
+- [ ] Search by charset
 
 ////////////////////////////////////////////////////////////////////////////////
 // Usage
@@ -154,66 +156,26 @@ Ctrl+Left/Right         Skip over repeated bytes or patterns
 Ctrl+Up/Down            Scroll view without moving cursor
 Shift+Navigation        Extend selection while navigating
 
+Navigation should resemble most text editors.
+
 To view all default keybindings, run: ddhx --help-keys
 
 ////////////////////////////////////////////////////////////////////////////////
 // Editing
 
 a-f, 0-9                Insert or replace data at cursor position
-Tab                     Change between data and text columns
+Ctrl+U                  Undo change
+Ctrl+R                  Redo previous change
 Ctrl+S                  Save document
-Ctrl+O                  Save As another name
+Ctrl+O                  Save As another name and set new target
+Tab                     Change between data and text columns
 
-////////////////////////////////////////////////////////////////////////////////
-// Key binding
+Edit single elements using a-f/0-9 keys. It's also possible to use a command
+over a selection, like "replace x:00" to replace selection with zeros.
 
-Keys can be bound to commands using the "bind" command.
-
-Usage: bind KEY COMMAND [PARAMS...]
-
-Vim-style navigation example:
-  >bind h left
-  >bind j down
-  >bind k up
-  >bind l right
-
-Custom jump example:
-  >bind right-arrow goto +32
-
-This makes the right arrow jump 32 bytes ahead instead of moving one position.
-
-To remove bindings:
-  >unbind right-arrow       Remove a specific binding
-  >reset-keys               Reset all bindings to defaults
-
-Key bounds in a session are not saved. The configuration file is recommended.
-
-////////////////////////////////////////////////////////////////////////////////
-// Searching
-
-Finding data uses the "find" (Ctrl+F) and "find-back" (Ctrl+B) commands.
-
-Once a search needle is define, it can be re-used using "find-next" (Ctrl+N)
-and "find-prev" (Shift+N).
-
-For example, looking for `hi\0\0` (these are equivalent):
-  >find s:hi x:00 00
-  >find \"hi\" 0x00 00
-  >find x:68 69 00 00
-
-Supported prefixes:
-  x: and 0x - Hexadecimal (currently only 8-bit unsigned)
-  d:        - Decimal (currently only 8-bit unsigned)
-  o:        - Octal (currently only 8-bit unsigned)
-  s: and "  - String (currently ASCII only)
-
-Practical example: PDF
-
-Use the "find s:endstream" comand to search for string "endstream", then hit
-Ctrl+N ("find-next") to go to next result or Shift+N ("find-prev") to go to
-the previous result.
-
-LIMITATION: Search does not wrap and depends on cursor position.
+To insert a file into the document at the current cursor position, use the
+"insert-file PATH" command, where PATH is a path to the file. The same can be
+done using "replace-file PATH", where the file replaces content instead.
 
 ////////////////////////////////////////////////////////////////////////////////
 // Commands
@@ -245,6 +207,47 @@ triggered with Ctrl+G and accepts decimal, octal, and hexadecimal values.
 To view all available commands, run: ddhx --help-commands
 
 ////////////////////////////////////////////////////////////////////////////////
+// Patterns
+
+ddhx uses a pattern system for a few commands: find, find-back, insert, and
+replace.
+
+A pattern consists of one or more prefixed patterns, where they can be matched
+in order (left to right).
+
+For example, "x:00 01" will yield a pattern of [ 0x00, 0x01 ], and
+"s:hi x:ffff" a pattern of [ 0x68, 0x69, 0xff, 0xff ].
+
+Supported prefixes:
+  x: and 0x - Hexadecimal unsigned integer
+  d:        - Decimal signed integer
+  o:        - Octal signed integer
+  s: and "  - String (currently ASCII only)
+
+////////////////////////////////////////////////////////////////////////////////
+// Searching
+
+Finding data uses the "find" (Ctrl+F) and "find-back" (Ctrl+B) commands.
+
+Once a search needle is define, it can be re-used using "find-next" (Ctrl+N)
+and "find-prev" (Shift+N).
+
+The search command uses the pattern system.
+
+For example, looking for `hi\0\0` (these are equivalent):
+  >find s:hi x:00 00
+  >find \"hi\" 0x0000
+  >find x:68 69 00 00
+
+Practical example: PDF
+
+Use the "find s:endstream" comand to search for string "endstream", then hit
+Ctrl+N ("find-next") to go to next result or Shift+N ("find-prev") to go to
+the previous result.
+
+LIMITATION: Search does not wrap and depends on cursor position.
+
+////////////////////////////////////////////////////////////////////////////////
 // Configuration
 
 Settings can be changed at runtime using the "set" command.
@@ -266,6 +269,30 @@ Example configuration file:
 To view configuration options, run: ddhx --help-config
 
 ////////////////////////////////////////////////////////////////////////////////
+// Key binding
+
+Keys can be bound to commands using the "bind" command.
+
+Usage: bind KEY COMMAND [PARAMS...]
+
+Vim-style navigation example:
+  >bind h left
+  >bind j down
+  >bind k up
+  >bind l right
+
+Custom jump example:
+  >bind right-arrow goto +32
+
+This makes the right arrow jump 32 bytes ahead instead of moving one position.
+
+To remove bindings:
+  >unbind right-arrow       Remove a specific binding
+  >reset-keys               Reset all bindings to defaults
+
+Key bounds in a session are not saved. The configuration file is recommended.
+
+////////////////////////////////////////////////////////////////////////////////
 // Compiling
 
 To compile this project, you'll need a D compiler and DUB.
@@ -273,6 +300,10 @@ To compile this project, you'll need a D compiler and DUB.
 All major compilers are supported (DMD, GDC, and LDC). LDC, GDC, and DUB are
 typically available in package repositories as gdc/gdc-*/gcc-gdc, ldc2, and
 dub.
+
+Minimum version should be a compiler with DMD front-end version 2.081 and
+later. Project successfully compiles on Ubuntu 16.04 using dmd-2.082.0,
+using the deb package from dlang.org.
 
 Compile a debug build:
   $ dub build
