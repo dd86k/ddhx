@@ -27,6 +27,13 @@ buildType "debug-static" {
     dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
     dflags "--static" platform="ldc"
 }
+buildType "release-debug-static" {
+    versions "Static"
+    buildOptions "debugMode" "debugInfo"
+    dflags "-L=-static" platform="dmd"
+    dflags "-Wl,-static" "-static" "-static-libgcc" platform="gdc"
+    dflags "--static" platform="ldc"
+}
 buildType "release-static" {
     versions "Static"
     buildOptions "releaseMode" "optimize" "inline"
