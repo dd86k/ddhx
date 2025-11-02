@@ -64,3 +64,8 @@ buildType "color" {
     buildOptions "unittests"
     sourceFiles "tests/color.d"
 }
+buildType "bench-piece" {
+    versions "BenchmarkPiece"
+    buildOptions "unittests" "optimize" "inline" "debugInfo"
+    sourceFiles "tests/piece.d"
+}

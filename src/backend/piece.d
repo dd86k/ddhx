@@ -1426,6 +1426,7 @@ unittest
        'c','e', 0,  0,  0,  0,  0,  0,  0,  0,  // 20
     ]);
     
+    // Insert file
     static immutable piece_insert_0 = "piece_insert_0.tmp";
     string path_insert = buildPath(tempDir(), piece_insert_0);
     write(path_insert, "file insert");
@@ -1444,7 +1445,7 @@ unittest
     //remove(path_insert);
 }
 
-// TODO: Large pattern (>4 GiB) + view past that with edits
+// TODO: Test: Large pattern (>4 GiB) + view past that with edits
 
 /// Common tests
 unittest
