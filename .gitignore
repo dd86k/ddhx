@@ -18,6 +18,10 @@ __test__*__
 .fuse_*
 docs/
 
+# flamegraph
+perf.data
+flame.svg
+
 # Other editors
 *.swp
 
