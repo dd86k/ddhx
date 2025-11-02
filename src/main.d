@@ -253,6 +253,8 @@ void main(string[] args)
     if (string logpath = environment.get("DDHX_LOG"))
     {
         logStart(logpath);
+        import std.process : thisProcessID;
+        log("PID=%d", thisProcessID());
     }
     
     // Load config file after defaults when able. Spouting an error here is

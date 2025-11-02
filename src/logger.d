@@ -37,7 +37,7 @@ void logStart(string file = "ddhx.log")
     tracing = true;
     
     import std.datetime.systime : Clock;
-    log("Trace started at %s", Clock.currTime());
+    log("Started %s", Clock.currTime());
 }
 
 /// Set the file path to log to.
