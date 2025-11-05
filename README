@@ -32,7 +32,7 @@
   OVR |  x8 |    ascii |       6c
 +------------------------------------------------------------------------------+
 
-ddhx is a multi-platform Text UI hex editor, inspired by GNU nano and vim.
+ddhx is a simple multi-platform modal Text UI hex editor.
 
 Currently available for Windows, macOS, Linux, and BSDs.
 
@@ -99,7 +99,7 @@ This list may change at any given time without notice.
 - [x] "bind" command: map command to shortcut
 - [x] Searching ("find" command)
 
-0.7: Beta 1 released!
+0.7: Released!
 - [x] Insert data
 - [x] Delete data
 - [x] "export-range" command
@@ -107,7 +107,13 @@ This list may change at any given time without notice.
 - [x] Insert/replace using pattern
 
 0.8:
-- [ ] Copy-Paste ("paste" depends on mode)
+- [ ] Back-end optimizations
+- [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
+- [ ] Dual highlighters setting (data and text)
+- [ ] Range expressions (start:end, start:+length)
+
+0.9:
+- TBD
 
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
@@ -118,7 +124,8 @@ Wishlist:
 - [ ] Other single-byte data types in view (d8, o8)
 - [ ] Patch system
 - [ ] Process memory document type
-- [ ] Search by charset
+- [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
+- [ ] Endian-specific pattern prefixes (e.g., u32le:)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Usage
