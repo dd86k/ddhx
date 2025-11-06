@@ -35,6 +35,12 @@ class FileDocument : IDocument
         return file.read(buffer);
     }
     
+    /// Close file document.
+    void close()
+    {
+        file.close();
+    }
+    
 private:
     OSFile file;
 }

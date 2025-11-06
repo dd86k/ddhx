@@ -332,38 +332,6 @@ class PieceDocumentEditor : IDocumentEditor
         return basedoc ? e && snapshot_index > 1 : e;
     }
     
-    /// Replace with new data at this position.
-    /// Params:
-    ///     position = Base position.
-    ///     data = Pointer to data.
-    ///     len = Length of data.
-    void replace(long position, const(void)* data, size_t len)
-    in (position >= 0, "position >= 0")
-    in (data != null, "data != NULL")
-    in (len > 0,  "len > 0")
-    {
-        log("REPLACE pos=%d len=%u data=%s", position, len, data);
-        
-        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
-        replacePiece(position, piece);
-    }
-    
-    /// Insert new data at this position
-    /// Params:
-    ///     position = Base position.
-    ///     data = Data pointer.
-    ///     len = Length of data.
-    void insert(long position, const(void)* data, size_t len)
-    in (position >= 0, "position >= 0")
-    in (data != null, "data != NULL")
-    in (len > 0, "len > 0")
-    {
-        log("INSERT pos=%d len=%u data=%s", position, len, data);
-        
-        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
-        insertPiece(position, piece);
-    }
-    
     /// Remove data foward from a position for a length of bytes.
     /// Throws: Exception.
     /// Params:
@@ -447,6 +415,22 @@ class PieceDocumentEditor : IDocumentEditor
         addSnapshot(new_snap);
     }
     
+    /// Replace with new data at this position.
+    /// Params:
+    ///     position = Base position.
+    ///     data = Pointer to data.
+    ///     len = Length of data.
+    void replace(long position, const(void)* data, size_t len)
+    in (position >= 0, "position >= 0")
+    in (data != null, "data != NULL")
+    in (len > 0,  "len > 0")
+    {
+        log("REPLACE pos=%d len=%u data=%s", position, len, data);
+        
+        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
+        replacePiece(position, piece);
+    }
+    
     void patternReplace(long position, long len, const(void) *data, size_t datlen)
     in (position >= 0, "position >= 0")
     in (len > 0, "len > 0")
@@ -461,6 +445,33 @@ class PieceDocumentEditor : IDocumentEditor
         replacePiece(position, piece);
     }
     
+    void fileReplace(long position, IDocument doc)
+    in (position >= 0, "position >= 0")
+    in (doc !is null, "doc !is null")
+    {
+        log("REPLACE FILE pos=%d", position);
+        
+        // Make piece
+        Piece piece = Piece.makefile( 0, doc.size(), doc );
+        replacePiece(position, piece);
+    }
+    
+    /// Insert new data at this position
+    /// Params:
+    ///     position = Base position.
+    ///     data = Data pointer.
+    ///     len = Length of data.
+    void insert(long position, const(void)* data, size_t len)
+    in (position >= 0, "position >= 0")
+    in (data != null, "data != NULL")
+    in (len > 0, "len > 0")
+    {
+        log("INSERT pos=%d len=%u data=%s", position, len, data);
+        
+        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
+        insertPiece(position, piece);
+    }
+    
     void patternInsert(long position, long len, const(void) *data, size_t datlen)
     in (position >= 0, "position >= 0")
     in (len > 0, "len > 0")
@@ -473,17 +484,6 @@ class PieceDocumentEditor : IDocumentEditor
         Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         
         insertPiece(position, piece);
-    }
-    
-    void fileReplace(long position, IDocument doc)
-    in (position >= 0, "position >= 0")
-    in (doc !is null, "doc !is null")
-    {
-        log("REPLACE FILE pos=%d", position);
-        
-        // Make piece
-        Piece piece = Piece.makefile( 0, doc.size(), doc );
-        replacePiece(position, piece);
     }
     
     void fileInsert(long position, IDocument doc)
@@ -1418,7 +1418,8 @@ unittest
     string path_replace = buildPath(tempDir(), piece_replace_0);
     write(path_replace, "file replace");
     assert(readText(path_replace) == "file replace");
-    e.fileReplace(10, new FileDocument(path_replace, true)); // open readonly
+    FileDocument filedoc0 = new FileDocument(path_replace, true);
+    e.fileReplace(10, filedoc0); // open readonly
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  // 0
@@ -1430,7 +1431,8 @@ unittest
     static immutable piece_insert_0 = "piece_insert_0.tmp";
     string path_insert = buildPath(tempDir(), piece_insert_0);
     write(path_insert, "file insert");
-    e.fileInsert(30, new FileDocument(path_insert, true)); // open readonly
+    FileDocument filedoc1 = new FileDocument(path_insert, true);
+    e.fileInsert(30, filedoc1); // open readonly
     assert(e.view(0, buffer) == [
     //  0   1   2   3   4   5   6   7   8   9
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  // 0
@@ -1440,9 +1442,12 @@ unittest
        't'
     ]);
     
-    // NOTE: Crashes on windows, can't remove if file opened.
-    //remove(path_replace);
-    //remove(path_insert);
+    // NOTE: Removing opened file on Windows crashes.
+    //       So, close them.
+    filedoc0.close();
+    filedoc1.close();
+    remove(path_replace);
+    remove(path_insert);
 }
 
 // TODO: Test: Large pattern (>4 GiB) + view past that with edits
