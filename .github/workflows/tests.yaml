@@ -9,26 +9,26 @@ jobs:
     strategy:
       matrix:
         # https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job#standard-github-hosted-runners-for-public-repositories
-        os: [
-          ubuntu-22.04, ubuntu-24.04,
-          windows-2022, windows-2025,
-          windows-11-arm,
-          macos-13, macos-14, macos-15
-        ]
-        # https://github.com/dlang-community/setup-dlang
-        dc: [ dmd, gdc, ldc ]
-        exclude:
-          # DMD is x86 only
-          - { os: windows-11-arm, dc: dmd }
-          - { os: macos-14, dc: dmd }
-          - { os: macos-15, dc: dmd }
-          # GDC is Linux only
-          - { os: windows-2022, dc: gdc }
-          - { os: windows-2025, dc: gdc }
-          - { os: windows-11-arm, dc: gdc }
-          - { os: macos-13, dc: gdc }
-          - { os: macos-14, dc: gdc }
-          - { os: macos-15, dc: gdc }
+        include: # easier to maintain, more explicit
+          # DMD: Currently x86-only
+          # GDC: Works best on Linux, BSDs
+          # Windows
+          - { os: windows-2022, dc: dmd }
+          - { os: windows-2022, dc: ldc }
+          - { os: windows-2025, dc: dmd }
+          - { os: windows-2025, dc: ldc }
+          - { os: windows-11-arm, dc: ldc }
+          # macOS
+          - { os: macos-14, dc: ldc }
+          - { os: macos-15, dc: ldc }
+          - { os: macos-15-intel, dc: ldc }
+          # Linux
+          - { os: ubuntu-22.04, dc: dmd }
+          - { os: ubuntu-22.04, dc: gdc }
+          - { os: ubuntu-22.04, dc: ldc }
+          - { os: ubuntu-24.04, dc: dmd }
+          - { os: ubuntu-24.04, dc: gdc }
+          - { os: ubuntu-24.04, dc: ldc }
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
