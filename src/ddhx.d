@@ -15,8 +15,11 @@ import doceditor;
 import logger;
 import os.terminal;
 import patterns;
+import ranges;
 import platform : assertion;
 import transcoder;
+import std.algorithm.comparison : min, max;
+import core.int128;
 
 // TODO: Find a way to dump session data to be able to resume later
 //       Session/project whatever
@@ -1184,7 +1187,6 @@ void update_status(Session *session, TerminalSize termsize)
         // TODO: Attempt to "scroll" message
         //       Loop keypresses to continue?
         //       Might include "+" at end of message to signal continuation
-        import std.algorithm.comparison : min;
         size_t e = min(cols, msg.length);
         terminalWrite(msg[0..e]);
     }
@@ -1621,8 +1623,6 @@ void unselect(Session *session)
 // Get selection information
 Selection selection(Session *session)
 {
-    import std.algorithm.comparison : min, max;
-    
     Selection sel;
     if (session.selection.status == 0)
         return sel;
@@ -2032,7 +2032,6 @@ void export_range(Session *session, string[] args)
     // HACK: end is inclusive. D ranges are not.
     sel.end++;
     
-    import std.algorithm.comparison : min;
     while (sel.start < sel.end)
     {
         long left = sel.end - sel.start;
@@ -2057,14 +2056,30 @@ void replace_(Session *session, string[] args)
     if (sel)
     {
         if (args.length < 1)
-            throw new Exception("Need pattern");
-        ubyte[] p = pattern(session.rc.charset, args[0]);
+        {
+            message("Need pattern");
+            return;
+        }
+        ubyte[] p = pattern(session.rc.charset, args);
         session.editor.patternReplace(sel.start, sel.length, p.ptr, p.length);
         g_status |= UVIEW | UHEADER | USTATUSBAR;
         return;
     }
     
-    throw new Exception("TODO: By range");
+    string arange = arg(args, 0, "Range: ");
+    if (arange is null)
+        return;
+    
+    Range orange = range(arange);
+    
+    long start = min(orange.start, orange.end);
+    long len   = orange.end == -1 ?
+        session.editor.size() - start:
+        orange.end - orange.start + 1;
+    
+    ubyte[] p = pattern(session.rc.charset, args[1..$]);
+    session.editor.patternReplace(start, len, p.ptr, p.length);
+    g_status |= UVIEW | UHEADER | USTATUSBAR;
 }
 
 // Insert data using pattern
@@ -2075,14 +2090,30 @@ void insert_(Session *session, string[] args)
     if (sel)
     {
         if (args.length < 1)
-            throw new Exception("Need pattern");
+        {
+            message("Need pattern");
+            return;
+        }
         ubyte[] p = pattern(session.rc.charset, args);
         session.editor.patternInsert(sel.start, sel.length, p.ptr, p.length);
         g_status |= UVIEW | UHEADER | USTATUSBAR;
         return;
     }
     
-    throw new Exception("TODO: By range");
+    string arange = arg(args, 0, "Range: ");
+    if (arange is null)
+        return;
+    
+    Range orange = range(arange);
+    
+    long start = min(orange.start, orange.end);
+    long len   = orange.end == -1 ?
+        session.editor.size() - start:
+        orange.end - orange.start + 1;
+    
+    ubyte[] p = pattern(session.rc.charset, args[1..$]);
+    session.editor.patternInsert(start, len, p.ptr, p.length);
+    g_status |= UVIEW | UHEADER | USTATUSBAR;
 }
 
 // Replace data using file
