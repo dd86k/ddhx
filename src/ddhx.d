@@ -19,7 +19,6 @@ import ranges;
 import platform : assertion;
 import transcoder;
 import std.algorithm.comparison : min, max;
-import core.int128;
 
 // TODO: Find a way to dump session data to be able to resume later
 //       Session/project whatever

@@ -50,11 +50,10 @@ unittest
     // Missing start
     try { cast(void)range(":$"); assert(false); } catch (Exception) {}
     
-    import std.conv : octal;
     assert(range("0:0")  == Range( 0, 0 ));
     assert(range("0:1")  == Range( 0, 1 ));
     assert(range("1:1")  == Range( 1, 1 ));
     assert(range("5:25") == Range( 5, 25 ));
-    assert(range("010:0x30") == Range( octal!"010", 0x30 ));
+    assert(range("010:0x30") == Range( 8, 0x30 ));
     assert(range("5:$")  == Range( 5, -1 ));
 }
