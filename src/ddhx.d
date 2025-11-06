@@ -1601,7 +1601,6 @@ void delete_back(Session *session, string[] args)
     g_status |= UVIEW;
 }
 
-
 //
 // Selection
 //
@@ -1989,7 +1988,7 @@ int suggestcols(int tcols, int aspace, int dspace)
 }
 unittest
 {
-    enum X8SPACING = 2;
+    enum X8SPACING = 2; // temp constants
     enum D8SPACING = 3;
     assert(suggestcols(80, 11, X8SPACING) == 16); // 11 chars for address, x8 formatting
     //assert(suggestcols(80, 11, D8SPACING) == 16); // 11 chars for address, d8 formatting
@@ -2164,7 +2163,10 @@ void save_as(Session *session, string[] args)
 {
     string name = arg(args, 0, "Save as: ");
     if (name.length == 0)
-        throw new Exception("Canceled");
+    {
+        message("Canceled");
+        return;
+    }
     
     session.target = name;
     save(session, null);
@@ -2175,11 +2177,17 @@ void set(Session *session, string[] args)
 {
     string setting = arg(args, 0, "Setting: ");
     if (setting.length == 0)
-        throw new Exception("Canceled");
+    {
+        message("Canceled");
+        return;
+    }
     
     string value = arg(args, 1, "Value: ");
     if (value.length == 0)
-        throw new Exception("Canceled");
+    {
+        message("Canceled");
+        return;
+    }
     
     configRC(session.rc, setting, value);
 }
@@ -2211,26 +2219,6 @@ void reset_keys(Session *session, string[] args)
     message("All keys reset");
 }
 
-// TODO: Range interface
-//       Syntax: START:END (inclusive)
-//       0x10:0x100, 20:$, etc.
-/*struct Range
-{
-    long start, end;
-}
-Range range(string expr)
-{
-    Range range;
-    
-    
-    
-    return range;
-}
-unittest
-{
-    assert(range("5:25") == Range( 5, 25 ));
-}*/
-
 /// Artificial needle size limit for find/find-back.
 enum SEARCH_LIMIT = KiB!128;
 
@@ -2259,9 +2247,16 @@ void find(Session *session, string[] args)
         throw new Exception("Need find info");
     
     unselect(session);
+    
+    message("Searching...");
+    update_status(session, terminalSize());
+    
     long p = search(session, g_needle, sel.start, 0);
     if (p < 0)
-        throw new Exception("Not found");
+    {
+        message("Not found");
+        return;
+    }
     
     moveabs(session, p);
     
@@ -2294,9 +2289,16 @@ void find_back(Session *session, string[] args)
         throw new Exception("Need find info");
     
     unselect(session);
+    
+    message("Searching...");
+    update_status(session, terminalSize());
+    
     long p = search(session, g_needle, sel.start, SEARCH_REVERSE);
     if (p < 0)
-        throw new Exception("Not found");
+    {
+        message("Not found");
+        return;
+    }
     
     moveabs(session, p);
     
@@ -2311,9 +2313,16 @@ void find_next(Session *session, string[] args)
         return;
     
     unselect(session);
+    
+    message("Searching...");
+    update_status(session, terminalSize());
+    
     long p = search(session, g_needle, session.position_cursor + g_needle.length, 0);
     if (p < 0)
-        throw new Exception("Not found");
+    {
+        message("Not found");
+        return;
+    }
     
     moveabs(session, p);
     
@@ -2328,9 +2337,16 @@ void find_prev(Session *session, string[] args)
         return;
     
     unselect(session);
+    
+    message("Searching...");
+    update_status(session, terminalSize());
+    
     long p = search(session, g_needle, session.position_cursor - 1, SEARCH_REVERSE);
     if (p < 0)
-        throw new Exception("Not found");
+    {
+        message("Not found");
+        return;
+    }
     
     moveabs(session, p);
     

@@ -21,6 +21,7 @@ enum PatternType
 /// Detect pattern prefix.
 /// Params: input = String input. Sliced from prefix.
 /// Returns: Pattern type, unknown if it can't be detected.
+private
 PatternType patternpfx(ref string input)
 {
     import std.string : startsWith;
@@ -192,6 +193,9 @@ unittest
     
     // Alias prefixes
     assert(pattern(CharacterSet.ascii, "0xff")            == [ 0xff ]);
+    assert(pattern(CharacterSet.ascii, `"no"`)            == [ 'n', 'o' ]);
+    
+    // Non-string multibyte patterns
     assert(pattern(CharacterSet.ascii, "0x01")            == [ 1 ]);
     assert(pattern(CharacterSet.ascii, "0x0101")          == [ 1, 1 ]);
     assert(pattern(CharacterSet.ascii, "0x010101")        == [ 1, 1, 1 ]);
@@ -201,5 +205,9 @@ unittest
     // Invalid and needs to throw
     try { cast(void)pattern(CharacterSet.ascii, "");   assert(false); } catch (Exception) {}
     try { cast(void)pattern(CharacterSet.ascii, "x:"); assert(false); } catch (Exception) {}
+    try { cast(void)pattern(CharacterSet.ascii, "o:"); assert(false); } catch (Exception) {}
+    try { cast(void)pattern(CharacterSet.ascii, "d:"); assert(false); } catch (Exception) {}
     try { cast(void)pattern(CharacterSet.ascii, "s:"); assert(false); } catch (Exception) {}
+    try { cast(void)pattern(CharacterSet.ascii, "0x"); assert(false); } catch (Exception) {}
+    try { cast(void)pattern(CharacterSet.ascii, "\""); assert(false); } catch (Exception) {}
 }
