@@ -1819,15 +1819,32 @@ void select(Session *session, string[] args)
 // Change writing mode
 void change_writemode(Session *session, string[] args)
 {
-    final switch (session.rc.writemode) {
-    case WritingMode.readonly: // Can't switch from read-only
+    // Can't switch from restricted mode
+    if (session.rc.writemode == WritingMode.readonly)
         throw new Exception("Can't edit in read-only");
-    case WritingMode.insert:
-        session.rc.writemode = WritingMode.overwrite;
-        break;
-    case WritingMode.overwrite:
-        session.rc.writemode = WritingMode.insert;
-        break;
+    
+    // Optional argument
+    if (args.length > 0)
+    {
+        switch (args[0][0]) {
+        case 'i':
+            session.rc.writemode = WritingMode.insert;
+            break;
+        case 'o':
+            session.rc.writemode = WritingMode.overwrite;
+            break;
+        case 'r':
+            session.rc.writemode = WritingMode.readonly;
+            break;
+        default:
+            throw new Exception(text("Unknown writemode:", args[0]));
+        }
+    }
+    else
+    {
+        session.rc.writemode =
+            session.rc.writemode == WritingMode.insert ?
+            WritingMode.overwrite : WritingMode.insert;
     }
     g_status |= USTATUSBAR;
 }
@@ -1982,10 +1999,7 @@ void report_position(Session *session, string[] args)
 void report_name(Session *session, string[] args)
 {
     import std.path : baseName;
-    
-    message( session.target is null ?
-        "(new buffer)" :
-        baseName(session.target) );
+    message( session.target is null ? "(new buffer)" : baseName(session.target) );
 }
 
 // Report program version on screen
@@ -2066,6 +2080,9 @@ void export_range(Session *session, string[] args)
 // Replace data using pattern
 void replace_(Session *session, string[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+    
     Selection sel = selection(session);
     
     if (sel)
@@ -2091,6 +2108,9 @@ void replace_(Session *session, string[] args)
 // Insert data using pattern
 void insert_(Session *session, string[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+    
     Selection sel = selection(session);
     
     if (sel)
@@ -2116,6 +2136,9 @@ void insert_(Session *session, string[] args)
 // Replace data using file
 void replace_file(Session *session, string[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+    
     import document.file : FileDocument;
     import document.base : IDocument;
     
@@ -2131,6 +2154,9 @@ void replace_file(Session *session, string[] args)
 // Insert data using file
 void insert_file(Session *session, string[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+    
     import document.file : FileDocument;
     import document.base : IDocument;
     
@@ -2146,6 +2172,9 @@ void insert_file(Session *session, string[] args)
 // Save changes
 void save(Session *session, string[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot save, read-only");
+    
     // No known path... Ask for one!
     if (session.target is null)
     {
@@ -2189,6 +2218,9 @@ void save(Session *session, string[] args)
 // Save as file
 void save_as(Session *session, string[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot save, read-only");
+    
     string name = askstring(args, 0, "Save as: ");
     
     session.target = name;
