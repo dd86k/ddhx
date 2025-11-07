@@ -2089,7 +2089,7 @@ void replace_(Session *session, string[] args)
     {
         if (args.length < 1)
         {
-            message("Need pattern");
+            message("Missing pattern");
             return;
         }
         ubyte[] p = pattern(session.rc.charset, args);
@@ -2098,8 +2098,18 @@ void replace_(Session *session, string[] args)
         return;
     }
     
-    Range r = askrange(args, 0, "Range: ");
+    if (args.length < 1)
+    {
+        message("Missing range");
+        return;
+    }
+    if (args.length < 2)
+    {
+        message("Missing pattern");
+        return;
+    }
     
+    Range r = askrange(args, 0, "Range: ");
     ubyte[] p = pattern(session.rc.charset, args[1..$]);
     session.editor.patternReplace(r.start, rangelen(r), p.ptr, p.length);
     g_status |= UVIEW | UHEADER | USTATUSBAR;
@@ -2126,8 +2136,18 @@ void insert_(Session *session, string[] args)
         return;
     }
     
-    Range r = askrange(args, 0, "Range: ");
+    if (args.length < 1)
+    {
+        message("Missing range");
+        return;
+    }
+    if (args.length < 2)
+    {
+        message("Missing pattern");
+        return;
+    }
     
+    Range r = askrange(args, 0, "Range: ");
     ubyte[] p = pattern(session.rc.charset, args[1..$]);
     session.editor.patternInsert(r.start, rangelen(r), p.ptr, p.length);
     g_status |= UVIEW | UHEADER | USTATUSBAR;

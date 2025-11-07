@@ -305,7 +305,7 @@ void main(string[] args)
     log("backend=%s", backend);
     assert(editor, "editor?");
     
-    // Open buffer or file where (imitating GUN nano):
+    // Open buffer or file where (imitating GNU nano):
     // - No args:  New empty buffer
     // - "-":      Read from stdin
     // - FILENAME: Attempt to open FILE
