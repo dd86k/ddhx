@@ -1601,7 +1601,14 @@ void view_down(Session *session, string[] args)
 void delete_front(Session *session, string[] args)
 {
     Selection sel = selection(session);
-    if (sel)
+    if (args.length > 0)
+    {
+        Range r = askrange(args, 0, "Range: ");
+        session.editor.remove(r.start, rangelen(r));
+        g_status |= UVIEW;
+        return;
+    }
+    else if (sel)
     {
         session.editor.remove(sel.start, sel.length);
         unselect(session);
