@@ -43,7 +43,7 @@ Title font: Shaded Blocky (FIGlet)
 
   • Insert, overwrite, and delete operations
   • Unlimited undo/redo
-  • Large file support
+  • Large file support (up to 8 EiB)
   • Visual selection and block operations
   • Multiple charset representations (ascii, mac, cp437, ebcdic)
   • Search data with a powerful pattern syntax

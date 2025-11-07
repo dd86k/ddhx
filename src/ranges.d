@@ -1,5 +1,4 @@
-/// Editor backend implemention using a Piece List to ease insertion and
-/// deletion operations.
+/// Implements range expressions.
 ///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
@@ -8,7 +7,22 @@ module ranges;
 
 import utils : scan;
 
-struct Range { long start, end; } // @suppress(dscanner.style.undocumented_declaration)
+/// Special values
+enum RangeSentinel {
+    eof     = -1,   /// End of file (document): '$'
+    cursor  = -2,   /// Cursor position: '.'
+}
+enum {
+    RANGE_RELATIVE = 1,     /// If set, end is a length value
+}
+
+/// Represents an inclusive range.
+struct Range
+{
+    long start;     /// Start.
+    long end;       /// End or length if RANGE_RELATIVE is set.
+    int flags;      /// Flags.
+}
 /// Parse a range expression.
 ///
 /// Only '$' is accepted as an end portion that turns into -1,
@@ -27,17 +41,38 @@ Range range(string expr)
     if (i < 0)
         throw new Exception("Missing separator in range");
     if (i == 0)
-        throw new Exception("Missing start portion in range");
+        throw new Exception("Missing start in range");
     if (i+1 == expr.length)
-        throw new Exception("Missing end portion in range");
+        throw new Exception("Missing end in range");
     
-    string start = expr[0..i];
-    string end   = expr[i+1..$];
+    Range r;
     
-    return Range(
-        start == "$" ? -1 : scan(start),
-        end   == "$" ? -1 : scan(end)
-    );
+    // Process start
+    string a = expr[0..i];
+    switch (a) {
+    case "$": r.start = RangeSentinel.eof; break;
+    case ".": r.start = RangeSentinel.cursor; break;
+    default:  r.start = scan(a);
+    }
+    
+    // Process end
+    string b = expr[i+1..$];
+    switch (b) {
+    case "$": r.end = RangeSentinel.eof; break;
+    case ".": r.end = RangeSentinel.cursor; break;
+    default:
+        if (b[0] == '+')
+        {
+            if (b.length < 2)
+                throw new Exception("Missing length in range");
+            r.end   = scan(b[1..$]);
+            r.flags = RANGE_RELATIVE;
+        }
+        else
+            r.end = scan(b);
+    }
+    
+    return r;
 }
 unittest
 {
@@ -47,6 +82,7 @@ unittest
     try { cast(void)range(":"); assert(false); } catch (Exception) {}
     // Missing end
     try { cast(void)range("0:"); assert(false); } catch (Exception) {}
+    try { cast(void)range("0:+"); assert(false); } catch (Exception) {}
     // Missing start
     try { cast(void)range(":$"); assert(false); } catch (Exception) {}
     
@@ -55,6 +91,11 @@ unittest
     assert(range("1:1")  == Range( 1, 1 ));
     assert(range("5:25") == Range( 5, 25 ));
     assert(range("010:0x30") == Range( 8, 0x30 ));
-    assert(range("5:$")  == Range( 5, -1 ));
-    assert(range("$:0x20")  == Range( -1, 0x20 ));
+    assert(range("5:$")     == Range( 5, RangeSentinel.eof ));
+    assert(range("$:0x20")  == Range( RangeSentinel.eof, 0x20 ));
+    assert(range(".:0x20")  == Range( RangeSentinel.cursor, 0x20 ));
+    assert(range(".:$")     == Range( RangeSentinel.cursor, RangeSentinel.eof ));
+    
+    // Relative
+    assert(range(".:+0x100") == Range( RangeSentinel.cursor, 0x100, RANGE_RELATIVE ));
 }

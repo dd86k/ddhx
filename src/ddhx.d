@@ -672,24 +672,39 @@ Range askrange(string[] args, size_t idx, string prefix)
 {
     string str = askstring(args, idx, prefix);
     
-    Range ran = range(str);
+    Range r = range(str);
     
-    // Adjust special meanings
-    if (ran.start == -1)
-        ran.start = g_session.position_cursor;
-    long docsize = g_session.editor.size(); // HACK
-    if (ran.end == -1)
-        ran.end = docsize == 0 ? 0 : docsize - 1;
+    switch (r.start) {
+    case RangeSentinel.eof: // why would you?
+        throw new Exception("Range start cannot be EOF");
+    case RangeSentinel.cursor:
+        r.start = g_session.position_cursor;
+        break;
+    default:
+    }
     
-    if (ran.start < 0 || ran.start >= docsize)
+    long docsize = g_session.editor.size();
+    
+    switch (r.end) {
+    case RangeSentinel.eof:
+        r.end = docsize == 0 ? 0 : docsize - 1;
+        break;
+    case RangeSentinel.cursor:
+        r.end = g_session.position_cursor;
+        break;
+    default:
+        if (r.flags & RANGE_RELATIVE)
+            r.end = r.start + r.end;
+    }
+    
+    if (r.start < 0 || r.start >= docsize)
         throw new Exception("range: Start out of range");
-    if (ran.end   < 0 || ran.end   >= docsize)
+    if (r.end   < 0 || r.end   >= docsize)
         throw new Exception("range: End out of range");
+    if (r.start > r.end)
+        throw new Exception("range: Cannot start after end");
     
-    ran.start = min(ran.start, ran.end);
-    ran.end   = max(ran.start, ran.end);
-    
-    return ran;
+    return r;
 }
 // Get length from range result
 long rangelen(ref Range r)
