@@ -653,12 +653,45 @@ unittest
 }
 
 // Command requires argument
-string arg(string[] args, size_t idx, string prefix)
+string askstring(string[] args, size_t idx, string prefix)
 {
-    if (args is null || args.length <= idx)
-        return promptline(prefix);
-    else
-        return args[idx];
+    string s = args is null || args.length <= idx ?
+        promptline(prefix) : args[idx];
+    
+    // Empty string? Cancel! Can't do anything on that.
+    // Bonus: Besides, throwing an exception is easier to manage than
+    // manually checking the output at every invokation.
+    if (s is null) // simple msg, if "error: " wanted, make new Exception class with prefix
+        throw new Exception("Cancelled");
+    
+    return s;
+}
+
+// Ask for range expression
+Range askrange(string[] args, size_t idx, string prefix)
+{
+    string str = askstring(args, idx, prefix);
+    
+    Range ran = range(str);
+    
+    long docsize = g_session.editor.size(); // HACK
+    if (ran.end == -1)
+        ran.end = docsize == 0 ? 0 : docsize - 1;
+    
+    if (ran.start < 0 || ran.start >= docsize)
+        throw new Exception("range: Start out of range");
+    if (ran.end   < 0 || ran.end   >= docsize)
+        throw new Exception("range: End out of range");
+    
+    ran.start = min(ran.start, ran.end);
+    ran.end   = max(ran.start, ran.end);
+    
+    return ran;
+}
+// Get length from range result
+long rangelen(ref Range r)
+{
+    return r.end - r.start + 1;
 }
 
 string tempName(string basename)
@@ -1769,17 +1802,10 @@ void select_all(Session *session, string[] args)
 // Start an explicit selection
 void select(Session *session, string[] args)
 {
-    string start = arg(args, 0, "Start: ");
-    if (start is null)
-        return;
-    string end   = arg(args, 1, "End: ");
-    if (end is null)
-        return;
+    Range ran = askrange(args, 0, "Range: ");
     
-    import utils : scan;
-    session.selection.status = 0;
-    session.selection.anchor = scan( start ); // throws if wrong
-    session.position_cursor  = scan( end );   // throws if wrong
+    session.selection.anchor = ran.start;
+    session.position_cursor  = ran.end;
     session.selection.status = 1;
 }
 
@@ -1884,9 +1910,8 @@ void goto_(Session *session, string[] args)
     }
     else
     {
-        string off = arg(args, 0, "offset: ");
-        if (off.length == 0)
-            return; // special since it will happen often to cancel
+        string off = askstring(args, 0, "offset: ");
+        
         // Number
         switch (off[0]) {
         case '+':
@@ -2001,10 +2026,9 @@ void export_range(Session *session, string[] args)
     if (sel.length == 0)
         throw new Exception("Need selection");
     
-    // TODO: Check if target exists
-    string name = arg(args, 0, "Name: ");
-    if (name is null || name.length == 0)
-        return;
+    // TODO: Check if target exists to potentially avoid overwriting it
+    //       Simple as just "Overwrite? (y/n) "
+    string name = askstring(args, 0, "Name: ");
     
     import std.stdio : File;
     File output = File(name, "w");
@@ -2054,19 +2078,10 @@ void replace_(Session *session, string[] args)
         return;
     }
     
-    string arange = arg(args, 0, "Range: ");
-    if (arange is null)
-        return;
-    
-    Range orange = range(arange);
-    
-    long start = min(orange.start, orange.end);
-    long len   = orange.end == -1 ?
-        session.editor.size() - start:
-        orange.end - orange.start + 1;
+    Range r = askrange(args, 0, "Range: ");
     
     ubyte[] p = pattern(session.rc.charset, args[1..$]);
-    session.editor.patternReplace(start, len, p.ptr, p.length);
+    session.editor.patternReplace(r.start, rangelen(r), p.ptr, p.length);
     g_status |= UVIEW | UHEADER | USTATUSBAR;
 }
 
@@ -2088,29 +2103,20 @@ void insert_(Session *session, string[] args)
         return;
     }
     
-    string arange = arg(args, 0, "Range: ");
-    if (arange is null)
-        return;
-    
-    Range orange = range(arange);
-    
-    long start = min(orange.start, orange.end);
-    long len   = orange.end == -1 ?
-        session.editor.size() - start:
-        orange.end - orange.start + 1;
+    Range r = askrange(args, 0, "Range: ");
     
     ubyte[] p = pattern(session.rc.charset, args[1..$]);
-    session.editor.patternInsert(start, len, p.ptr, p.length);
+    session.editor.patternInsert(r.start, rangelen(r), p.ptr, p.length);
     g_status |= UVIEW | UHEADER | USTATUSBAR;
 }
 
 // Replace data using file
 void replace_file(Session *session, string[] args)
 {
-    string path = arg(args, 0, "File: ");
-    
     import document.file : FileDocument;
     import document.base : IDocument;
+    
+    string path = askstring(args, 0, "File: ");
     
     IDocument file = new FileDocument(path, true);
     long curpos = session.position_cursor;
@@ -2122,10 +2128,10 @@ void replace_file(Session *session, string[] args)
 // Insert data using file
 void insert_file(Session *session, string[] args)
 {
-    string path = arg(args, 0, "File: ");
-    
     import document.file : FileDocument;
     import document.base : IDocument;
+    
+    string path = askstring(args, 0, "File: ");
     
     IDocument file = new FileDocument(path, true);
     long curpos = session.position_cursor;
@@ -2180,12 +2186,7 @@ void save(Session *session, string[] args)
 // Save as file
 void save_as(Session *session, string[] args)
 {
-    string name = arg(args, 0, "Save as: ");
-    if (name.length == 0)
-    {
-        message("Canceled");
-        return;
-    }
+    string name = askstring(args, 0, "Save as: ");
     
     session.target = name;
     save(session, null);
@@ -2194,19 +2195,8 @@ void save_as(Session *session, string[] args)
 // Set runtime config
 void set(Session *session, string[] args)
 {
-    string setting = arg(args, 0, "Setting: ");
-    if (setting.length == 0)
-    {
-        message("Canceled");
-        return;
-    }
-    
-    string value = arg(args, 1, "Value: ");
-    if (value.length == 0)
-    {
-        message("Canceled");
-        return;
-    }
+    string setting = askstring(args, 0, "Setting: ");
+    string value   = askstring(args, 1, "Value: ");
     
     configRC(session.rc, setting, value);
 }
@@ -2214,9 +2204,9 @@ void set(Session *session, string[] args)
 // Bind key to action (command + parameters)
 void bind(Session *session, string[] args)
 {
-    int key = terminal_keybind( arg(args, 0, "Key: ") );
+    int key = terminal_keybind( askstring(args, 0, "Key: ") );
     // BUG: promptline returns as one string, so "goto +32" might happen
-    string command = arg(args, 1, "Command: ");
+    string command = askstring(args, 1, "Command: ");
     
     bindkey(key, command, args.length >= 2 ? args[2..$] : null);
     message("Key binded");
@@ -2225,7 +2215,7 @@ void bind(Session *session, string[] args)
 // Unbind key
 void unbind(Session *session, string[] args)
 {
-    int key = terminal_keybind( arg(args, 0, "Key: ") );
+    int key = terminal_keybind( askstring(args, 0, "Key: ") );
     unbindkey(key);
     message("Key unbinded");
 }
