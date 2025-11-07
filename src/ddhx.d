@@ -697,9 +697,9 @@ Range askrange(string[] args, size_t idx, string prefix)
             r.end = r.start + r.end;
     }
     
-    if (r.start < 0 || r.start >= docsize)
+    if (r.start < 0)
         throw new Exception("range: Start out of range");
-    if (r.end   < 0 || r.end   >= docsize)
+    if (r.end   < 0)
         throw new Exception("range: End out of range");
     if (r.start > r.end)
         throw new Exception("range: Cannot start after end");
