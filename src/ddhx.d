@@ -661,7 +661,7 @@ string askstring(string[] args, size_t idx, string prefix)
     // Empty string? Cancel! Can't do anything on that.
     // Bonus: Besides, throwing an exception is easier to manage than
     // manually checking the output at every invokation.
-    if (s is null) // simple msg, if "error: " wanted, make new Exception class with prefix
+    if (s is null || s.length == 0) // simple msg, if "error: " wanted, make new Exception class with prefix
         throw new Exception("Cancelled");
     
     return s;
@@ -674,6 +674,9 @@ Range askrange(string[] args, size_t idx, string prefix)
     
     Range ran = range(str);
     
+    // Adjust special meanings
+    if (ran.start == -1)
+        ran.start = g_session.position_cursor;
     long docsize = g_session.editor.size(); // HACK
     if (ran.end == -1)
         ran.end = docsize == 0 ? 0 : docsize - 1;

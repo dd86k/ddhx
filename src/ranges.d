@@ -12,7 +12,7 @@ struct Range { long start, end; } // @suppress(dscanner.style.undocumented_decla
 /// Parse a range expression.
 ///
 /// Only '$' is accepted as an end portion that turns into -1,
-/// for special designation.
+/// for special designation to the caller.
 /// Params: expr = Expression string.
 /// Returns: Range structure.
 /// Throws: Exception.
@@ -35,8 +35,8 @@ Range range(string expr)
     string end   = expr[i+1..$];
     
     return Range(
-        scan(start),
-        end == "$" ? -1 : scan(end)
+        start == "$" ? -1 : scan(start),
+        end   == "$" ? -1 : scan(end)
     );
 }
 unittest
@@ -56,4 +56,5 @@ unittest
     assert(range("5:25") == Range( 5, 25 ));
     assert(range("010:0x30") == Range( 8, 0x30 ));
     assert(range("5:$")  == Range( 5, -1 ));
+    assert(range("$:0x20")  == Range( -1, 0x20 ));
 }
