@@ -274,14 +274,13 @@ unittest
     assert(align64up(33, 16) == 48);
 }
 
-/// Divides an integer by a whole percentage
+/// Divides an integer by a whole percentage.
 /// Params:
 ///     a = Number
 ///     per = Percent (0-100)
 /// Returns: Number. Value of 1000 with per=50(%) will give 500.
 long llpercentdiv(long a, int per)
 {
-    // TODO: Check for overflow using std.numeric (if available) or manually
     return (a * per) / 100;
 }
 unittest
@@ -289,6 +288,26 @@ unittest
     assert(llpercentdiv(1000,   0) == 0);
     assert(llpercentdiv(1000,  50) == 500);
     assert(llpercentdiv(1000, 100) == 1000);
+    assert(llpercentdiv(  64,  50) == 32);
+}
+
+/// Divides an integer by a percentage.
+/// Params:
+///     a = Number
+///     per = Percent (0-100)
+/// Returns: Number. Value of 1000 with per=50.0(%) will give 500.
+long llpercentdivf(long a, double per)
+{
+    import std.math : round;
+    return cast(long)round((cast(double)a * per) / 100.0);
+}
+unittest
+{
+    assert(llpercentdivf(1000,   0.0) == 0);
+    assert(llpercentdivf(1000,  50.0) == 500);
+    assert(llpercentdivf(1000,  55.5) == 555);
+    assert(llpercentdivf(1000, 100.0) == 1000);
+    assert(llpercentdivf(  64,  50.0) == 32);
 }
 
 /// Simple buffered writer structure with custom flush function

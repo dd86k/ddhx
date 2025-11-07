@@ -20,9 +20,6 @@ import platform : assertion;
 import transcoder;
 import std.algorithm.comparison : min, max;
 
-// TODO: Find a way to dump session data to be able to resume later
-//       Session/project whatever
-
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
 /// Copyright string
@@ -146,15 +143,8 @@ struct Command
 }
 
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
-// - "find-back" (Ctrl+B and/or '?'): Backward search
-// - "find-next" (prefill with Ctrl+F): Find next instance for find
-// - "find-prev" (prefill with Ctrl+F): Find next instance for find-back
 // - "toggle-*" (Alt+Key): Hiding/showing panels
 // - "save-settings": Save session settings into .ddhxrc
-// - "insert" (Ctrl+I): Insert data (generic, might redirect to other commands?)
-// - "backspace" (Backspace): Delete elements before cursor position
-// - "delete" (Delete): Delete elements at cursor position
-// - "fill": Fill selection/range with bytes (overwrite only)
 // - "hash": Hash selection with result in status
 //           Mostly checksums and digests under 256 bits.
 //           80 columns -> 40 bytes -> 320 bits.
@@ -1913,16 +1903,15 @@ void goto_(Session *session, string[] args)
             break;
         case '%':
             import std.conv : to;
-            import utils : llpercentdiv;
+            import utils : llpercentdivf;
             
             if (off.length <= 1) // just '%'
                 throw new Exception("Need percentage number");
             
-            // TODO: Support double (mantissa issue isn't real)
-            uint per = to!uint(off[1..$]);
-            if (per > 100) // Yeah we can't go over the document
+            double per = to!double(off[1..$]);
+            if (per > 100.0) // Can't go beyond document (EOF)
                 throw new Exception("Percentage cannot be over 100");
-            position = llpercentdiv(session.editor.size(), per);
+            position = llpercentdivf(session.editor.size(), per);
             absolute = true;
             break;
         default:
