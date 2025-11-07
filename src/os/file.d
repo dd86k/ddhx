@@ -106,7 +106,7 @@ enum OFlags
     read    = 1 << 1,   /// Read access.
     write   = 1 << 2,   /// Write access.
     readWrite = read | write,   /// Read and write access.
-    share   = 1 << 5,   /// TODO: Share file with read access to other programs.
+    share   = 1 << 5,   /// Share file with read access to other programs.
 }
 
 // TODO: Set file size (to extend or truncate file, allocate size)

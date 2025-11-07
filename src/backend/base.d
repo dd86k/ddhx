@@ -18,8 +18,6 @@ interface IDocumentEditor
     /// Mark the document as saved.
     void markSaved();
     
-    // TODO: Change ubyte[] to either const(ubyte)[] or immutable(ubyte)[]
-    
     /// View document at position using buffer.
     ubyte[] view(long position, void *data, size_t size);
     /// Ditto.
@@ -88,6 +86,9 @@ void editorTests(T : IDocumentEditor)()
 
 private:
 
+// NOTE: These tests only hinder new backend development
+//       No idea if I'll keep them
+
 //
 // Tests without document
 //
@@ -133,14 +134,6 @@ void test_replace(T : IDocumentEditor)()
     assert(e.size() == 4);
     assert(e.view(0, buffer) == "tsss");
 }
-// TODO: Insert
-// TODO: Delete
-// TODO: Replace+Insert
-// TODO: Replace+Delete
-// TODO: Insert+Delete
-// TODO: Replace+Insert+Delete
-// TODO: Replace+Insert+Delete+Undo+Redo
-// TODO: Everything (Replace+Insert+Delete+Undo+Redo+Save)
 // Undo/Redo
 void test_undo_redo(T : IDocumentEditor)()
 {

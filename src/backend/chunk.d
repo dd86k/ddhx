@@ -500,11 +500,6 @@ class ChunkDocumentEditor : IDocumentEditor
             patch.status |= PATCH_APPEND;
         }
         
-        // TODO: Rewrite this function
-        //       It'd be better to rewrite this function that "walks" across
-        //       "chunks" (min(chunk.length, len_rem)) which should cover
-        //       chunk gaps and chunk overflows.
-        
         // Time to locate (or create) a chunk to apply the patch to
         Chunk *chunk = chunks.locate(pos);
         if (chunk) // update chunk
@@ -532,8 +527,6 @@ class ChunkDocumentEditor : IDocumentEditor
             }
         }
         
-        // TODO: Fix cross-chunk old data reference
-        //       Probably with a "copy old data" function which can append
         // Add patch into set with new and old data
         log("add historyidx=%u patch=%s", historyidx, patch);
         patches.insert(historyidx++, patch);
@@ -616,8 +609,6 @@ class ChunkDocumentEditor : IDocumentEditor
         
         log("patch=%s chunk=%s", patch, *chunk);
         
-        // TODO: If insert/deletion, don't forget to reshift chunks
-        
         // HACK: With overwrites, the last byte could be overwritten
         //       and its size unchanged.
         
@@ -661,8 +652,6 @@ class ChunkDocumentEditor : IDocumentEditor
         assertion(chunk, "chunk != NULL");
         
         log("patch=%s chunk=%s", patch, *chunk);
-        
-        // TODO: If insert/deletion, don't forget to reshift chunks
         
         // Apply new data
         import core.stdc.string : memcpy;
@@ -1067,7 +1056,7 @@ unittest
     ]);
 }
 
-// TODO: TEST-0011 (test disabled until relevant)
+//       TEST-0011 (test disabled until relevant)
 //       Editor can only edit single bytes right now...
 //       If you enable this test, it might pass and silently fail
 /// Replace data across two chunks
@@ -1094,7 +1083,7 @@ unittest
     ]);
 }*/
 
-// TODO: TEST-0012 (test disabled until relevant)
+//       TEST-0012 (test disabled until relevant)
 //       Editor can only edit single bytes right now...
 /// Append to a chunk so much it overflows to another chunk
 /*unittest
