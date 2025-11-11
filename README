@@ -138,7 +138,7 @@ Synopsis:
   ddhx {-h|--help|--version|--ver}
 
 To view available start options, execute `ddhx --help`. The command-line
-interface matches POSIX guidelines.
+interface matches POSIX guidelines on all platforms.
 
 Create a new empty document:
   $ ddhx
@@ -184,6 +184,16 @@ To insert a file into the document at the current cursor position, use the
 "insert-file PATH" command, where PATH is a path to the file. The same can be
 done using "replace-file PATH", where the file replaces content instead.
 
+Some commands support selection. Selection makes certain commands work
+differently. For example, with an active selection, the "replace" command
+doesn't need a range expression, only patterns.
+
+Commands:
+  insert RANGE PATTERNS...         - Insert data
+  insert-file RANGE PATTERNS...    - Insert file
+  replace RANGE PATTERNS...        - Replace data
+  replace-file RANGE PATTERNS...   - Replace data using a file
+
 ////////////////////////////////////////////////////////////////////////////////
 // Commands
 
@@ -216,9 +226,6 @@ To view all available commands, run: ddhx --help-commands
 ////////////////////////////////////////////////////////////////////////////////
 // Patterns
 
-ddhx uses a pattern system for a few commands: find, find-back, insert, and
-replace.
-
 A pattern consists of one or more prefixed patterns, where they can be matched
 in order (left to right).
 
@@ -231,12 +238,39 @@ Supported prefixes:
   o:        - Octal signed integer
   s: and "  - String (currently ASCII only)
 
+Supported commands: find, find-back, insert, and replace.
+
+////////////////////////////////////////////////////////////////////////////////
+// Ranges
+
+A range expression represents a start and end position inclusively, typically
+in the START:END format.
+
+Without a start marker, it denotes a length only, starting at the cursor
+position. *
+
+Special markers:
+  . - Current cursor position.
+  $ - End Of File (document size minus one)
+  + - (End only) End is not a position, but an addition
+
+Examples:
+  "select 0x10:0x19"       - Selects positions 0x10 to 0x19
+  "select 0x10:+9"         - Selects positions 0x10 to 0x19 (0x10+9=0x19)
+  "replace 200:$ x:00"     - Replace bytes from address 200 to EOF with zeros
+  "replace 200:. x:00"     - Replace from 200 to current position with zeros
+  "insert 100 x:90"        - Insert 100 0x90 bytes at current position *
+
+Supported commands: insert, replace, select, and delete.
+
+* Upcoming version.
+
 ////////////////////////////////////////////////////////////////////////////////
 // Searching
 
 Finding data uses the "find" (Ctrl+F) and "find-back" (Ctrl+B) commands.
 
-Once a search needle is define, it can be re-used using "find-next" (Ctrl+N)
+Once a search needle is defined, it can be re-used using "find-next" (Ctrl+N)
 and "find-prev" (Shift+N).
 
 The search command uses the pattern system.
@@ -288,10 +322,8 @@ Vim-style navigation example:
   >bind k up
   >bind l right
 
-Custom jump example:
+This makes the right arrow jump 32 bytes ahead.
   >bind right-arrow goto +32
-
-This makes the right arrow jump 32 bytes ahead instead of moving one position.
 
 To remove bindings:
   >unbind right-arrow       Remove a specific binding
