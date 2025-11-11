@@ -37,15 +37,24 @@ Range range(string expr)
     
     import std.string : indexOf;
     
+    Range r;
+    
     ptrdiff_t i = indexOf(expr, ':');
     if (i < 0)
-        throw new Exception("Missing separator in range");
+    {
+        // Assume length-only range expression if separator missing
+        r.start = RangeSentinel.cursor;
+        r.end   = scan(expr);
+        if (r.end == 0)
+            throw new Exception("Length cannot be zero");
+        r.end--;
+        r.flags = RANGE_RELATIVE;
+        return r;
+    }
     if (i == 0)
         throw new Exception("Missing start in range");
     if (i+1 == expr.length)
         throw new Exception("Missing end in range");
-    
-    Range r;
     
     // Process start
     string a = expr[0..i];
@@ -97,5 +106,6 @@ unittest
     assert(range(".:$")     == Range( RangeSentinel.cursor, RangeSentinel.eof ));
     
     // Relative
-    assert(range(".:+0x100") == Range( RangeSentinel.cursor, 0x100, RANGE_RELATIVE ));
+    assert(range(".:+0x100") == Range( RangeSentinel.cursor, 0x100,   RANGE_RELATIVE ));
+    assert(range("0x100")    == Range( RangeSentinel.cursor, 0x100-1, RANGE_RELATIVE ));
 }
