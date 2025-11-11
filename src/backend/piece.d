@@ -428,6 +428,7 @@ class PieceDocumentEditor : IDocumentEditor
         log("REPLACE pos=%d len=%u data=%s", position, len, data);
         
         Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
+        
         replacePiece(position, piece);
     }
     
@@ -439,7 +440,6 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("REPLACE PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
         
-        // Make piece
         Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         
         replacePiece(position, piece);
@@ -451,8 +451,8 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("REPLACE FILE pos=%d", position);
         
-        // Make piece
         Piece piece = Piece.makefile( 0, doc.size(), doc );
+        
         replacePiece(position, piece);
     }
     
@@ -469,6 +469,7 @@ class PieceDocumentEditor : IDocumentEditor
         log("INSERT pos=%d len=%u data=%s", position, len, data);
         
         Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
+        
         insertPiece(position, piece);
     }
     
@@ -480,7 +481,6 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("INSERT PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
         
-        // Make piece
         Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         
         insertPiece(position, piece);
@@ -492,8 +492,8 @@ class PieceDocumentEditor : IDocumentEditor
     {
         log("INSERT FILE pos=%d", position);
         
-        // Make piece
         Piece piece = Piece.makefile( 0, doc.size(), doc );
+        
         insertPiece(position, piece);
     }
     
@@ -565,8 +565,8 @@ private:
     {
         long len = piece.size;
         
-        // Optimization: No snapshots, no documents opened
-        if (snapshots.length == 0)
+        // Optimization: No snapshots, no documents opened, or we're at the beginning with no valid snapshot
+        if (snapshots.length == 0 || (snapshot_index == 0 && basedoc is null))
         {
             assertion(position == 0, "insert(position==0)");
             Snapshot snap = Snapshot( 0, len, len, new Tree(IndexedPiece(len, piece)) );
@@ -706,8 +706,8 @@ private:
     {
         long len = piece.size;
         
-        // Optimization: No snapshots, no documents opened
-        if (snapshots.length == 0)
+        // Optimization: No snapshots, no documents opened, or we're at the beginning with no valid snapshot
+        if (snapshots.length == 0 || (snapshot_index == 0 && basedoc is null))
         {
             assertion(position == 0, "position == 0");
             Snapshot snap = Snapshot( 0, len, len, new Tree(IndexedPiece(len, piece)) );
@@ -837,7 +837,7 @@ private:
     /// Returns: Snapshot
     Snapshot currentSnapshot()
     {
-        // Zero-check is cheap hack...
+        // HACK: because my snapshot system is crappy and requires checks from caller
         return snapshots[ snapshot_index == 0 ? 0 : snapshot_index-1 ];
     }
     
@@ -1448,6 +1448,30 @@ unittest
     filedoc1.close();
     remove(path_replace);
     remove(path_insert);
+}
+
+// NOTE: This test fails and proves that the current way snapshots
+//       are implement is to be either
+
+// Add data on empty doc, undo, and insert pattern
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0011");
+    
+    scope PieceDocumentEditor e = new PieceDocumentEditor();
+    
+    ubyte dd = 0xdd;
+    e.replace(0, &dd, ubyte.sizeof);
+    
+    e.undo();
+    
+    ubyte p = 0;
+    e.patternInsert(0, 5, &p, ubyte.sizeof);
+    
+    ubyte[10] buf;
+    assert(e.view(0, buf) == [ 0,0,0,0,0 ]);
 }
 
 // TODO: Test: Large pattern (>4 GiB) + view past that with edits
