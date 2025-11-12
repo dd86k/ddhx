@@ -105,12 +105,12 @@ This list may change at any given time without notice.
 - [x] "export-range" command
 - [x] Insert/replace using file
 - [x] Insert/replace using pattern
+- [x] Range expressions
 
 0.8:
 - [ ] Back-end optimizations
 - [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
 - [ ] Dual highlighters setting (data and text)
-- [ ] Range expressions (start:end, start:+length)
 
 0.9:
 - TBD
