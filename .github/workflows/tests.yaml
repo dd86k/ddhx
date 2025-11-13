@@ -36,9 +36,15 @@ jobs:
       uses: dlang-community/setup-dlang@v2
       with:
         compiler: ${{ matrix.dc }}
-    # Ensure it compiles (with main) and runs
-    - name: Compile & run
-      run: dub -- --ver
     # Ensure basic functionality
     - name: Unit tests
       run: dub test
+    # Compiles and run
+    - name: Compile & run
+      run: dub -- --ver
+    # Upload artifact
+    - name: Upload build
+      uses: actions/upload-artifact@v4
+      with:
+        name: ddhx-${{ matrix.os }}-${{ matrix.dc }}
+        path: ddhx*
