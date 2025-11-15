@@ -3,7 +3,7 @@
 docs.json
 __dummy.html
 dub.selections.json
-ddhx-test-*
+ddhx-*
 /ddhx
 __test__*__
 *.o
@@ -14,6 +14,8 @@ __test__*__
 *.tar
 *.gz
 *.xz
+*.lib
+*.a
 *.bzip2
 .fuse_*
 docs/

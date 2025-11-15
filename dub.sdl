@@ -49,11 +49,14 @@ buildType "native-static" {
     dflags "--static" "-mcpu=native" platform="ldc"
 }
 
+subPackage "benchmark"
+
 #
 # Tests
 #
 
-# NOTE: Don't bother making configurations, DUB will just pick the first one
+# NOTE: Don't bother making configurations
+#       DUB will just pick the first one and that messes up the default configs
 buildType "input" {
     versions "TestInput"
     buildOptions "unittests"
@@ -64,7 +67,7 @@ buildType "color" {
     buildOptions "unittests"
     sourceFiles "tests/color.d"
 }
-buildType "bench-piece" {
+buildType "bench-piece" { # deprecated
     versions "BenchmarkPiece"
     buildOptions "unittests" "optimize" "inline" "debugInfo"
     sourceFiles "tests/piece.d"

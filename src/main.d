@@ -280,30 +280,9 @@ void main(string[] args)
     
     // Select editor backend, this allows transitioning between multiple
     // backends (implementations) easier.
-    IDocumentEditor editor;
     string backend = environment.get("DDHX_BACKEND", DEFAULT_BACKEND);
-    switch (backend) {
-    case "piece":
-        editor = new PieceDocumentEditor();
-        break;
-    case "chunk":
-        size_t chksize;
-        if (string strsize = environment.get("DDHX_CHUNKSIZE"))
-        {
-            log(`chunksize="%s"`, strsize);
-            import utils : parsebin;
-            ulong sz = parsebin(strsize);
-            if (sz > 64 * 1024 * 1024) // 64 MiB
-                throw new Exception("Chunk size SHOULD be lower than 64 MiB");
-            chksize = cast(size_t)sz;
-        }
-        editor = new ChunkDocumentEditor(0, chksize);
-        break;
-    default:
-        throw new Exception("Backend does not exist");
-    }
     log("backend=%s", backend);
-    assert(editor, "editor?");
+    IDocumentEditor editor = selectBackend(backend);
     
     // Open buffer or file where (imitating GNU nano):
     // - No args:  New empty buffer

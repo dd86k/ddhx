@@ -49,6 +49,36 @@ interface IDocumentEditor
     long redo();
 }
 
+IDocumentEditor selectBackend(string name)
+{
+    import std.conv : text;
+    import std.process : environment;
+    import backend.chunk : ChunkDocumentEditor;
+    import backend.piece : PieceDocumentEditor;
+    import backend.piecev2 : PieceV2DocumentEditor;
+    import logger : log;
+    switch (name) {
+    case "piece":
+        return new PieceDocumentEditor();
+    case "piecev2":
+        return new PieceV2DocumentEditor();
+    case "chunk":
+        size_t chksize;
+        if (string strsize = environment.get("DDHX_CHUNKSIZE"))
+        {
+            log(`chunksize="%s"`, strsize);
+            import utils : parsebin;
+            ulong sz = parsebin(strsize);
+            if (sz > 64 * 1024 * 1024) // 64 MiB
+                throw new Exception("Chunk size SHOULD be lower than 64 MiB");
+            chksize = cast(size_t)sz;
+        }
+        return new ChunkDocumentEditor(0, chksize);
+    default:
+        throw new Exception(text("Backend does not exist: ", name));
+    }
+}
+
 version (unittest)
 {
 

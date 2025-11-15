@@ -1,0 +1,6 @@
+name "benchmark"
+
+dependency "ddhx" path=".."
+
+targetName "ddhx-benchmark"
+targetPath ".."
