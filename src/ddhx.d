@@ -373,7 +373,7 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     //          Somehow re-init loop without longjmp (unavail on Windows)
     //       2. Quit, restore IOS
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
-    terminalOnResize(&onresize);
+    terminalResizeHandler(&onresize);
     terminalHideCursor();
     
     // Special keybinds with no attached commands

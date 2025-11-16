@@ -313,16 +313,17 @@ private __gshared void function() terminalOnResizeEvent;
 /// On Windows, (at least for conhost) this is only called when the buffer is
 /// resized, not the window.
 /// Params: func = Function to call.
-void terminalOnResize(void function() func)
+void terminalResizeHandler(void function() func)
 {
-    version (Posix)
-    {
-        sigaction_t sa = void;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = SA_SIGINFO;
-        sa.sa_sigaction = &terminalResized;
-        assert(sigaction(SIGWINCH, &sa, NULL_SIGACTION) != -1);
-    }
+version (Posix)
+{
+    sigaction_t sa = void;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = &terminalResized;
+    if (sigaction(SIGWINCH, &sa, NULL_SIGACTION) < 0)
+        throw new OSException("sigaction(SIGWINCH)");
+}
     terminalOnResizeEvent = func;
 }
 
@@ -334,6 +335,10 @@ void terminalResized(int signo, siginfo_t *info, void *content)
     if (terminalOnResizeEvent)
         terminalOnResizeEvent();
 }
+
+//
+// Etc.
+//
 
 /// Pause terminal input. (On POSIX, this restores the old IOS)
 private
