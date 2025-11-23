@@ -41,10 +41,10 @@ Title font: Shaded Blocky (FIGlet)
 
 // FEATURES
 
-  • Insert, overwrite, and delete operations
+  • Supports insert, overwrite, and delete operations
   • Unlimited undo/redo
   • Large file support (up to 8 EiB)
-  • Visual selection and block operations
+  • Visual selection and range operations
   • Multiple charset representations (ascii, mac, cp437, ebcdic)
   • Search data with a powerful pattern syntax
   • Skip identical data or repeating patterns by selection
@@ -108,7 +108,8 @@ This list may change at any given time without notice.
 - [x] Range expressions
 
 0.8:
-- [ ] Back-end optimizations
+- [x] Back-end optimizations
+- [ ] Custom Readline implementation
 - [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
 - [ ] Dual highlighters setting (data and text)
 
@@ -203,6 +204,10 @@ keyboard shortcuts or by typing them directly into the command prompt.
 Press Enter to open the command prompt, type your command, then press Enter
 again to execute it.
 
+To cancel a prompt input, give it an empty line. *
+
+* Version 0.8: Allows ^C for cancellation.
+
 // Command Arguments
 
 Commands may require arguments. If you omit them, the editor will prompt you
@@ -246,13 +251,13 @@ Supported commands: find, find-back, insert, and replace.
 A range expression represents a start and end position inclusively, typically
 in the START:END format.
 
-Without a start marker, it denotes a length only, starting at the cursor
+Without a separator, it denotes a length only, starting at the cursor
 position. *
 
 Special markers:
   . - Current cursor position.
   $ - End Of File (document size minus one)
-  + - (End only) End is not a position, but an addition
+  + - (End only) End is not a position, but an addition to start position
 
 Examples:
   "select 0x10:0x19"       - Selects positions 0x10 to 0x19
@@ -263,7 +268,7 @@ Examples:
 
 Supported commands: insert, replace, select, and delete.
 
-* Upcoming version.
+* Upcoming version: 0.8
 
 ////////////////////////////////////////////////////////////////////////////////
 // Searching
@@ -364,7 +369,7 @@ Environment variables:
   - If set, start logging to PATH.
 - DDHX_BACKEND=BACKEND
   - If set, forces BACKEND to be selected, if it exists.
-  - Backends: "piece" (default), "chunk" (older, deprecated)
+  - Backends: "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5)
 - DDHX_CHUNKSIZE=SIZE
   - If set, sets chunk size to SIZE (binary suffix) for the chunk backend.
 
