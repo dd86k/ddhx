@@ -255,7 +255,7 @@ void terminalInit(int features = 0)
             // remove ISTRIP (strips the 8th bit) (ASCII-related?)
             new_ios.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
             // output modes
-            // remove OPOST (turns on output post-processing)
+            // remove OPOST (turns on output post-processing, line newlines)
             //new_ios.c_oflag &= ~(OPOST);
             // local modes
             // remove ICANON (turns on canonical mode (per-line instead of per-byte))
@@ -488,6 +488,7 @@ TerminalPosition terminalTell()
     }
     else version (Posix)
     {
+        // HACK: Lazy
         if ((current_features & TermFeat.rawInput) == 0)
             throw new Exception("Need raw input");
         
@@ -1088,8 +1089,10 @@ Lread:
                 { "D",      Key.LeftArrow },
                 { "H",      Key.Home },
                 { "F",      Key.End },
+                { "1~",     Key.Home },
                 { "2~",     Key.Insert },
                 { "3~",     Key.Delete },
+                { "4~",     Key.End },
                 { "5~",     Key.PageUp },
                 { "6~",     Key.PageDown },
                 { "P",      Key.F1 },
@@ -1281,6 +1284,7 @@ void terminalRenderline(ref ReadlineState state, char[] buffer, int flags)
         // Write buffer
         terminalMove(state.orig.column, state.orig.row);
         terminalWrite(buffer);
+        version(Posix) fsync(STDOUT_FILENO); // HACK: FreeBSD
         
         // if characters deleted since last render, fill with spaces
         if (buffer.length < state.last)
