@@ -120,6 +120,12 @@ else version (Posix)
     private __gshared termios old_ios, new_ios;
 }
 
+private
+{
+    /// Terminal input buffer size
+    enum BLEN = 8;
+}
+
 private import os.error : OSException;
 
 /// Flags for terminalInit.
@@ -127,7 +133,9 @@ enum TermFeat {
     /// Initiate only the basic.
     none        = 0,
     /// Initiate the input system.
-    inputSys    = 1,
+    rawInput    = 1,
+    /// Alias for rawInput.
+    inputSys    = rawInput,
     /// Initiate the alternative screen buffer.
     altScreen   = 1 << 1,
     // Report key up and mouse up events
@@ -225,11 +233,12 @@ void terminalInit(int features = 0)
         // Setup "raw" input system
         if (features & TermFeat.inputSys)
         {
-            // Should it re-open tty by default?
+            // If FIFO (pipe), then re-open stdin
             stat_t s = void;
             fstat(STDIN_FILENO, &s);
             if (S_ISFIFO(s.st_mode))
                 stdin.reopen("/dev/tty", "r");
+            
             if (tcgetattr(STDIN_FILENO, &old_ios) < 0)
                 throw new OSException("tcgetattr(STDIN_FILENO) failed");
             new_ios = old_ios;
@@ -238,7 +247,7 @@ void terminalInit(int features = 0)
             // remove ICRNL (enables ^M)
             // remove BRKINT (causes SIGINT (^C) on break conditions)
             // remove INPCK (enables parity checking)
-            // remove ISTRIP (strips the 8th bit)
+            // remove ISTRIP (strips the 8th bit) (ASCII-related?)
             new_ios.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
             // output modes
             // remove OPOST (turns on output post-processing)
@@ -248,7 +257,7 @@ void terminalInit(int features = 0)
             // remove ECHO (turns on character echo)
             // remove ISIG (enables ^C and ^Z signals)
             // remove IEXTEN (enables ^V)
-            new_ios.c_lflag &= ~(ICANON | ECHO | IEXTEN);
+            new_ios.c_lflag &= ~(ICANON | ECHO | IEXTEN | ISIG);
             // control modes
             // add CS8 sets Character Size to 8-bit
             new_ios.c_cflag |= CS8;
@@ -258,7 +267,6 @@ void terminalInit(int features = 0)
             // maximum amount of time to wait for input,
             // 1 being 1/10 of a second (100 milliseconds)
             //new_ios.c_cc[VTIME] = 0;
-            //if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios) < 0)
             if (tcsetattr(STDIN_FILENO, TCSANOW, &new_ios) < 0)
                 throw new OSException("tcsetattr(STDIN_FILENO)");
         }
@@ -306,6 +314,10 @@ void terminalRestore()
     }
 }
 
+//
+// Resize event
+//
+
 private __gshared void function() terminalOnResizeEvent;
 
 /// Set handler for resize events.
@@ -317,13 +329,12 @@ void terminalResizeHandler(void function() func)
 {
 version (Posix)
 {
-    sigaction_t sa = void;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_SIGINFO;
+    sigaction_t sa;
+    sa.sa_flags     = 0;
     sa.sa_sigaction = &terminalResized;
     if (sigaction(SIGWINCH, &sa, NULL_SIGACTION) < 0)
         throw new OSException("sigaction(SIGWINCH)");
-}
+} // Windows: See terminalRead function
     terminalOnResizeEvent = func;
 }
 
@@ -347,7 +358,7 @@ void terminalPauseInput()
     version (Windows)
         SetConsoleMode(hIn, oldMode); // nothrow, called fine in setup
     version (Posix)
-        cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_ios);
+        cast(void)tcsetattr(STDIN_FILENO, TCSANOW, &old_ios);
 }
 /// Resume terminal input. (On POSIX, this restores the old IOS)
 private
@@ -356,7 +367,7 @@ void terminalResumeInput()
     version (Windows)
         SetConsoleMode(hIn, CONSOLE_MODE_INPUT);
     version (Posix)
-        cast(void)tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_ios);
+        cast(void)tcsetattr(STDIN_FILENO, TCSANOW, &new_ios);
 }
 
 /// Clear screen
@@ -434,7 +445,7 @@ TerminalSize terminalSize()
 /// Params:
 ///   x = X position (horizontal)
 ///   y = Y position (vertical)
-void terminalCursor(int x, int y)
+void terminalMove(int x, int y)
 {
     version (Windows) // 0-based
     {
@@ -451,6 +462,62 @@ void terminalCursor(int x, int y)
         assert(r > 0);
         terminalWrite(b.ptr, r);
     }
+}
+alias terminalCursor = terminalMove;
+
+struct TerminalPosition
+{
+    int column, row;
+}
+TerminalPosition terminalTell()
+{
+    TerminalPosition pos;
+    
+    version (Windows)
+    {
+        CONSOLE_SCREEN_BUFFER_INFO csbi = void;
+        if (GetConsoleScreenBufferInfo(hOut, &csbi) == FALSE)
+            throw new OSException("GetConsoleScreenBufferInfo");
+        pos.column = csbi.dwCursorPosition.X;
+        pos.row    = csbi.dwCursorPosition.Y;
+    }
+    else version (Posix)
+    {
+        if ((current_features & TermFeat.rawInput) == 0)
+            throw new Exception("Need raw input");
+        
+        // Need ICANON+ECHO off
+        terminalWrite("\033[6n");
+        
+        // Read up to 'R' ("ESC[row;colR")
+        // Can be tricky since we don't really know how much
+        // until read.2 returns, so read per-byte.
+        enum BSIZE = 32;
+        char[BSIZE] buf = void;
+        size_t i;
+        while (i < BSIZE - 1)
+        {
+            if (read(STDIN_FILENO, buf.ptr+i, 1) < 1)
+                throw new OSException("read");
+            if (buf[i] == 'R') break;
+            i++;
+        }
+        buf[i] = 0;
+        
+        // Parse
+        if (buf[0] != '\033' || buf[1] != '[')
+            throw new Exception("Not an escape code");
+        import core.stdc.stdio : sscanf;
+        int r = sscanf(buf.ptr + 2, "%d;%d", &pos.row, &pos.column);
+        if (r < 2)
+            throw new Exception("Missing item");
+        
+        // 1-based, to me, must be 0-based
+        pos.row--;
+        pos.column--;
+    }
+    
+    return pos;
 }
 
 /// Hide the terminal cursor.
@@ -837,6 +904,10 @@ Lread:
             if (dwControlKeyState & SHIFT_PRESSED) event.key = Mod.shift;
             }
             
+            // TODO: ir.KeyEvent.UnicodeChar to multi-byte
+            event.kbuffer[0] = ir.KeyEvent.AsciiChar;
+            event.ksize      = 1;
+            
             const char ascii = ir.KeyEvent.AsciiChar;
             if (ascii >= 'a' && ascii <= 'z')
             {
@@ -889,15 +960,13 @@ Lread:
         //       b bits[1:0] 0=MB1 pressed, 1=MB2 pressed, 2=MB3 pressed, 3=release
         //       b bits[7:2] 4=Shift (bit 3), 8=Meta (bit 4), 16=Control (bit 5)
         
-        enum BLEN = 8;
-        char[BLEN] b = void;
     Lread:
-        ssize_t r = read(STDIN_FILENO, b.ptr, BLEN);
-        if (r < 0) // happens on term resize, for example (errno=4,EINTR)
-        {
-            version (unittest) printf("errno: %d\n", errno);
+        ssize_t r = read(STDIN_FILENO, event.kbuffer.ptr, BLEN);
+        // NOTE: EINTR (errno=4)
+        //       Emitted when resizing or on ^C.
+        if (r < 0)
             goto Lread;
-        }
+        event.ksize = cast(int)r;
         
         version (unittest)
         {
@@ -905,11 +974,11 @@ Lread:
             for (size_t i; i < r; ++i)
             {
                 if (i) printf(", ");
-                char c = b[i];
+                char c = event.kbuffer[i];
                 if (c < 32 || c > 126) // non-printable ascii
                     printf("\\0%o", c);
                 else
-                    printf("'%c'", b[i]);
+                    printf("'%c'", event.kbuffer[i]);
             }
             cast(void)putchar('\n');
         }
@@ -931,7 +1000,7 @@ Lread:
         }
         
         // https://espterm.github.io/docs/espterm-xterm.html
-        switch (b[0]) {
+        switch (event.kbuffer[0]) {
         case 0: // Ctrl+Space
             event.key = Key.Spacebar | Mod.ctrl;
             return event;
@@ -955,13 +1024,13 @@ Lread:
                 return event;
             }
             
-            char[] input = b[1..r];
+            char[] input = event.kbuffer[1..r];
             
             // Next, detect sequence
             switch (input[0]) {
             case '[': // CSI, Control Sequence Introducer
                 // Detect special modifier keys if there are any
-                if (r >= 5 && b[2] == '1' && b[3] == ';')
+                if (r >= 5 && event.kbuffer[2] == '1' && event.kbuffer[3] == ';')
                 {
                     // 1;2 -> Shift
                     // 1;3 -> Alt
@@ -970,7 +1039,7 @@ Lread:
                     // 1;6 -> Ctrl+Shift
                     // 1;7 -> Alt+Ctrl
                     // 1;8 -> Shift+Alt+Ctrl
-                    switch (b[4]) {
+                    switch (event.kbuffer[4]) {
                     case '2': event.key = Mod.shift; break;
                     case '3': event.key = Mod.alt; break;
                     case '4': event.key = Mod.shift|Mod.alt; break;
@@ -981,6 +1050,19 @@ Lread:
                     default: goto Lread; // Unknown, don't bother misreporting
                     }
                     input = input[4..$];
+                }
+                else if (r >= 5 && event.kbuffer[2] == '3' && event.kbuffer[3] == ';')
+                {
+                    // HACK: Lazy, but seems to imitate previous switch (swapped...)
+                    switch (event.kbuffer[4]) {
+                    case '2': // "ESC[3;2~" -> Shift+Delete
+                        event.key = Mod.shift | Key.Delete;
+                        return event;
+                    case '5': // "ESC[3;5~" -> Ctrl+Delete
+                        event.key = Mod.ctrl | Key.Delete;
+                        return event;
+                    default: goto Lread; // Unknown, don't bother misreporting
+                    }
                 }
                 else
                     input = input[1..$];
@@ -1046,7 +1128,7 @@ Lread:
         // alt+g   -> \033 g
         // xterm: Alt+Return -> \033 \015
         // vt220: Alt+Return -> \0215
-        int c = b[0];
+        int c = event.kbuffer[0];
         if (c >= 'a' && c <= 'z')
             event.key = cast(ushort)(c - 32);
         else if (c >= 'A' && c <= 'Z')
@@ -1063,29 +1145,307 @@ Lread:
     } // version (Posix)
 }
 
+private
+struct LineBuffer
+{
+    void insert(size_t i, char[] chr)
+    {
+        // Ensure we have enough capacity
+        ensureCapacity(i, chr.length);
+        
+        // Shift existing content to the right to make space
+        if (i < l)
+        {
+            import core.stdc.string : memmove;
+            memmove(&buffer[i + chr.length], &buffer[i], l - i);
+        }
+        
+        // Copy new characters into position
+        buffer[i .. i + chr.length] = chr[];
+        l += chr.length;
+    }
+    
+    void deleteAt(size_t i, size_t size)
+    {
+        // Bounds check
+        if (i >= l || size == 0)
+            return;
+        
+        // Clamp size to available characters
+        if (i + size > l)
+            size = l - i;
+        
+        // Shift remaining content left
+        if (i + size < l)
+        {
+            import core.stdc.string : memmove;
+            memmove(&buffer[i], &buffer[i + size], l - i - size);
+        }
+        
+        l -= size;
+    }
+    
+    // private but this module can 'see' it anyway
+    void ensureCapacity(size_t i, size_t size)
+    {
+        // Nothing to do
+        if (i + size < buffer.length)
+            return;
+        
+        // Align up amount of memory to reallocate
+        enum ALGN  = 128;
+        enum MASK  = ALGN - 1;
+        size_t amt = (i + size + MASK) & ~MASK;
+        buffer.length = amt;
+    }
+    
+    size_t l;   /// Length
+    alias length = l;
+    char[] buffer;
+    
+    inout(char)[] opSlice() inout // preserves const
+    {
+        return buffer[0..l];
+    }
+    string toString() const
+    {
+        return cast(immutable)buffer[0..l].idup;
+    }
+}
+unittest
+{
+    LineBuffer buf;
+    
+    // Test basic insertion
+    buf.insert(0, "hello".dup);
+    assert(buf.l == 5);
+    assert(buf[] == "hello");
+    
+    // Test insertion in middle
+    buf.insert(5, " world".dup);
+    assert(buf.l == 11);
+    assert(buf[] == "hello world");
+    
+    // Test insertion at arbitrary position
+    buf.insert(5, ",".dup);
+    assert(buf.l == 12);
+    assert(buf[] == "hello, world");
+    
+    // Test deletion
+    buf.deleteAt(5, 2); // Remove ", "
+    assert(buf.l == 10);
+    assert(buf[] == "helloworld");
+    
+    // Test deletion at end
+    buf.deleteAt(5, 10); // Should clamp to available
+    assert(buf.l == 5);
+    assert(buf[] == "hello");
+    
+    // Test deletion beyond bounds
+    buf.deleteAt(100, 5); // Should do nothing
+    assert(buf.l == 5);
+    assert(buf[] == "hello");
+    
+    // Test capacity expansion
+    buf.insert(0, "x".dup);
+    assert(buf.l == 6);
+    assert(buf[]== "xhello");
+}
+
+private
+enum {
+    RENDER_BUFFER = 1,
+}
+private 
+struct ReadlineState
+{
+    /// Original cursor position.
+    /// Pre-Windows 10 doesn't have '\r' and even then.
+    TerminalPosition orig;
+    /// Caret (cursor) position.
+    size_t caret;
+    /// Last amount of characters written.
+    size_t last;
+}
+private
+void terminalRenderline(ref ReadlineState state, char[] buffer, int flags)
+{
+    //TerminalSize tsize = terminalSize();
+    
+    if (flags & RENDER_BUFFER) // buffer content changed
+    {
+        // Write buffer
+        terminalMove(state.orig.column, state.orig.row);
+        terminalWrite(buffer);
+        
+        // if characters deleted since last render, fill with spaces
+        if (buffer.length < state.last)
+            terminalWriteChar(' ', cast(int)(state.last - buffer.length));
+    }
+    
+    // Done, just move cursor to where it's supposed to be
+    int col = state.orig.column;
+    int row = state.orig.row;
+    // TODO: MULTILINE
+    //       If state.flags & RL_MULTI (line), calculate with +y in mind
+    int x   = cast(int)state.caret;
+    int y   = 0;
+    terminalMove(col + x, row + y);
+    
+    // Save number written
+    state.last = buffer.length;
+}
+
+// Flags to better define behavior versus relying on current_features.
+enum {
+    /// Uses legacy readln method.
+    RL_LEGACY = 1,
+}
+
 /// Read a line.
 /// Params: flags = Read flags.
 /// Returns: String without newline.
 string terminalReadline(int flags = 0)
 {
-    import std.stdio : readln;
-    import std.string : chomp;
-    
-    if (current_features & TermFeat.inputSys)
+    // Cheap line-oriented if we're not using alternate screen buffer,
+    // because there isn't any rendering worries. Legacy bit.
+    if (flags & RL_LEGACY)
     {
-        terminalPauseInput();
+        import std.stdio : readln;
+        import std.string : chomp;
+        if (current_features & TermFeat.rawInput)
+            terminalPauseInput();
         terminalShowCursor();
-    }
-    
-    string line = chomp( readln() );
-    
-    if (current_features & TermFeat.inputSys)
-    {
+        string line = readln().chomp();
         terminalHideCursor();
-        terminalResumeInput();
+        if (current_features & TermFeat.rawInput)
+            terminalResumeInput();
+        return line;
     }
     
-    return line;
+    // Prep work
+    ReadlineState state;
+    state.orig = terminalTell();
+    LineBuffer line;    /// Line buffer
+Lread: // Emulate line buffer
+    // NOTE: Only stdout (Phobos) is setup with _IONBF
+    TermInput input = terminalRead();
+    if (input.type != InputType.keyDown)
+        goto Lread;
+    switch (input.key) {
+    // NOTE: Is ^C is something else in other locales?
+    //       TermInput could be updated with a new event type
+    case Mod.ctrl | Key.C: // \033 (ESC)
+        throw new Exception("Cancelled");
+    case Key.Enter:
+        goto Lout;
+    case Key.LeftArrow:
+        if (state.caret == 0)
+            goto Lread;
+        --state.caret;
+        terminalRenderline(state, line[], 0);
+        goto Lread;
+    case Key.RightArrow:
+        if (state.caret >= line.length)
+            goto Lread;
+        ++state.caret;
+        terminalRenderline(state, line[], 0);
+        goto Lread;
+    case Mod.ctrl | Key.LeftArrow:
+        if (state.caret == 0)
+            goto Lread;
+        size_t i = state.caret;
+        while (--i > 0)
+        {
+            // TODO: Need "isspace(...)" multibyte function
+            if (line.buffer[i] == ' ')
+                break;
+        }
+        state.caret = i;
+        terminalRenderline(state, line[], 0);
+        goto Lread;
+    case Mod.ctrl | Key.RightArrow:
+        if (state.caret >= line.length)
+            goto Lread;
+        size_t i = state.caret;
+        while (++i < line.length)
+        {
+            // TODO: Need "isspace(...)" multibyte function
+            if (line.buffer[i] == ' ')
+                break;
+        }
+        state.caret = i;
+        terminalRenderline(state, line[], 0);
+        goto Lread;
+    // TODO: Line History
+    case Key.UpArrow:
+    case Key.DownArrow:
+        goto Lread;
+    case Key.Home:
+        state.caret = 0;
+        terminalRenderline(state, line[], 0);
+        goto Lread;
+    case Key.End:
+        state.caret = line.length;
+        terminalRenderline(state, line[], 0);
+        goto Lread;
+    case Key.Delete: // front delete character
+        if (state.caret >= line.length) // nothing to delete
+            goto Lread;
+        
+        line.deleteAt(state.caret, 1);
+        terminalRenderline(state, line[], RENDER_BUFFER);
+        goto Lread;
+    case Mod.ctrl | Key.Delete: // front delete word
+        if (state.caret >= line.length) // nothing to delete
+            goto Lread;
+        size_t i = state.caret;
+        while (++i < line.length)
+        {
+            // TODO: Need "isspace(...)" multibyte function
+            if (line.buffer[i] == ' ')
+                break;
+        }
+        line.deleteAt(state.caret, i - state.caret);
+        terminalRenderline(state, line[], RENDER_BUFFER);
+        goto Lread;
+    case Key.Backspace: // back delete character
+        if (state.caret == 0) // nothing to delete
+            goto Lread;
+        
+        line.deleteAt(--state.caret, 1);
+        terminalRenderline(state, line[], RENDER_BUFFER);
+        goto Lread;
+    case Mod.ctrl | Key.Backspace: // back delete word
+        if (state.caret == 0) // nothing to delete
+            goto Lread;
+        size_t i = state.caret;
+        while (--i > 0)
+        {
+            // TODO: Need "isspace(...)" multibyte function
+            if (line.buffer[i] == ' ')
+                break;
+        }
+        line.deleteAt(i, state.caret - i);
+        state.caret = i;
+        terminalRenderline(state, line[], RENDER_BUFFER);
+        goto Lread;
+    case Key.Tab: // TODO: Auto-complete
+        goto Lread;
+    // Ignore list
+    case Key.PageDown, Key.PageUp, Key.Insert:
+        goto Lread;
+    default: // insert char
+        // Attempt to exclude weirder cases
+        if (input.key & (Mod.ctrl|Mod.alt))
+            goto Lread;
+        line.insert(state.caret++, input.kbuffer[0..input.ksize]);
+        terminalRenderline(state, line[], RENDER_BUFFER);
+    }
+    goto Lread;
+    
+Lout:
+    return line.toString();
 }
 
 /// Terminal input type.
@@ -1098,7 +1458,7 @@ enum InputType
 }
 
 /// Key modifier
-enum Mod // A little more readable than e.g., CTRL!(ALT!(SHIFT!('a')))
+enum Mod // More readable templates: CTRL!(ALT!(SHIFT!('a')))
 {
     ctrl  = 1 << 24,
     shift = 1 << 25,
@@ -1260,15 +1620,19 @@ enum Key // These are fine for now
 /// Terminal input structure
 struct TermInput
 {
-    union
+    union {
+    struct
     {
-        int key; /// Keyboard input with possible Mod flags.
-        struct
-        {
-            ushort mouseX; /// Mouse column coord
-            ushort mouseY; /// Mouse row coord
-        }
+        int key;            /// Keyboard input with possible Mod flags.
+        int ksize;          /// Size of the filled input buffer
+        char[8] kbuffer;    /// Input buffer for the character
     }
+    struct
+    {
+        ushort mouseX; /// Mouse column coord
+        ushort mouseY; /// Mouse row coord
+    }
+    } // union
     int type; /// Terminal input event type
 }
 

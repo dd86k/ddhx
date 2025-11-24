@@ -360,21 +360,19 @@ Keybind* binded(int key)
 ///     initmsg = Initial message.
 void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
 {
-    g_status = UINIT; // init here since message could be called later
+    terminalInit(TermFeat.altScreen | TermFeat.inputSys);
+    // NOTE: Alternate buffers are usually "clean" except on framebuffer (fbcon)
+    terminalClear();
+    terminalResizeHandler(&onresize);
+    terminalHideCursor();
+    
+    g_status = UINIT;
     
     g_session = new Session(rc);
     g_session.target = path;    // assign target path, NULL unsets this
     g_session.editor = editor;  // assign editor instance
     
     message(initmsg);
-    
-    // TODO: Handle ^C
-    //       1. Ignore + message to really quit
-    //          Somehow re-init loop without longjmp (unavail on Windows)
-    //       2. Quit, restore IOS
-    terminalInit(TermFeat.altScreen | TermFeat.inputSys);
-    terminalResizeHandler(&onresize);
-    terminalHideCursor();
     
     // Special keybinds with no attached commands
     // TODO: Make "menu" bindable.
@@ -398,9 +396,21 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
 
 private:
 
+void onresize()
+{
+    // If autoresize configuration is enabled, automatically set column count
+    if (g_session.rc.autoresize)
+        autosize(g_session, null);
+    
+    g_status |= UHEADER | UVIEW | USTATUSBAR; // draw everything
+    update(g_session); // I/O allowed
+}
+
 // 
 void loop(Session *session)
 {
+    bool ctrlc;
+    
 Lupdate:
     update(session);
     
@@ -408,6 +418,23 @@ Lread:
     TermInput input = terminalRead();
     switch (input.type) {
     case InputType.keyDown:
+        if (input.key == (Mod.ctrl | Key.C))
+        {
+            // Quit without saving
+            if (ctrlc)
+            {
+                import core.stdc.stdlib : exit;
+                terminalRestore();
+                exit(0);
+            }
+            
+            ctrlc = true;
+            message("Again to quit");
+            goto Lupdate;
+        }
+        
+        ctrlc = false;
+        
         // Key mapped to command
         const(Keybind) *k = input.key in g_keys;
         if (k)
@@ -488,17 +515,6 @@ Lread:
     goto Lupdate;
 }
 
-void onresize()
-{
-    // If autoresize configuration is enabled, automatically set columns
-    if (g_session.rc.autoresize)
-        autosize(g_session, null);
-    
-    g_status |= UVIEW; // view buffer size will be updated
-    
-    update(g_session);
-}
-
 // Invoke command prompt
 string promptline(string text)
 {
@@ -522,14 +538,9 @@ string promptline(string text)
     terminalWrite(text);
     
     // Read line
-    string line = terminalReadline();
-    
-    // Force update view if prompt+line overflows to view,
-    // since we're currently reading lines at the top of screen
-    if (text.length + line.length >= tcols)
-        g_status |= UVIEW;
-    
-    return line;
+    terminalShowCursor();
+    scope(exit) terminalHideCursor(); // scope for exception
+    return terminalReadline();
 }
 int promptkey(string text)
 {
@@ -560,6 +571,8 @@ Lread:
     if (input.type != InputType.keyDown)
         goto Lread;
     terminalHideCursor();
+    if (input.key == (Mod.ctrl | Key.C))
+        throw new Exception("Cancelled"); // lazy
     
     return input.key;
 }

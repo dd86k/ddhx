@@ -5,9 +5,9 @@ import os.terminal;
 
 @system unittest
 {
-    terminalInit(TermFeat.inputSys);
+    terminalInit(TermFeat.rawInput); // enables capturing ^C
     scope(exit) terminalRestore();
-    terminalOnResize(&onresize);
+    terminalResizeHandler(&onresize);
     
     // This tests (Phobos') stdout
     writeln("Exit by CTRL+C");
@@ -25,6 +25,9 @@ Lread:
     if (input.key & Mod.shift) write("+shift");
     
     writeln;
+    
+    if (input.key == (Mod.ctrl|Key.C))
+        return;
     
     goto Lread;
 }
