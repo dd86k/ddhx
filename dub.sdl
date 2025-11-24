@@ -67,8 +67,8 @@ buildType "color" {
     buildOptions "unittests"
     sourceFiles "tests/color.d"
 }
-buildType "bench-piece" { # deprecated
-    versions "BenchmarkPiece"
-    buildOptions "unittests" "optimize" "inline" "debugInfo"
-    sourceFiles "tests/piece.d"
+buildType "size" {
+    versions "TestSize"
+    buildOptions "unittests"
+    sourceFiles "tests/size.d"
 }
