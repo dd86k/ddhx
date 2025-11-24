@@ -94,7 +94,7 @@ This list may change at any given time without notice.
 - [x] Skip to different element (or byte) (Ctrl+Left/Right)
 
 0.6: Released!
-- [x] Support selecting data
+- [x] Selection support
 - [x] Config file
 - [x] "bind" command: map command to shortcut
 - [x] Searching ("find" command)
@@ -108,25 +108,22 @@ This list may change at any given time without notice.
 - [x] Range expressions
 
 0.8:
-- [x] Back-end optimizations
-- [ ] Custom Readline implementation
+- [x] Custom Readline implementation (handle ^C)
 - [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
 - [ ] Dual highlighters setting (data and text)
+- [ ] Inspect data panel (replaces text panel)
 
 0.9:
 - TBD
 
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
-- [ ] Disk document type
-- [ ] Insert characters
-- [ ] Inspect data panel (could replace text panel)
-- [ ] Multi-byte data types (d16, f32, etc.)
-- [ ] Other single-byte data types in view (d8, o8)
-- [ ] Patch system
-- [ ] Process memory document type
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
+- [ ] Document: Disk
+- [ ] Document: Process memory
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
+- [ ] Patch system
+- [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Usage
@@ -179,7 +176,7 @@ Ctrl+O                  Save As another name and set new target
 Tab                     Change between data and text columns
 
 Edit single elements using a-f/0-9 keys. It's also possible to use a command
-over a selection, like "replace x:00" to replace selection with zeros.
+over a selection, like "replace x:00" to replace a selection with zeros.
 
 To insert a file into the document at the current cursor position, use the
 "insert-file PATH" command, where PATH is a path to the file. The same can be
@@ -224,7 +221,7 @@ triggered with Ctrl+G and accepts decimal, octal, and hexadecimal values.
   >goto 0x10        Jump to position 16 (hexadecimal)
   >goto +020        Jump forward 16 bytes (octal)
   >goto -5          Jump backward 5 bytes (decimal)
-  >goto %45         Jump to 45% through the document
+  >goto %45.1       Jump to 45.1% through the document
 
 To view all available commands, run: ddhx --help-commands
 
@@ -305,19 +302,20 @@ Most settings can also be configured via command-line flags. For example, both
 "-c" and "--columns=" correspond to the "columns" setting.
 
 Runtime changes do not persist across sessions. To make settings permanent,
-add them to your configuration file at. (Use `ddhx --config-path` to see
-your system's location.)
+add them to your configuration file at.
 
 Example configuration file:
   charset mac
   columns 32
 
-To view configuration options, run: ddhx --help-config
+To view configuration options and path, run: ddhx --help-config
 
 ////////////////////////////////////////////////////////////////////////////////
 // Key binding
 
 Keys can be bound to commands using the "bind" command.
+
+The bind command also works in configuration files.
 
 Usage: bind KEY COMMAND [PARAMS...]
 
