@@ -1,5 +1,6 @@
 /// Terminal/console handling.
 ///
+/// Watch out! Some legacy bits haunt this place.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
@@ -25,7 +26,7 @@ module os.terminal;
 //       https://man7.org/linux/man-pages/man4/console_codes.4.html
 
 private import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
-private import core.stdc.stdlib : system, atexit;
+private import core.stdc.stdlib : system;
 version (unittest)
 {
     private import core.stdc.stdio : printf;
@@ -124,6 +125,10 @@ private
 {
     /// Terminal input buffer size
     enum BLEN = 8;
+    
+    // Bypass current definition because Phobos with GDC 10 (DMD 2.079) is incorrect
+    extern (C)
+    int sscanf(scope const char* s, scope const char* format, scope ...);
 }
 
 private import os.error : OSException;
@@ -507,7 +512,6 @@ TerminalPosition terminalTell()
         // Parse
         if (buf[0] != '\033' || buf[1] != '[')
             throw new Exception("Not an escape code");
-        import core.stdc.stdio : sscanf;
         int r = sscanf(buf.ptr + 2, "%d;%d", &pos.row, &pos.column);
         if (r < 2)
             throw new Exception("Missing item");

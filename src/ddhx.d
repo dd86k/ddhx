@@ -379,16 +379,6 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     //       Return should still be provided as a fallback.
     g_keys[Key.Enter] = Keybind( &prompt_command, null );
     
-    // HACK: New input system tweaks fixes weird Shift+Arrow fuckery in conhost,
-    //       but also captures Ctrl+C. Annoyingly, force quit when that happens.
-    version (Windows)
-    g_keys[Mod.ctrl|Key.C] = Keybind(
-        (Session*, string[])
-        {
-            import core.stdc.stdlib : exit;
-            exit(0);
-        }, null);
-    
     loop(g_session);
     
     terminalRestore();
