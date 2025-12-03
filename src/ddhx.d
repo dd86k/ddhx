@@ -1908,6 +1908,7 @@ void undo(Session *session, string[] args)
     long pos = session.editor.undo();
     if (pos >= 0)
     {
+        unselect(session);
         moveabs(session, pos);
         g_status |= UVIEW; // new data
     }
@@ -1919,6 +1920,7 @@ void redo(Session *session, string[] args)
     long pos = session.editor.redo();
     if (pos >= 0)
     {
+        unselect(session);
         moveabs(session, pos);
         g_status |= UVIEW; // new data
     }
