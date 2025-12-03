@@ -521,11 +521,11 @@ string promptline(string prompt)
         throw new Exception("Not enough space for prompt");
     
     // Clear upper space
-    terminalCursor(0, 0);
+    terminalCursor(0, tsize.rows - 1);
     terminalWriteChar(' ', tcols);
     
     // Print prompt, cursor will be after prompt
-    terminalCursor(0, 0);
+    terminalCursor(0, tsize.rows - 1);
     terminalWrite(prompt);
     
     terminalShowCursor();
@@ -547,12 +547,12 @@ int promptkey(string text)
         throw new Exception("Not enough space for prompt");
     
     // Clear upper space
-    terminalCursor(0, 0);
+    terminalCursor(0, tsize.rows - 1);
     for (int x; x < tcols; ++x)
         terminalWrite(" ");
     
     // Print prompt, cursor will be after prompt
-    terminalCursor(0, 0);
+    terminalCursor(0, tsize.rows - 1);
     terminalWrite(text);
     
     // Read character
