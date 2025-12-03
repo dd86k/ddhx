@@ -1366,7 +1366,7 @@ void readlineRender(ref ReadlineState state, char[] buffer, int flags)
     size_t visible = min(avail, buffer.length);
     int w = cast(int)terminalWrite(buffer[state.base .. state.base + visible]);
     if (w < width) // fill
-        terminalWriteChar(' ', width - w);
+        terminalWriteChar(' ', width - w - 1);
     
     // Position caret on screen
     int x = state.orig.column + cast(int)state.caret;
