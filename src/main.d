@@ -176,17 +176,17 @@ void main(string[] args)
         "c|columns",    "Set columns per row (default: 16)",
             (string _, string val)
             {
-                configuration_columns(rc, val);
+                configure_columns(rc, val);
             },
         "A|addressing", `Set address mode ("hex"/"dec"/"oct", default: "hex")`,
             (string _, string val)
             {
-                configuration_addressing(rc, val);
+                configure_addressing(rc, val);
             },
         "address-spacing", "Set address spacing in characters (default: 11)",
             (string _, string val)
             {
-                configuration_charset(rc, val);
+                configure_charset(rc, val);
             },
         /*
         "data",         "Set data mode (default: x8)",

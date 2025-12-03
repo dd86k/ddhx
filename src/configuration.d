@@ -38,14 +38,23 @@ struct RC
     /// On terminal resize, automatically set number of columns to fit screen.
     bool autoresize;
     
+    /// If set, hide header.
+    bool header = true;
+    
+    /// If set, hide status bar.
+    bool status = true;
+    
+private:
     // Fixes when RC file has config and CLI already set a field.
-    bool address_type_set;  // @suppress(dscanner.style.undocumented_declaration)
-    bool data_type_set;     // @suppress(dscanner.style.undocumented_declaration)
-    bool charset_set;       // @suppress(dscanner.style.undocumented_declaration)
-    bool writemode_set;     // @suppress(dscanner.style.undocumented_declaration)
-    bool columns_set;       // @suppress(dscanner.style.undocumented_declaration)
-    bool address_spacing_set; // @suppress(dscanner.style.undocumented_declaration)
-    bool autoresize_set;    // @suppress(dscanner.style.undocumented_declaration)
+    bool address_type_set;
+    bool data_type_set;
+    bool charset_set;
+    bool writemode_set;
+    bool columns_set;
+    bool address_spacing_set;
+    bool autoresize_set;
+    bool header_set;
+    bool status_set;
 }
 
 /// Return true/false given sting input.
@@ -133,8 +142,8 @@ unittest
     assert(binded(key) == null);
     
     // Emulate CLI change, before config
-    configuration_columns(rc, "6");
-    configuration_charset(rc, "ascii");
+    configure_columns(rc, "6");
+    configure_charset(rc, "ascii");
     
     // Load and check
     loadRC(rc,
@@ -163,27 +172,37 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
     {
         "address-spacing", "Left row address spacing in characters",
         "Number", "11",
-        &configuration_address_spacing
+        &configure_address_spacing
     },
     {
         "addressing", "Addressing offset format displayed",
         `"h[exadecimal]", "o[ctal]", "d[ecimal]"`, `"hexadecimal"`,
-        &configuration_addressing
+        &configure_addressing
     },
     {
         "autoresize", "If set, automatically resize columns to fit screen",
         "Boolean", `"off"`,
-        &configuration_autoresize
+        &configure_autoresize
     },
     {
         "charset", "Character set",
         `"ascii", "cp437", "mac", "ebcdic"`, `"ascii"`,
-        &configuration_charset
+        &configure_charset
     },
     {
         "columns", "Number of elements to show on a row",
         "Number", "16",
-        &configuration_columns
+        &configure_columns
+    },
+    {
+        "header", "If set, hide the header bar",
+        "Boolean", `"off"`,
+        &configure_header
+    },
+    {
+        "status", "If set, hide the status bar",
+        "Boolean", `"off"`,
+        &configure_status
     },
 ];
 unittest
@@ -241,7 +260,7 @@ unittest
     assert(rc.charset == CharacterSet.ebcdic);
 }
 
-void configuration_autoresize(ref RC rc, string value, bool conf = false)
+void configure_autoresize(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.autoresize_set)
         return;
@@ -250,7 +269,7 @@ void configuration_autoresize(ref RC rc, string value, bool conf = false)
     rc.autoresize_set = true;
 }
 
-void configuration_columns(ref RC rc, string value, bool conf = false)
+void configure_columns(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.columns_set)
         return;
@@ -262,7 +281,7 @@ void configuration_columns(ref RC rc, string value, bool conf = false)
     rc.columns_set = true;
 }
 
-void configuration_addressing(ref RC rc, string value, bool conf = false)
+void configure_addressing(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.address_type_set)
         return;
@@ -280,7 +299,7 @@ void configuration_addressing(ref RC rc, string value, bool conf = false)
     rc.address_type_set = true;
 }
 
-void configuration_address_spacing(ref RC rc, string value, bool conf = false)
+void configure_address_spacing(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.address_spacing_set)
         return;
@@ -292,11 +311,29 @@ void configuration_address_spacing(ref RC rc, string value, bool conf = false)
     rc.address_spacing_set = true;
 }
 
-void configuration_charset(ref RC rc, string value, bool conf = false)
+void configure_charset(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.charset_set)
         return;
     
     rc.charset = selectCharacterSet(value);
     rc.charset_set = true;
+}
+
+void configure_header(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.header_set)
+        return;
+    
+    rc.header = boolean(value);
+    rc.header_set = true;
+}
+
+void configure_status(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.status_set)
+        return;
+    
+    rc.status = boolean(value);
+    rc.status_set = true;
 }

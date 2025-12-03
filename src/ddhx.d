@@ -511,8 +511,8 @@ string promptline(string prompt)
     assert(prompt, "Prompt text missing");
     assert(prompt.length, "Prompt text required"); // disallow empty
     
-    // Repaint header at minimum
-    g_status |= UHEADER;
+    // Repaint header at minimum, but with view... Just in case
+    g_status |= UHEADER | UVIEW;
     
     // Clear upper space
     TerminalSize tsize = terminalSize();
@@ -961,6 +961,7 @@ void update_header(Session *session, TerminalSize termsize)
 // Render view with data on screen
 void update_view(Session *session, TerminalSize termsize)
 {
+    // What do you want me to do with so little space?
     if (termsize.rows < 3)
         return;
     
@@ -1027,7 +1028,7 @@ void update_view(Session *session, TerminalSize termsize)
     int datawidth   = dataSpec(session.rc.data_type).spacing; // data element width
     int addspacing  = session.rc.address_spacing;
     PanelType panel = session.panel;
-    if (logging) // branch avoids pushing all of this for nothing
+    if (logging) // branch avoids pushing all of this for nothing (and lazy adds instructions)
         log("address=%d viewpos=%d cols=%d rows=%d count=%d Dwidth=%d readlen=%d panel=%s "~
             "select.anchor=%d select.status=%#x sl0=%d sl1=%d",
             address, viewpos, cols, rows, count, datawidth, readlen, panel,
@@ -1039,15 +1040,15 @@ void update_view(Session *session, TerminalSize termsize)
         terminalWrite(data, size);
     }) buffwriter;
     int row;
+    int rowdisp = session.rc.header ? 1 : 0; // lazy
     for (; row < erows; ++row, address += cols)
     {
         // '\n' counts as a character (on conhost), avoid using it
-        terminalCursor(0, row + 1);
+        terminalCursor(0, row + rowdisp);
         
         buffwriter.clear();
         
         string addr = formatAddress(txtbuf, address, addspacing, session.rc.address_type);
-        //size_t w = terminalWrite(addr, " "); // row address + spacer
         buffwriter.put(addr);
         buffwriter.put(" ");
         
@@ -1056,22 +1057,21 @@ void update_view(Session *session, TerminalSize termsize)
         {
             int i = (row * cols) + col;
             
+            // Selection overwrite
             if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.data)
             {
                 buffwriter.flush;
                 // Depending where spacer is placed, invert its color earlier
                 if (i != sl0) terminalInvertColor();
-                /*w += */terminalWrite(" "); // data-data spacer
+                terminalWrite(" "); // data-data spacer
                 if (i == sl0) terminalInvertColor();
-                /*w += */terminalWrite(dfmt.formatdata());
+                terminalWrite(dfmt.formatdata());
                 terminalResetColor();
                 continue;
             }
             
-            // BUG: When i == viewpos && we have selection, cursor renders
             bool highlight = i == viewpos && panel == PanelType.data;
             
-            //w += terminalWrite(" "); // data-data spacer
             buffwriter.put(" ");
             
             if (highlight)
@@ -1083,13 +1083,12 @@ void update_view(Session *session, TerminalSize termsize)
             if (g_editdigit && highlight) // apply current edit at position
             {
                 dfmt.skip();
-                /*w += */terminalWrite(
+                terminalWrite(
                     formatData(txtbuf, g_editbuf.ptr, g_editbuf.length, session.rc.data_type)
                 );
             }
             else if (i < readlen) // apply data
             {
-                //w += terminalWrite(dfmt.formatdata());
                 if (highlight)
                     terminalWrite(dfmt.formatdata());
                 else
@@ -1097,7 +1096,6 @@ void update_view(Session *session, TerminalSize termsize)
             }
             else // no data, print spacer
             {
-                //w += terminalWriteChar(' ', datawidth);
                 if (highlight)
                     terminalWriteChar(' ', datawidth);
                 else
@@ -1108,7 +1106,6 @@ void update_view(Session *session, TerminalSize termsize)
         }
         
         // data-text spacer
-        //w += terminalWrite("  ");
         buffwriter.put(' ', 2);
         
         // Render character data
@@ -1116,12 +1113,13 @@ void update_view(Session *session, TerminalSize termsize)
         {
             int i = (row * cols) + col;
             
+            // Selection override
             if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.text)
             {
                 buffwriter.flush();
                 terminalInvertColor();
                 string c = transcode(result[i], session.rc.charset);
-                /*w += */terminalWrite(c ? c : ".");
+                terminalWrite(c ? c : ".");
                 terminalResetColor();
                 continue;
             }
@@ -1138,15 +1136,17 @@ void update_view(Session *session, TerminalSize termsize)
             {
                 // NOTE: Escape codes do not seem to be a worry with tests
                 string c = transcode(result[i], session.rc.charset);
-                //w += terminalWrite(c ? c : ".");
+                
+                if (c == null)
+                    c = ".";
+                
                 if (highlight)
-                    terminalWrite(c ? c : ".");
+                    terminalWrite(c);
                 else
-                    buffwriter.put(c ? c : ".");
+                    buffwriter.put(c);
             }
             else // no data
             {
-                //w += terminalWrite(" ");
                 if (highlight)
                     terminalWrite(" ");
                 else
@@ -1253,12 +1253,21 @@ void update(Session *session)
     //       It's pointless to micro-optimize rendering processes while everything is WIP
     TerminalSize termsize = terminalSize();
     
-    // Number of effective rows for data view
-    g_rows = termsize.rows - 2;
+    // Number of available rows
+    g_rows = termsize.rows;
     
-    update_header(session, termsize);
+    // Header enabled
+    if (session.rc.header) g_rows--;
+    // Status enabled
+    if (session.rc.status) g_rows--;
+    
+    if (session.rc.header)
+        update_header(session, termsize);
+    
     update_view(session, termsize);
-    update_status(session, termsize);
+    
+    if (session.rc.status || g_status & UMESSAGE)
+        update_status(session, termsize);
     
     g_status = 0;
 }
