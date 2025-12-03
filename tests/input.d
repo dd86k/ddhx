@@ -15,9 +15,11 @@ import os.terminal;
 Lread:
     TermInput input = terminalRead();
     
+    int basekey = input.key;
+    
     writef(
     "TerminalInput: type=%s key=%s",
-    cast(InputType)input.type, cast(Key)(cast(short)input.key)
+    cast(InputType)input.type, cast(Key)(basekey & 0xff_ffff)
     );
     
     if (input.key & Mod.ctrl)  write("+ctrl");

@@ -38,6 +38,7 @@ version (Windows)
     import core.sys.windows.winbase;
     import core.sys.windows.wincon;
     import core.sys.windows.windef; // HANDLE, USHORT, DWORD
+    import core.sys.windows.winuser; // For Keycodes
     import std.windows.syserror : WindowsException;
     private enum CP_UTF8 = 65_001;
     // CONSOLE_MODE_INPUT: Used for raw input (so setup and resuming)
@@ -46,8 +47,8 @@ version (Windows)
     //   If unset, captures Ctrl+C as a keystroke.
     private enum CONSOLE_MODE_INPUT = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
     private __gshared HANDLE hIn, hOut;
-    private __gshared DWORD oldCP; // Old CodePage
-    private __gshared WORD oldAttr; // Old console attributes
+    private __gshared DWORD oldCP;   // Old CodePage
+    private __gshared WORD  oldAttr; // Old console attributes
     private __gshared DWORD oldMode; // Old console mode
 }
 else version (Posix)
@@ -202,8 +203,7 @@ void terminalInit(int features = 0)
             if (SetStdHandle(STD_OUTPUT_HANDLE, hOut) == FALSE) // forgot what this fixes
                 throw new OSException("SetStdHandle");
             
-            // We need processed ouput to have basic shit like backspace
-            // for readln.
+            // IIRC, this is to allow newlines
             DWORD attr = void;
             if (GetConsoleMode(hOut, &attr) == FALSE)
                 throw new OSException("GetConsoleMode");
@@ -221,8 +221,8 @@ void terminalInit(int features = 0)
                 throw new OSException("GetStdHandle");
         }
         
-        // NOTE: While Windows supports UTF-16LE (1200) and UTF-32LE,
-        //       it's only for "managed applications" (.NET).
+        // NOTE: While Windows supports UTF-16LE (1200), UTF-16BE (1201), UTF-32LE (12000),
+        //       and UTF-32BE (12001), it's only for "managed applications" (.NET).
         // LINK: https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
         oldCP = GetConsoleOutputCP();
         if (SetConsoleOutputCP(CP_UTF8) == FALSE)
@@ -882,8 +882,9 @@ Lread:
             version (unittest)
             {
                 printf(
-                "KeyEvent: AsciiChar=%d wVirtualKeyCode=%d dwControlKeyState=0x%x\n",
+                "KeyEvent: AsciiChar=%d UnicodeChar=%d wVirtualKeyCode=%d dwControlKeyState=0x%x\n",
                 ir.KeyEvent.AsciiChar,
+                ir.KeyEvent.UnicodeChar,
                 ir.KeyEvent.wVirtualKeyCode,
                 ir.KeyEvent.dwControlKeyState
                 );
@@ -914,19 +915,42 @@ Lread:
             event.kbuffer[0] = ir.KeyEvent.AsciiChar;
             event.ksize      = 1;
             
-            const char ascii = ir.KeyEvent.AsciiChar;
-            if (ascii >= 'a' && ascii <= 'z')
-            {
-                event.key |= ascii - 32;
-                return event;
+            // Special keys
+            switch (keycode) {
+            case VK_INSERT: event.key |= Key.Insert; break;
+            case VK_DELETE: event.key |= Key.Delete; break;
+            case VK_HOME:   event.key |= Key.Home; break;
+            case VK_END:    event.key |= Key.End; break;
+            case VK_PRIOR:  event.key |= Key.PageUp; break;
+            case VK_NEXT:   event.key |= Key.PageDown; break;
+            case VK_LEFT:   event.key |= Key.LeftArrow; break;
+            case VK_RIGHT:  event.key |= Key.RightArrow; break;
+            case VK_UP:     event.key |= Key.UpArrow; break;
+            case VK_DOWN:   event.key |= Key.DownArrow; break;
+            default: // Special key range
+                const char ascii = ir.KeyEvent.AsciiChar;
+                if (keycode >= VK_NUMPAD0 && keycode <= VK_NUMPAD9)
+                {
+                    event.key = (keycode - VK_NUMPAD0) + '0';
+                }
+                else if (keycode >= VK_F1 && keycode <= VK_F24)
+                {
+                    event.key = (keycode - VK_F1) + Key.F1;
+                }
+                else if (ascii >= 'a' && ascii <= 'z')
+                {
+                    event.key |= ascii - 32;
+                }
+                else if (ascii >= 32 && ascii < 127)
+                {
+                    event.key |= ascii;
+                    // HACK: Remove unnatural modifiers (ie, for '@')
+                    //       readline depends on this
+                    event.key &= ~(Mod.ctrl|Mod.alt);
+                }
+                else
+                    event.key |= keycode;
             }
-            else if (ascii >= 0x20 && ascii < 0x7f)
-            {
-                event.key |= ascii;
-                return event;
-            }
-            
-            event.key |= keycode;
             return event;
         /*case MOUSE_EVENT:
             if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED)
@@ -1323,7 +1347,8 @@ void readlineRender(ref ReadlineState state, char[] buffer, int flags)
     
     terminalMove(state.orig.column, state.orig.row);
     
-    int avail = tsize.columns - state.orig.column;
+    int width = tsize.columns;
+    int avail = width - state.orig.column;
     
     // Adjust view
     //size_t base = state.base;
@@ -1337,17 +1362,17 @@ void readlineRender(ref ReadlineState state, char[] buffer, int flags)
     import std.range : drop, take;
     auto visible = buffer.byDchar.drop(state.base).take(avail);*/
     
+    // Write buffer
     size_t visible = min(avail, buffer.length);
-    
     int w = cast(int)terminalWrite(buffer[state.base .. state.base + visible]);
-    if (w < tsize.columns) // fill
-        terminalWriteChar(' ', tsize.columns - w);
+    if (w < width) // fill
+        terminalWriteChar(' ', width - w);
     
-    // Done, just move cursor to where it's supposed to be
-    terminalMove(
-        state.orig.column + cast(int)state.caret,
-        state.orig.row
-    );
+    // Position caret on screen
+    int x = state.orig.column + cast(int)state.caret;
+    if (x >= width) // outside buffer
+        x = width - 1;
+    terminalMove(x, state.orig.row);
     
     version(Posix) fsync(STDOUT_FILENO); // HACK: FreeBSD
 }
@@ -1526,39 +1551,33 @@ enum InputType
 }
 
 /// Key modifier
-enum Mod // More readable templates: CTRL!(ALT!(SHIFT!('a')))
+enum Mod // More readable than templates: CTRL!(ALT!(SHIFT!('a')))
 {
     ctrl  = 1 << 24,
     shift = 1 << 25,
     alt   = 1 << 26,
 }
 
-/// Key codes map.
+/// Translated keycode.
+///
+/// 31..24: Modifiers
+/// 23..16: Special keys
+/// 15..0: Character
 enum Key // These are fine for now
 {
+    // Special legacy keys (<32)
     Undefined = 0,
     Backspace = 8,
     Tab = 9,
-    Clear = 12,
     Enter = 13,
-    Pause = 19,
     Escape = 27,
+    
+    // ASCII (32..127)
+    // Deprecated, but also used for printing
     Spacebar = 32,
-    PageUp = 33,
-    PageDown = 34,
-    End = 35,
-    Home = 36,
-    LeftArrow = 37,
-    UpArrow = 38,
-    RightArrow = 39,
-    DownArrow = 40,
-    Select = 41,
-    Print = 42,
-    Execute = 43,
-    PrintScreen = 44,
-    Insert = 45,
-    Delete = 46,
-    Help = 47,
+    Exclamation = 32,
+    Plus = 43,
+    Minus = 45,
     D0 = 48,
     D1 = 49,
     D2 = 50,
@@ -1597,93 +1616,56 @@ enum Key // These are fine for now
     X = 88,
     Y = 89,
     Z = 90,
-    LeftMeta = 91,
-    RightMeta = 92,
-    Applications = 93,
-    Sleep = 95,
-    NumPad0 = 96,
-    NumPad1 = 97,
-    NumPad2 = 98,
-    NumPad3 = 99,
-    NumPad4 = 100,
-    NumPad5 = 101,
-    NumPad6 = 102,
-    NumPad7 = 103,
-    NumPad8 = 104,
-    NumPad9 = 105,
-    Multiply = 106,
-    Add = 107,
-    Separator = 108,
-    Subtract = 109,
-    Decimal = 110,
-    Divide = 111,
-    F1 = 112,
-    F2 = 113,
-    F3 = 114,
-    F4 = 115,
-    F5 = 116,
-    F6 = 117,
-    F7 = 118,
-    F8 = 119,
-    F9 = 120,
-    F10 = 121,
-    F11 = 122,
-    F12 = 123,
-    F13 = 124,
-    F14 = 125,
-    F15 = 126,
-    F16 = 127,
-    F17 = 128,
-    F18 = 129,
-    F19 = 130,
-    F20 = 131,
-    F21 = 132,
-    F22 = 133,
-    F23 = 134,
-    F24 = 135,
-    BrowserBack = 166,
-    BrowserForward = 167,
-    BrowserRefresh = 168,
-    BrowserStop = 169,
-    BrowserSearch = 170,
-    BrowserFavorites = 171,
-    BrowserHome = 172,
-    VolumeMute = 173,
-    VolumeDown = 174,
-    VolumeUp = 175,
-    MediaNext = 176,
-    MediaPrevious = 177,
-    MediaStop = 178,
-    MediaPlay = 179,
-    LaunchMail = 180,
-    LaunchMediaSelect = 181,
-    LaunchApp1 = 182,
-    LaunchApp2 = 183,
-    Oem1 = 186,
-    OemPlus = 187,
-    OemComma = 188,
-    OemMinus = 189,
-    OemPeriod = 190,
-    Oem2 = 191,
-    Oem3 = 192,
-    Oem4 = 219,
-    Oem5 = 220,
-    Oem6 = 221,
-    Oem7 = 222,
-    Oem8 = 223,
-    Oem102 = 226,
-    Process = 229,
-    Packet = 231,
-    Attention = 246,
-    CrSel = 247,
-    ExSel = 248,
-    EraseEndOfFile = 249,
-    Play = 250,
-    Zoom = 251,
-    NoName = 252,
-    Pa1 = 253,
-    OemClear = 254
+    
+    // Special keys
+    PageUp      = 0x01_0000,
+    PageDown,
+    End,
+    Home,
+    LeftArrow,
+    UpArrow,
+    RightArrow,
+    DownArrow,
+    Select,
+    Print,
+    Execute,
+    PrintScreen,
+    Insert,
+    Delete,
+    Help,
+    Multiply,
+    Add,
+    Separator,
+    Subtract,
+    Decimal,
+    Divide,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    F13,
+    F14,
+    F15,
+    F16,
+    F17,
+    F18,
+    F19,
+    F20,
+    F21,
+    F22,
+    F23,
+    F24,
+    __specialmax // for unittest
 }
+static assert(Key.__specialmax < 0x01_00_0000);
 
 /// Terminal input structure
 struct TermInput
