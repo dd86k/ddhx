@@ -951,7 +951,7 @@ void update_header(Session *session, TerminalSize termsize)
     }
     
     // Fill rest of upper bar with spaces
-    int rem = termsize.columns - cast(int)buffwriter.length() - 1;
+    int rem = termsize.columns - cast(int)buffwriter.length();
     if (rem > 0)
         buffwriter.put(' ', rem);
     
@@ -1003,7 +1003,7 @@ void update_view(Session *session, TerminalSize termsize)
         debug if (logging)
         {
             sw.stop();
-            log("TIME view=%s", sw.peek());
+            log("READ view=%s", sw.peek());
             sw.reset();
         }
     }
@@ -1160,9 +1160,9 @@ void update_view(Session *session, TerminalSize termsize)
         // NOTE: Commented because of other fuckery around cursor
         //       Don't want to deal with it now and this shit is after
         //       character column -- empty space. This is also semi-useless.
-        /*int f = termsize.columns - cast(int)buffwriter.length();
+        int f = termsize.columns - cast(int)buffwriter.length();
         if (f > 0)
-            buffwriter.put(' ', f);*/
+            buffwriter.put(' ', f);
         
         buffwriter.flush;
     }
@@ -1179,7 +1179,7 @@ void update_view(Session *session, TerminalSize termsize)
     debug if (logging)
     {
         sw.stop();
-        log("TIME update_view=%s", sw.peek());
+        log("RENDER update_view=%s", sw.peek());
     }
 }
 
