@@ -1413,6 +1413,11 @@ string readline(int flags = 0)
     ReadlineState rl_state;
     rl_state.orig = terminalTell();
     
+    // HACK: Cheap way to clear line + setup cursor
+    //       Removes responsability from caller
+    terminalWriteChar(' ', terminalSize().columns-rl_state.orig.column-1);
+    with (rl_state.orig) terminalMove(column, row);
+    
     // HACK: FreeBSD, QoL when "prompt" is printed beforehand
     version(Posix) fsync(STDOUT_FILENO);
     

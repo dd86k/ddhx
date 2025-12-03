@@ -36,7 +36,8 @@ private enum // Internal editor status flags
     // Update the header
     UHEADER     = 1 << 2,
     // Update statusbar
-    USTATUSBAR  = 1 << 3,
+    USTATUS     = 1 << 3,
+    USTATUSBAR  = USTATUS, // older alias
     
     // Pending message
     UMESSAGE    = 1 << 16,
@@ -512,17 +513,13 @@ string promptline(string prompt)
     assert(prompt.length, "Prompt text required"); // disallow empty
     
     // Repaint header at minimum, but with view... Just in case
-    g_status |= UHEADER | UVIEW;
+    g_status |= USTATUS;
     
     // Clear upper space
     TerminalSize tsize = terminalSize();
     int tcols = tsize.columns;
     if (tcols < 10) // TODO: Remove this since terminal module is smarter?
         throw new Exception("Not enough space for prompt");
-    
-    // Clear upper space
-    terminalCursor(0, tsize.rows - 1);
-    terminalWriteChar(' ', tcols);
     
     // Print prompt, cursor will be after prompt
     terminalCursor(0, tsize.rows - 1);
@@ -538,30 +535,28 @@ int promptkey(string text)
     assert(text, "Prompt text missing");
     assert(text.length, "Prompt text required"); // disallow empty
     
-    g_status |= UHEADER; // Needs to be repainted anyway
+    g_status |= USTATUS; // Needs to be repainted anyway
     
     // Clear upper space
     TerminalSize tsize = terminalSize();
     int tcols = tsize.columns - 1;
     if (tcols < 10)
         throw new Exception("Not enough space for prompt");
-    
-    // Clear upper space
     terminalCursor(0, tsize.rows - 1);
-    for (int x; x < tcols; ++x)
-        terminalWrite(" ");
+    terminalWriteChar(' ', tcols);
     
     // Print prompt, cursor will be after prompt
     terminalCursor(0, tsize.rows - 1);
     terminalWrite(text);
     
-    // Read character
     terminalShowCursor();
+    scope(exit) terminalHideCursor();
+    
+    // Read character
 Lread:
     TermInput input = terminalRead();
     if (input.type != InputType.keyDown)
         goto Lread;
-    terminalHideCursor();
     if (input.key == (Mod.ctrl | Key.C))
         throw new Exception("Cancelled"); // lazy
     
