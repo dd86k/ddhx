@@ -239,6 +239,7 @@ void terminalInit(int features = 0)
         if (features & TermFeat.inputSys)
         {
             // If FIFO (pipe), then re-open stdin
+            // HACK for stdin.readln()
             stat_t s = void;
             fstat(STDIN_FILENO, &s);
             if (S_ISFIFO(s.st_mode))
@@ -260,7 +261,7 @@ void terminalInit(int features = 0)
             // local modes
             // remove ICANON (turns on canonical mode (per-line instead of per-byte))
             // remove ECHO (turns on character echo)
-            // remove ISIG (enables ^C and ^Z signals)
+            // remove ISIG (enables ^C and ^Z signals) (disables sig gen from keyboard)
             // remove IEXTEN (enables ^V)
             new_ios.c_lflag &= ~(ICANON | ECHO | IEXTEN | ISIG);
             // control modes
@@ -1224,17 +1225,17 @@ unittest
     LineBuffer buf;
     
     // Test basic insertion
-    buf.insert(0, "hello".dup);
+    buf.insert(0, cast(char[])"hello");
     assert(buf.l == 5);
     assert(buf[] == "hello");
     
     // Test insertion in middle
-    buf.insert(5, " world".dup);
+    buf.insert(5, cast(char[])" world");
     assert(buf.l == 11);
     assert(buf[] == "hello world");
     
     // Test insertion at arbitrary position
-    buf.insert(5, ",".dup);
+    buf.insert(5, cast(char[])",");
     assert(buf.l == 12);
     assert(buf[] == "hello, world");
     
@@ -1254,14 +1255,51 @@ unittest
     assert(buf[] == "hello");
     
     // Test capacity expansion
-    buf.insert(0, "x".dup);
+    buf.insert(0, cast(char[])"x");
     assert(buf.l == 6);
     assert(buf[]== "xhello");
 }
 
-private
-enum {
-    RENDER_BUFFER = 1,
+// NOTE: Will be useful when we fully want to support UTF-8
+// Count number of visible printed characters from a narrow mutlibyte string.
+/*private
+size_t terminalLength(string s)
+{
+    if (s is null || s.length == 0)
+        return 0;
+    
+    import std.uni : graphemeStride;
+    size_t width;
+    size_t i;
+    while (i < s.length)
+    {
+        size_t stride = graphemeStride(s, i);
+        dchar c = s[i];  // First char of grapheme
+        
+        // Rough heuristic for wide chars
+        if (c >= 0x1100 && (
+            (c >= 0x1100 && c <= 0x115F) ||  // Hangul
+            (c >= 0x2E80 && c <= 0x9FFF) ||  // CJK
+            (c >= 0xAC00 && c <= 0xD7A3) ||  // Hangul Syllables
+            (c >= 0xFF00 && c <= 0xFF60)))   // Fullwidth
+            width += 2;
+        else
+            width += 1;
+        
+        i += stride;
+    }
+    
+    return width;
+}
+unittest
+{
+    assert(terminalLength(null)         == 0);
+    assert(terminalLength("")           == 0);
+    assert(terminalLength("hello")      == "hello".length);
+}*/
+
+private enum {
+    _RL_BUFCHANGED = 1 << 16, /// Buffer content changed
 }
 private 
 struct ReadlineState
@@ -1271,52 +1309,64 @@ struct ReadlineState
     TerminalPosition orig;
     /// Caret (cursor) position.
     size_t caret;
-    /// Last amount of characters written.
-    size_t last;
+    /// Base position. View/camera.
+    size_t base;
 }
+// Render line on-screen
 private
-void terminalRenderline(ref ReadlineState state, char[] buffer, int flags)
+void readlineRender(ref ReadlineState state, char[] buffer, int flags)
 {
-    //TerminalSize tsize = terminalSize();
+    import std.algorithm : min, max;
     
-    if (flags & RENDER_BUFFER) // buffer content changed
-    {
-        // Write buffer
-        terminalMove(state.orig.column, state.orig.row);
-        terminalWrite(buffer);
-        version(Posix) fsync(STDOUT_FILENO); // HACK: FreeBSD
-        
-        // if characters deleted since last render, fill with spaces
-        if (buffer.length < state.last)
-            terminalWriteChar(' ', cast(int)(state.last - buffer.length));
-    }
+    // NOTE: Could also be an imposed max size (like for a text field)
+    TerminalSize tsize = terminalSize();
+    
+    terminalMove(state.orig.column, state.orig.row);
+    
+    int avail = tsize.columns - state.orig.column;
+    
+    // Adjust view
+    //size_t base = state.base;
+    if (state.caret < state.base)
+        state.base = state.caret;
+    else if (state.caret >= avail)
+        state.base = state.caret - avail;
+    
+    // Valid, but is of Take!R type
+    /*import std.utf : byDchar;
+    import std.range : drop, take;
+    auto visible = buffer.byDchar.drop(state.base).take(avail);*/
+    
+    size_t visible = min(avail, buffer.length);
+    
+    int w = cast(int)terminalWrite(buffer[state.base .. state.base + visible]);
+    if (w < tsize.columns) // fill
+        terminalWriteChar(' ', tsize.columns - w);
     
     // Done, just move cursor to where it's supposed to be
-    int col = state.orig.column;
-    int row = state.orig.row;
-    // TODO: MULTILINE
-    //       If state.flags & RL_MULTI (line), calculate with +y in mind
-    int x   = cast(int)state.caret;
-    int y   = 0;
-    terminalMove(col + x, row + y);
+    terminalMove(
+        state.orig.column + cast(int)state.caret,
+        state.orig.row
+    );
     
-    // Save number written
-    state.last = buffer.length;
+    version(Posix) fsync(STDOUT_FILENO); // HACK: FreeBSD
 }
 
 // Flags to better define behavior versus relying on current_features.
 enum {
     /// Uses legacy readln method.
     RL_LEGACY = 1,
+    /// Use history feature. Enables saving lines and using up/down arrows.
+    RL_HISTORY = 2,
 }
-
 /// Read a line.
 /// Params: flags = Read flags.
 /// Returns: String without newline.
-string terminalReadline(int flags = 0)
+string readline(int flags = 0)
 {
     // Cheap line-oriented if we're not using alternate screen buffer,
     // because there isn't any rendering worries. Legacy bit.
+    // To be removed later.
     if (flags & RL_LEGACY)
     {
         import std.stdio : readln;
@@ -1331,11 +1381,20 @@ string terminalReadline(int flags = 0)
         return line;
     }
     
+    // TODO: History
+    //       Can be saved and selected from there.
+    
     // Prep work
-    ReadlineState state;
-    state.orig = terminalTell();
+    ReadlineState rl_state;
+    rl_state.orig = terminalTell();
+    
+    // HACK: FreeBSD, QoL when "prompt" is printed beforehand
+    version(Posix) fsync(STDOUT_FILENO);
+    
     LineBuffer line;    /// Line buffer
+    int rl_flags = void;
 Lread: // Emulate line buffer
+    rl_flags = flags;
     // NOTE: Only stdout (Phobos) is setup with _IONBF
     TermInput input = terminalRead();
     if (input.type != InputType.keyDown)
@@ -1348,111 +1407,112 @@ Lread: // Emulate line buffer
     case Key.Enter:
         goto Lout;
     case Key.LeftArrow:
-        if (state.caret == 0)
+        if (rl_state.caret == 0)
             goto Lread;
-        --state.caret;
-        terminalRenderline(state, line[], 0);
-        goto Lread;
+        --rl_state.caret;
+        break;
     case Key.RightArrow:
-        if (state.caret >= line.length)
+        if (rl_state.caret >= line.length)
             goto Lread;
-        ++state.caret;
-        terminalRenderline(state, line[], 0);
-        goto Lread;
+        ++rl_state.caret;
+        break;
     case Mod.ctrl | Key.LeftArrow:
-        if (state.caret == 0)
+        if (rl_state.caret == 0)
             goto Lread;
-        size_t i = state.caret;
+        size_t i = rl_state.caret;
         while (--i > 0)
         {
             // TODO: Need "isspace(...)" multibyte function
             if (line.buffer[i] == ' ')
                 break;
         }
-        state.caret = i;
-        terminalRenderline(state, line[], 0);
-        goto Lread;
+        rl_state.caret = i;
+        break;
     case Mod.ctrl | Key.RightArrow:
-        if (state.caret >= line.length)
+        if (rl_state.caret >= line.length)
             goto Lread;
-        size_t i = state.caret;
+        size_t i = rl_state.caret;
         while (++i < line.length)
         {
             // TODO: Need "isspace(...)" multibyte function
             if (line.buffer[i] == ' ')
                 break;
         }
-        state.caret = i;
-        terminalRenderline(state, line[], 0);
-        goto Lread;
+        rl_state.caret = i;
+        break;
     // TODO: Line History
     case Key.UpArrow:
     case Key.DownArrow:
         goto Lread;
     case Key.Home:
-        state.caret = 0;
-        terminalRenderline(state, line[], 0);
-        goto Lread;
+        rl_state.caret = 0;
+        break;
     case Key.End:
-        state.caret = line.length;
-        terminalRenderline(state, line[], 0);
-        goto Lread;
+        rl_state.caret = line.length;
+        break;
     case Key.Delete: // front delete character
-        if (state.caret >= line.length) // nothing to delete
+        if (rl_state.caret >= line.length) // nothing to delete
             goto Lread;
         
-        line.deleteAt(state.caret, 1);
-        terminalRenderline(state, line[], RENDER_BUFFER);
-        goto Lread;
+        line.deleteAt(rl_state.caret, 1);
+        rl_flags |= _RL_BUFCHANGED;
+        break;
     case Mod.ctrl | Key.Delete: // front delete word
-        if (state.caret >= line.length) // nothing to delete
+        if (rl_state.caret >= line.length) // nothing to delete
             goto Lread;
-        size_t i = state.caret;
+        size_t i = rl_state.caret;
         while (++i < line.length)
         {
             // TODO: Need "isspace(...)" multibyte function
             if (line.buffer[i] == ' ')
                 break;
         }
-        line.deleteAt(state.caret, i - state.caret);
-        terminalRenderline(state, line[], RENDER_BUFFER);
-        goto Lread;
+        line.deleteAt(rl_state.caret, i - rl_state.caret);
+        rl_flags |= _RL_BUFCHANGED;
+        break;
     case Key.Backspace: // back delete character
-        if (state.caret == 0) // nothing to delete
+        if (rl_state.caret == 0) // nothing to delete
             goto Lread;
         
-        line.deleteAt(--state.caret, 1);
-        terminalRenderline(state, line[], RENDER_BUFFER);
-        goto Lread;
+        line.deleteAt(--rl_state.caret, 1);
+        rl_flags |= _RL_BUFCHANGED;
+        break;
     case Mod.ctrl | Key.Backspace: // back delete word
-        if (state.caret == 0) // nothing to delete
+        if (rl_state.caret == 0) // nothing to delete
             goto Lread;
-        size_t i = state.caret;
+        size_t i = rl_state.caret;
         while (--i > 0)
         {
             // TODO: Need "isspace(...)" multibyte function
             if (line.buffer[i] == ' ')
                 break;
         }
-        line.deleteAt(i, state.caret - i);
-        state.caret = i;
-        terminalRenderline(state, line[], RENDER_BUFFER);
-        goto Lread;
+        line.deleteAt(i, rl_state.caret - i);
+        rl_state.caret = i;
+        rl_flags |= _RL_BUFCHANGED;
+        break;
     case Key.Tab: // TODO: Auto-complete
         goto Lread;
     // Ignore list
     case Key.PageDown, Key.PageUp, Key.Insert:
         goto Lread;
     default: // insert char
+        // Ignore function keys by range instead of polluting switch-case
+        if (input.key >= Key.F1 && input.key <= Key.F24)
+            goto Lread;
+        
         // Attempt to exclude weirder cases
         if (input.key & (Mod.ctrl|Mod.alt))
             goto Lread;
-        line.insert(state.caret++, input.kbuffer[0..input.ksize]);
-        terminalRenderline(state, line[], RENDER_BUFFER);
+        
+        line.insert(rl_state.caret++, input.kbuffer[0..input.ksize]);
+        rl_flags |= _RL_BUFCHANGED;
     }
+    readlineRender(rl_state, line[], rl_flags);
     goto Lread;
     
 Lout:
+    // TODO: If RL_HISTORY, save into history
     return line.toString();
 }
 

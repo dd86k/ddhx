@@ -506,17 +506,18 @@ Lread:
 }
 
 // Invoke command prompt
-string promptline(string text)
+string promptline(string prompt)
 {
-    assert(text, "Prompt text missing");
-    assert(text.length, "Prompt text required"); // disallow empty
+    assert(prompt, "Prompt text missing");
+    assert(prompt.length, "Prompt text required"); // disallow empty
     
-    g_status |= UHEADER; // Needs to be repainted anyway
+    // Repaint header at minimum
+    g_status |= UHEADER;
     
     // Clear upper space
     TerminalSize tsize = terminalSize();
-    int tcols = tsize.columns - 1;
-    if (tcols < 10)
+    int tcols = tsize.columns;
+    if (tcols < 10) // TODO: Remove this since terminal module is smarter?
         throw new Exception("Not enough space for prompt");
     
     // Clear upper space
@@ -525,12 +526,12 @@ string promptline(string text)
     
     // Print prompt, cursor will be after prompt
     terminalCursor(0, 0);
-    terminalWrite(text);
+    terminalWrite(prompt);
     
-    // Read line
     terminalShowCursor();
     scope(exit) terminalHideCursor(); // scope for exception
-    return terminalReadline();
+    
+    return readline();
 }
 int promptkey(string text)
 {
