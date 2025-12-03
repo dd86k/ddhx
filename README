@@ -41,27 +41,28 @@ Title font: Shaded Blocky (FIGlet)
 
 // FEATURES
 
-  • Supports insert, overwrite, and delete operations
-  • Unlimited undo/redo
-  • Large file support (up to 8 EiB)
-  • Visual selection and range operations
-  • Multiple charset representations (ascii, mac, cp437, ebcdic)
-  • Search data with a powerful pattern syntax
-  • Skip identical data or repeating patterns by selection
-  • Customizable with configuration file
+  * Supports insert, overwrite, and delete operations
+  * Unlimited undo/redo
+  * Large file support (up to 8 EiB)
+  * Visual selection and range operations
+  * Multiple charset representations (ascii, mac, cp437, ebcdic)
+  * Search data with a powerful pattern syntax
+  * Skip identical data or repeating patterns by selection
+  * Customizable with configuration file
 
 ////////////////////////////////////////////////////////////////////////////////
 // Limitations
 
 // Output
 
-It currently only outputing UTF-8. You might want to stick to the ASCII charset
+It currently only outputs UTF-8. You might want to stick to the ASCII charset
 if your terminal/console lacks UTF-8 capabilities. On Windows, the editor will
 attempt to use the 65001 (UTF-8) codepage automatically.
 
 // Input
 
-On POSIX platforms, the editor supports xterm and vt220 sequences.
+On POSIX platforms, the editor supports xterm and vt220 sequences and assumes
+UTF-8 for input.
 
 The app assumes these keys:
 - ^H (\010) for Ctrl+Backspace;
@@ -109,9 +110,7 @@ This list may change at any given time without notice.
 
 0.8:
 - [x] Custom Readline implementation (handle ^C)
-- [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
-- [ ] Dual highlighters setting (data and text)
-- [ ] Inspect data panel (replaces text panel)
+- [x] Show header/status configurations
 
 0.9:
 - TBD
@@ -119,10 +118,13 @@ This list may change at any given time without notice.
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
+- [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
 - [ ] Document: Disk
 - [ ] Document: Process memory
+- [ ] Dual highlighters setting (data and text)
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
-- [ ] Patch system
+- [ ] Inspect data panel (replaces text panel)
+- [ ] Patch system (maybe with ed(1) front-end)
 - [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -364,12 +366,15 @@ Run unit tests with log traces:
 
 Environment variables:
 - DDHX_LOG=PATH
-  - If set, start logging to PATH.
+  - Version: Since 0.7
+  - Logs to PATH.
 - DDHX_BACKEND=BACKEND
-  - If set, forces BACKEND to be selected, if it exists.
+  - Version: Since 0.7
+  - Forces BACKEND to be selected.
   - Backends: "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5)
 - DDHX_CHUNKSIZE=SIZE
-  - If set, sets chunk size to SIZE (binary suffix) for the chunk backend.
+  - Version: Since 0.7
+  - Sets buffer size to SIZE (with binary suffix) for the "chunk" backend.
 
 ********************************************************************************
 *                                    NOTICE                                    *
