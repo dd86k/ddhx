@@ -58,11 +58,17 @@ void printpage(string opt)
         writeln(SECRET);
         break;
     case "version":
+        import platform : TARGET_TRIPLE;
+        import os.mem : syspagesize;
+        import std.conv : text;
         printfield("ddhx",      DDHX_VERSION);
         printfield(null,        DDHX_BUILDINFO);
         printfield("License",   "MIT");
         printfield(null,        DDHX_COPYRIGHT);
         printfield("Homepage",  "https://github.com/dd86k/ddhx");
+        printfield("Compiler",  __VENDOR__~" "~DVER!__VERSION__);
+        printfield("Target",    TARGET_TRIPLE);
+        printfield("Pagesize",  text(syspagesize()));
         break;
     case "ver":
         writeln(DDHX_VERSION);
@@ -139,14 +145,6 @@ void printpage(string opt)
             writeln;
         }
         break;
-    case "help-debug":
-        import platform : TARGET_TRIPLE;
-        import os.mem : syspagesize;
-        import std.conv : text;
-        printfield("Compiler",  __VENDOR__~" "~DVER!__VERSION__);
-        printfield("Target",    TARGET_TRIPLE);
-        printfield("Pagesize",  text(syspagesize()));
-        break;
     }
     exit(EXIT_SUCCESS);
 }
@@ -188,13 +186,6 @@ void main(string[] args)
             {
                 configure_charset(rc, val);
             },
-        /*
-        "data",         "Set data mode (default: x8)",
-            (string _, string val)
-            {
-                configRC(rc, "data-type", val);
-            },
-        */
         //"filler",       "Set non-printable default character (default='.')", &cliOption,
         "C|charset",    `Set character translation (default="ascii")`,
             (string _, string val)
@@ -216,7 +207,6 @@ void main(string[] args)
         "help-keys",    "Print default shortcuts and exit", &printpage,
         "help-commands","Print commands page and exit", &printpage,
         "help-config",  "Print configuration page and exit", &printpage,
-        "help-debug",   "Print debug page and exit", &printpage,
         );
     }
     catch (Exception ex)
@@ -344,7 +334,7 @@ void main(string[] args)
     try startddhx(editor, rc, target, initmsg);
     catch (Exception ex)
     {
-        writeln(); // if cursor was at some weird place
+        writeln(); // if cursor was at some weird place, start at newline
         debug stderr.writeln("fatal: ", ex);
         else  stderr.writeln("fatal: ", ex.msg);
         log("%s", ex);
