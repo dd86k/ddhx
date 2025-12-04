@@ -8,6 +8,8 @@ module document.memory;
 import document.base : IDocument;
 
 /// Memory document, holds data in memory entirely.
+///
+/// Used for CLI when absorbing data.
 class MemoryDocument : IDocument
 {
     /// New empty document

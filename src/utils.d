@@ -402,19 +402,22 @@ struct BufferedWriter(void function(void*,size_t) FLUSHER, size_t SIZE = 2048)
         index = 0;
     }
     
-    /// Returns number of bytes currently in buffer
+    /// Returns number of bytes currently in buffer.
+    /// Returns: Size in bytes.
     size_t length() const
     {
         return index;
     }
     
-    /// Returns remaining space in buffer
+    /// Returns remaining space in buffer.
+    /// Returns: Size in bytes.
     size_t available() const
     {
         return SIZE - index;
     }
     
     /// Returns true if buffer is empty
+    /// Returns: True if empty.
     bool empty() const
     {
         return index == 0;

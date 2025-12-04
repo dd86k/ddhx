@@ -7,5 +7,4 @@ module document;
 
 public import document.base,
 	document.file,
-	document.mmfile,
 	document.memory;

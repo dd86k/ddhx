@@ -344,6 +344,8 @@ struct OSFile
 ///
 /// Plus does the safer thing on Windows where it forces getting the parent
 /// directory if the target isn't a directory.
+///
+/// Used specifically with a file target in mind.
 /// Params: path = Target path.
 /// Returns: Available bytes.
 /// Throws: OSException

@@ -1,5 +1,5 @@
 /// Editor backend implemention using a Piece List to ease insertion and
-/// deletion operations.
+/// deletion operations, and tree snapshots for undo-redo operations.
 ///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
@@ -13,32 +13,6 @@ import backend.base : IDocumentEditor;
 import document.base : IDocument;
 import platform : assertion;
 import logger;
-
-// TODO: Piece coalescing
-//       Could be useful to save the last piece for each operation.
-//       So it could be "extended" for future operations of each category.
-//       Invalidated if operation changes.
-// TODO: Snapshot commit (idea to explore later)
-//       Right now, the idea is to do one edit, and save the snapshot.
-//       However, what would we do if we wanted to do multiple operations
-//       as one (e.g., a patch)?
-//       Need to figure out RBTree cloning. For chunk, maybe save number
-//       of history action (e.g., 3 undos for this patch).
-// TODO: Save optimization.
-//       Right now, the generic save function is pretty decent, but writes
-//       the entire file out.
-//       If we only write affected regions (pieces != source), this would be
-//       a significant performance boost, but first we need a way to relay
-//       this information, somehow.
-// TODO: CPU cache friendliness
-//       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
-//       Instead of an array of structures, having array of fields tend to help
-//       processor cache, in particular, architectures with cache lines of 64 Bytes.
-//       Checks (needs linux-tools-generic):
-//       - perf stat -e cache-misses,cache-references ./myapp
-//       - perf record -e cache-misses ./myapp
-//         perk report
-//       - perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
@@ -1450,9 +1424,6 @@ unittest
     remove(path_insert);
 }
 
-// NOTE: This test fails and proves that the current way snapshots
-//       are implement is to be either
-
 // Add data on empty doc, undo, and insert pattern
 unittest
 {
@@ -1473,8 +1444,6 @@ unittest
     ubyte[10] buf;
     assert(e.view(0, buf) == [ 0,0,0,0,0 ]);
 }
-
-// TODO: Test: Large pattern (>4 GiB) + view past that with edits
 
 /// Common tests
 unittest

@@ -1,5 +1,5 @@
 /// Editor backend implemention using a Piece List to ease insertion and
-/// deletion operations.
+/// deletion operations, and a command history stack for undo-redo operations.
 ///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
@@ -18,18 +18,6 @@ import logger;
 //       Could be useful to save the last piece for each operation.
 //       So it could be "extended" for future operations of each category.
 //       Invalidated if operation changes.
-// TODO: Snapshot commit (idea to explore later)
-//       Right now, the idea is to do one edit, and save the snapshot.
-//       However, what would we do if we wanted to do multiple operations
-//       as one (e.g., a patch)?
-//       Need to figure out RBTree cloning. For chunk, maybe save number
-//       of history action (e.g., 3 undos for this patch).
-// TODO: Save optimization.
-//       Right now, the generic save function is pretty decent, but writes
-//       the entire file out.
-//       If we only write affected regions (pieces != source), this would be
-//       a significant performance boost, but first we need a way to relay
-//       this information, somehow.
 // TODO: CPU cache friendliness
 //       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
 //       Instead of an array of structures, having array of fields tend to help
@@ -39,6 +27,7 @@ import logger;
 //       - perf record -e cache-misses ./myapp
 //         perk report
 //       - perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads
+//       Not a current necessity, as nothing is pushing the backend to extreme scenarios.
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
@@ -51,6 +40,7 @@ enum Source
     document,   /// File document
 }
 
+/// Used with Source.buffer.
 private
 struct BufferPiece
 {
@@ -62,7 +52,7 @@ struct BufferPiece
     size_t skip;
 }
 
-// Same as piece, but other meaning
+/// Used with Source.pattern.
 private
 struct PatternPiece
 {
@@ -74,14 +64,16 @@ struct PatternPiece
     size_t skip;
 }
 
+/// Use with Source.document.
 private
 struct DocumentPiece
 {
     IDocument doc;
 }
 
+/// Represents a single piece in the Piece Table.
 private
-struct Piece
+struct Piece // @suppress(dscanner.suspicious.incomplete_operator_overloading)
 {
     /// Piece source. (Document, buffer, etc.)
     Source source;
@@ -147,7 +139,7 @@ struct Piece
     }
 }
 
-// For RedBlackTree
+/// Indexed piece used for indexing with the redblack tree.
 private
 struct IndexedPiece
 {
@@ -156,26 +148,12 @@ struct IndexedPiece
     /// If we have pieces (pos=0,size=15),(pos=15,size=30),(pos=45,size=5),
     /// then they'd have 15, 45, and 50 cumulative sizes respectfully.
     long cumulative;
+    /// Actual tree piece.
     Piece piece;
 }
 
 /// Tree format
 private alias Tree = RedBlackTree!(IndexedPiece, "a.cumulative < b.cumulative");
-
-/// Represents a snapshot of pieces
-deprecated
-private
-struct Snapshot
-{
-    /// Start of affected region.
-    long start;
-    /// End of affected region.
-    long end;
-    /// Effective logical size of the snapshot.
-    long logical_size;
-    /// Indexed pieces list.
-    Tree pieces;
-}
 
 /// Operating type.
 private
@@ -184,7 +162,7 @@ enum OperationType
     insert, replace, remove,
 }
 
-/// Represents an operation
+/// Represents an operation for the history stack (undo-redo).
 private
 struct Operation
 {
@@ -415,53 +393,6 @@ class PieceV2DocumentEditor : IDocumentEditor
             
             cumulative = idx.cumulative;
         }
-        /*long old_cumulative;  // Track position in OLD snapshot
-        long new_cumulative;  // Track position in NEW snapshot
-        foreach (index; tree)
-        {
-            long piece_start = old_cumulative;
-            long piece_end   = index.cumulative;
-            
-            // Pieces that overlap with removal region
-            if (piece_start < end && piece_end > position)
-            {
-                // Keep left portion (before removal starts)
-                if (piece_start < position)
-                {
-                    long keep = position - old_cumulative;
-                    Piece left = index.piece;
-                    left.size = keep;
-                    new_cumulative += keep;
-                    new_snap.pieces.insert(IndexedPiece(new_cumulative, left));
-                }
-                
-                // Keep right portion (after removal ends)
-                if (piece_end > end)
-                {
-                    long skip = end - old_cumulative;
-                    long keep = piece_end - end;
-                    Piece right = trimPiece(index.piece, skip, keep);
-                    new_cumulative += keep;
-                    new_snap.pieces.insert(IndexedPiece(new_cumulative, right));
-                }
-                
-                // Middle portion gets deleted (not inserted)
-            }
-            else if (piece_end <= position)
-            {
-                // Pieces completely before removal - keep as-is
-                new_snap.pieces.insert(index);
-                new_cumulative = index.cumulative;
-            }
-            else  // piece_start >= end
-            {
-                // Pieces completely after removal - use NEW cumulative
-                new_cumulative += index.piece.size;
-                new_snap.pieces.insert(IndexedPiece(new_cumulative, index.piece));
-            }
-            
-            old_cumulative = index.cumulative;
-        }*/
         
         applyOperation(op);
         addOperation(op);
@@ -1456,9 +1387,6 @@ unittest
     remove(path_insert);
 }
 
-// NOTE: This test fails and proves that the current way snapshots
-//       are implement is to be either
-
 // Add data on empty doc, undo, and insert pattern
 unittest
 {
@@ -1481,6 +1409,17 @@ unittest
 }
 
 // TODO: Test: Large pattern (>4 GiB) + view past that with edits
+
+// Add enormous pattern of 10 GiB, seek to it, insert data, test undo-redo
+unittest
+{
+    import document.memory : MemoryDocument;
+    
+    log("TEST-0011");
+    
+    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();
+}
+
 
 /// Common tests
 unittest

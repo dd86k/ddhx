@@ -253,6 +253,7 @@ immutable Command[] default_commands = [
     { "goto",                       "Navigate or jump to a specific position",
         Mod.ctrl|Key.G,             &goto_ },
     // Reports
+    // NOTE: Could be renamed to remove "report-" to act as get/set
     { "report-position",            "Report cursor position on screen",
         Mod.ctrl|Key.P,             &report_position },
     { "report-name",                "Report document name on screen",

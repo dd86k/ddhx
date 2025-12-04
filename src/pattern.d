@@ -1,6 +1,6 @@
-/// Editor backend implemention using a Piece List to ease insertion and
-/// deletion operations.
+/// Pattern subsystem.
 ///
+/// Used for creating patterns for searching and insertions.
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
@@ -102,7 +102,7 @@ ubyte[] slice64(ulong *x)
 {
     import core.bitop : bsr, bsf;
     
-    assert(x, "fuck you");
+    assert(x);
     
     if (*x == 0) return [ 0 ];
     

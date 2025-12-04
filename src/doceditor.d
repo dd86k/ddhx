@@ -1,4 +1,5 @@
-/// Misc stuff.
+/// This module used to host the document editor code, before it was moved
+/// to backend.
 ///
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT

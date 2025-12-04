@@ -1439,12 +1439,12 @@ Lread: // Emulate line buffer
     case Key.LeftArrow:
         if (rl_state.caret == 0)
             goto Lread;
-        --rl_state.caret;
+        --rl_state.caret; // TODO: multibyte jump
         break;
     case Key.RightArrow:
         if (rl_state.caret >= line.length)
             goto Lread;
-        ++rl_state.caret;
+        ++rl_state.caret; // TODO: multibyte jump
         break;
     case Mod.ctrl | Key.LeftArrow:
         if (rl_state.caret == 0)
