@@ -69,7 +69,14 @@ private
 struct CurrentSelection
 {
     long anchor;    /// original position when started
-    int status;
+    int status;     /// current status
+}
+
+private enum {
+    /// Selection is active and has a range going
+    SELECT_ACTIVE   = 1,
+    /// Mark started, so don't clear it
+    SELECT_ONGOING  = 2,
 }
 
 /// Editor session.
@@ -213,8 +220,12 @@ immutable Command[] default_commands = [
         Mod.ctrl|Mod.shift|Key.End, &select_bottom },
     { "select-all",                 "Select entire document",
         Mod.ctrl|Key.A,             &select_all },
-    { "select",                     "Start a selection range",
+    { "select",                     "Select using a range",
         0,                          &select },
+    { "mark" ,                      "Start selection mode",
+        0,                          &mark },
+    { "unmark",                     "End selection mode",
+        0,                          &unmark },
     // Mode, panel...
     { "change-panel",               "Switch to another data panel",
         Key.Tab,                    &change_panel },
@@ -404,7 +415,7 @@ void loop(Session *session)
     bool ctrlc;
     
 Lupdate:
-    update(session);
+    update(session); // Clears status!
     
 Lread:
     TermInput input = terminalRead();
@@ -420,6 +431,7 @@ Lread:
                 exit(0);
             }
             
+            session.selection.status = 0; // force all select off
             ctrlc = true;
             message("Again to quit");
             goto Lupdate;
@@ -1426,7 +1438,8 @@ void prompt_command(Session *session, string[] args)
 // Move back a single item
 void move_left(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     if (session.position_cursor == 0)
         return;
     
@@ -1435,13 +1448,15 @@ void move_left(Session *session, string[] args)
 // Move forward a single item
 void move_right(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     moverel(session, +1);
 }
 // Move back a row
 void move_up(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     if (session.position_cursor == 0)
         return;
     
@@ -1450,13 +1465,15 @@ void move_up(Session *session, string[] args)
 // Move forward a row
 void move_down(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     moverel(session, +session.rc.columns);
 }
 // Move back a page
 void move_pg_up(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     if (session.position_cursor == 0)
         return;
     
@@ -1465,31 +1482,36 @@ void move_pg_up(Session *session, string[] args)
 // Move forward a page
 void move_pg_down(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     moverel(session, +(g_rows * session.rc.columns));
 }
 // Move to start of line
 void move_ln_start(Session *session, string[] args) // move to start of line
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     moverel(session, -(session.position_cursor % session.rc.columns));
 }
 // Move to end of line
 void move_ln_end(Session *session, string[] args) // move to end of line
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
 }
 // Move to absolute start of document
 void move_abs_start(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     moveabs(session, 0);
 }
 // Move to absolute end of document
 void move_abs_end(Session *session, string[] args)
 {
-    session.selection.status = 0;
+    unselect(session);
+    
     moveabs(session, session.editor.size());
 }
 
@@ -1681,6 +1703,9 @@ struct Selection
 // Force unselection
 void unselect(Session *session)
 {
+    if (session.selection.status & SELECT_ONGOING)
+        return;
+    
     session.selection.status = 0;
 }
 
@@ -1714,7 +1739,7 @@ unittest
     assert(sel == 0);
     
     // Emulate a selection where cursor is behind anchor
-    session.selection.status = 1;
+    session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 4;
     session.position_cursor  = 2;
     
@@ -1724,7 +1749,7 @@ unittest
     assert(sel.end    == 4);
     
     // Emulate a selection where only one element is selected
-    session.selection.status = 1;
+    session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 2;
     session.position_cursor  = 2;
     sel = selection(&session);
@@ -1738,7 +1763,7 @@ void select_left(Session *session, string[] args)
 {
     if (!session.selection.status)
     {
-        session.selection.status = 1;
+        session.selection.status = SELECT_ACTIVE;
         session.selection.anchor = session.position_cursor;
     }
     
@@ -1750,7 +1775,7 @@ void select_right(Session *session, string[] args)
 {
     if (!session.selection.status)
     {
-        session.selection.status = 1;
+        session.selection.status = SELECT_ACTIVE;
         session.selection.anchor = session.position_cursor;
     }
     
@@ -1762,7 +1787,7 @@ void select_up(Session *session, string[] args)
 {
     if (!session.selection.status)
     {
-        session.selection.status = 1;
+        session.selection.status = SELECT_ACTIVE;
         session.selection.anchor = session.position_cursor;
     }
     
@@ -1774,7 +1799,7 @@ void select_down(Session *session, string[] args)
 {
     if (!session.selection.status)
     {
-        session.selection.status = 1;
+        session.selection.status = SELECT_ACTIVE;
         session.selection.anchor = session.position_cursor;
     }
     
@@ -1786,7 +1811,7 @@ void select_home(Session *session, string[] args)
 {
     if (!session.selection.status)
     {
-        session.selection.status = 1;
+        session.selection.status = SELECT_ACTIVE;
         session.selection.anchor = session.position_cursor;
     }
     
@@ -1798,7 +1823,7 @@ void select_end(Session *session, string[] args)
 {
     if (!session.selection.status)
     {
-        session.selection.status = 1;
+        session.selection.status = SELECT_ACTIVE;
         session.selection.anchor = session.position_cursor;
     }
     
@@ -1809,46 +1834,59 @@ void select_end(Session *session, string[] args)
 void select_top(Session *session, string[] args)
 {
     long docsize = session.editor.size();
-    if (docsize < 1)
+    if (docsize <= 0)
         return;
     
     session.selection.anchor = session.position_cursor;
     session.position_cursor  = 0;
-    session.selection.status = 1;
+    session.selection.status = SELECT_ACTIVE;
 }
 
 // Select from current position to end of document
 void select_bottom(Session *session, string[] args)
 {
     long docsize = session.editor.size();
-    if (docsize < 1)
+    if (docsize <= 0)
         return;
     
     session.selection.anchor = session.position_cursor;
     session.position_cursor  = docsize - 1;
-    session.selection.status = 1;
+    session.selection.status = SELECT_ACTIVE;
 }
 
 // Select all of document
 void select_all(Session *session, string[] args)
 {
     long docsize = session.editor.size();
-    if (docsize < 1)
+    if (docsize <= 0)
         return;
     
     session.selection.anchor = 0;
     session.position_cursor  = docsize - 1;
-    session.selection.status = 1;
+    session.selection.status = SELECT_ACTIVE;
 }
 
-// Start an explicit selection
+// Make an explicit selection
 void select(Session *session, string[] args)
 {
     Range ran = askrange(args, 0, "Range: ");
     
     session.selection.anchor = ran.start;
     session.position_cursor  = ran.end;
-    session.selection.status = 1;
+    session.selection.status = SELECT_ACTIVE;
+}
+
+// Start an active selection
+void mark(Session *session, string[] args)
+{
+    session.selection.status = SELECT_ACTIVE | SELECT_ONGOING;
+    session.selection.anchor = session.position_cursor;
+}
+
+// End the active selection
+void unmark(Session *session, string[] args)
+{
+    session.selection.status &= ~SELECT_ONGOING;
 }
 
 //
