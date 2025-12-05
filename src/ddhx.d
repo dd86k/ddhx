@@ -974,7 +974,7 @@ void update_view(Session *session, TerminalSize termsize)
         return;
     
     int cols        = session.rc.columns;       /// elements per row
-    int rows        = g_rows;                   /// rows to render
+    int rows        = g_rows;                   /// rows available
     int count       = rows * cols;              /// elements on screen
     long curpos     = session.position_cursor;  /// Cursor position
     long address    = session.position_view;    /// Base address
@@ -1084,39 +1084,47 @@ void update_view(Session *session, TerminalSize termsize)
                 continue;
             }
             
-            bool highlight = i == viewpos && panel == PanelType.data;
-            
             buffwriter.put(" ");
             
+            // Current cursor position
+            bool highlight = i == viewpos && panel == PanelType.data;
+            bool second    = i == viewpos && session.rc.mirror_cursor;
             if (highlight)
             {
-                buffwriter.flush();
+                buffwriter.flush(); // for windows
                 terminalInvertColor();
             }
+            else if (second)
+            {
+                buffwriter.flush(); // for windows
+                terminalForeground(TermColor.white);
+                terminalBackground(TermColor.red);
+            }
             
+            // Print data
             if (g_editdigit && highlight) // apply current edit at position
             {
-                dfmt.skip();
+                dfmt.skip(); // skip this element since it's in the edit buffer
                 terminalWrite(
                     formatData(txtbuf, g_editbuf.ptr, g_editbuf.length, session.rc.data_type)
                 );
             }
             else if (i < readlen) // apply data
             {
-                if (highlight)
+                if (highlight || second)
                     terminalWrite(dfmt.formatdata());
                 else
                     buffwriter.put(dfmt.formatdata());
             }
             else // no data, print spacer
             {
-                if (highlight)
+                if (highlight || second)
                     terminalWriteChar(' ', datawidth);
                 else
                     buffwriter.put(' ', datawidth);
             }
             
-            if (highlight) terminalResetColor();
+            if (highlight || second) terminalResetColor();
         }
         
         // data-text spacer
@@ -1138,12 +1146,19 @@ void update_view(Session *session, TerminalSize termsize)
                 continue;
             }
             
+            // Current cursor position
             bool highlight = i == viewpos && panel == PanelType.text;
-            
+            bool second    = i == viewpos && session.rc.mirror_cursor;
             if (highlight)
             {
-                buffwriter.flush();
+                buffwriter.flush(); // for windows
                 terminalInvertColor();
+            }
+            else if (second)
+            {
+                buffwriter.flush(); // for windows
+                terminalForeground(TermColor.white);
+                terminalBackground(TermColor.red);
             }
             
             if (i < readlen)
@@ -1153,20 +1168,20 @@ void update_view(Session *session, TerminalSize termsize)
                 if (c == null) // default char
                     c = ".";
                 
-                if (highlight)
+                if (highlight || second)
                     terminalWrite(c);
                 else
                     buffwriter.put(c);
             }
             else // no data
             {
-                if (highlight)
+                if (highlight || second)
                     terminalWrite(" ");
                 else
                     buffwriter.put(' ', 1);
             }
             
-            if (highlight) terminalResetColor();
+            if (highlight || second) terminalResetColor();
         }
         
         // Fill rest of spaces

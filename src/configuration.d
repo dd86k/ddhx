@@ -44,6 +44,9 @@ struct RC
     /// If set, hide status bar.
     bool status = true;
     
+    /// If set, sets the cursor mirror.
+    bool mirror_cursor; // could be paired with "mirror-color" later
+    
 private:
     // Fixes when RC file has config and CLI already set a field.
     bool address_type_set;
@@ -55,6 +58,7 @@ private:
     bool autoresize_set;
     bool header_set;
     bool status_set;
+    bool mirror_cursor_set;
 }
 
 /// Return true/false given sting input.
@@ -204,6 +208,11 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         "Boolean", `"off"`,
         &configure_status
     },
+    {
+        "mirror-cursor", "If set, mirrors the cursor for both columns",
+        "Boolean", `"off"`,
+        &configure_mirror_cursor
+    },
 ];
 unittest
 {
@@ -336,4 +345,13 @@ void configure_status(ref RC rc, string value, bool conf = false)
     
     rc.status = boolean(value);
     rc.status_set = true;
+}
+
+void configure_mirror_cursor(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.mirror_cursor_set)
+        return;
+    
+    rc.mirror_cursor = boolean(value);
+    rc.mirror_cursor_set = true;
 }
