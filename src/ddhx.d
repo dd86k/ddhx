@@ -972,7 +972,18 @@ void update_view(Session *session, TerminalSize termsize)
     debug import std.datetime.stopwatch : StopWatch, Duration;
     debug StopWatch sw;
     
-    // Read data from editor
+    __gshared ubyte[] viewbuf;  /// View buffer (capacity)
+    __gshared ubyte[] result;   /// View buffer slice (result)
+    __gshared int readlen;      /// Slice length in int, easier to add with col/row
+    
+    // Bit of a hack to force update when buffer size changes (config or otherwise)
+    if (viewbuf.length != count) // only resize if required
+    {
+        viewbuf.length = count;
+        g_status |= UVIEW;
+    }
+    
+    // Read data
     // NOTE: To avoid unecessary I/O, call .view() when:
     //       - base position changed (when base pos changes, set UVIEW)
     //       - read size changed (resize event, set UVIEW flag)
@@ -984,15 +995,10 @@ void update_view(Session *session, TerminalSize termsize)
     //       allocation alive and simply resize it (either pool or realloc).
     // NOTE: new expression clears memory (memset).
     //       Unwanted, so avoid it to avoid wasting cpu time.
-    __gshared ubyte[] viewbuf;
-    __gshared ubyte[] result;
-    __gshared int readlen;
-    if (g_status & UVIEW) // view data needs to be updated
+    if (g_status & UVIEW)
     {
         debug if (logging) sw.start(); // For IDocumentEditor.view()
         
-        if (viewbuf.length != count) // only resize if required
-            viewbuf.length = count;
         result  = session.editor.view(address, viewbuf);
         readlen = cast(int)result.length;
         
@@ -1132,8 +1138,7 @@ void update_view(Session *session, TerminalSize termsize)
             {
                 // NOTE: Escape codes do not seem to be a worry with tests
                 string c = transcode(result[i], session.rc.charset);
-                
-                if (c == null)
+                if (c == null) // default char
                     c = ".";
                 
                 if (highlight)
@@ -1156,7 +1161,7 @@ void update_view(Session *session, TerminalSize termsize)
         // NOTE: Commented because of other fuckery around cursor
         //       Don't want to deal with it now and this shit is after
         //       character column -- empty space. This is also semi-useless.
-        int f = termsize.columns - cast(int)buffwriter.length();
+        int f = termsize.columns - cast(int)buffwriter.length() - 1;
         if (f > 0)
             buffwriter.put(' ', f);
         
@@ -1168,9 +1173,12 @@ void update_view(Session *session, TerminalSize termsize)
     int tcols = termsize.columns - 1;
     for (; row < rows; ++row)
     {
-        terminalCursor(0, row + 1);
+        terminalCursor(0, row + rowdisp);
         terminalWriteChar(' ', tcols);
     }
+    
+    // Notably for fbcon
+    terminalFlush();
     
     debug if (logging)
     {

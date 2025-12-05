@@ -854,6 +854,19 @@ size_t terminalWriteChar(int chr, int amount)
     return amount;
 }
 
+/// Flushes terminal output.
+void terminalFlush()
+{
+    version (Windows)
+    {
+        // No-op. That is because the console output is not buffered.
+    }
+    else
+    {
+        fsync(STDOUT_FILENO);
+    }
+}
+
 /// Read an input event. This function is blocking.
 /// Throws: (Windows) WindowsException on OS error.
 /// Returns: Terminal input.
@@ -1374,7 +1387,7 @@ void readlineRender(ref ReadlineState state, char[] buffer, int flags)
         x = width - 1;
     terminalMove(x, state.orig.row);
     
-    version(Posix) fsync(STDOUT_FILENO); // HACK: FreeBSD
+    terminalFlush(); // fbcons on Linux/BSDs need this
 }
 
 // Flags to better define behavior versus relying on current_features.
@@ -1417,9 +1430,7 @@ string readline(int flags = 0)
     //       Removes responsability from caller
     terminalWriteChar(' ', terminalSize().columns-rl_state.orig.column-1);
     with (rl_state.orig) terminalMove(column, row);
-    
-    // HACK: FreeBSD, QoL when "prompt" is printed beforehand
-    version(Posix) fsync(STDOUT_FILENO);
+    terminalFlush(); // Needed on fbcons
     
     LineBuffer line;    /// Line buffer
     int rl_flags = void;
