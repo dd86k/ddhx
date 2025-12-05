@@ -1072,7 +1072,8 @@ void update_view(Session *session, TerminalSize termsize)
             int i = (row * cols) + col;
             
             // Selection overwrite
-            if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.data)
+            if (session.selection.status && i >= sl0 && i <= sl1 &&
+                (panel == PanelType.data || session.rc.mirror_cursor))
             {
                 buffwriter.flush;
                 // Depending where spacer is placed, invert its color earlier
@@ -1136,7 +1137,8 @@ void update_view(Session *session, TerminalSize termsize)
             int i = (row * cols) + col;
             
             // Selection override
-            if (session.selection.status && i >= sl0 && i <= sl1 && panel == PanelType.text)
+            if (session.selection.status && i >= sl0 && i <= sl1 &&
+                (panel == PanelType.text || session.rc.mirror_cursor))
             {
                 buffwriter.flush();
                 terminalInvertColor();
