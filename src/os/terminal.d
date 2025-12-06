@@ -1720,6 +1720,9 @@ int terminal_keybind(string value)
 {
     import std.string : startsWith;
     
+    if (value.length == 0)
+        throw new Exception("Expected key, got empty");
+    
     int mod; /// modificators
     
     static immutable string ctrlpfx = "ctrl+";
@@ -1743,14 +1746,20 @@ int terminal_keybind(string value)
         value = value[shiftpfx.length..$];
     }
     
+    // Second check with modifiers sliced out
     if (value.length == 0)
         throw new Exception("Expected key, got empty");
     
     int c = value[0];
-    if (value.length == 1 && c >= 'a' && c <= 'z')
-        return mod | (c - 32);
-    else if (value.length == 1 && c >= '0' && c <= '9') // NOTE: '0'==Key.D0
-        return mod | c;
+    if (value.length == 1)
+    {
+        // ISSUE: Yes, adjusts to Key.* enum, but 'a' is also valid...
+        //        Keeping this for now, compatibility
+        if (c >= 'a' && c <= 'z') // lower ascii
+            return mod | (c - 32);
+        else if (c >= 32 && c < 127) // printable
+            return mod | c;
+    }
     
     switch (value) {
     case "insert":      return mod | Key.Insert;
@@ -1777,8 +1786,9 @@ int terminal_keybind(string value)
     case "f11":         return mod | Key.F11;
     case "f12":         return mod | Key.F12;
     default:
-        throw new Exception("Unknown key");
     }
+    
+    throw new Exception("Unknown key");
 }
 unittest
 {
@@ -1793,4 +1803,6 @@ unittest
     assert(terminal_keybind("shift+page-up") == Mod.shift+Key.PageUp);
     assert(terminal_keybind("delete")        == Key.Delete);
     assert(terminal_keybind("f1")            == Key.F1);
+    assert(terminal_keybind(":")             == ':');
+    assert(terminal_keybind(":")             == Key.Colon);
 }
