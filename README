@@ -43,9 +43,9 @@ Title font: Shaded Blocky (FIGlet)
 
   * Supports insert, overwrite, and delete operations
   * Unlimited undo/redo
-  * Large file support (up to 8 EiB)
+  * Large file support: up to 8 EiB
   * Visual selection and range operations
-  * Multiple charset representations (ascii, mac, cp437, ebcdic)
+  * Multiple charset representations: ascii, mac, cp437, ebcdic
   * Search data with a powerful pattern syntax
   * Skip identical data or repeating patterns by selection
   * Customizable with configuration file
@@ -61,8 +61,8 @@ attempt to use the 65001 (UTF-8) codepage automatically.
 
 // Input
 
-On POSIX platforms, the editor supports xterm and vt220 sequences and assumes
-UTF-8 for input.
+On POSIX platforms, the editor supports most xterm, vt100, and vt220 sequences.
+It assumes UTF-8 for input.
 
 The app assumes these keys:
 - ^H (\010) for Ctrl+Backspace;
@@ -76,8 +76,9 @@ often capture Ctrl+Shift+Arrow keys for tab/pane navigation. Most framebuffers
 will capture Shift+PageUp for scrolling the buffer upward.
 
 If a shortcut doesn't work, the "bind" command allows binding a command to a
-shortcut: `bind alt+e select-end`. Commands can still be executed from the
-command prompt.
+shortcut. For example, `bind alt+e select-end` binds Alt+E to extend the
+selection to the end of the line. Commands can still be executed from the
+command prompt (also known as the menu).
 
 ////////////////////////////////////////////////////////////////////////////////
 // Roadmap
@@ -111,6 +112,7 @@ This list may change at any given time without notice.
 0.8:
 - [x] Custom Readline implementation (handle ^C)
 - [x] Show header/status configurations
+- [x] Dual highlighters setting (data and text)
 
 0.9:
 - TBD
@@ -121,10 +123,10 @@ Wishlist:
 - [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
 - [ ] Document: Disk
 - [ ] Document: Process memory
-- [ ] Dual highlighters setting (data and text)
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
-- [ ] Inspect data panel (replaces text panel)
-- [ ] Patch system (maybe with ed(1) front-end)
+- [ ] Inspect data panel (replaces text panel when toggled)
+- [ ] Patch system (maybe with an ed(1) front-end?)
+- [ ] Pattern layout system
 - [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -241,6 +243,7 @@ Supported prefixes:
   d:        - Decimal signed integer
   o:        - Octal signed integer
   s: and "  - String (currently ASCII only)
+              Quotes need a terminator: "example"
 
 Supported commands: find, find-back, insert, and replace.
 
@@ -326,6 +329,7 @@ Vim-style navigation example:
   >bind j down
   >bind k up
   >bind l right
+* >bind : menu
 
 This makes the right arrow jump 32 bytes ahead.
   >bind right-arrow goto +32
@@ -336,14 +340,26 @@ To remove bindings:
 
 Key bounds in a session are not saved. The configuration file is recommended.
 
+* Upcoming version: 0.8 fixes binding to ':'
+
 ////////////////////////////////////////////////////////////////////////////////
 // Compiling
 
 To compile this project, you'll need a D compiler and DUB.
 
-All major compilers are supported (DMD, GDC, and LDC). LDC, GDC, and DUB are
-typically available in package repositories as gdc/gdc-*/gcc-gdc, ldc2, and
-dub.
+All major compilers are supported (DMD, GDC, and LDC).
+
+DUB is used for project management and building. It is typically available in
+system repositories as 'dub'.
+
+DMD is typically available in system repositories and on https://dlang.org/.
+
+GDC is typically available in system repositories as 'gdc', 'gdc-*', 'gcc-gdc',
+'gcc*-gdc', 'gcc-d', or 'gcc-d-*'. For example, on Ubuntu 24.04, 'gdc-9' to
+'gdc-14' are available. This project doesn't use 'gdmd', the dmd wrapper.
+
+LDC is typically available in system repositories as 'ldc', and is typically
+invoked using 'ldc2'. This project doesn't use 'ldmd2', the dmd wrapper.
 
 Minimum version should be a compiler with DMD front-end version 2.081 and
 later. Project successfully compiles on Ubuntu 16.04 using dmd-2.082.0,
