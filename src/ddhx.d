@@ -287,6 +287,8 @@ immutable Command[] default_commands = [
         0,                          &unbind },
     { "reset-keys",                 "Reset all binded keys to default",
         0,                          &reset_keys },
+    { "menu",                       "Invoke command prompt",
+        Key.Enter,                  &prompt_command },
     { "quit",                       "Quit program",
         Mod.ctrl|Key.Q,             &quit },
 ];
@@ -374,7 +376,7 @@ Keybind* binded(int key)
 void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
 {
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
-    // NOTE: Alternate buffers are usually "clean" except on framebuffer (fbcon)
+    // NOTE: Alternate buffers are usually "clean" except on framebuffers (fbcon)
     terminalClear();
     terminalResizeHandler(&onresize);
     terminalHideCursor();
@@ -386,11 +388,6 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     g_session.editor = editor;  // assign editor instance
     
     message(initmsg);
-    
-    // Special keybinds with no attached commands
-    // TODO: Make "menu" bindable.
-    //       Return should still be provided as a fallback.
-    g_keys[Key.Enter] = Keybind( &prompt_command, null );
     
     loop(g_session);
     
