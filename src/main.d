@@ -86,7 +86,7 @@ void printpage(string opt)
             if (command.key & Mod.ctrl)  write("Ctrl+");
             if (command.key & Mod.alt)   write("Alt+");
             if (command.key & Mod.shift) write("Shift+");
-            writeln(cast(Key)cast(short)command.key);
+            writeln(cast(Key)(command.key & 0xff_ffff));
         }
         break;
     case "help-commands":
