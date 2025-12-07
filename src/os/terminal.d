@@ -1589,7 +1589,6 @@ enum Key // These are fine for now
     Escape = 27,
     
     // ASCII (32..127)
-    // Deprecated, but also used for printing
     Spacebar = 32,
     Exclamation = 32,
     Plus = 43,
@@ -1711,12 +1710,31 @@ struct TerminalSize
     int rows;
 }
 
+// If string has this needle, remove it (single instance) and return slice without needle.
+private
+string strhas(string needle, string haystack)
+{
+    import std.string : indexOf;
+    
+    ptrdiff_t i = indexOf(haystack, needle);
+    if (i < 0) return null;
+    
+    return haystack[0..i]~haystack[i+needle.length..$];
+}
+unittest
+{
+    assert(strhas("ctrl+", "a")            == null);
+    assert(strhas("ctrl+", "ctrl+a")       == "a");
+    assert(strhas("ctrl+", "ctrl+shift+a") == "shift+a");
+    assert(strhas("ctrl+", "shift+ctrl+a") == "shift+a");
+}
+
 /// Return key value from string interpretation.
 /// Throws: Exception.
 /// Params:
 ///     value = String value.
 /// Returns: Keys.
-int terminal_keybind(string value)
+int terminalKeybind(string value)
 {
     import std.string : startsWith;
     
@@ -1725,36 +1743,33 @@ int terminal_keybind(string value)
     
     int mod; /// modificators
     
-    static immutable string ctrlpfx = "ctrl+";
-    if (startsWith(value, ctrlpfx))
+    if (string v = strhas("ctrl+", value))
     {
         mod |= Mod.ctrl;
-        value = value[ctrlpfx.length..$];
+        value = v;
     }
     
-    static immutable string altpfx = "alt+";
-    if (startsWith(value, altpfx))
+    if (string v = strhas("alt+", value))
     {
         mod |= Mod.alt;
-        value = value[altpfx.length..$];
+        value = v;
     }
     
-    static immutable string shiftpfx = "shift+";
-    if (startsWith(value, shiftpfx))
+    if (string v = strhas("shift+", value))
     {
         mod |= Mod.shift;
-        value = value[shiftpfx.length..$];
+        value = v;
     }
     
     // Second check with modifiers sliced out
     if (value.length == 0)
         throw new Exception("Expected key, got empty");
     
-    int c = value[0];
     if (value.length == 1)
     {
+        int c = value[0];
         // ISSUE: Yes, adjusts to Key.* enum, but 'a' is also valid...
-        //        Keeping this for now, compatibility
+        //        Keeping this for compatibility
         if (c >= 'a' && c <= 'z') // lower ascii
             return mod | (c - 32);
         else if (c >= 32 && c < 127) // printable
@@ -1790,11 +1805,15 @@ int terminal_keybind(string value)
     
     throw new Exception("Unknown key");
 }
+// Older alias
+alias terminal_keybind = terminalKeybind;
 unittest
 {
     assert(terminal_keybind("a")             == Key.A);
     assert(terminal_keybind("alt+a")         == Mod.alt+Key.A);
     assert(terminal_keybind("ctrl+a")        == Mod.ctrl+Key.A);
+    assert(terminal_keybind("ctrl+shift+a")  == Mod.ctrl+Mod.shift+Key.A);
+    assert(terminal_keybind("shift+ctrl+a")  == Mod.ctrl+Mod.shift+Key.A);
     assert(terminal_keybind("shift+a")       == Mod.shift+Key.A);
     assert(terminal_keybind("ctrl+0")        == Mod.ctrl+Key.D0);
     assert(terminal_keybind("ctrl+insert")   == Mod.ctrl+Key.Insert);
