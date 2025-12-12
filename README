@@ -207,7 +207,7 @@ again to execute it.
 
 To cancel a prompt input, give it an empty line. *
 
-* Version 0.8: Allows ^C for cancellation.
+* Version 0.8 allows ^C for cancellation.
 
 // Command Arguments
 
@@ -340,7 +340,7 @@ To remove bindings:
 
 Key bounds in a session are not saved. The configuration file is recommended.
 
-* Upcoming version: 0.8 fixes binding to ':'
+* Upcoming version 0.8 fixes binding to ':' and makes 'menu' bindable
 
 ////////////////////////////////////////////////////////////////////////////////
 // Compiling
