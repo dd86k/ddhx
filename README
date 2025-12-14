@@ -109,7 +109,7 @@ This list may change at any given time without notice.
 - [x] Insert/replace using pattern
 - [x] Range expressions
 
-0.8:
+0.8: Released!
 - [x] Custom Readline implementation (handle ^C)
 - [x] Show header/status configurations
 - [x] Dual highlighters setting (data and text)
@@ -205,9 +205,7 @@ keyboard shortcuts or by typing them directly into the command prompt.
 Press Enter to open the command prompt, type your command, then press Enter
 again to execute it.
 
-To cancel a prompt input, give it an empty line. *
-
-* Version 0.8 allows ^C for cancellation.
+To cancel a prompt input, give it an empty line or hit Ctrl+C.
 
 // Command Arguments
 
@@ -253,8 +251,8 @@ Supported commands: find, find-back, insert, and replace.
 A range expression represents a start and end position inclusively, typically
 in the START:END format.
 
-Without a separator, it denotes a length only, starting at the cursor
-position. *
+Without a separator, it only denotes a length, starting at the cursor
+position.
 
 Special markers:
   . - Current cursor position.
@@ -269,8 +267,6 @@ Examples:
   "insert 100 x:90"        - Insert 100 0x90 bytes at current position *
 
 Supported commands: insert, replace, select, and delete.
-
-* Upcoming version: 0.8
 
 ////////////////////////////////////////////////////////////////////////////////
 // Searching
@@ -329,7 +325,7 @@ Vim-style navigation example:
   >bind j down
   >bind k up
   >bind l right
-* >bind : menu
+  >bind : menu
 
 This makes the right arrow jump 32 bytes ahead.
   >bind right-arrow goto +32
@@ -339,8 +335,6 @@ To remove bindings:
   >reset-keys               Reset all bindings to defaults
 
 Key bounds in a session are not saved. The configuration file is recommended.
-
-* Upcoming version 0.8 fixes binding to ':' and makes 'menu' bindable
 
 ////////////////////////////////////////////////////////////////////////////////
 // Compiling
