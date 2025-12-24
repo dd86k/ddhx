@@ -989,9 +989,9 @@ Lread:
         //       Disable: ESC [ ? 9 l
         //       "sends ESC [ M bxy (6 characters)"
         //       - ESC [ M button column row (1-based)
-        //       - 0,0 click: ESC [ M   ! !
+        //       - 0,0 click: "ESC[M !!"
         //         ! is 0x21, so '!' - 0x21 = 0
-        //       - end,end click: ESC [ M   q ;
+        //       - end,end click: "ESC[M q;"
         //         q is 0x71, so 'q' - 0x21 = 0x50 (column 80)
         //         ; is 0x3b, so ';' - 0x21 = 0x1a (row 26)
         //       - button left:   ' '
@@ -1009,7 +1009,6 @@ Lread:
         //       Emitted when resizing or on ^C.
         if (r < 0)
             goto Lread;
-        event.ksize = cast(int)r;
         
         version (unittest)
         {
@@ -1026,6 +1025,7 @@ Lread:
             cast(void)putchar('\n');
         }
         
+        event.ksize = cast(int)r;
         event.type = InputType.keyDown; // Assuming for now
         event.key  = 0; // clear as safety measure
         
@@ -1070,7 +1070,7 @@ Lread:
             char[] input = event.kbuffer[1..r];
             
             // Next, detect sequence
-            switch (input[0]) {
+            switch (event.kbuffer[1]) { // next char after ESC
             case '[': // CSI, Control Sequence Introducer
                 // Detect special modifier keys if there are any
                 if (r >= 5 && event.kbuffer[2] == '1' && event.kbuffer[3] == ';')
@@ -1193,68 +1193,85 @@ Lread:
 private
 struct LineBuffer
 {
-    void insert(size_t i, char[] chr)
+    size_t insert(size_t i, char[] chr)
     {
+        size_t w = graphs(chr);
+        
         // Ensure we have enough capacity
         ensureCapacity(i, chr.length);
         
         // Shift existing content to the right to make space
-        if (i < l)
+        if (i < length)
         {
             import core.stdc.string : memmove;
-            memmove(&buffer[i + chr.length], &buffer[i], l - i);
+            memmove(&buffer[i + chr.length], &buffer[i], length - i);
         }
         
         // Copy new characters into position
         buffer[i .. i + chr.length] = chr[];
-        l += chr.length;
+        length += chr.length;
+        
+        cells += w;
+        
+        return w;
     }
     
-    void deleteAt(size_t i, size_t size)
+    // delete size in bytes (change to grapheme count later)
+    size_t deleteAt(size_t i, size_t delsize)
     {
         // Bounds check
-        if (i >= l || size == 0)
-            return;
+        if (i >= length || delsize == 0)
+            return 0;
+        
+        // LAZY: to get diff in cells
+        size_t a = graphs(buffer[0..length]);
         
         // Clamp size to available characters
-        if (i + size > l)
-            size = l - i;
+        if (i + delsize > length)
+            delsize = length - i;
         
         // Shift remaining content left
-        if (i + size < l)
+        if (i + delsize < length)
         {
             import core.stdc.string : memmove;
-            memmove(&buffer[i], &buffer[i + size], l - i - size);
+            memmove(&buffer[i], &buffer[i + delsize], length - i - delsize);
         }
         
-        l -= size;
+        length -= delsize;
+        
+        cells = graphs(buffer[0..length]);
+        
+        return a - cells;
     }
     
-    // private but this module can 'see' it anyway
-    void ensureCapacity(size_t i, size_t size)
+    // private but this module can see this function anyway
+    void ensureCapacity(size_t i, size_t insize) // incoming size
     {
         // Nothing to do
-        if (i + size < buffer.length)
+        if (i + insize < buffer.length)
             return;
         
         // Align up amount of memory to reallocate
         enum ALGN  = 128;
         enum MASK  = ALGN - 1;
-        size_t amt = (i + size + MASK) & ~MASK;
+        size_t amt = (i + insize + MASK) & ~MASK;
         buffer.length = amt;
     }
     
-    size_t l;   /// Length
-    alias length = l;
+    /// Count of cells that the multibyte buffer would take to render on screen
+    size_t cells;
+    /// Current size of content in bytes
+    size_t length;
+    // Buffer
     char[] buffer;
     
     inout(char)[] opSlice() inout // preserves const
     {
-        return buffer[0..l];
+        return buffer[0..length];
     }
     string toString() const
     {
-        return cast(immutable)buffer[0..l].idup;
+        return cast(immutable)buffer[0..length].idup;
     }
 }
 unittest
@@ -1262,54 +1279,61 @@ unittest
     LineBuffer buf;
     
     // Test basic insertion
-    buf.insert(0, cast(char[])"hello");
-    assert(buf.l == 5);
+    assert(buf.insert(0, cast(char[])"hello") == "hello".length);
+    assert(buf.length == 5);
+    assert(buf.cells  == 5);
     assert(buf[] == "hello");
     
     // Test insertion in middle
-    buf.insert(5, cast(char[])" world");
-    assert(buf.l == 11);
+    assert(buf.insert(5, cast(char[])" world") == " world".length);
+    assert(buf.length == 11);
+    assert(buf.cells  == 11);
     assert(buf[] == "hello world");
     
     // Test insertion at arbitrary position
-    buf.insert(5, cast(char[])",");
-    assert(buf.l == 12);
+    assert(buf.insert(5, cast(char[])",") == 1);
+    assert(buf.length == 12);
+    assert(buf.cells  == 12);
     assert(buf[] == "hello, world");
     
     // Test deletion
-    buf.deleteAt(5, 2); // Remove ", "
-    assert(buf.l == 10);
+    assert(buf.deleteAt(5, 2) == 2); // Remove ", "
+    assert(buf.length == 10);
+    assert(buf.cells  == 10);
     assert(buf[] == "helloworld");
     
     // Test deletion at end
-    buf.deleteAt(5, 10); // Should clamp to available
-    assert(buf.l == 5);
+    assert(buf.deleteAt(5, 10) == 5); // Should clamp to available
+    assert(buf.length == 5);
+    assert(buf.cells  == 5);
     assert(buf[] == "hello");
     
     // Test deletion beyond bounds
-    buf.deleteAt(100, 5); // Should do nothing
-    assert(buf.l == 5);
+    assert(buf.deleteAt(100, 5) == 0); // Should do nothing
+    assert(buf.length == 5);
+    assert(buf.cells  == 5);
     assert(buf[] == "hello");
     
     // Test capacity expansion
-    buf.insert(0, cast(char[])"x");
-    assert(buf.l == 6);
+    assert(buf.insert(0, cast(char[])"x") == 1);
+    assert(buf.length == 6);
+    assert(buf.cells  == 6);
     assert(buf[]== "xhello");
 }
 
-// NOTE: Will be useful when we fully want to support UTF-8
-// Count number of visible printed characters from a narrow mutlibyte string.
-/*private
-size_t terminalLength(string s)
+// Count number of visible printed characters (for a terminal) from a narrow
+// mutlibyte string.
+private
+size_t graphs(inout(char)[] s)
 {
     if (s is null || s.length == 0)
         return 0;
     
-    import std.uni : graphemeStride;
     size_t width;
     size_t i;
     while (i < s.length)
     {
+        import std.uni : graphemeStride;
         size_t stride = graphemeStride(s, i);
         dchar c = s[i];  // First char of grapheme
         
@@ -1330,10 +1354,11 @@ size_t terminalLength(string s)
 }
 unittest
 {
-    assert(terminalLength(null)         == 0);
-    assert(terminalLength("")           == 0);
-    assert(terminalLength("hello")      == "hello".length);
-}*/
+    assert(graphs(null)         == 0);
+    assert(graphs("")           == 0);
+    assert(graphs("hello")      == "hello".length);
+    assert(graphs("🥴")         == 1); // WOOZY, U+1F974
+}
 
 private enum {
     _RL_BUFCHANGED = 1 << 16, /// Buffer content changed
@@ -1351,7 +1376,7 @@ struct ReadlineState
 }
 // Render line on-screen
 private
-void readlineRender(ref ReadlineState state, char[] buffer, int flags)
+void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, int flags)
 {
     import std.algorithm : min, max;
     
@@ -1546,10 +1571,16 @@ Lread: // Emulate line buffer
         if (input.key & (Mod.ctrl|Mod.alt))
             goto Lread;
         
-        line.insert(rl_state.caret++, input.kbuffer[0..input.ksize]);
+        // If size is 1 (ASCII) and is outside of ASCII range, skip
+        import core.stdc.ctype : isprint;
+        if (!isprint(input.kbuffer[0]))
+            goto Lread;
+        
+        rl_state.caret +=
+            line.insert(rl_state.caret, input.kbuffer[0..input.ksize]);
         rl_flags |= _RL_BUFCHANGED;
     }
-    readlineRender(rl_state, line[], rl_flags);
+    readlineRender(rl_state, line[], line.cells, rl_flags);
     goto Lread;
     
 Lout:
