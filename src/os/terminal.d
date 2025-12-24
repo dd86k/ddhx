@@ -1468,7 +1468,7 @@ Lread: // Emulate line buffer
     switch (input.key) {
     // NOTE: Is ^C is something else in other locales?
     //       TermInput could be updated with a new event type
-    case Mod.ctrl | Key.C: // \033 (ESC)
+    case Mod.ctrl | Key.C, Key.Escape: // \033 (ESC)
         throw new Exception("Cancelled");
     case Key.Enter:
         goto Lout;
