@@ -1,0 +1,220 @@
+Hello! If you're here, you're interested in understanding how ddhx works
+internally.
+
+This document explains:
+- How the codebase is organized
+- The program's execution flow
+- How the Piece Table + Red-Black tree backend works
+- The command-based undo/redo system
+
+For user-facing documentation, see the main README in the project root.
+
+********************************************************************************
+* SOURCE STRUCTURE
+********************************************************************************
+
+The folder structure is pretty straight-forward:
+- backend/
+  Contains multiple backends that provides an implementation of a document
+  editor.
+- document/
+  Source documents. Often representing a specific media, such as a file, a disk
+  a process, and other physical representation of a source document.
+  Currently, only saving to files are supported, it is planned that each
+  document will have different strategies to save content.
+- os/
+  Operation system interfaces.
+
+Files:
+- configuration.d
+  Contains runtime configuration with functions to change, load and (soon) save
+  configurations.
+- ddhx.d
+  Main application, defines behaviour on what to do, like application commands.
+- doceditor.d
+  Legacy baggage. Has some enumeration definitions and formatting utilities.
+  This is where the document editor used to reside in versions prior to 0.5.
+- logger.d
+  Stupidly simple logging interface.
+- main.d
+  Application entry-point. Command-line, configuration, and editor
+  initialization.
+- pattern.d
+  Module for creating patterns.
+- platform.d
+  Platform definitions.
+- ranges.d
+  Module for selection ranges.
+- transcoder.d
+  Character translation module.
+- utils.d
+  Miscellaneous utilities. Like argument splitting, binary and integer number
+  parsing, bufferedwriter, etc.
+
+********************************************************************************
+* PROGRAM CONTROL FLOW
+********************************************************************************
+
+                        START
++-----------------+   +--------+ - Command-line parsing, init logging
+| configuration.d |<->| main.d | - Initialize default keys, commands
+| backend/*.d     |   +--------+ - Find and parse configuration
+| logger.d        |       |      - Initialize document editor, open document
++-----------------+       v
+                ^     +--------+ - Setup terminal and session
+             +--+---->| ddhx.d | - Loop (read input, modify state, update)
+             v        +--------+ - menu (prompt) system, command implementation
++--------------+          |      - Renders text/data to buffers
+| ranges.d     |          v
+| pattern.d    |  +---------------+ - Manage terminal features
+| transcoder.d |  | os/terminal.d | - readkey, readline implementation
++--------------+  +---------------+
+                          |
+                          v
+                      + ~ ~ ~ ~+
+                      | screen |
+                      +~ ~ ~ ~ +
+
+********************************************************************************
+* DOCUMENT EDITOR
+********************************************************************************
+
+To keep things simple, only the latest backend (backend/piecev2.d), will be
+explained here.
+
+All document editor backends interface IDocumentEditor (backend/base.d), and
+are in charge of implementing editor features. IDocumentEditor allows the
+editing of IDocument (document/base.d) using the 'open(IDocument)' function.
+
+The piecev2 backend implements a Piece Table data structure using a Red-black
+self-balancing tree. For undo operations, a command-based approach is used.
+
+A piece, simply put, contains the source material (document, buffer, etc.),
+the position from the source material, its size (in Bytes), and resources
+to the source material (document:file, buffer:memory data, etc.).
+
+(See "Piece types" section below for details on each type)
+
+The red-black tree helps index pieces with their cumulative size. When
+searching pieces, because are already sorted by position and size, operations
+are relatively fast, comparing to sorting every piece at every operation.
+
+Example of indexed pieces:
++---------------+-------+---------------------+
+| Piece         | Piece | Piece               |
++---------------+-------+---------------------+
+                ^       ^                     ^
+100 ------------+       |                     |
+120 --------------------+                     |
+220 ------------------------------------------+
+
+When a new instance of this backend is created, a single tree instance is
+created with no pieces and an empty command list.
+
+*
+* DESIGN RATIONALE
+*
+
+Why a Piece Table?
+- Memory efficient: Original file data is never duplicated.
+- Fast insertions: No need to shift large amounts of data.
+- Natural undo/redo: Changes are discrete pieces.
+
+Why Red-Black Trees?
+- Self-balancing ensures consistent O(log n) performance.
+- Better than arrays for large documents with many edits.
+- Efficient cumulative size indexing for address lookups.
+
+*
+* OPENING
+*
+
+When opening a document, a single document piece is inserted in the tree.
+
+Visually, a single document piece is inserted:
++--------------------------------------+
+| Document                             |
++--------------------------------------+
+
+The piece structure instance inserted in the tree will contain (for example):
+  source=Document, position=0, size=[size of file], doc=[handle to file].
+
+A command entry is not created, unless we consider opening a file as a form
+of edition, which is rather rare when it comes to text editors.
+
+*
+* MODIFYING
+*
+
+When inserting or replacing data, a new piece is created and inserted into the
+tree.
+
+For each operation, some pieces will be truncated (removed and reinserted).
+
+Example of an initial document:
++--------------------------------------+
+| Document                             |
++--------------------------------------+
+
+Example of a replace operation with a New piece:
++---------------+-----+----------------+
+| Document      | New | Document       |
++---------------+-----+----------------+
+
+Example of an insert operation with a New piece:
++---------------+-----+-----------------------+
+| Document      | New | Document              |
++---------------+-----+-----------------------+
+
+When deleting data, existing pieces will be cut and reinserted:
+1. +-------------------------------+ Tree contains one piece.
+   | Document                      |
+   +-------------------------------+
+2. +---------------+-----+---------+ Visualization of the piece to cut.
+   | Document      | CUT |         |
+   +---------------+-----+---------+
+3. +---------------+--------+        Sliced piece, because a "gap" is created
+   | Document      | Doc    |        with a new position (cut offset) and
+   +---------------+--------+        new size.
+
+In debug builds, a consistency check is performed. This check ensures pieces
+have proper a size and cumulative size following each other sequentially.
+
+When finished, a new command entry is added to the list of commands.
+
+*
+* HISTORY
+*
+
+User actions are recorded as commands in the history stack.
+
+When an operation (insert, replace, delete) is performed, a new command is
+created, executed, and added to the list of commands (history).
+
+No snapshot of the tree is taken due to memory concerns, as the piece (v1)
+backend demonstrated. Only added pieces and removed indexed pieces are saved.
+
+The Command structure contains the minimum information to perform operations
+again. For undo operations, the last operation is reversed.
+
+*
+* VIEWING
+*
+
+When viewing the current document, the tree is traversed until the first
+piece within the view range (base position and the size of the view buffer)
+is located.
+
+For each piece that needs to be read, their source material is read using the
+'IDocument.readAt' function. This process is repeated until the view buffer
+requested is filled, or end of the edited document is reached.
+
+Piece types:
+- source:   The original, unmodified document (typically a file on disk).
+            This is the "main" source that other pieces reference.
+- document: A file IDocument instance. Used when inserting content from
+            another file into the current document.
+- buffer:   In-memory data created during edits (inserts, replaces).
+            Contains the entire data to be applied in the view buffer.
+- pattern:  Special pieces for repeated data (e.g., filling with zeros).
+            Pattern data is repeated as needed when filling the buffer.
