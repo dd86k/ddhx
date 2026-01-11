@@ -644,7 +644,14 @@ private:
         history_index++;
     }
     
-    /// Ensure pieces are consistent
+    /// Ensure pieces are consistent.
+    ///
+    /// This is automatically called in debug builds after inserting a piece
+    /// into the tree.
+    ///
+    /// Called from addOperation because all operations, when done, adds
+    /// the current operation (command) into the list, and before doing that
+    /// the consistency check is called, so history can be printed more cleanly.
     debug void ensureConsistency()
     {
         import std.conv : text;
@@ -1408,9 +1415,7 @@ unittest
     assert(e.view(0, buf) == [ 0,0,0,0,0 ]);
 }
 
-// TODO: Test: Large pattern (>4 GiB) + view past that with edits
-
-// Add enormous pattern of 10 GiB, seek to it, insert data, test undo-redo
+// Add enormous pattern of 10 GiB and edit into it
 unittest
 {
     import document.memory : MemoryDocument;
@@ -1418,6 +1423,41 @@ unittest
     log("TEST-0011");
     
     scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();
+    
+    enum P0 = 0xda; //    K      M      G
+    enum _10GB = 10L * 1024 * 1024 * 1024;
+    enum _2GB  =  2L * 1024 * 1024 * 1024;
+    
+    // Insert single-byte 10 GiB pattern
+    ubyte da = P0;
+    e.patternInsert(0, _10GB, &da, ubyte.sizeof);
+    
+    // 10 GiB block
+    ubyte[10] buf;
+    assert(e.view(0, buf)          == [ P0,P0,P0,P0,P0,P0,P0,P0,P0,P0 ]);
+    assert(e.view(_10GB - 10, buf) == [ P0,P0,P0,P0,P0,P0,P0,P0,P0,P0 ]);
+    assert(e.view(_10GB -  5, buf) == [ P0,P0,P0,P0,P0 ]);
+    assert(e.view(_10GB     , buf) == [ ]);
+    
+    // Add another 2 GiB pattern
+    static immutable string str = "I love you!";
+    e.patternInsert(_10GB, _2GB, str.ptr, str.length);
+    assert(e.view(_10GB - 10, buf) == [ P0, P0, P0, P0, P0, P0, P0, P0, P0, P0  ]);
+    assert(e.view(_10GB -  5, buf) == [ P0, P0, P0, P0, P0, 'I',' ','l','o','v' ]);
+    assert(e.view(_10GB     , buf) == [ 'I',' ','l','o','v','e',' ','y','o','u' ]);
+    
+    ubyte[] db = [ 'M', 'e', '?' ];
+    e.patternReplace(_10GB - 10, 20, db.ptr, db.length);
+    assert(e.view(_10GB - 10, buf) == [ 'M','e','?','M','e','?','M','e','?','M'  ]);
+    assert(e.view(_10GB -  5, buf) == [ '?','M','e','?','M','e','?','M','e','?' ]);
+    assert(e.view(_10GB     , buf) == [ 'e','?','M','e','?','M','e','?','M','e' ]);
+    
+    // 
+    ubyte[] dc = [ 'M','a','y','b','e','.','.','.' ];
+    e.insert(_10GB - 10, dc.ptr, dc.length);
+    assert(e.view(_10GB - 10, buf) == [ 'M','a','y','b','e','.','.','.','M','e' ]);
+    assert(e.view(_10GB     , buf) == [ '?','M','e','?','M','e','?','M','e','?' ]);
+    assert(e.view(_10GB -  5, buf) == [ '.','.','.','M','e','?','M','e','?','M' ]);
 }
 
 
