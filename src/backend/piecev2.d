@@ -1448,7 +1448,7 @@ unittest
     
     ubyte[] db = [ 'M', 'e', '?' ];
     e.patternReplace(_10GB - 10, 20, db.ptr, db.length);
-    assert(e.view(_10GB - 10, buf) == [ 'M','e','?','M','e','?','M','e','?','M'  ]);
+    assert(e.view(_10GB - 10, buf) == [ 'M','e','?','M','e','?','M','e','?','M' ]);
     assert(e.view(_10GB -  5, buf) == [ '?','M','e','?','M','e','?','M','e','?' ]);
     assert(e.view(_10GB     , buf) == [ 'e','?','M','e','?','M','e','?','M','e' ]);
     
@@ -1456,8 +1456,8 @@ unittest
     ubyte[] dc = [ 'M','a','y','b','e','.','.','.' ];
     e.insert(_10GB - 10, dc.ptr, dc.length);
     assert(e.view(_10GB - 10, buf) == [ 'M','a','y','b','e','.','.','.','M','e' ]);
-    assert(e.view(_10GB     , buf) == [ '?','M','e','?','M','e','?','M','e','?' ]);
     assert(e.view(_10GB -  5, buf) == [ '.','.','.','M','e','?','M','e','?','M' ]);
+    assert(e.view(_10GB     , buf) == [ '?','M','e','?','M','e','?','M','e','?' ]);
 }
 
 

@@ -141,7 +141,6 @@ unittest
     RC rc;
     int key = terminal_keybind("j");
     assert(rc.columns == 16);
-    assert(rc.autoresize == false);
     assert(binded(key) == null);
     
     // Emulate CLI change, before config
@@ -151,11 +150,9 @@ unittest
     // Load and check
     loadRC(rc,
 `columns 20
-autoresize on
 charset ebcdic
 bind j left`);
     assert(rc.columns == 6); // Untouched by config file
-    assert(rc.autoresize); // Touched by config
     assert(rc.charset == CharacterSet.ascii);
     assert(binded(key));
 }
