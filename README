@@ -126,7 +126,8 @@ Wishlist:
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
 - [ ] Inspect data panel (replaces text panel when toggled)
 - [ ] Patch system (maybe with an ed(1) front-end?)
-- [ ] Pattern layout system
+- [ ] Pattern layout overlay system (needs a nicer name)
+- [ ] Snapshot tree system (explore different edit branches)
 - [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -381,9 +382,9 @@ Environment variables:
 - DDHX_BACKEND=BACKEND
   - Version: Since 0.7
   - Forces BACKEND to be selected.
-  - Backends: "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5)
+  - Backends: "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5 <0.9)
 - DDHX_CHUNKSIZE=SIZE
-  - Version: Since 0.7
+  - Version: Since 0.7, removed in 0.9
   - Sets buffer size to SIZE (with binary suffix) for the "chunk" backend.
 
 ********************************************************************************
