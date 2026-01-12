@@ -64,7 +64,7 @@ Files:
                 ^     +--------+ - Setup terminal and session
              +--+---->| ddhx.d | - Loop (read input, modify state, update)
              v        +--------+ - menu (prompt) system, command implementation
-+--------------+          |      - Renders text/data to buffers
++--------------+          |      - Renders text/data to buffer
 | ranges.d     |          v
 | pattern.d    |  +---------------+ - Manage terminal features
 | transcoder.d |  | os/terminal.d | - readkey, readline implementation
@@ -83,8 +83,9 @@ To keep things simple, only the latest backend (backend/piecev2.d), will be
 explained here.
 
 All document editor backends interface IDocumentEditor (backend/base.d), and
-are in charge of implementing editor features. IDocumentEditor allows the
-editing of IDocument (document/base.d) using the 'open(IDocument)' function.
+are in charge of implementing editor features. Editors allow the editing of
+IDocument (document/base.d) instances using the 'IDocumentEditor.open(IDocument)'
+function.
 
 The piecev2 backend implements a Piece Table data structure using a Red-black
 self-balancing tree. For undo operations, a command-based approach is used.
@@ -93,7 +94,7 @@ A piece, simply put, contains the source material (document, buffer, etc.),
 the position from the source material, its size (in Bytes), and resources
 to the source material (document:file, buffer:memory data, etc.).
 
-(See "Piece types" section below for details on each type)
+(See "Piece types" in the VIEWING section for details on each type)
 
 The red-black tree helps index pieces with their cumulative size. When
 searching pieces, because are already sorted by position and size, operations
@@ -120,7 +121,7 @@ Why a Piece Table?
 - Fast insertions: No need to shift large amounts of data.
 - Natural undo/redo: Changes are discrete pieces.
 
-Why Red-Black Trees?
+Why a Red-Black Tree?
 - Self-balancing ensures consistent O(log n) performance.
 - Better than arrays for large documents with many edits.
 - Efficient cumulative size indexing for address lookups.
@@ -137,10 +138,11 @@ Visually, a single document piece is inserted:
 +--------------------------------------+
 
 The piece structure instance inserted in the tree will contain (for example):
-  source=Document, position=0, size=[size of file], doc=[handle to file].
+  { source=Document, position=0, size=[size of file], doc=[handle to file] }
 
-A command entry is not created, unless we consider opening a file as a form
-of edition, which is rather rare when it comes to text editors.
+The command history is cleared and a command entry is not created, unless we
+consider opening a file as a form of edition, which is rather rare when it
+comes to text editors.
 
 *
 * MODIFYING
@@ -183,7 +185,7 @@ have proper a size and cumulative size following each other sequentially.
 When finished, a new command entry is added to the list of commands.
 
 *
-* HISTORY
+* COMMANDS
 *
 
 User actions are recorded as commands in the history stack.
@@ -197,6 +199,18 @@ backend demonstrated. Only added pieces and removed indexed pieces are saved.
 The Command structure contains the minimum information to perform operations
 again. For undo operations, the last operation is reversed.
 
+Applying an operation:
+1. Remove indexed pieces mentioned by the command, from the operation.
+2. Adjust cumulatives by delta of all pieces after the new cumulative.
+3. Add new pieces created by the opreation, with their cumulative adjusted.
+4. Update the logical document size by adding delta.
+
+Undoing an operation:
+1. Remove pieces that were previously added.
+2. Adjust cumulatives by -delta of pieces starting from new cumulative.
+3. Add removed pieces.
+4. Update logical document size by subtracting delta.
+
 *
 * VIEWING
 *
@@ -206,8 +220,9 @@ piece within the view range (base position and the size of the view buffer)
 is located.
 
 For each piece that needs to be read, their source material is read using the
-'IDocument.readAt' function. This process is repeated until the view buffer
-requested is filled, or end of the edited document is reached.
+'IDocument.readAt(long, ubyte[])' function with the base position of the piece
+and the slice of the view buffer. This process is repeated until the view
+buffer requested is filled, or end of the edited document is reached.
 
 Piece types:
 - source:   The original, unmodified document (typically a file on disk).
