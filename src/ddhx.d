@@ -107,22 +107,23 @@ struct Session
 
 private __gshared // globals have the ugly "g_" prefix to be told apart
 {
-    // Editor status
-    //
-    // Reset every update
+    // Editor status, resetted every time update() is called
     int g_status;
     
-    // Number of effective rows for view
-    // 
-    // Updated every update
+    // Number of effective rows in view, updated every time update() is called
     int g_rows;
     
     // HACK: Global for screen resize events
+    // Eventually, a session manager could hold multiple sessions and return
+    // the 'current' session (return sessions[current]).
     Session *g_session;
     
+    // Message slice. Sadly, format() uses its own buffer and sformat only
+    // throws when it runs out of a buffer instead of resizing (that would
+    // suck anyway).
     string g_messagebuf;
     
-    /// Last search needle (find-* uses this).
+    /// Last search needle buffer (find commands use this).
     ubyte[] g_needle;
     
     // TODO: Should be turned into a "reader" (struct+function)
@@ -155,7 +156,7 @@ struct Command
 // - "save-settings": Save session settings into .ddhxrc
 // - "hash": Hash selection with result in status
 //           Mostly checksums and digests under 256 bits.
-//           80 columns -> 40 bytes -> 320 bits.
+//           256 bits -> 32 Bytes -> 64 hex characters
 // - "save-status": Save status/message content into file...?
 // NOTE: Command names
 //       Because navigation keys are the most essential, they get short names.
@@ -399,7 +400,7 @@ private:
 void onresize()
 {
     // If autoresize configuration is enabled, automatically set column count
-    if (g_session.rc.autoresize)
+    if (g_session.rc.columns == COLUMNS_AUTO)
         autosize(g_session, null);
     
     g_status |= UHEADER | UVIEW | USTATUSBAR; // draw everything

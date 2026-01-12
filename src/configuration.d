@@ -12,6 +12,9 @@ import transcoder : CharacterSet, selectCharacterSet;
 import doceditor : WritingMode, AddressType, DataType;
 import std.conv : text, to;
 
+/// Special value for RC.columns to autoresize.
+enum COLUMNS_AUTO = 0;
+
 /// Editor configuration
 struct RC
 {
@@ -35,9 +38,6 @@ struct RC
     /// Number of characters to fill when printing row address.
     int address_spacing = 11;
     
-    /// On terminal resize, automatically set number of columns to fit screen.
-    bool autoresize;
-    
     /// If set, hide header.
     bool header = true;
     
@@ -55,7 +55,6 @@ private:
     bool writemode_set;
     bool columns_set;
     bool address_spacing_set;
-    bool autoresize_set;
     bool header_set;
     bool status_set;
     bool mirror_cursor_set;
@@ -174,7 +173,7 @@ struct Config
 /// Available configurations.
 immutable Config[] configurations = [ // Try keeping this ascending by name!
     {
-        "address-spacing", "Left row address spacing in characters",
+        "address-spacing", "Address spacing in characters",
         "Number", "11",
         &configure_address_spacing
     },
@@ -184,28 +183,24 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_addressing
     },
     {
-        "autoresize", "If set, automatically resize columns to fit screen",
-        "Boolean", `"off"`,
-        &configure_autoresize
-    },
-    {
         "charset", "Character set",
         `"ascii", "cp437", "mac", "ebcdic"`, `"ascii"`,
         &configure_charset
     },
     {
-        "columns", "Number of elements to show on a row",
+        // NOTE: "autoresize" was too ambiguous and moved into columns
+        "columns", "Number of elements to show on a row, 'auto' to fit screen",
         "Number", "16",
         &configure_columns
     },
     {
-        "header", "If set, hide the header bar",
-        "Boolean", `"off"`,
+        "header", "If enabled, show the header bar",
+        "Boolean", `"on"`,
         &configure_header
     },
     {
-        "status", "If set, hide the status bar",
-        "Boolean", `"off"`,
+        "status", "If enabled, show the status bar",
+        "Boolean", `"on"`,
         &configure_status
     },
     {
@@ -269,23 +264,23 @@ unittest
     assert(rc.charset == CharacterSet.ebcdic);
 }
 
-void configure_autoresize(ref RC rc, string value, bool conf = false)
-{
-    if (conf && rc.autoresize_set)
-        return;
-    
-    rc.autoresize = boolean(value);
-    rc.autoresize_set = true;
-}
-
 void configure_columns(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.columns_set)
         return;
     
+    // Aliases
+    switch (value) {
+    case "auto", "autoresize":
+        rc.columns = COLUMNS_AUTO;
+        rc.columns_set = true;
+        return;
+    default:
+    }
+    
     int cols = to!int(value);
-    if (cols <= 0)
-        throw new Exception("Cannot have negative or zero columns");
+    if (cols < 0)
+        throw new Exception("Cannot have negative columns");
     rc.columns = cols;
     rc.columns_set = true;
 }
