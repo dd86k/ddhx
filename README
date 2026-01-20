@@ -32,7 +32,7 @@
   OVR |  x8 |    ascii |       6c
 +------------------------------------------------------------------------------+
 
-ddhx is a simple multi-platform modal Text UI hex editor.
+ddhx is a simple byte-oriented multi-platform modal TUI hex editor.
 
 Currently available for Windows, macOS, Linux, and BSDs.
 
@@ -44,7 +44,7 @@ Title font: Shaded Blocky (FIGlet)
   * Supports insert, overwrite, and delete operations
   * Unlimited undo/redo
   * Large file support: up to 8 EiB
-  * Visual selection and range operations
+  * Visual selection and range commands
   * Multiple charset representations: ascii, mac, cp437, ebcdic
   * Search data with a powerful pattern syntax
   * Skip identical data or repeating patterns by selection
