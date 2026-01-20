@@ -860,10 +860,36 @@ void terminalFlush()
     version (Windows)
     {
         // No-op. That is because the console output is not buffered.
+        // I believe that includes both conhost (OpenConsole) and Windows Terminal.
     }
     else
     {
         fsync(STDOUT_FILENO);
+    }
+}
+
+/// Perform a non-blocking peek for terminal input.
+/// Returns: Number of events.
+int terminalHasInput()
+{
+    version(Windows)
+    {
+        DWORD events = void;
+        if (GetNumberOfConsoleInputEvents(hIn, &events) == FALSE)
+            throw new OSException("GetNumberOfConsoleInputEvents");
+        return cast(int)events;
+    }
+    else version(Posix)
+    {
+        import core.sys.posix.poll : poll, pollfd, POLLIN;
+        // Use select/poll with 0 timeout
+        pollfd pfd;
+        pfd.fd = STDIN_FILENO;
+        pfd.events = POLLIN;
+        int r = poll(&pfd, 1, 0);
+        if (r < 0)
+            throw new OSException("poll");
+        return r;
     }
 }
 

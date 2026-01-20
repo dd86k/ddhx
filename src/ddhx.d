@@ -1303,6 +1303,64 @@ void update(Session *session)
     g_status = 0;
 }
 
+// Special function to update progress
+// (Closer to update() than update_* functions...)
+void update_progress(Session *session, long position, long total)
+{
+    __gshared int lastx;
+    
+    TerminalSize termsize = terminalSize();
+    int width = termsize.columns - 2;
+    
+    assert(position <= total, "position <= total");
+    
+    int x = cast(int)(width * (cast(double)position / total));
+    
+    if (x == lastx)
+        return;
+    
+    lastx = x;
+    
+    int rem = width - x;
+    
+    log("w=%d p=%d t=%d x=%d r=%d",
+        width, position, total, x, rem);
+    
+    terminalMove(0, termsize.rows - 1);
+    terminalWriteChar('[', 1);
+    terminalWriteChar('#', x);
+    terminalWriteChar(' ', rem);
+    terminalWriteChar(']', 1);
+}
+
+// Peek input if cancel key is requested, used in I/O intense scenarios,
+// like the search function.
+int cancelling()
+{
+    int num = terminalHasInput();
+    if (num == 0)
+        return 0;
+    
+    for (int i; i < num; i++)
+    {
+        TermInput r = terminalRead();
+        if (r.type != InputType.keyDown)
+            continue;
+        
+        switch (r.key) {
+        case Mod.ctrl|Key.C, Key.Escape:
+            return 1;
+        default:
+        }
+    }
+    
+    return 0;
+}
+
+//
+// Search function
+//
+
 enum {
     /// Search for different needle value, not an exact one.
     SEARCH_DIFF     = 1,
@@ -1318,6 +1376,8 @@ enum {
 
 /// Search buffer (haystack) size.
 enum SEARCH_SIZE = 16 * 1024;
+/// Search result not found.
+enum SEARCH_RESULT_NOT_FOUND = -1;
 
 /// Search for data.
 ///
@@ -1332,8 +1392,8 @@ enum SEARCH_SIZE = 16 * 1024;
 ///     needle = Data to compare against.
 ///     position = Starting position.
 ///     flags = Operation flags.
-/// Returns: Found position, or -1. SEARCH_LASTPOS overrides returning -1.
-long search(Session *session, ubyte[] needle, long position, int flags)
+/// Returns: Position or SEARCH_RESULT_NOT_FOUND. SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND.
+long search(Session *session, ubyte[] needle, long position, int flags, void delegate(long, long) progress)
 {
     import core.stdc.stdlib : malloc, free;
     import core.stdc.string : memcmp;
@@ -1351,6 +1411,8 @@ long search(Session *session, ubyte[] needle, long position, int flags)
     int diff = flags & SEARCH_DIFF;
     size_t alignment = flags & SEARCH_ALIGNED ? needle.length : 1;
     
+    long docsize = session.editor.size();
+    
     debug import std.datetime.stopwatch : StopWatch;
     debug StopWatch sw;
     debug sw.start;
@@ -1360,51 +1422,62 @@ long search(Session *session, ubyte[] needle, long position, int flags)
         long base = position;
         do
         {
+            if (cancelling())
+                throw new Exception("Cancelled");
+            
             base -= SEARCH_SIZE;
             if (base < 0)
                 base = 0;
             
             ubyte[] haystack = session.editor.view(base, hay);
             if (haystack.length < needle.length)
-            {
                 // somehow haystack is smaller than needle
-                return -2;
-            }
+                return SEARCH_RESULT_NOT_FOUND;
             
             for (size_t o = cast(size_t)(position - base); o > 0; o -= alignment, position -= alignment)
             {
                 int r = memcmp(needle.ptr, haystack.ptr + o, needle.length);
                 
-                // if memcmp=0 (exact)   != diff=1 -> SKIP
-                // if memcmp=-1/1 (diff) != diff=0 -> SKIP
+                // if memcmp==0 (exact) != diff=1 -> SKIP
+                // if memcmp!=0 (diff)  != diff=0 -> SKIP
                 if ((diff == 0 && r != 0) || (diff && r == 0))
                     continue;
                 
                 return position;
             }
+            
+            // 1. After that loop to avoid flickerin between status-progress
+            // 2. In reverse mode, it's towards zero, so base decrements
+            // NOTE: If we wanted a reverse progress bar, just pass base, but would be confusing
+            if (progress) progress(docsize - base, docsize);
         }
         while (base > 0);
     }
     else // forward
     {
-        long docsize = session.editor.size();
         do
         {
+            if (cancelling())
+                throw new Exception("Cancelled");
+            
             ubyte[] haystack = session.editor.view(position, hay);
             if (haystack.length < needle.length)
-                return -2;
+                return SEARCH_RESULT_NOT_FOUND;
             
             for (size_t o; o < haystack.length; o += alignment, position += alignment)
             {
                 int r = memcmp(needle.ptr, haystack.ptr + o, needle.length);
                 
-                // if memcmp=0 (exact)   != diff=1 -> SKIP
-                // if memcmp=-1/1 (diff) != diff=0 -> SKIP
+                // if memcmp==0 (exact) != diff=1 -> SKIP
+                // if memcmp!=0 (diff)  != diff=0 -> SKIP
                 if ((diff == 0 && r != 0) || (diff && r == 0))
                     continue;
                 
                 return position;
             }
+            
+            // Same as other remark for this
+            if (progress) progress(position, docsize);
         }
         while (position < docsize);
     }
@@ -1412,7 +1485,7 @@ long search(Session *session, ubyte[] needle, long position, int flags)
     debug sw.stop();
     debug log("search=%s", sw.peek());
     
-    return flags & SEARCH_LASTPOS ? position : -1;
+    return flags & SEARCH_LASTPOS ? position : SEARCH_RESULT_NOT_FOUND;
 }
 
 //
@@ -1573,7 +1646,8 @@ void move_skip_backward(Session *session, string[] args)
     // characters) the cursor still moves to the start of the document.
     moveabs(session,
         search(session, needle, sel.start - needle.length,
-            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED));
+            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED,
+            (pos, total){ update_progress(session, pos, total); }));
 }
 
 template MiB(int base)
@@ -1621,7 +1695,8 @@ void move_skip_forward(Session *session, string[] args)
     
     moveabs(session,
         search(session, needle, sel.start + needle.length,
-            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED));
+            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED,
+            (pos, total){ update_progress(session, pos, total); }));
 }
 
 // Move view up
@@ -2409,7 +2484,9 @@ void find(Session *session, string[] args)
     message("Searching...");
     update_status(session, terminalSize());
     
-    long p = search(session, g_needle, sel.start, 0);
+    long p =
+        search(session, g_needle, sel.start, 0,
+        (pos, total){ update_progress(session, pos, total); });
     if (p < 0)
     {
         message("Not found");
@@ -2451,7 +2528,9 @@ void find_back(Session *session, string[] args)
     message("Searching...");
     update_status(session, terminalSize());
     
-    long p = search(session, g_needle, sel.start, SEARCH_REVERSE);
+    long p =
+        search(session, g_needle, sel.start, SEARCH_REVERSE,
+        (pos, total){ update_progress(session, pos, total); });
     if (p < 0)
     {
         message("Not found");
@@ -2475,7 +2554,9 @@ void find_next(Session *session, string[] args)
     message("Searching...");
     update_status(session, terminalSize());
     
-    long p = search(session, g_needle, session.position_cursor + g_needle.length, 0);
+    long p =
+        search(session, g_needle, session.position_cursor + g_needle.length, 0,
+        (pos, total){ update_progress(session, pos, total); });
     if (p < 0)
     {
         message("Not found");
@@ -2499,7 +2580,9 @@ void find_prev(Session *session, string[] args)
     message("Searching...");
     update_status(session, terminalSize());
     
-    long p = search(session, g_needle, session.position_cursor - 1, SEARCH_REVERSE);
+    long p =
+        search(session, g_needle, session.position_cursor - 1, SEARCH_REVERSE,
+        (pos, total){ update_progress(session, pos, total); });
     if (p < 0)
     {
         message("Not found");
