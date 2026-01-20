@@ -180,6 +180,11 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_addressing
     },
     {
+        "autoresize", "(deprecated) If set, fit columns on screen",
+        "Boolean", `"off"`,
+        &configure_autoresize
+    },
+    {
         "charset", "Character set",
         `"ascii", "cp437", "mac", "ebcdic"`, `"ascii"`,
         &configure_charset
@@ -346,4 +351,14 @@ void configure_mirror_cursor(ref RC rc, string value, bool conf = false)
     
     rc.mirror_cursor = boolean(value);
     rc.mirror_cursor_set = true;
+}
+
+// Deprecated, aliases to columns
+void configure_autoresize(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.columns_set)
+        return;
+    
+    rc.columns = boolean(value) ? COLUMNS_AUTO : 16;
+    rc.columns_set = true;
 }
