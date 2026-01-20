@@ -207,6 +207,7 @@ void terminalInit(int features = 0)
             DWORD attr = void;
             if (GetConsoleMode(hOut, &attr) == FALSE)
                 throw new OSException("GetConsoleMode");
+            attr &= ~ENABLE_WRAP_AT_EOL_OUTPUT;
             if (SetConsoleMode(hOut, attr | ENABLE_PROCESSED_OUTPUT) == FALSE)
                 throw new OSException("SetConsoleMode");
             
@@ -1415,7 +1416,6 @@ void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, i
     int avail = width - state.orig.column;
     
     // Adjust view
-    //size_t base = state.base;
     if (state.caret < state.base)
         state.base = state.caret;
     else if (state.caret >= avail)
