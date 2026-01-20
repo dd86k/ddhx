@@ -1055,7 +1055,7 @@ void update_view(Session *session, TerminalSize termsize)
     int rowdisp = session.rc.header ? 1 : 0; // lazy
     for (; row < erows; ++row, address += cols)
     {
-        // '\n' counts as a character (on conhost), avoid using it
+        // newline processing could be disabled
         terminalCursor(0, row + rowdisp);
         
         buffwriter.clear();
@@ -1113,7 +1113,10 @@ void update_view(Session *session, TerminalSize termsize)
                 if (highlight || second)
                     terminalWrite(dfmt.formatdata());
                 else
+                {
                     buffwriter.put(dfmt.formatdata());
+                    version (Windows) buffwriter.flush(); // windows cursor fix
+                }
             }
             else // no data, print spacer
             {
@@ -1151,12 +1154,12 @@ void update_view(Session *session, TerminalSize termsize)
             bool second    = i == viewpos && session.rc.mirror_cursor;
             if (highlight)
             {
-                buffwriter.flush(); // for windows
+                buffwriter.flush(); // for windows colors
                 terminalInvertColor();
             }
             else if (second)
             {
-                buffwriter.flush(); // for windows
+                buffwriter.flush(); // for windows colors
                 terminalForeground(TermColor.white);
                 terminalBackground(TermColor.red);
             }
@@ -1171,7 +1174,10 @@ void update_view(Session *session, TerminalSize termsize)
                 if (highlight || second)
                     terminalWrite(c);
                 else
+                {
                     buffwriter.put(c);
+                    version (Windows) buffwriter.flush(); // windows cursor fix
+                }
             }
             else // no data
             {
@@ -1185,10 +1191,7 @@ void update_view(Session *session, TerminalSize termsize)
         }
         
         // Fill rest of spaces
-        // NOTE: Commented because of other fuckery around cursor
-        //       Don't want to deal with it now and this shit is after
-        //       character column -- empty space. This is also semi-useless.
-        int f = termsize.columns - cast(int)buffwriter.length() - 1;
+        int f = termsize.columns - cast(int)buffwriter.length();
         if (f > 0)
             buffwriter.put(' ', f);
         
