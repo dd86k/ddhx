@@ -490,12 +490,8 @@ TerminalPosition terminalTell()
     }
     else version (Posix)
     {
-        // HACK: Lazy
-        if ((current_features & TermFeat.rawInput) == 0)
-            throw new Exception("Need raw input");
-        
-        // Need ICANON+ECHO off
-        terminalWrite("\033[6n");
+        terminalWrite("\033[6n"); // should be same for xterm,vt100,vt220
+        terminalFlush(); // Remember, fbcon needs this!
         
         // Read up to 'R' ("ESC[row;colR")
         // Can be tricky since we don't really know how much
@@ -519,7 +515,7 @@ TerminalPosition terminalTell()
         if (r < 2)
             throw new Exception("Missing item");
         
-        // 1-based, to me, must be 0-based
+        // 1-based, but to me, they must be 0-based
         pos.row--;
         pos.column--;
     }
