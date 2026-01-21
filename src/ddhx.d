@@ -25,7 +25,7 @@ private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 /// Copyright string
 immutable string DDHX_COPYRIGHT = "Copyright (c) 2017-2025 dd86k <dd@dax.moe>";
 /// App version
-immutable string DDHX_VERSION   = "0.8.1"~DEBUG;
+immutable string DDHX_VERSION   = "0.8.2"~DEBUG;
 /// Build information
 immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 
