@@ -114,13 +114,12 @@ This list may change at any given time without notice.
 - [x] Show header/status configurations
 - [x] Dual highlighters setting (data and text)
 
-0.9:
-- TBD
+Current:
+- [x] Copy-Cut-Paste: "copy", "cut", "paste" commands (modal)
 
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
-- [ ] Copy-Paste: "copy", "cut, "paste" commands (modal)
 - [ ] Document: Disk
 - [ ] Document: Process memory
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
@@ -179,6 +178,9 @@ Ctrl+R                  Redo previous change
 Ctrl+S                  Save document
 Ctrl+O                  Save As another name and set new target
 Tab                     Change between data and text columns
+Alt+C                   Copy data into internal buffer
+Alt+X                   Cut data into internal buffer
+Alt+V                   Paste data from internal buffer to document
 
 Edit single elements using a-f/0-9 keys. It's also possible to use a command
 over a selection, like "replace x:00" to replace a selection with zeros.
