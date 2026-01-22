@@ -5,6 +5,7 @@ copyright "Copyright © 2017-2025 dd86k"
 license "MIT"
 
 buildType "debugv" {
+    versions "verbose"
     dflags "-vgc" "-vtls" platform="dmd"
     dflags "--vgc" "--vtls" platform="ldc"
 }

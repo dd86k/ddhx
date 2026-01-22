@@ -123,3 +123,16 @@ else
 
 /// Full target triple.
 enum TARGET_TRIPLE = TARGET_PLATFORM ~ "-" ~ TARGET_OS ~ "-" ~ TARGET_ENV;
+
+/// Maximum address value for this target.
+enum MAXSIZE = size_t.max;
+
+/// Pointer size in bits
+enum BITNESS = cast(int)size_t.sizeof * 8;
+
+version (verbose)
+{
+    pragma(msg, "TARGET\t",  TARGET_TRIPLE);
+    pragma(msg, "MAXSIZE\t", MAXSIZE);
+    pragma(msg, "BITNESS\t", BITNESS);
+}
