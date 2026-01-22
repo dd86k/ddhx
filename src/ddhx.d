@@ -2542,7 +2542,7 @@ void save(Session *session, string[] args)
         {
             // NOTE: Don't explicitly check if directory exists.
             //       The filesystem will report the error anyway.
-            switch (promptkey("Overwrite? (Y/N) ")) {
+            switch (promptkey("Overwrite? [y/N] ")) {
             case 'y', 'Y': // Continue
                 break;
             default:
