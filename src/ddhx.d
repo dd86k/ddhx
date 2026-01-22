@@ -7,18 +7,19 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-import std.conv : text;
-import std.string;
 import backend.base : IDocumentEditor;
 import configuration;
+import core.stdc.stdlib : malloc, realloc, free, exit;
 import doceditor;
 import logger;
 import os.terminal;
 import patterns;
-import ranges;
 import platform : assertion;
-import transcoder;
+import ranges;
 import std.algorithm.comparison : min, max;
+import std.conv : text;
+import std.string;
+import transcoder;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
@@ -135,6 +136,10 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // 
     ubyte[8] g_editbuf;
     
+    /// Global clipboard buffer.
+    ubyte *g_clipboard_ptr;
+    size_t g_clipboard_len;
+    
     /// Registered commands
     command_func[string] g_commands;
     /// Registered shortcuts
@@ -243,13 +248,22 @@ immutable Command[] default_commands = [
         Mod.shift|Key.N,            &find_prev },
     // Data manipulation
     { "replace",                    "Replace data using a pattern",
-        0,                          &replace_ }, // avoid Phobos comflict
+        0,                          &replace_ }, // avoid Phobos conflict
     { "insert",                     "Insert data using a pattern",
-        0,                          &insert_ }, // avoid Phobos comflict
+        0,                          &insert_ }, // avoid Phobos conflict
     { "replace-file",               "Replace data using a file",
         0,                          &replace_file },
     { "insert-file",                "Insert data using a file",
         0,                          &insert_file },
+    // Copy-Paste
+    { "copy",                       "Copy data into buffer",
+        Mod.alt|Key.C,              &clip_copy },
+    { "cut",                        "Copy data into buffer, delete selection",
+        Mod.alt|Key.X,              &clip_cut },
+    { "paste",                      "Paste clipboard data", // modal!
+        Mod.alt|Key.V,              &clip_paste },
+    { "clear-clip",                 "Clear clipboard data",
+        0,                          &clip_clear },
     // NOTE: "save-as" exists solely because it's a dedicated operation
     //       Despite that "save" could have just gotten an optional parameter
     { "save",                       "Save document to file",
@@ -424,7 +438,6 @@ Lread:
             // Quit without saving
             if (ctrlc)
             {
-                import core.stdc.stdlib : exit;
                 terminalRestore();
                 exit(0);
             }
@@ -767,7 +780,6 @@ void save_file(IDocumentEditor editor, string target)
     
     { // scope allows earlier buffer being freed
         // Read buffer
-        import core.stdc.stdlib : malloc, free;
         enum BUFFER_SIZE = 16 * 1024;
         ubyte[] buffer = (cast(ubyte*)malloc(BUFFER_SIZE))[0..BUFFER_SIZE];
         if (buffer is null)
@@ -987,6 +999,7 @@ void update_view(Session *session, TerminalSize termsize)
     __gshared int readlen;      /// Slice length in int, easier to add with col/row
     
     // Bit of a hack to force update when buffer size changes (config or otherwise)
+    // Only useful when screen resizes, but fails when data changes (ie, a paste)
     if (viewbuf.length != count) // only resize if required
     {
         viewbuf.length = count;
@@ -1398,7 +1411,6 @@ enum SEARCH_RESULT_NOT_FOUND = -1;
 /// Returns: Position or SEARCH_RESULT_NOT_FOUND. SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND.
 long search(Session *session, ubyte[] needle, long position, int flags, void delegate(long, long) progress)
 {
-    import core.stdc.stdlib : malloc, free;
     import core.stdc.string : memcmp;
     
     assertion(needle, "Need needle");
@@ -2224,7 +2236,6 @@ void export_range(Session *session, string[] args)
     
     // Re-using search alloc func because lazy
     enum EXPORT_SIZE = 4096; // export buffer, tend to be smaller
-    import core.stdc.stdlib : malloc, free;
     ubyte[] buf = (cast(ubyte*)malloc(EXPORT_SIZE))[0..EXPORT_SIZE];
     if (buf is null)
         throw new Exception("error: Out of memory");
@@ -2359,6 +2370,154 @@ void insert_file(Session *session, string[] args)
     
     session.editor.fileInsert(curpos, file);
     g_status |= UVIEW;
+}
+
+// Copy data into clipboard buffer
+void clip_copy(Session *session, string[] args)
+{
+    long start;
+    size_t len;
+    
+    Selection sel = selection(session);
+    if (sel.length)
+    {
+        // Address space range check (notably on 32-bit systems)
+        import platform : MAXSIZE;
+        if (sel.length > MAXSIZE)
+            throw new Exception("Clipboard cannot contain selection");
+        
+        // 128 MiB is starting to be a lot of data, ask to continue
+        enum WORRIED = 128L*1024*1024;
+        if (sel.length >= WORRIED)
+        {
+            int k = promptkey("Copy >128 MiB into clipboard? [y/N] ");
+            switch (k) {
+            case 'y', 'Y': break;
+            default: return;
+            }
+        }
+        
+        len   = cast(size_t)sel.length;
+        start = sel.start;
+    }
+    else // No selection
+    {
+        len   = 1;
+        start = session.position_cursor;
+    }
+    
+    log("Copying %u bytes...", len);
+    
+    void *ptr = realloc(g_clipboard_ptr, len);
+    if (ptr == null)
+        throw new Exception("Allocation failed");
+    g_clipboard_ptr = cast(ubyte*)ptr;
+    
+    g_clipboard_len = len;
+    
+    cast(void)session.editor.view(start, g_clipboard_ptr[0..len]);
+}
+
+// Cut data into clipboard buffer
+void clip_cut(Session *session, string[] args)
+{
+    // shameless copy from clip_copy
+    long start;
+    size_t len;
+    
+    Selection sel = selection(session);
+    if (sel.length)
+    {
+        // Address space range check (notably on 32-bit systems)
+        import platform : MAXSIZE;
+        if (sel.length > MAXSIZE)
+            throw new Exception("Clipboard cannot contain selection");
+        
+        // 128 MiB is starting to be a lot of data, ask to continue
+        enum WORRIED = 128L*1024*1024;
+        if (sel.length >= WORRIED)
+        {
+            int k = promptkey("Copy >128 MiB into clipboard? [y/N] ");
+            switch (k) {
+            case 'y', 'Y': break;
+            default: return;
+            }
+        }
+        
+        len   = cast(size_t)sel.length;
+        start = sel.start;
+    }
+    else // No selection
+    {
+        len   = 1;
+        start = session.position_cursor;
+    }
+    
+    log("Copying %u bytes...", len);
+    
+    void *ptr = realloc(g_clipboard_ptr, len);
+    if (ptr == null)
+        throw new Exception("Allocation failed");
+    g_clipboard_ptr = cast(ubyte*)ptr;
+    
+    g_clipboard_len = len;
+    
+    cast(void)session.editor.view(start, g_clipboard_ptr[0..len]);
+    
+    session.editor.remove(start, len);
+    g_status |= UVIEW; // force read
+}
+
+// Paste data from clipboard buffer
+void clip_paste(Session *session, string[] args)
+{
+    if (g_clipboard_ptr == null)
+        throw new Exception("Clipboard is empty");
+    
+    // Typical behaviour with text editors: If we paste with a selection,
+    // (a) selection region gets removed and (b) new data is inserted
+    Selection sel = selection(session);
+    if (sel.length)
+    {
+        session.editor.remove(sel.start, sel.length);
+        
+        // Force selection OFF even with an active marking
+        session.selection.status = 0;
+        
+        // NOTE: Editor isn't smart enough for positions after document
+        //       So force the new position to be minimum value
+        session.position_cursor = sel.start;
+    }
+    
+    // Depending on mode (modal), insert or overwrite
+    final switch (session.rc.writemode) {
+    case WritingMode.insert:
+        session.editor.insert(session.position_cursor, g_clipboard_ptr, g_clipboard_len);
+        break;
+    case WritingMode.overwrite:
+        session.editor.replace(session.position_cursor, g_clipboard_ptr, g_clipboard_len);
+        break;
+    case WritingMode.readonly:
+        throw new Exception("Document is read-only");
+    }
+    
+    // Move cursor to end of pasted data, which helps repeating the action of
+    // pasting over and over
+    long newpos = session.position_cursor + g_clipboard_len;
+    moveabs(session, newpos);
+    
+    g_status |= UVIEW; // force read
+}
+
+// Clear clipboard buffer
+void clip_clear(Session *session, string[] args)
+{
+    if (g_clipboard_ptr == null)
+        return;
+    
+    free(g_clipboard_ptr);
+    g_clipboard_ptr = null;
+    g_clipboard_len = 0;
 }
 
 // Save changes
@@ -2617,7 +2776,6 @@ void quit(Session *session, string[] args)
     }
     
 Lexit:
-    import core.stdc.stdlib : exit;
     terminalRestore();
     exit(0);
 }
