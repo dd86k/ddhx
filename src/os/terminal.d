@@ -508,7 +508,8 @@ struct TerminalPosition
 {
     int column, row;
 }
-TerminalPosition terminalTell()
+deprecated("Don't use terminalTell") // Thanks, FreeBSD
+TerminalPosition terminalTell()      // Keep this around, though
 {
     TerminalPosition pos;
     
@@ -522,26 +523,43 @@ TerminalPosition terminalTell()
     }
     else version (Posix)
     {
-        terminalWrite("\033[6n"); // should be same for xterm,vt100,vt220
-        terminalFlush(); // Remember, fbcon needs this!
+        // NOTE: FreeBSD and DSR
+        //
+        //       FreeBSD's terminal emulator library, teken, does not implement
+        //       the tf_respond callback function, which would implement DSR
+        //       (Device Status Report), and most importantly, the CPR
+        //       (Report Cursor Position) escape codes. It is left
+        //       unimplemented for a security-related reason.
+        //
+        //       This includes both the ANSI ("\033[6n") and the DEC
+        //       ("\033[?6n") variants.
+        //
+        //       Looks like vt (freebsd-src/main/sys/dev/vt/) doesn't even have
+        //       any function to grab or report the position of the cursor.
+        //
+        //       Source: freebsd-src/sys/teken/libteken/teken.3
         
-        // Read up to 'R' ("ESC[row;colR")
-        // Can be tricky since we don't really know how much
-        // until read.2 returns, so read per-byte.
+        // Standard Device Status Report codes, even xterm.js supports it
+        enum DSR = "\033[6n";
+        
+        terminalWrite(DSR);
+        terminalFlush(); // Important for framebuffers notably
+        
         enum BSIZE = 32;
         char[BSIZE] buf = void;
-        size_t i;
-        while (i < BSIZE - 1)
-        {
-            if (read(STDIN_FILENO, buf.ptr+i, 1) < 1)
-                throw new OSException("read");
-            if (buf[i] == 'R') break;
-            i++;
-        }
+        
+        ssize_t i = read(STDIN_FILENO, buf.ptr, buf.sizeof);
+        if (i < 0)
+            throw new OSException("read");
         buf[i] = 0;
         
+        /*
+        import std.stdio : stderr, writef, writefln;
+        stderr.writefln("%(%02x,%)", buf[0..i]);
+        */
+        
         // Parse
-        if (buf[0] != '\033' || buf[1] != '[')
+        if (i < 5 || buf[0] != '\033' || buf[1] != '[')
             throw new Exception("Not an escape code");
         int r = sscanf(buf.ptr + 2, "%d;%d", &pos.row, &pos.column);
         if (r < 2)
@@ -550,6 +568,7 @@ TerminalPosition terminalTell()
         // 1-based, but to me, they must be 0-based
         pos.row--;
         pos.column--;
+        return pos;
     }
     
     return pos;
@@ -899,7 +918,7 @@ void terminalFlush()
 
 /// Perform a non-blocking peek for terminal input.
 /// Returns: Number of events.
-int terminalHasInput()
+int terminalPeek()
 {
     version(Windows)
     {
@@ -921,6 +940,7 @@ int terminalHasInput()
         return r;
     }
 }
+alias terminalHasInput = terminalPeek; // alias
 
 /// Read an input event. This function is blocking.
 /// Throws: (Windows) WindowsException on OS error.
@@ -1472,19 +1492,22 @@ void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, i
 // Flags to better define behavior versus relying on current_features.
 enum {
     /// Uses legacy readln method.
-    RL_LEGACY = 1,
+    RL_READLN = 1,
     /// Use history feature. Enables saving lines and using up/down arrows.
     RL_HISTORY = 2,
 }
 /// Read a line.
-/// Params: flags = Read flags.
+/// Params:
+///     column = Original column position.
+///     row    = Original row position.
+///     flags  = Read flags.
 /// Returns: String without newline.
-string readline(int flags = 0)
+string readline(int column, int row, int flags = 0)
 {
     // Cheap line-oriented if we're not using alternate screen buffer,
     // because there isn't any rendering worries. Legacy bit.
     // To be removed later.
-    if (flags & RL_LEGACY)
+    if (flags & RL_READLN)
     {
         import std.stdio : readln;
         import std.string : chomp;
@@ -1503,12 +1526,14 @@ string readline(int flags = 0)
     
     // Prep work
     ReadlineState rl_state;
-    rl_state.orig = terminalTell();
+    //rl_state.orig = terminalTell();
+    rl_state.orig.column = column;
+    rl_state.orig.row    = row;
     
     // HACK: Cheap way to clear line + setup cursor
     //       Removes responsability from caller
     terminalWriteChar(' ', terminalSize().columns-rl_state.orig.column-1);
-    with (rl_state.orig) terminalMove(column, row);
+    /*with (rl_state.orig)*/ terminalMove(column, row);
     terminalFlush(); // Needed on fbcons
     
     LineBuffer line;    /// Line buffer

@@ -10,6 +10,8 @@ import os.terminal;
     TerminalSize size = terminalSize();
     writeln("Size: COLS=", size.columns, " ROWS=", size.rows);
     
+    /*
     TerminalPosition pos = terminalTell();
     writeln("Position: COL=", pos.column, " ROW=", pos.row);
+    */
 }

@@ -559,7 +559,7 @@ string promptline(string prompt)
     terminalShowCursor();
     scope(exit) terminalHideCursor(); // scope for exception
     
-    return readline();
+    return readline(cast(int)prompt.length, tsize.rows - 1);
 }
 int promptkey(string text)
 {
