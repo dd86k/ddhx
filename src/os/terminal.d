@@ -148,6 +148,28 @@ enum TermFeat {
     //inputUp     = 1 << 8,
 }
 
+/// Determines is stdin is a FIFO/Pipe.
+///
+/// Safe to call before terminalInit.
+/// Returns: True if FIFO/Pipe.
+bool terminalInputIsPipe()
+{
+version (Windows)
+{
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    if (h == INVALID_HANDLE_VALUE)
+        throw new OSException("GetStdHandle");
+    return GetFileType(h) == FILE_TYPE_PIPE;
+}
+else // POSIX
+{
+    stat_t s = void;
+    if (fstat(STDIN_FILENO, &s) < 0)
+        throw new OSException("fstat");
+    return S_ISFIFO(s.st_mode);
+}
+}
+
 private __gshared int current_features;
 
 /// Initiate terminal.
@@ -157,19 +179,29 @@ void terminalInit(int features = 0)
 {
     current_features = features;
     
+    // TODO: Consider removing std.stdio handle hacks
+    
     version (Windows)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi = void;
         
-        // NOTE: There used to be a "hack" using CreateFileA("CONIN$", but that
-        //       caused more pain than anything.
-        //       So, terminalReadline was introduced that automatically applies the "pause" for
-        //       input, where it re-establishes the old mode for STD_INPUT_HANDLE, and "resumes"
-        //       using the desired flags.
-        //       No more need to re-create stdin using "CONIN$".
         hIn = GetStdHandle(STD_INPUT_HANDLE);
         if (hIn == INVALID_HANDLE_VALUE)
             throw new OSException("GetStdHandle");
+        
+        if (GetFileType(hIn) == FILE_TYPE_PIPE)
+        {
+            hIn = CreateFileA("CONIN$",
+                GENERIC_READ|GENERIC_WRITE,
+                0,
+                null,
+                OPEN_EXISTING,
+                0,
+                null);
+            if (hIn == INVALID_HANDLE_VALUE)
+                throw new OSException("CreateFileA");
+            //stdin.windowsHandleOpen(hIn, "rb");
+        }
         
         if (GetConsoleMode(hIn, &oldMode) == FALSE)
             throw new OSException("SetConsoleMode");
