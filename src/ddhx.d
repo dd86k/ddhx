@@ -2377,6 +2377,9 @@ void insert_file(Session *session, string[] args)
     g_status |= UVIEW;
 }
 
+/// Amount of data before warning for a copy.
+enum COPY_WORRY = 16L*1024*1024; // 16 MiB
+
 // Copy data into clipboard buffer
 void clip_copy(Session *session, string[] args)
 {
@@ -2391,11 +2394,9 @@ void clip_copy(Session *session, string[] args)
         if (sel.length > MAXSIZE)
             throw new Exception("Clipboard cannot contain selection");
         
-        // 128 MiB is starting to be a lot of data, ask to continue
-        enum WORRIED = 128L*1024*1024;
-        if (sel.length >= WORRIED)
+        if (sel.length >= COPY_WORRY)
         {
-            int k = promptkey("Copy >128 MiB into clipboard? [y/N] ");
+            int k = promptkey("Copy >16 MiB into clipboard? [y/N] ");
             switch (k) {
             case 'y', 'Y': break;
             default: return;
@@ -2438,11 +2439,9 @@ void clip_cut(Session *session, string[] args)
         if (sel.length > MAXSIZE)
             throw new Exception("Clipboard cannot contain selection");
         
-        // 128 MiB is starting to be a lot of data, ask to continue
-        enum WORRIED = 128L*1024*1024;
-        if (sel.length >= WORRIED)
+        if (sel.length >= COPY_WORRY)
         {
-            int k = promptkey("Copy >128 MiB into clipboard? [y/N] ");
+            int k = promptkey("Copy >16 MiB into clipboard? [y/N] ");
             switch (k) {
             case 'y', 'Y': break;
             default: return;
