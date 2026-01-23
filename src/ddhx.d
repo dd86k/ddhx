@@ -534,6 +534,12 @@ Lread:
     goto Lupdate;
 }
 
+// Returns true if key is Key.Escape or Mod.ctrl+Key.C
+bool iscancel(int key)
+{
+    return key == (Mod.ctrl|Key.C) || key == Key.Escape;
+}
+
 // Invoke command prompt
 string promptline(string prompt)
 {
@@ -582,8 +588,8 @@ Lread:
     TermInput input = terminalRead();
     if (input.type != InputType.keyDown)
         goto Lread;
-    if (input.key == (Mod.ctrl | Key.C))
-        throw new Exception("Cancelled"); // lazy
+    if (iscancel(input.key))
+        throw new Exception("Cancelled");
     
     return input.key;
 }
@@ -1359,11 +1365,8 @@ int cancelling()
         if (r.type != InputType.keyDown)
             continue;
         
-        switch (r.key) {
-        case Mod.ctrl|Key.C, Key.Escape:
+        if (iscancel(r.key))
             return 1;
-        default:
-        }
     }
     
     return 0;
