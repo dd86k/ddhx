@@ -254,7 +254,7 @@ void main(string[] args)
     initdefaults();
     if (orc) // Load specified RC by path
     {
-    Lload:
+    Lrc:
         log(`config_file="%s"`, orc);
         loadRC(rc, readText(orc));
     }
@@ -263,7 +263,7 @@ void main(string[] args)
         import os.path : findConfig;
         orc = findConfig("ddhx", ".ddhxrc");
         if (orc) // we got config path, load it
-            goto Lload;
+            goto Lrc;
     }
     
     static immutable string MSG_NEWBUF  = "(new buffer)";
@@ -284,10 +284,9 @@ void main(string[] args)
     string initmsg;
     switch (target) {
     case null:
-        // NOTE: Peeking stdin.
-        //       We could try peeking stdin (getchar + ungetc(c, stdin)),
-        //       but that might introduce unwanted implicit behavior.
-        //       It's safer and more consistent to demand "-" for stdin.
+        import os.terminal : terminalInputIsPipe;
+        if (terminalInputIsPipe())
+            goto case "-";
         initmsg = MSG_NEWBUF;
         break;
     case "-": // In-memory buffer from stdin
@@ -301,7 +300,7 @@ void main(string[] args)
         editor.open(doc);
         initmsg = MSG_NEWBUF;
         break;
-    default: // target is set, to either: file, disk (future), or PID (future)
+    default: // target is set, to either: file, disk (todo), or PID (todo)
         import std.file : exists;
         
         // Thanks to the null case, there is no need to check if target
