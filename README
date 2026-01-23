@@ -49,6 +49,7 @@ Title font: Shaded Blocky (FIGlet)
   * Search data with a powerful pattern syntax
   * Skip identical data or repeating patterns by selection
   * Customizable with configuration file
+  * Copy, Cut, and Paste data at will
 
 ////////////////////////////////////////////////////////////////////////////////
 // Limitations
@@ -120,12 +121,13 @@ Current:
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
+- [ ] Diff view (vs. opened document)
 - [ ] Document: Disk
 - [ ] Document: Process memory
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
 - [ ] Inspect data panel (replaces text panel when toggled)
 - [ ] Patch system (maybe with an ed(1) front-end?)
-- [ ] Pattern layout overlay system (needs a nicer name)
+- [ ] Layout system (akin to ImHex Patterns)
 - [ ] Snapshot tree system (explore different edit branches)
 - [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
@@ -147,7 +149,7 @@ Create a new empty document:
 Open an existing or create a new file at this location:
   $ ddhx FILENAME
 Create a new document from stream data:
-  $ echo test | ddhx -
+  $ echo test | ddhx
 
 To quit the editor, use Ctrl+Q, or use the "quit" command.
 
