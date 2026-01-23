@@ -568,7 +568,6 @@ TerminalPosition terminalTell()      // Keep this around, though
         // 1-based, but to me, they must be 0-based
         pos.row--;
         pos.column--;
-        return pos;
     }
     
     return pos;
