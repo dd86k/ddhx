@@ -20,6 +20,7 @@ import std.algorithm.comparison : min, max;
 import std.conv : text;
 import std.string;
 import transcoder;
+import document.file;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
@@ -681,10 +682,10 @@ string askstring(string[] args, size_t idx, string prefix)
     string s = args is null || args.length <= idx ?
         promptline(prefix) : args[idx];
     
-    // Empty string? Cancel! Can't do anything on that.
+    // Empty string? Cancel! Can't do anything with that.
     // Bonus: Besides, throwing an exception is easier to manage than
     // manually checking the output at every invokation.
-    if (s is null || s.length == 0) // simple msg, if "error: " wanted, make new Exception class with prefix
+    if (s is null || s.length == 0)
         throw new Exception("Cancelled");
     
     return s;
@@ -742,10 +743,9 @@ string tempName(string basename)
     return format("%s.tmp-ddhx-%u", basename, uniform(10_000, 100_000)); // 10,000..99,999 incl.
 }
 
-// Save changes to this file
-void save_file(IDocumentEditor editor, string target)
+void save_to_file(IDocumentEditor editor, string target)
 {
-    log("SAVING target=%s", target);
+    log("target='%s'", target);
     
     // NOTE: Caller is responsible to populate target path.
     //       Using assert will stop the program completely,
@@ -757,9 +757,7 @@ void save_file(IDocumentEditor editor, string target)
     import std.stdio : File;
     import std.conv  : text;
     import std.path : baseName, dirName, buildPath;
-    import std.file : rename, exists,
-        getAttributes, setAttributes, getTimes, setTimes;
-    import std.datetime.systime : SysTime;
+    import std.file : rename, exists, getAttributes, setAttributes;
     import os.file : availableDiskSpace;
     
     long docsize = editor.size();
@@ -778,16 +776,14 @@ void save_file(IDocumentEditor editor, string target)
     log(`basedir="%s" basenam="%s" tmpname="%s" tmppath="%s"`,
         basedir, basenam, tmpname, tmppath);
     
-    { // scope allows earlier buffer being freed
-        // Read buffer
+    // 2. Allocate buffer, read from editor, and write to temp file
+    {
         enum BUFFER_SIZE = 16 * 1024;
         ubyte[] buffer = (cast(ubyte*)malloc(BUFFER_SIZE))[0..BUFFER_SIZE];
         if (buffer is null)
             throw new Exception("error: Out of memory");
         scope(exit) free(buffer.ptr);
-    
-        // 2. Write data
-        //    Could also do a hash and compare. Could be a debug option.
+        
         File fileout = File(tmppath, "w");
         long position;
         do
@@ -796,28 +792,28 @@ void save_file(IDocumentEditor editor, string target)
             position += BUFFER_SIZE;
         }
         while (position < docsize);
-        fileout.flush();
+        fileout.flush(); // On the safer side
         fileout.sync();
         fileout.close();
     }
     
     // 3. Copy attributes of target
-    //    NOTE: Times
-    //          POSIX only has concepts of access and modify times.
-    //          Both are irrelevant for saving, but sadly, since there are no
-    //          concepts of birth date handling (assumed read-only), then I
-    //          won't rip my hair trying to get and set it to target.
-    //          Windows... There are no std.file.setTimesWin. Don't know why.
+    // NOTE: Times
+    //       POSIX only has concepts of access and modify times.
+    //       Both are irrelevant for saving. And sadly, since there are no
+    //       concepts of birth date handling (assumed read-only), then I
+    //       won't rip my hair trying to get and set it to target.
+    //       Windows... There are no std.file.setTimesWin. Don't know why.
     bool target_exists = exists(target);
     uint attr = void;
     if (target_exists)
         attr = getAttributes(target);
     
     // 4. Replace target
-    //    NOTE: std.file.rename
-    //          Windows: Uses MoveFileExW with MOVEFILE_REPLACE_EXISTING.
-    //                   Remember, TxF (transactional stuff) is deprecated!
-    //          POSIX: Confirmed a to be atomic on POSIX platforms.
+    // NOTE: std.file.rename
+    //       Windows: Uses MoveFileExW with MOVEFILE_REPLACE_EXISTING.
+    //                Remember, TxF (transactional stuff) is deprecated!
+    //       POSIX: Confirmed a to be an atomic operation, using rename(3).
     rename(tmppath, target);
     
     // 5. Apply attributes to target
@@ -846,7 +842,7 @@ unittest
     // Save file as new (target does not exist)
     static immutable string data0 = "test data";
     scope IDocumentEditor e0 = new DummyDocumentEditor(cast(immutable(ubyte)[])data0);
-    save_file(e0, path);
+    save_to_file(e0, path);
     if (readText(path) != data0)
     {
         remove(path); // Let's not leave residue
@@ -856,7 +852,7 @@ unittest
     // Save different data to existing path (target exists)
     static immutable string data1 = "test data again!";
     scope IDocumentEditor e1 = new DummyDocumentEditor(cast(immutable(ubyte)[])data1);
-    save_file(e1, path);
+    save_to_file(e1, path);
     if (readText(path) != data1)
     {
         remove(path); // Let's not leave residue
@@ -2447,7 +2443,7 @@ void clip_cut(Session *session, string[] args)
         len   = cast(size_t)sel.length;
         start = sel.start;
     }
-    else // No selection
+    else // No selection: Copy element (right now, that's only a byte)
     {
         len   = 1;
         start = session.position_cursor;
@@ -2520,7 +2516,7 @@ void clip_clear(Session *session, string[] args)
     g_clipboard_len = 0;
 }
 
-// Save changes
+// Save changes (assumes to a file)
 void save(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
@@ -2553,16 +2549,12 @@ void save(Session *session, string[] args)
         session.target = target;
     }
     
-    log("target='%s'", session.target);
-    
     // Force updating the status bar to indicate that we're currently saving.
     // It might take a while with the current implementation.
     message("Saving...");
     update_status(session, terminalSize());
     
-    // On error, an exception is thrown, where the command handler receives,
-    // and displays its message.
-    save_file(session.editor, session.target);
+    save_to_file(session.editor, session.target);
     message("Saved");
 }
 
@@ -2574,8 +2566,14 @@ void save_as(Session *session, string[] args)
     
     string name = askstring(args, 0, "Save as: ");
     
+    message("Saving...");
+    update_status(session, terminalSize());
+    
+    save_to_file(session.editor, name);
+    message("Saved");
+    
+    // Successful save, set as target
     session.target = name;
-    save(session, null);
 }
 
 // Set runtime config
