@@ -14,8 +14,8 @@ For user-facing documentation, see the main README in the project root.
 ********************************************************************************
 
 The folder structure is pretty straight-forward:
-- backend/
-  Contains multiple backends that provides an implementation of a document
+- editor/
+  Contains editor backends. Each provide an implementation of a document
   editor.
 - document/
   Source documents. Often representing a specific media, such as a file, a disk

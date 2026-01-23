@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module backend.base;
+module editor.base;
 
 import document.base : IDocument;
 
@@ -53,7 +53,7 @@ IDocumentEditor selectBackend(string name)
 {
     import std.conv : text;
     import std.process : environment;
-    import backend; // @suppress(dscanner.suspicious.local_imports)
+    import editor; // @suppress(dscanner.suspicious.local_imports)
     import logger : log;
     switch (name) {
     case "piece":

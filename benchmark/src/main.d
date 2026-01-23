@@ -4,7 +4,7 @@ import core.memory : GC;
 import std.getopt;
 import std.stdio;
 import std.datetime.stopwatch;
-import backend.base;
+import editor.base;
 
 @nogc nothrow
 const(char)[] fmtbin(ulong b, ref char[16] buf) {

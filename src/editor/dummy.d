@@ -3,10 +3,10 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module backend.dummy;
+module editor.dummy;
 
 import document.base : IDocument;
-import backend.base : IDocumentEditor;
+import editor.base : IDocumentEditor;
 import platform : NotImplementedException;
 
 class DummyDocumentEditor : IDocumentEditor

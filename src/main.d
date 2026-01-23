@@ -17,7 +17,7 @@ import configuration;
 import ddhx;
 import doceditor;
 import logger;
-import backend;
+import editor;
 
 private:
 

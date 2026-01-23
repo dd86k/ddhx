@@ -7,7 +7,7 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-import backend.base : IDocumentEditor;
+import editor.base : IDocumentEditor;
 import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 import doceditor;
@@ -830,7 +830,7 @@ void save_to_file(IDocumentEditor editor, string target)
 }
 unittest
 {
-    import backend.dummy : DummyDocumentEditor;
+    import editor.dummy : DummyDocumentEditor;
     import std.file : remove, readText, exists;
     
     static immutable path = "tmp_save_test";
@@ -1832,7 +1832,7 @@ unittest
 {
     Session session;
     
-    import backend.dummy : DummyDocumentEditor;
+    import editor.dummy : DummyDocumentEditor;
     session.editor = new DummyDocumentEditor(); // needed for length
     
     // Not selected
