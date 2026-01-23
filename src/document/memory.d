@@ -55,6 +55,7 @@ class MemoryDocument : IDocument
     }
     
 private:
+    // TODO: Change to OutBuffer+toBytes() or Appender
     const(ubyte)[] buffer;
 }
 
@@ -65,25 +66,25 @@ unittest
     scope MemoryDocument doc = new MemoryDocument();
     
     ubyte[1] buf1;
-    assert(doc.readAt(0, buf1[]) == []);
+    assert(doc.readAt(0, buf1) == []);
     
     doc.append(data);
     assert(doc.buffer == data);
     
-    assert(doc.readAt(0, buf1[]).length == 1);
+    assert(doc.readAt(0, buf1).length == 1);
     assert(buf1[0] == 0);
-    assert(doc.readAt(1, buf1[]).length == 1);
+    assert(doc.readAt(1, buf1).length == 1);
     assert(buf1[0] == 1);
-    assert(doc.readAt(2, buf1[]).length == 1);
+    assert(doc.readAt(2, buf1).length == 1);
     assert(buf1[0] == 2);
     
     ubyte[3] buf3;
-    assert(doc.readAt(0, buf3[]).length == 3);
+    assert(doc.readAt(0, buf3).length == 3);
     assert(buf3[] == data);
     
     ubyte[8] buf8;
-    assert(doc.readAt(0, buf8[]).length == 3);
+    assert(doc.readAt(0, buf8).length == 3);
     assert(buf8[0..data.length] == data);
     
-    assert(doc.readAt(1000, buf8[]) == []);
+    assert(doc.readAt(1000, buf8) == []);
 }
