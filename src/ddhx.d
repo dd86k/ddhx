@@ -7,10 +7,11 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
-import editor.base : IDocumentEditor;
 import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 import doceditor;
+import document.file;
+import editor.base : IDocumentEditor;
 import logger;
 import os.terminal;
 import patterns;
@@ -18,9 +19,9 @@ import platform : assertion;
 import ranges;
 import std.algorithm.comparison : min, max;
 import std.conv : text;
+import std.file : exists;
 import std.string;
 import transcoder;
-import document.file;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
@@ -412,14 +413,16 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
 
 private:
 
-void onresize()
+void onresize() // NOTE: I/O is allowed here
 {
+    // TODO: Consider rendering something like "screen too small" if screen too small
+    
     // If autoresize configuration is enabled, automatically set column count
     if (g_session.rc.columns == COLUMNS_AUTO)
         autosize(g_session, null);
     
     g_status |= UHEADER | UVIEW | USTATUSBAR; // draw everything
-    update(g_session); // I/O allowed
+    update(g_session);
 }
 
 // 
@@ -542,9 +545,6 @@ string promptline(string prompt)
     
     // Clear upper space
     TerminalSize tsize = terminalSize();
-    int tcols = tsize.columns;
-    if (tcols < 10) // TODO: Remove this since terminal module is smarter?
-        throw new Exception("Not enough space for prompt");
     
     // Print prompt, cursor will be after prompt
     terminalCursor(0, tsize.rows - 1);
@@ -2037,8 +2037,8 @@ void refresh(Session *session, string[] args)
 // Change active panel
 void change_panel(Session *session, string[] args)
 {
-    // TODO: First parameter should be a panel panel
-    //       By default, just cycle
+    // TODO: First parameter should be a panel
+    //       Default to just cycle
     
     session.panel++;
     if (session.panel >= PanelType.max + 1)
@@ -2223,9 +2223,15 @@ void export_range(Session *session, string[] args)
     if (sel.length == 0)
         throw new Exception("Need selection");
     
-    // TODO: Check if target exists to potentially avoid overwriting it
-    //       Simple as just "Overwrite? (y/n) "
     string name = askstring(args, 0, "Name: ");
+    if (exists(name))
+    {
+        int key = promptkey("File exists, overwrite? [y/N] ");
+        switch (key) {
+        case 'y', 'Y': break;
+        default: return;
+        }
+    }
     
     import std.stdio : File;
     File output = File(name, "w");
@@ -2533,7 +2539,6 @@ void save(Session *session, string[] args)
         }
         
         // Check if target exists to ask for overwrite
-        import std.file : exists;
         if (exists(target))
         {
             // NOTE: Don't explicitly check if directory exists.
