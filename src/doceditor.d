@@ -77,29 +77,29 @@ unittest
 {
     char[32] buf = void;
     // Address offset in column
-    assert(formatAddress(buf[], 0x00, 2, AddressType.hex) == " 0");
-    assert(formatAddress(buf[], 0x01, 2, AddressType.hex) == " 1");
-    assert(formatAddress(buf[], 0x80, 2, AddressType.hex) == "80");
-    assert(formatAddress(buf[], 0xff, 2, AddressType.hex) == "ff");
-    assert(formatAddress(buf[], 0xff, 2, AddressType.dec) == "255");
-    assert(formatAddress(buf[], 0xff, 2, AddressType.oct) == "377");
-    assert(formatAddress(buf[], 0xf, 3, AddressType.hex, true) == "00f");
-    assert(formatAddress(buf[], 0xf, 3, AddressType.dec, true) == "015");
-    assert(formatAddress(buf[], 0xf, 3, AddressType.oct, true) == "017");
+    assert(formatAddress(buf, 0x00, 2, AddressType.hex) == " 0");
+    assert(formatAddress(buf, 0x01, 2, AddressType.hex) == " 1");
+    assert(formatAddress(buf, 0x80, 2, AddressType.hex) == "80");
+    assert(formatAddress(buf, 0xff, 2, AddressType.hex) == "ff");
+    assert(formatAddress(buf, 0xff, 2, AddressType.dec) == "255");
+    assert(formatAddress(buf, 0xff, 2, AddressType.oct) == "377");
+    assert(formatAddress(buf, 0xf, 3, AddressType.hex, true) == "00f");
+    assert(formatAddress(buf, 0xf, 3, AddressType.dec, true) == "015");
+    assert(formatAddress(buf, 0xf, 3, AddressType.oct, true) == "017");
     // Address offset in left panel
-    assert(formatAddress(buf[], 0x00, 10, AddressType.hex)        == "         0");
-    assert(formatAddress(buf[], 0x01, 10, AddressType.hex)        == "         1");
-    assert(formatAddress(buf[], 0x80, 10, AddressType.hex)        == "        80");
-    assert(formatAddress(buf[], 0xff, 10, AddressType.hex)        == "        ff");
-    assert(formatAddress(buf[], 0x100, 10, AddressType.hex)       == "       100");
-    assert(formatAddress(buf[], 0x1000, 10, AddressType.hex)      == "      1000");
-    assert(formatAddress(buf[], 0x10000, 10, AddressType.hex)     == "     10000");
-    assert(formatAddress(buf[], 0x100000, 10, AddressType.hex)    == "    100000");
-    assert(formatAddress(buf[], 0x1000000, 10, AddressType.hex)   == "   1000000");
-    assert(formatAddress(buf[], 0x10000000, 10, AddressType.hex)  == "  10000000");
-    assert(formatAddress(buf[], 0x100000000, 10, AddressType.hex) == " 100000000");
-    assert(formatAddress(buf[], 0x100000000, 10, AddressType.hex) == " 100000000");
-    assert(formatAddress(buf[], ulong.max, 10, AddressType.hex)   == "ffffffffffffffff");
+    assert(formatAddress(buf, 0x00, 10, AddressType.hex)        == "         0");
+    assert(formatAddress(buf, 0x01, 10, AddressType.hex)        == "         1");
+    assert(formatAddress(buf, 0x80, 10, AddressType.hex)        == "        80");
+    assert(formatAddress(buf, 0xff, 10, AddressType.hex)        == "        ff");
+    assert(formatAddress(buf, 0x100, 10, AddressType.hex)       == "       100");
+    assert(formatAddress(buf, 0x1000, 10, AddressType.hex)      == "      1000");
+    assert(formatAddress(buf, 0x10000, 10, AddressType.hex)     == "     10000");
+    assert(formatAddress(buf, 0x100000, 10, AddressType.hex)    == "    100000");
+    assert(formatAddress(buf, 0x1000000, 10, AddressType.hex)   == "   1000000");
+    assert(formatAddress(buf, 0x10000000, 10, AddressType.hex)  == "  10000000");
+    assert(formatAddress(buf, 0x100000000, 10, AddressType.hex) == " 100000000");
+    assert(formatAddress(buf, 0x100000000, 10, AddressType.hex) == " 100000000");
+    assert(formatAddress(buf, ulong.max, 10, AddressType.hex)   == "ffffffffffffffff");
 }
 
 //
@@ -163,11 +163,11 @@ unittest
 {
     char[32] buf = void;
     ubyte a = 0x00;
-    assert(formatData(buf[], &a, ubyte.sizeof, DataType.x8) == "00");
+    assert(formatData(buf, &a, ubyte.sizeof, DataType.x8) == "00");
     ubyte b = 0x01;
-    assert(formatData(buf[], &b, ubyte.sizeof, DataType.x8) == "01");
+    assert(formatData(buf, &b, ubyte.sizeof, DataType.x8) == "01");
     ubyte c = 0xff;
-    assert(formatData(buf[], &c, ubyte.sizeof, DataType.x8) == "ff");
+    assert(formatData(buf, &c, ubyte.sizeof, DataType.x8) == "ff");
 }
 
 /// Format element as x8.
@@ -183,12 +183,12 @@ string formatx8(char[] buf, ubyte v, bool zeros)
 unittest
 {
     char[32] buf = void;
-    assert(formatx8(buf[], 0x00, true)  == "00");
-    assert(formatx8(buf[], 0x01, true)  == "01");
-    assert(formatx8(buf[], 0xff, true)  == "ff");
-    assert(formatx8(buf[], 0x00, false) == " 0");
-    assert(formatx8(buf[], 0x01, false) == " 1");
-    assert(formatx8(buf[], 0xff, false) == "ff");
+    assert(formatx8(buf, 0x00, true)  == "00");
+    assert(formatx8(buf, 0x01, true)  == "01");
+    assert(formatx8(buf, 0xff, true)  == "ff");
+    assert(formatx8(buf, 0x00, false) == " 0");
+    assert(formatx8(buf, 0x01, false) == " 1");
+    assert(formatx8(buf, 0xff, false) == "ff");
 }
 
 /// Helper structure that walks over a buffer and formats every element.
@@ -205,7 +205,7 @@ struct DataFormatter
             formatdata = () {
                 if (buffer + size > max)
                     return null;
-                return formatx8(textbuf[], *cast(ubyte*)(buffer++), true);
+                return formatx8(textbuf, *cast(ubyte*)(buffer++), true);
             };
             size = ubyte.sizeof;
             break;

@@ -965,7 +965,7 @@ void update_header(Session *session, TerminalSize termsize)
     char[32] buf = void;
     for (int col; col < cols; ++col)
     {
-        string chdr = formatAddress(buf[], col, cwidth, session.rc.address_type);
+        string chdr = formatAddress(buf, col, cwidth, session.rc.address_type);
         buffwriter.put(' ', 1);
         buffwriter.put(chdr);
     }
@@ -2378,7 +2378,7 @@ void insert_file(Session *session, string[] args)
 }
 
 /// Amount of data before warning for a copy.
-enum COPY_WORRY = 16L*1024*1024; // 16 MiB
+enum COPY_WORRY = MiB!(16);
 
 // Copy data into clipboard buffer
 void clip_copy(Session *session, string[] args)
