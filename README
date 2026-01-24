@@ -269,7 +269,7 @@ Examples:
   "select 0x10:+9"         - Selects positions 0x10 to 0x19 (0x10+9=0x19)
   "replace 200:$ x:00"     - Replace bytes from address 200 to EOF with zeros
   "replace 200:. x:00"     - Replace from 200 to current position with zeros
-  "insert 100 x:90"        - Insert 100 0x90 bytes at current position *
+  "insert 100 x:90"        - Insert 100 0x90 bytes at current position
 
 Supported commands: insert, replace, select, and delete.
 
@@ -290,7 +290,7 @@ For example, looking for `hi\0\0` (these are equivalent):
 
 Practical example: PDF
 
-Use the "find s:endstream" comand to search for string "endstream", then hit
+Use the "find s:endstream" command to search for string "endstream", then hit
 Ctrl+N ("find-next") to go to next result or Shift+N ("find-prev") to go to
 the previous result.
 
@@ -381,15 +381,13 @@ Run unit tests with log traces:
 
 Environment variables:
 - DDHX_LOG=PATH
+  - If set, enables logging debug inform into this file.
   - Version: Since 0.7
-  - Logs to PATH.
 - DDHX_BACKEND=BACKEND
-  - Version: Since 0.7
   - Forces BACKEND to be selected.
-  - Backends: "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5 <0.9)
-- DDHX_CHUNKSIZE=SIZE
-  - Version: Since 0.7, removed in 0.9
-  - Sets buffer size to SIZE (with binary suffix) for the "chunk" backend.
+  - Version: Since 0.7
+  - Default: "piecev2" (since 0.8)
+  - Backends: "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5 <0.8.2)
 
 ********************************************************************************
 *                                    NOTICE                                    *
