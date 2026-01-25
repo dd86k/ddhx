@@ -504,6 +504,7 @@ void terminalMove(int x, int y)
 }
 alias terminalCursor = terminalMove;
 
+deprecated
 struct TerminalPosition
 {
     int column, row;
@@ -1440,9 +1441,11 @@ private enum {
 private 
 struct ReadlineState
 {
-    /// Original cursor position.
-    /// Pre-Windows 10 doesn't have '\r' and even then.
-    TerminalPosition orig;
+    // NOTE: conhost (pre-Windows Terminal) does not handle '\r'
+    /// Original column position.
+    int orig_col;
+    /// Original row position.
+    int orig_row;
     /// Caret (cursor) position.
     size_t caret;
     /// Base position. View/camera.
@@ -1457,10 +1460,10 @@ void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, i
     // NOTE: Could also be an imposed max size (like for a text field)
     TerminalSize tsize = terminalSize();
     
-    terminalMove(state.orig.column, state.orig.row);
+    terminalMove(state.orig_col, state.orig_row);
     
     int width = tsize.columns;
-    int avail = width - state.orig.column;
+    int avail = width - state.orig_col;
     
     // Adjust view
     if (state.caret < state.base)
@@ -1477,13 +1480,13 @@ void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, i
     size_t visible = min(avail, buffer.length);
     int w = cast(int)terminalWrite(buffer[state.base .. state.base + visible]);
     if (w < width) // fill
-        terminalWriteChar(' ', width - w - state.orig.column);
+        terminalWriteChar(' ', width - w - state.orig_col);
     
     // Position caret on screen
-    int x = state.orig.column + cast(int)state.caret;
+    int x = state.orig_col + cast(int)state.caret;
     if (x >= width) // outside buffer
         x = width - 1;
-    terminalMove(x, state.orig.row);
+    terminalMove(x, state.orig_row);
     
     terminalFlush(); // fbcons on Linux/BSDs need this
 }
@@ -1525,14 +1528,14 @@ string readline(int column, int row, int flags = 0)
     
     // Prep work
     ReadlineState rl_state;
-    //rl_state.orig = terminalTell();
-    rl_state.orig.column = column;
-    rl_state.orig.row    = row;
+    rl_state.orig_col = column;
+    rl_state.orig_row = row;
     
     // HACK: Cheap way to clear line + setup cursor
     //       Removes responsability from caller
-    terminalWriteChar(' ', terminalSize().columns-rl_state.orig.column-1);
-    /*with (rl_state.orig)*/ terminalMove(column, row);
+    // TODO: Make caller do this, caller knows state of display better
+    terminalWriteChar(' ', terminalSize().columns-column-1);
+    terminalMove(column, row);
     terminalFlush(); // Needed on fbcons
     
     LineBuffer line;    /// Line buffer
