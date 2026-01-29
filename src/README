@@ -21,7 +21,7 @@ The folder structure is pretty straight-forward:
   Source documents. Often representing a specific media, such as a file, a disk
   a process, and other physical representation of a source document.
   Currently, only saving to files are supported, it is planned that each
-  document will have different strategies to save content.
+  document will have different strategies to save modifications.
 - os/
   Operation system interfaces.
 
@@ -40,11 +40,11 @@ Files:
   Application entry-point. Command-line, configuration, and editor
   initialization.
 - pattern.d
-  Module for creating patterns.
+  Module for (search) patterns.
 - platform.d
-  Platform definitions.
+  Platform (system) definitions.
 - ranges.d
-  Module for selection ranges.
+  Module for ranges, often used for selections.
 - transcoder.d
   Character translation module.
 - utils.d
@@ -68,7 +68,7 @@ Files:
 | ranges.d     |          v
 | pattern.d    |  +---------------+ - Manage terminal features
 | transcoder.d |  | os/terminal.d | - readkey, readline implementation
-+--------------+  +---------------+
++--------------+  +---------------+ - Translate key names to key values
                           |
                           v
                       + ~ ~ ~ ~+
@@ -116,15 +116,20 @@ created with no pieces and an empty command list.
 * DESIGN RATIONALE
 *
 
+Why not using a memory-mapped file? (std.mmfile)
+- Inefficient: Specifying size=0 loads the entire file in memory.
+- Dangerous: If size is set, seeking past it truncates the file.
+- Undeterministic: Depends on specific system functions.
+
 Why a Piece Table?
-- Memory efficient: Original file data is never duplicated.
-- Fast insertions: No need to shift large amounts of data.
-- Natural undo/redo: Changes are discrete pieces.
+- Efficient: Original file data is never duplicated.
+- Fast: No need to shift large amounts of data in fixed buffers.
+- Natural: Changes are discrete pieces, easier to implement undo/redo.
 
 Why a Red-Black Tree?
-- Self-balancing ensures consistent O(log n) performance.
-- Better than arrays for large documents with many edits.
-- Efficient cumulative size indexing for address lookups.
+- Consistent: Self-balancing ensures O(log n) performance.
+- Fast: Avoids performance penalties with sorting arrays.
+- Efficient: Cumulative size indexing for faster address lookups.
 
 *
 * OPENING
