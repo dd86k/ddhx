@@ -352,7 +352,6 @@ struct BufferedWriter(void function(void*,size_t) FLUSHER, size_t SIZE = 2048)
     
     void put(char c, size_t count)
     {
-        
         if (count == 0) return;
         
         // Handle large counts that exceed buffer

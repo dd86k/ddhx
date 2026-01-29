@@ -22,6 +22,7 @@ import std.conv : text;
 import std.file : exists;
 import std.string; // imports format
 import transcoder;
+import utils : BufferedWriter;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
@@ -1046,10 +1047,9 @@ void update_header(Session *session, TerminalSize termsize)
 {
     terminalCursor(0, 0);
     
-    import utils : BufferedWriter;
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
-    }) buffwriter;
+    }, 256) buffwriter;
     
     // Print spacers and current address type
     string atype = addressTypeToString(session.rc.address_type);
@@ -1074,6 +1074,7 @@ void update_header(Session *session, TerminalSize termsize)
         buffwriter.put(' ', rem);
     
     buffwriter.flush();
+    terminalFlush();
 }
 
 // Render view with data on screen
@@ -1160,10 +1161,9 @@ void update_view(Session *session, TerminalSize termsize)
             session.selection.anchor, session.selection.status, sl0, sl1);
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     
-    import utils : BufferedWriter;
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
-    }) buffwriter;
+    }, 256) buffwriter;
     int row;
     int rowdisp = session.rc.header ? 1 : 0; // lazy
     for (; row < erows; ++row, address += cols)
@@ -1320,7 +1320,7 @@ void update_view(Session *session, TerminalSize termsize)
         terminalWriteChar(' ', tcols);
     }
     
-    // Notably for fbcon
+    // Important for fbcon
     terminalFlush();
     
     debug if (logging)
@@ -1425,7 +1425,7 @@ void update_progress(Session *session, long position, long total)
     assert(position <= total, "position <= total");
     
     int x = cast(int)(width * (cast(double)position / total));
-    
+    // Same position, avoid unnecessary I/O
     if (x == lastx)
         return;
     
@@ -1437,10 +1437,18 @@ void update_progress(Session *session, long position, long total)
         width, position, total, x, rem);
     
     terminalMove(0, termsize.rows - 1);
-    terminalWriteChar('[', 1);
-    terminalWriteChar('#', x);
-    terminalWriteChar(' ', rem);
-    terminalWriteChar(']', 1);
+    
+    BufferedWriter!((void *data, size_t size) {
+        terminalWrite(data, size);
+    }, 256) buffwriter;
+    
+    buffwriter.put('[', 1);
+    buffwriter.put('#', x);
+    buffwriter.put(' ', rem);
+    buffwriter.put(']', 1);
+    
+    buffwriter.flush();
+    terminalFlush();
 }
 
 // Peek input if cancel key is requested, used in I/O intense scenarios,
