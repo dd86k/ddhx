@@ -9,9 +9,9 @@ module ddhx;
 
 import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
-import doceditor;
 import document.file;
 import editor.base : IDocumentEditor;
+import formatters;
 import logger;
 import os.terminal;
 import patterns;

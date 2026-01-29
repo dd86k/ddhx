@@ -9,7 +9,7 @@ module configuration;
 // "rc" local variable names.
 
 import transcoder : CharacterSet, selectCharacterSet;
-import doceditor : WritingMode, AddressType, DataType;
+import formatters : WritingMode, AddressType, DataType;
 import std.conv : text, to;
 
 /// Special value for RC.columns to autoresize.
