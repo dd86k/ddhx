@@ -366,7 +366,8 @@ void initdefaults()
             file.writeln("GC");
             file.writeln("\t", stats.freeSize, " B Free");
             file.writeln("\t", stats.usedSize, " B Used");
-            file.writeln("\t", stats.allocatedInCurrentThread, " B Allocated (thread)");
+            static if (__VERSION__ >= 2087)
+                file.writeln("\t", stats.allocatedInCurrentThread, " B Allocated (thread)");
             /*GC.ProfileStats profiler = GC.profileStats(); // Useless if not enabled?
             file.writeln("\t", profiler.numCollections, " Cycles");
             file.writeln("\t", profiler.totalCollectionTime, " Total Collection Time");
