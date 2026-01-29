@@ -1,7 +1,7 @@
 name "ddhx"
 description "Binary file editor"
 authors "dd86k"
-copyright "Copyright © 2017-2025 dd86k"
+copyright "Copyright © 2017-2026 dd86k"
 license "MIT"
 
 buildType "debugv" {
