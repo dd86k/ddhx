@@ -7,7 +7,9 @@ module platform;
 
 /// Soft assertion exception class.
 ///
-/// Mostly used to prefix "assert: " to messages.
+/// Utilities:
+/// - An assert quits program without a chance to do anything.
+/// - Debug-only asserts can still be invoked as "debug assertion(...)".
 public class Assertion : Exception
 {
     this(string msg, // @suppress(dscanner.style.undocumented_declaration)
@@ -42,12 +44,12 @@ version (X86)
     enum TARGET_PLATFORM = "x86";	/// Platform string
 else version (X86_64)
     enum TARGET_PLATFORM = "x86_64";	/// Ditto
-else version (ARM_Thumb)
+else version (ARM_Thumb) // NOTE: "In any Thumb mode", so could be T16 too...
     enum TARGET_PLATFORM = "arm_t32";	/// Ditto
-else version (ARM)
-    enum TARGET_PLATFORM = "arm_a32";	/// Ditto
 else version (AArch64)
     enum TARGET_PLATFORM = "arm_a64";	/// Ditto
+else version (ARM)
+    enum TARGET_PLATFORM = "arm_a32";	/// Ditto
 else version (PPC)
     enum TARGET_PLATFORM = "powerpc";	/// Ditto
 else version (PPC64)
@@ -64,6 +66,8 @@ else version (RISCV32)
     enum TARGET_PLATFORM = "riscv32";	/// Ditto
 else version (RISCV64)
     enum TARGET_PLATFORM = "riscv64";	/// Ditto
+else version (Xtensa)
+    enum TARGET_PLATFORM = "xtensa";	/// Ditto
 else
     enum TARGET_PLATFORM = "unknown";	/// Ditto
 
@@ -72,6 +76,8 @@ version (Win64)
     enum TARGET_OS = "win64";	/// Platform OS string
 else version (Win32)
     enum TARGET_OS = "win32";	/// Ditto
+else version (Android)
+    enum TARGET_OS = "android";	/// Ditto
 else version (linux)
     enum TARGET_OS = "linux";	/// Ditto
 else version (OSX)
@@ -84,14 +90,12 @@ else version (NetBSD)
     enum TARGET_OS = "netbsd";	/// Ditto
 else version (DragonflyBSD)
     enum TARGET_OS = "dragonflybsd";	/// Ditto
-else version (BSD)
-    enum TARGET_OS = "bsd";	/// Ditto
 else version (Solaris)
     enum TARGET_OS = "solaris";	/// Ditto
 else version (AIX)
     enum TARGET_OS = "aix";	/// Ditto
 else version (Hurd)
-    enum TARGET_OS = "hurd";	/// 
+    enum TARGET_OS = "hurd";	/// Ditto
 else
     enum TARGET_OS = "unknown";	/// Ditto
 
