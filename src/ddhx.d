@@ -20,7 +20,7 @@ import ranges;
 import std.algorithm.comparison : min, max;
 import std.conv : text;
 import std.file : exists;
-import std.string;
+import std.string; // imports format
 import transcoder;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
@@ -121,10 +121,12 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // the 'current' session (return sessions[current]).
     Session *g_session;
     
-    // Message slice. Sadly, format() allocates a buffer and sformat only
-    // throws when it runs out of a buffer instead of resizing (that would
-    // suck anyway).
-    string g_messagebuf;
+    // Message buffer.
+    // Sadly, format() allocates a buffer and sformat() throws when it runs out
+    // of the buffer instead of resizing (that would suck to implement anyway).
+    char[] g_messagebuf;
+    // Message slice result.
+    string g_message;
     
     /// Last search needle buffer (find commands use this).
     ubyte[] g_needle;
@@ -400,9 +402,10 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     terminalHideCursor();
     
     g_status = UINIT;
+    g_messagebuf.length = 4096;
     
     g_session = new Session(rc);
-    g_session.target = path;    // assign target path, NULL unsets this
+    g_session.target = path;    // assign target path, a NULL value is valid
     g_session.editor = editor;  // assign editor instance
     
     message(initmsg);
@@ -925,24 +928,29 @@ void moveabs(Session *session, long pos)
     g_status |= USTATUSBAR;
 }
 
+// TODO: To ease on memory allocations, could be possible to go @nogc.
+//       string[]... parameters, copy strings into realloc'd buffer.
+//       Integer/Floats can be used with a "fast" string (struct with static buffer).
+//       As of writing, there are 38 invocations of this template function,
+//       so having a runtime-focused function with typesafe variadtic parameters
+//       should help with file size.
+// TODO: Handle multiple messages.
+//       It COULD happen that multiple messages are sent before they
+//       are displayed. Right now, only the last message is taken into
+//       account.
+//       Easiest fix would be string[] or something similar.
 // Send a message within the editor to be displayed.
 void message(A...)(string fmt, A args)
 {
-    // TODO: Handle multiple messages.
-    //       It COULD happen that multiple messages are sent before they
-    //       are displayed. Right now, only the last message is taken into
-    //       account.
-    //       Easiest fix would be string[] or something similar.
-    
     try
     {
-        g_messagebuf = format(fmt, args);
+        g_message = cast(string)sformat(g_messagebuf, fmt, args);
         g_status |= UMESSAGE | USTATUSBAR;
     }
     catch (Exception ex)
     {
         log("%s", ex);
-        message("%s", ex.msg);
+        message(ex.msg);
     }
 }
 
@@ -1240,33 +1248,27 @@ void update_status(Session *session, TerminalSize termsize)
 {
     terminalCursor(0, termsize.rows - 1);
     
-    // Typical session are 80/120 columns.
-    // A fullscreen terminal window (1080p, 10pt) is around 240x54.
-    // If crashes, at this point, fuck it just use a heap buffer starting at 4K.
-    char[512] statusbuf = void;
+    // NOTE: Worst offender is long.min octal at 22 characters
+    char[24] buf0 = void; // cursor address or selection start buffer
+    char[24] buf1 = void; // selection end buffer
     
-    char[32] buf0 = void; // cursor address or selection start buffer
-    char[32] buf1 = void; // selection end buffer
-    
-    // If there is a pending message, print that.
-    // Otherwise, print status bar using the message buffer space.
     Selection sel = selection(session);
     string msg = void;
-    if (g_status & UMESSAGE)
+    if (g_status & UMESSAGE) // Pending message
     {
-        msg = g_messagebuf;
+        msg = g_message;
     }
-    else if (sel)
+    else if (sel) // Active selection
     {
         string start = formatAddress(buf0, sel.start, 1, session.rc.address_type);
         string end   = formatAddress(buf1, sel.end,   1, session.rc.address_type);
-        msg = cast(string)sformat(statusbuf, "SEL: %s-%s (%d Bytes)", start, end, sel.length);
+        msg = cast(string)sformat(g_messagebuf, "SEL: %s-%s (%d Bytes)", start, end, sel.length);
     }
-    else
+    else // Regular status bar
     {
         string curstr = formatAddress(buf0, session.position_cursor, 8, session.rc.address_type);
         
-        msg = cast(string)sformat(statusbuf, "%c %s | %3s | %8s | %s",
+        msg = cast(string)sformat(g_messagebuf, "%c %s | %3s | %8s | %s",
             session.editor.edited() ? '*' : ' ',
             writingModeToString(session.rc.writemode),
             dataTypeToString(session.rc.data_type),
@@ -1277,7 +1279,7 @@ void update_status(Session *session, TerminalSize termsize)
     
     // Attempt to fit the new message on screen
     int msglen = cast(int)msg.length;
-    int cols = termsize.columns - 1;
+    int cols = termsize.columns; // "-1" was when I was worried about line wrapping
     if (msglen >= cols) // message does not fit on screen
     {
         // TODO: Attempt to "scroll" message
