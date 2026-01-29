@@ -396,7 +396,7 @@ struct BufferedWriter(void function(void*,size_t) FLUSHER, size_t SIZE = 2048)
     }
     
     /// Clear buffer without flushing
-    void clear()
+    void reset()
     {
         index = 0;
     }
@@ -427,27 +427,31 @@ unittest
     BufferedWriter!((void *data, size_t size) {
         assert(data);
         assert(size == 3);
-    }, 16) buffwriter0;
-    buffwriter0.put("gay");
-    assert(buffwriter0.index == 3);
-    assert(buffwriter0.buffer[0..3] == "gay");
-    buffwriter0.flush();
-    
+    }, 16) bufwriter;
+    bufwriter.put("gay");
+    assert(bufwriter.index == 3);
+    assert(bufwriter.buffer[0..3] == "gay");
+    bufwriter.flush();
+}
+unittest
+{
     // Incoming data too large to hold into buffer
     string str2 = "very long string that flushes once"; // 34
     BufferedWriter!((void *data, size_t size) {
         assert(data);
         assert(size == 34);
-    }, 16) buffwriter1;
-    buffwriter1.put(str2);
-    assert(buffwriter1.index == 0);
-    
+    }, 16) bufwriter;
+    bufwriter.put(str2);
+    assert(bufwriter.index == 0); // flushed
+}
+unittest
+{
     // 
     BufferedWriter!((void *data, size_t size) {
         assert(data);
         assert(size == 16);
-    }, 16) buffwriter2;
-    buffwriter2.put("1234567890");
-    buffwriter2.put("1234567890");
-    assert(buffwriter2.index == 4);
+    }, 16) bufwriter;
+    bufwriter.put("1234567890");
+    bufwriter.put("1234567890");
+    assert(bufwriter.index == 4);
 }

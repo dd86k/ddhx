@@ -1051,6 +1051,8 @@ void update_header(Session *session, TerminalSize termsize)
         terminalWrite(data, size);
     }, 256) buffwriter;
     
+    AddressFormatter address = AddressFormatter(session.rc.address_type);
+    
     // Print spacers and current address type
     string atype = addressTypeToString(session.rc.address_type);
     int prespaces = session.rc.address_spacing - cast(int)atype.length;
@@ -1060,12 +1062,10 @@ void update_header(Session *session, TerminalSize termsize)
     
     int cols = session.rc.columns;
     int cwidth = dataSpec(session.rc.data_type).spacing; // data width spec (for alignment with col headers)
-    char[32] buf = void;
     for (int col; col < cols; ++col)
     {
-        string chdr = formatAddress(buf, col, cwidth, session.rc.address_type);
         buffwriter.put(' ', 1);
-        buffwriter.put(chdr);
+        buffwriter.put(address.format(col, cwidth));
     }
     
     // Fill rest of upper bar with spaces
@@ -1149,10 +1149,9 @@ void update_view(Session *session, TerminalSize termsize)
     int sl1   = cast(int)(sel.end   - address);
     
     // Render view
-    char[32] txtbuf = void;
+    char[32] txtbuf = void; // Still used for data in edit buffer...
     int viewpos     = cast(int)(curpos - address); // relative cursor position in view
     int datawidth   = dataSpec(session.rc.data_type).spacing; // data element width
-    int addspacing  = session.rc.address_spacing;
     PanelType panel = session.panel;
     if (logging) // branch avoids pushing all of this for nothing (and lazy adds instructions)
         log("address=%d viewpos=%d cols=%d rows=%d count=%d Dwidth=%d readlen=%d panel=%s "~
@@ -1160,6 +1159,7 @@ void update_view(Session *session, TerminalSize termsize)
             address, viewpos, cols, rows, count, datawidth, readlen, panel,
             session.selection.anchor, session.selection.status, sl0, sl1);
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
+    AddressFormatter afmt = AddressFormatter(session.rc.address_type);
     
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
@@ -1171,10 +1171,9 @@ void update_view(Session *session, TerminalSize termsize)
         // newline processing could be disabled
         terminalCursor(0, row + rowdisp);
         
-        buffwriter.clear();
+        buffwriter.reset();
         
-        string addr = formatAddress(txtbuf, address, addspacing, session.rc.address_type);
-        buffwriter.put(addr);
+        buffwriter.put(afmt.format(address, session.rc.address_spacing));
         buffwriter.put(" ");
         
         // Render view data
@@ -1335,9 +1334,7 @@ void update_status(Session *session, TerminalSize termsize)
 {
     terminalCursor(0, termsize.rows - 1);
     
-    // NOTE: Worst offender is long.min octal at 22 characters
-    char[24] buf0 = void; // cursor address or selection start buffer
-    char[24] buf1 = void; // selection end buffer
+    AddressFormatter address = void;
     
     Selection sel = selection(session);
     string msg = void;
@@ -1347,21 +1344,22 @@ void update_status(Session *session, TerminalSize termsize)
     }
     else if (sel) // Active selection
     {
-        string start = formatAddress(buf0, sel.start, 1, session.rc.address_type);
-        string end   = formatAddress(buf1, sel.end,   1, session.rc.address_type);
+        address.change(session.rc.address_type);
+        AddressFormatter address_end = address; // has its own buffer, copy only Type+Spec
+        string start = address.format(sel.start, 1);
+        string end   = address_end.format(sel.end, 1);
         msg = cast(string)sformat(g_messagebuf, "SEL: %s-%s (%d Bytes)", start, end, sel.length);
     }
     else // Regular status bar
     {
-        string curstr = formatAddress(buf0, session.position_cursor, 8, session.rc.address_type);
+        address.change(session.rc.address_type);
         
         msg = cast(string)sformat(g_messagebuf, "%c %s | %3s | %8s | %s",
             session.editor.edited() ? '*' : ' ',
             writingModeToString(session.rc.writemode),
             dataTypeToString(session.rc.data_type),
             charsetID(session.rc.charset),
-            curstr);
-        
+            address.format(session.position_cursor, 8));
     }
     
     // Attempt to fit the new message on screen
@@ -2762,8 +2760,7 @@ void find(Session *session, string[] args)
     
     moveabs(session, p);
     
-    char[32] buf = void;
-    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
+    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
 }
 
 //
@@ -2806,8 +2803,7 @@ void find_back(Session *session, string[] args)
     
     moveabs(session, p);
     
-    char[32] buf = void;
-    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
+    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
 }
 
 // 
@@ -2832,8 +2828,7 @@ void find_next(Session *session, string[] args)
     
     moveabs(session, p);
     
-    char[32] buf = void;
-    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
+    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
 }
 
 // 
@@ -2858,8 +2853,7 @@ void find_prev(Session *session, string[] args)
     
     moveabs(session, p);
     
-    char[32] buf = void;
-    message("Found at %s", formatAddress(buf, p, 1, session.rc.address_type));
+    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
 }
 
 // Quit app

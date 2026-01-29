@@ -6,8 +6,8 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module doceditor;
 
-import document.base : IDocument;
-import logger;
+// TODO: Could be renamed to "formatters"
+
 import platform : assertion;
 import std.format;
 import transcoder : CharacterSet;
@@ -38,15 +38,16 @@ string writingModeToString(WritingMode mode)
 //
 
 /// Address type used for displaying offsets.
-enum AddressType
+enum AddressType // short names to avoid name conflicts
 {
     hex,    /// Hexadecimal.
     dec,    /// Decimal.
     oct,    /// Octal.
 }
+
 /// Get label for this address type.
 /// Params: type = AddressType.
-/// Returns: 
+/// Returns: Short name.
 string addressTypeToString(AddressType type)
 {
     final switch (type) {
@@ -55,51 +56,98 @@ string addressTypeToString(AddressType type)
     case AddressType.oct: return "oct";
     }
 }
-/// Format an address using this type.
-/// Params:
-///     buf = Character buffer.
-///     v = Address value.
-///     spacing = Number of spacing in characters.
-///     type = AddressType.
-///     zeros = If set, prepend with zeros.
-/// Returns: String slice.
-string formatAddress(char[] buf, long v, int spacing, AddressType type, bool zeros = false)
+
+/// Does not represent an address, but is a utility to help with formatting.
+///
+/// Because an address is frequency formatted, and often with different values,
+/// this helps with "set up once and fire often" issue with the older
+/// formatAddress function.
+struct AddressFormatter
 {
-    string spec = void;
-    final switch (type) {
-    case AddressType.hex: spec = zeros ? "%0*x" : "%*x"; break;
-    case AddressType.dec: spec = zeros ? "%0*d" : "%*d"; break;
-    case AddressType.oct: spec = zeros ? "%0*o" : "%*o"; break;
+    this(AddressType newtype, bool zeroes = false) { change(newtype, zeroes); }
+    
+    void change(AddressType newtype, bool zeroes = false)
+    {
+        // FormatSpec & al sucks.
+        final switch (newtype) {
+        case AddressType.hex: spec = zeroes ? s_hex0 : s_hex; break;
+        case AddressType.dec: spec = zeroes ? s_dec0 : s_dec; break;
+        case AddressType.oct: spec = zeroes ? s_oct0 : s_oct; break;
+        }
+        type = newtype;
     }
-    return cast(string)sformat(buf, spec, spacing, v);
+    string format(long value, int spacing)
+    {
+        debug assertion(spec);
+        debug assertion(spacing <= buffer.sizeof);
+        return cast(string)sformat(buffer, spec, spacing, value);
+    }
+    void opAssign(AddressFormatter fmt)
+    {
+        // Only copy type and spec
+        type = fmt.type;
+        spec = fmt.spec;
+    }
+private:
+    static immutable string s_hex  = "%*x";
+    static immutable string s_hex0 = "%0*x";
+    static immutable string s_dec  = "%*d";
+    static immutable string s_dec0 = "%0*d";
+    static immutable string s_oct  = "%*o";
+    static immutable string s_oct0 = "%0*o";
+    AddressType type = AddressType.hex;
+    string spec = s_hex;
+    // worst offender is long.min %o: 1000000000000000000000 (22 chars)
+    char[24] buffer = void;
 }
 unittest
 {
-    char[32] buf = void;
+    AddressFormatter address;
+    
     // Address offset in column
-    assert(formatAddress(buf, 0x00, 2, AddressType.hex) == " 0");
-    assert(formatAddress(buf, 0x01, 2, AddressType.hex) == " 1");
-    assert(formatAddress(buf, 0x80, 2, AddressType.hex) == "80");
-    assert(formatAddress(buf, 0xff, 2, AddressType.hex) == "ff");
-    assert(formatAddress(buf, 0xff, 2, AddressType.dec) == "255");
-    assert(formatAddress(buf, 0xff, 2, AddressType.oct) == "377");
-    assert(formatAddress(buf, 0xf, 3, AddressType.hex, true) == "00f");
-    assert(formatAddress(buf, 0xf, 3, AddressType.dec, true) == "015");
-    assert(formatAddress(buf, 0xf, 3, AddressType.oct, true) == "017");
+    address.change(AddressType.hex, false);
+    assert(address.format(0x00, 2)  == " 0");
+    assert(address.format(0x01, 2)  == " 1");
+    assert(address.format(0x80, 2)  == "80");
+    assert(address.format(0xff, 2)  == "ff");
+    
+    address.change(AddressType.hex, true);
+    assert(address.format(0xf,  3)  == "00f");
+    
+    address.change(AddressType.dec, false);
+    assert(address.format(0,    2)  ==  " 0");
+    assert(address.format(0,    3)  == "  0");
+    assert(address.format(0xff, 2)  == "255");
+    assert(address.format(0xff, 3)  == "255");
+    
+    address.change(AddressType.dec, true);
+    assert(address.format(0xf, 3)   == "015");
+    
+    address.change(AddressType.oct, true);
+    assert(address.format(0xff, 2) == "377");
+    
+    // Test opAssign
+    AddressFormatter add2 = address;
+    assert(address.format(0xff, 2) == "377");
+    
+    address.change(AddressType.oct, false);
+    assert(address.format(0xf, 3) == " 17");
+    
     // Address offset in left panel
-    assert(formatAddress(buf, 0x00, 10, AddressType.hex)        == "         0");
-    assert(formatAddress(buf, 0x01, 10, AddressType.hex)        == "         1");
-    assert(formatAddress(buf, 0x80, 10, AddressType.hex)        == "        80");
-    assert(formatAddress(buf, 0xff, 10, AddressType.hex)        == "        ff");
-    assert(formatAddress(buf, 0x100, 10, AddressType.hex)       == "       100");
-    assert(formatAddress(buf, 0x1000, 10, AddressType.hex)      == "      1000");
-    assert(formatAddress(buf, 0x10000, 10, AddressType.hex)     == "     10000");
-    assert(formatAddress(buf, 0x100000, 10, AddressType.hex)    == "    100000");
-    assert(formatAddress(buf, 0x1000000, 10, AddressType.hex)   == "   1000000");
-    assert(formatAddress(buf, 0x10000000, 10, AddressType.hex)  == "  10000000");
-    assert(formatAddress(buf, 0x100000000, 10, AddressType.hex) == " 100000000");
-    assert(formatAddress(buf, 0x100000000, 10, AddressType.hex) == " 100000000");
-    assert(formatAddress(buf, ulong.max, 10, AddressType.hex)   == "ffffffffffffffff");
+    address.change(AddressType.hex, false);
+    assert(address.format(       0x00, 10) == "         0");
+    assert(address.format(       0x01, 10) == "         1");
+    assert(address.format(       0x80, 10) == "        80");
+    assert(address.format(       0xff, 10) == "        ff");
+    assert(address.format(      0x100, 10) == "       100");
+    assert(address.format(     0x1000, 10) == "      1000");
+    assert(address.format(    0x10000, 10) == "     10000");
+    assert(address.format(   0x100000, 10) == "    100000");
+    assert(address.format(  0x1000000, 10) == "   1000000");
+    assert(address.format(0x10000000,  10) == "  10000000");
+    assert(address.format(0x100000000, 10) == " 100000000");
+    assert(address.format(0x100000000, 10) == " 100000000");
+    assert(address.format(ulong.max,   10) == "ffffffffffffffff");
 }
 
 //
