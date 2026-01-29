@@ -4,7 +4,7 @@ import core.memory : GC;
 import std.getopt;
 import std.stdio;
 import std.datetime.stopwatch;
-import editor.base;
+import editor;
 
 @nogc nothrow
 const(char)[] fmtbin(ulong b, ref char[16] buf) {
@@ -148,7 +148,7 @@ void test(string name, int rounds = 30, int runs = 100)
         throw new Exception("error: Out of memory");
     scope(exit) free(buffer.ptr);
     
-    scope IDocumentEditor e = selectBackend(name);
+    scope IDocumentEditor e = spawnEditor(name);
     
     StopWatch sw;
     

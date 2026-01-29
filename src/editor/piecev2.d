@@ -22,12 +22,12 @@ import logger;
 //       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
 //       Instead of an array of structures, having array of fields tend to help
 //       processor cache, in particular, architectures with cache lines of 64 Bytes.
-//       Checks (needs linux-tools-generic):
-//       - perf stat -e cache-misses,cache-references ./myapp
-//       - perf record -e cache-misses ./myapp
-//         perk report
-//       - perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads
-//       Not a current necessity, as nothing is pushing the backend to extreme scenarios.
+//       Not a current necessity, as no one is pushing the editor this much *yet*.
+// TODO: File handling
+//       Currently, when a file is inserted, its handle lives until program quits.
+//       Which might confuse some, since files we open (particlarly on Windows) aren't shared.
+//       So if I integrate a "close" (document) command, these handles are still up, which
+//       may cause trouble.
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
@@ -238,8 +238,6 @@ class PieceV2DocumentEditor : IDocumentEditor
     {
         if (logical_size == 0)
             return [];
-        //if (his_index == 0 && basedoc is null)
-            //return [];
         
         log("VIEW Hi=%u Hc=%u", history_index, history.length);
         
@@ -257,7 +255,6 @@ class PieceV2DocumentEditor : IDocumentEditor
             long piece_end = index.cumulative;
             
             // Skip pieces before our view position
-            //if (piece_end <= doc_pos)
             if (piece_end <= lpos)
                 continue;
             
@@ -1459,7 +1456,6 @@ unittest
     assert(e.view(_10GB -  5, buf) == [ '.','.','.','M','e','?','M','e','?','M' ]);
     assert(e.view(_10GB     , buf) == [ '?','M','e','?','M','e','?','M','e','?' ]);
 }
-
 
 /// Common tests
 unittest

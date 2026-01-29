@@ -149,7 +149,8 @@ struct Snapshot
     Tree pieces;
 }
 
-/// Document editor implementing a Piece List with RedBlackTree for indexing.
+/// Document editor implementing a Piece List with RedBlackTree for indexing
+/// and a snapshot system for history.
 class PieceDocumentEditor : IDocumentEditor
 {
     /// New document editor with a new empty buffer.

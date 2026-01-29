@@ -49,22 +49,8 @@ interface IDocumentEditor
     long redo();
 }
 
-IDocumentEditor selectBackend(string name)
-{
-    import std.conv : text;
-    import std.process : environment;
-    import editor; // @suppress(dscanner.suspicious.local_imports)
-    import logger : log;
-    switch (name) {
-    case "piece":
-        return new PieceDocumentEditor();
-    case "piecev2":
-        return new PieceV2DocumentEditor();
-    default:
-        throw new Exception(text("Backend does not exist: ", name));
-    }
-}
-
+// NOTE: These tests only hinder new backend development
+//       No idea if I'll keep them
 version (unittest)
 {
 
@@ -101,9 +87,6 @@ void editorTests(T : IDocumentEditor)()
 }
 
 private:
-
-// NOTE: These tests only hinder new backend development
-//       No idea if I'll keep them
 
 //
 // Tests without document

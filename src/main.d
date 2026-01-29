@@ -32,8 +32,6 @@ template DVER(uint ver)
         cast(char)((ver % 10) + '0');
 }
 
-enum EXIT_CRITICAL = 2;
-
 immutable string SECRET = q"SECRET
         +----------------------------+
   __    | Heard you need help.       |
@@ -273,7 +271,7 @@ void main(string[] args)
     // backends (implementations) easier.
     string backend = environment.get("DDHX_BACKEND", DEFAULT_BACKEND);
     log("backend=%s", backend);
-    IDocumentEditor editor = selectBackend(backend);
+    IDocumentEditor editor = spawnEditor(backend);
     
     // Open buffer or file where (imitating GNU nano):
     // - No args:  New empty buffer
@@ -338,6 +336,6 @@ void main(string[] args)
         debug stderr.writeln("fatal: ", ex);
         else  stderr.writeln("fatal: ", ex.msg);
         log("%s", ex);
-        exit(EXIT_CRITICAL);
+        exit(2);
     }
 }
