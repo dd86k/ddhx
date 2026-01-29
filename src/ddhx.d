@@ -507,11 +507,15 @@ private:
 
 void onresize() // NOTE: I/O is allowed here
 {
-    // TODO: Consider rendering something like "screen too small" if screen too small
+    // TODO: Consider rendering something like "SMALL" if screen too small
     
     // If autoresize configuration is enabled, automatically set column count
     if (g_session.rc.columns == COLUMNS_AUTO)
         autosize(g_session, null);
+    
+    // Yes, on resize, conhost will show the console's cursor again
+    version (Windows)
+        terminalHideCursor();
     
     g_status |= UHEADER | UVIEW | USTATUSBAR; // draw everything
     update(g_session);
