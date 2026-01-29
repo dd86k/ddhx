@@ -21,10 +21,10 @@ IDocumentEditor spawnEditor(string name)
     import std.conv : text;
     import std.process : environment;
     import logger : log;
-    switch (name) {
+    switch (name) { // null=default
     case "piece":
         return new PieceDocumentEditor();
-    case "piecev2":
+    case "piecev2", null:
         return new PieceV2DocumentEditor();
     default:
         throw new Exception(text("Backend does not exist: ", name));

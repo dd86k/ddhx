@@ -21,8 +21,6 @@ import editor;
 
 private:
 
-enum DEFAULT_BACKEND = "piecev2";
-
 template DVER(uint ver)
 {
     enum DVER =
@@ -269,9 +267,8 @@ void main(string[] args)
     
     // Select editor backend, this allows transitioning between multiple
     // backends (implementations) easier.
-    string backend = environment.get("DDHX_BACKEND", DEFAULT_BACKEND);
-    log("backend=%s", backend);
-    IDocumentEditor editor = spawnEditor(backend);
+    IDocumentEditor editor = spawnEditor( environment.get("DDHX_BACKEND") );
+    log("backend=%s", editor);
     
     // Open buffer or file where (imitating GNU nano):
     // - No args:  New empty buffer
