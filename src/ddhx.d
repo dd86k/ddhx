@@ -121,7 +121,7 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // the 'current' session (return sessions[current]).
     Session *g_session;
     
-    // Message slice. Sadly, format() uses its own buffer and sformat only
+    // Message slice. Sadly, format() allocates a buffer and sformat only
     // throws when it runs out of a buffer instead of resizing (that would
     // suck anyway).
     string g_messagebuf;
@@ -155,7 +155,7 @@ struct Command
     string name;        /// Command short name
     string description; /// Short description
     int key;            /// Default shortcut
-    command_func impl; /// Implementation
+    command_func impl;  /// Implementation
 }
 
 // Reserved (Idea: Ctrl=Action, Alt=Alternative):
@@ -176,41 +176,41 @@ struct Command
 /// List of default commands and shortcuts
 immutable Command[] default_commands = [
     // Navigation
-    { "left",                       "Navigate one element back",
+    { "left",                       "Move cursor left one element",
         Key.LeftArrow,              &move_left },
-    { "right",                      "Navigate one element forward",
+    { "right",                      "Move cursor right one element",
         Key.RightArrow,             &move_right },
-    { "up",                         "Navigate one line back",
+    { "up",                         "Move cursor upward a line",
         Key.UpArrow,                &move_up },
-    { "down",                       "Navigate one line forward",
+    { "down",                       "Move cursor downward a line",
         Key.DownArrow,              &move_down },
-    { "home",                       "Navigate to start of line",
+    { "home",                       "Move cursor to start of line",
         Key.Home,                   &move_ln_start },
-    { "end",                        "Navigate to end of line",
+    { "end",                        "Move cursor to end of line",
         Key.End,                    &move_ln_end },
-    { "top",                        "Navigate to start (top) of document",
+    { "top",                        "Move cursor to start of document",
         Mod.ctrl|Key.Home,          &move_abs_start },
-    { "bottom",                     "Navigate to end (bottom) of document",
+    { "bottom",                     "Move cursor to end of document",
         Mod.ctrl|Key.End,           &move_abs_end },
-    { "page-up",                    "Navigate one screen page back",
+    { "page-up",                    "Move cursor up a screen",
         Key.PageUp,                 &move_pg_up },
-    { "page-down",                  "Navigate one screen page forward",
+    { "page-down",                  "Move cursor down a screen",
         Key.PageDown,               &move_pg_down },
-    { "skip-back",                  "Skip backward to different element",
-        Mod.ctrl|Key.LeftArrow,     &move_skip_backward },
-    { "skip-front",                 "Skip forward to different element",
-        Mod.ctrl|Key.RightArrow,    &move_skip_forward },
     { "view-up",                    "Move view up a row",
         Mod.ctrl|Key.UpArrow,       &view_up },
     { "view-down",                  "Move view down a row",
         Mod.ctrl|Key.DownArrow,     &view_down },
+    { "skip-back",                  "Skip same elements backends",
+        Mod.ctrl|Key.LeftArrow,     &move_skip_backward },
+    { "skip-front",                 "Skip same elements forward",
+        Mod.ctrl|Key.RightArrow,    &move_skip_forward },
     // Deletions
-    { "delete",                     "Delete data from position",
+    { "delete",                     "Delete data at cursor position",
         Key.Delete,                 &delete_front },
-    { "delete-back",                "Delete data from position backward",
+    { "delete-back",                "Delete data before cursor position",
         Key.Backspace,              &delete_back },
     // Selections
-    { "select-left",                "Extend selection one element back",
+    { "select-left",                "Extend selection one element backward",
         Mod.shift|Key.LeftArrow,    &select_left },
     { "select-right",               "Extend selection one element forward", 
         Mod.shift|Key.RightArrow,   &select_right },
@@ -228,23 +228,23 @@ immutable Command[] default_commands = [
         Mod.ctrl|Mod.shift|Key.End, &select_bottom },
     { "select-all",                 "Select entire document",
         Mod.ctrl|Key.A,             &select_all },
-    { "select",                     "Select using a range",
+    { "select",                     "Select elements using a range expression",
         0,                          &select },
-    { "mark" ,                      "Start selection mode",
+    { "mark" ,                      "Start a selection",
         0,                          &mark },
-    { "unmark",                     "End selection mode",
+    { "unmark",                     "End selection",
         0,                          &unmark },
     // Mode, panel...
-    { "change-panel",               "Switch to another data panel",
+    { "change-panel",               "Switch data panel",
         Key.Tab,                    &change_panel },
     { "change-mode",                "Change writing mode (between overwrite and insert)",
         Key.Insert,                 &change_writemode },
     // Find
-    { "find",                       "Find a pattern in the document",
+    { "find",                       "Find data in document using patterns",
         Mod.ctrl|Key.F,             &find },
-    { "find-back",                  "Find a pattern in the document backward",
+    { "find-back",                  "Find data in document, backward direction",
         Mod.ctrl|Key.B,             &find_back },
-    { "find-next",                  "Repeat search",
+    { "find-next",                  "Repeat search forward",
         Mod.ctrl|Key.N,             &find_next },
     { "find-prev",                  "Repeat search backward",
         Mod.shift|Key.N,            &find_prev },
@@ -260,29 +260,30 @@ immutable Command[] default_commands = [
     // Copy-Paste
     { "copy",                       "Copy data into buffer",
         Mod.alt|Key.C,              &clip_copy },
-    { "cut",                        "Copy data into buffer, delete selection",
+    { "cut",                        "Copy data into buffer and delete selection",
         Mod.alt|Key.X,              &clip_cut },
-    { "paste",                      "Paste clipboard data", // modal!
+    { "paste",                      "Paste clipboard data into document", // modal!
         Mod.alt|Key.V,              &clip_paste },
     { "clear-clip",                 "Clear clipboard data",
         0,                          &clip_clear },
-    // NOTE: "save-as" exists solely because it's a dedicated operation
-    //       Despite that "save" could have just gotten an optional parameter
-    { "save",                       "Save document to file",
+    { "save",                       "Save document",
         Mod.ctrl|Key.S,             &save },
+    // NOTE: "save-as" exists solely because it's a dedicated operation.
+    //       Despite that "save" could have just gotten an optional parameter.
+    //       Analogous to GNU nano having ^O.
     { "save-as",                    "Save document as a different file",
         Mod.ctrl|Key.O,             &save_as },
     // Undo-Redo
     { "undo",                       "Undo last edit",
         Mod.ctrl|Key.U,             &undo },
-    { "redo",                       "Redo previously undone edit",
+    { "redo",                       "Redo previous change",
         Mod.ctrl|Key.R,             &redo },
     // Position
     { "goto",                       "Navigate or jump to a specific position",
         Mod.ctrl|Key.G,             &goto_ },
     // Reports
-    // NOTE: Could be renamed to remove "report-" to act as get/set
-    { "report-position",            "Report cursor position on screen",
+    // NOTE: "report-position" will be useless once customizable statusbar is implemented
+    { "report-position",            "Report position, document size, and % in bytes",
         Mod.ctrl|Key.P,             &report_position },
     { "report-name",                "Report document name on screen",
         0,                          &report_name },
@@ -296,13 +297,13 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.L,             &refresh },
     { "autosize",                   "Automatically set column size depending of screen",
         Mod.alt|Key.R,              &autosize },
-    { "set",                        "Set a configuration value",
+    { "set",                        "Set a configuration value for this session",
         0,                          &set },
-    { "bind",                       "Bind a shortcut to an action",
+    { "bind",                       "Bind a shortcut to an action for this session",
         0,                          &bind },
     { "unbind",                     "Remove or reset a bind shortcut",
         0,                          &unbind },
-    { "reset-keys",                 "Reset all binded keys to default",
+    { "reset-keys",                 "Reset all binded keys to default for this session",
         0,                          &reset_keys },
     { "menu",                       "Invoke command prompt",
         Key.Enter,                  &prompt_command },
@@ -378,8 +379,8 @@ void unbindkey(int key)
     g_keys.remove(key);
 }
 
-version(unittest)
-Keybind* binded(int key)
+pragma(inline)
+const(Keybind)* binded(int key)
 {
     return key in g_keys;
 }
@@ -455,7 +456,7 @@ Lread:
         ctrlc = false;
         
         // Key mapped to command
-        const(Keybind) *k = input.key in g_keys;
+        const(Keybind) *k = binded( input.key );
         if (k)
         {
             log("key=%s (%d)", input.key, input.key);
@@ -556,9 +557,11 @@ string promptline(string prompt)
     terminalCursor(0, tsize.rows - 1);
     terminalWrite(prompt);
     
+    // Show and hide cursor for this scope. scope(exit) is OK with exceptions
     terminalShowCursor();
-    scope(exit) terminalHideCursor(); // scope for exception
+    scope(exit) terminalHideCursor();
     
+    // Passing x,y to fix issues where obtaining cursor position is not possible
     return readline(cast(int)prompt.length, tsize.rows - 1);
 }
 int promptkey(string text)
