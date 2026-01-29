@@ -114,9 +114,10 @@ This list may change at any given time without notice.
 - [x] Custom Readline implementation (handle ^C)
 - [x] Show header/status configurations
 - [x] Dual highlighters setting (data and text)
+- [x] 0.8.3: Copy-Cut-Paste: "copy", "cut", "paste" commands (modal)
+- [x] 0.8.3: FIFO/Pipe detection
 
-Current:
-- [x] Copy-Cut-Paste: "copy", "cut", "paste" commands (modal)
+0.9: TBD
 
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
@@ -125,9 +126,10 @@ Wishlist:
 - [ ] Document: Disk
 - [ ] Document: Process memory
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
+- [ ] File browser (to insert files)
 - [ ] Inspect data panel (replaces text panel when toggled)
-- [ ] Patch system (maybe with an ed(1) front-end?)
 - [ ] Layout system (akin to ImHex Patterns)
+- [ ] Patch system (maybe with an ed(1) front-end?)
 - [ ] Snapshot tree system (explore different edit branches)
 - [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
@@ -156,18 +158,21 @@ To quit the editor, use Ctrl+Q, or use the "quit" command.
 Minimum recommended terminal size is 80x24 characters.
 
 ////////////////////////////////////////////////////////////////////////////////
-// Navigation
+// Navigation & Selection
 
 Left/Right Arrow Keys   Move cursor by one element
 Up/Down Arrow Keys      Move cursor by a row
 Page Up/Down            Move cursor across the screen
 Home/End                Move cursor to start or end of line
-Ctrl+Home/End           Move cursor to start of end of document
-Ctrl+Left/Right         Skip over repeated bytes or patterns
-Ctrl+Up/Down            Scroll view without moving cursor
+Ctrl+Home/Ctrl+End      Move cursor to start of end of document
+Ctrl+Up/Ctrl+Down       Scroll view
+Ctrl+Left/Ctrl+Right    Skip same elements (supports selection to skip groups)
 Shift+Navigation        Extend selection while navigating
 
 Navigation should resemble most text editors.
+
+If the shift key is unavailable, the "mark" and "unmark" commands can be used
+to start and stop a selection.
 
 To view all default keybindings, run: ddhx --help-keys
 
@@ -184,12 +189,18 @@ Alt+C                   Copy data into internal buffer
 Alt+X                   Cut data into internal buffer
 Alt+V                   Paste data from internal buffer to document
 
-Edit single elements using a-f/0-9 keys. It's also possible to use a command
-over a selection, like "replace x:00" to replace a selection with zeros.
+Edit single elements using a-f and 0-9 keys. The editor is currently byte-
+oriented, so typing "ff" will insert or replace a byte (element).
+
+It's also possible to use a command over a selection, like "replace x:00", to
+replace a selection with zeros.
 
 To insert a file into the document at the current cursor position, use the
 "insert-file PATH" command, where PATH is a path to the file. The same can be
-done using "replace-file PATH", where the file replaces content instead.
+done using "replace-file PATH", where the file replaces content instead using
+the file's length.
+
+The writing mode (modal) affects manual edits and pasting data.
 
 Some commands support selection. Selection makes certain commands work
 differently. For example, with an active selection, the "replace" command
@@ -256,8 +267,8 @@ Supported commands: find, find-back, insert, and replace.
 A range expression represents a start and end position inclusively, typically
 in the START:END format.
 
-Without a separator, it only denotes a length, starting at the cursor
-position.
+Without the separator (:), it only denotes a length, including the cursor
+position. Instead of ".:+3" (current position + 3 elements), "4" can be typed.
 
 Special markers:
   . - Current cursor position.
@@ -265,11 +276,11 @@ Special markers:
   + - (End only) End is not a position, but an addition to start position
 
 Examples:
-  "select 0x10:0x19"       - Selects positions 0x10 to 0x19
-  "select 0x10:+9"         - Selects positions 0x10 to 0x19 (0x10+9=0x19)
-  "replace 200:$ x:00"     - Replace bytes from address 200 to EOF with zeros
-  "replace 200:. x:00"     - Replace from 200 to current position with zeros
-  "insert 100 x:90"        - Insert 100 0x90 bytes at current position
+  >select 0x10:0x19        - Selects positions 0x10 to 0x19
+  >select 0x10:+9          - Selects positions 0x10 to 0x19 (0x10+9=0x19)
+  >replace 200:$ x:00      - Replace bytes from address 200 to EOF with zeros
+  >replace 200:. x:00      - Replace from 200 to current position with zeros
+  >insert 100 x:90         - Insert 100 0x90 bytes at current position
 
 Supported commands: insert, replace, select, and delete.
 
@@ -278,10 +289,10 @@ Supported commands: insert, replace, select, and delete.
 
 Finding data uses the "find" (Ctrl+F) and "find-back" (Ctrl+B) commands.
 
+The search command uses the pattern system.
+
 Once a search needle is defined, it can be re-used using "find-next" (Ctrl+N)
 and "find-prev" (Shift+N).
-
-The search command uses the pattern system.
 
 For example, looking for `hi\0\0` (these are equivalent):
   >find s:hi x:00 00
@@ -299,47 +310,39 @@ LIMITATION: Search does not wrap and depends on cursor position.
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration
 
-Settings can be changed at runtime using the "set" command.
+Runtime changes do not persist across sessions. To make settings permanent,
+add them to your configuration file.
 
-Example - changing the character set:
-  >set charset mac
+Settings can be changed at runtime using the "set" command:
+  set CONFIG VALUE
+
+Keys can be bound to commands using the "bind" command:
+  bind KEY COMMAND [PARAMS...]
+
+Examples:
+  >set charset mac              Set character set to Mac
+  >bind right-arrow goto +32    Bind Right Arrow to "goto +32" (jump 32 bytes)
+
+To remove bindings:
+  >unbind KEY                   Remove specific binding from KEY
+  >reset-keys                   Reset all bindings to defaults
 
 Most settings can also be configured via command-line flags. For example, both
 "-c" and "--columns=" correspond to the "columns" setting.
 
-Runtime changes do not persist across sessions. To make settings permanent,
-add them to your configuration file at.
-
 Example configuration file:
-  charset mac
+  # EBCDIC character set
+  charset ebcdic
+  # 32 columns
   columns 32
+  # Vim-style navigation
+  bind h left
+  bind j down
+  bind k up
+  bind l right
+  bind : menu
 
-To view configuration options and path, run: ddhx --help-config
-
-////////////////////////////////////////////////////////////////////////////////
-// Key binding
-
-Keys can be bound to commands using the "bind" command.
-
-The bind command also works in configuration files.
-
-Usage: bind KEY COMMAND [PARAMS...]
-
-Vim-style navigation example:
-  >bind h left
-  >bind j down
-  >bind k up
-  >bind l right
-  >bind : menu
-
-This makes the right arrow jump 32 bytes ahead.
-  >bind right-arrow goto +32
-
-To remove bindings:
-  >unbind right-arrow       Remove a specific binding
-  >reset-keys               Reset all bindings to defaults
-
-Key bounds in a session are not saved. The configuration file is recommended.
+To view configuration options and paths, run: ddhx --help-config
 
 ////////////////////////////////////////////////////////////////////////////////
 // Compiling
@@ -378,10 +381,13 @@ Run unit tests (useful for new platforms):
   $ dub test
 Run unit tests with log traces:
   $ dub test --d-version=Trace
+Run a specific system integration test:
+  $ dub test -b TYPE
+  TYPE: input (terminal input), color (terminal colors), size (terminal size)
 
 Environment variables:
 - DDHX_LOG=PATH
-  - If set, enables logging debug inform into this file.
+  - If set, enables logging debugging information into this file.
   - Version: Since 0.7
 - DDHX_BACKEND=BACKEND
   - Forces BACKEND to be selected.
