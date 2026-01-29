@@ -43,9 +43,9 @@ interface IDocumentEditor
     /// Insert data using a file
     void fileInsert(long position, IDocument doc);
     
-    /// Returns: Position
+    /// Returns: Position (start position of affected region) or -1
     long undo();
-    /// Returns: Postion+Length
+    /// Returns: Postion+Length (end position of affected region) or -1
     long redo();
 }
 

@@ -32,6 +32,7 @@ flame.svg
 .ddhxrc
 *.log
 *.patch
+ddhx_dump.txt
 
 # Personal
 perso/

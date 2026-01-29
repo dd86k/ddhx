@@ -326,24 +326,111 @@ void initdefaults()
             g_keys[command.key] = Keybind( command.impl, null );
     }
     
-    // Add commands and shortcuts for debug builds.
-    debug
+    // Add a "debug" command for, you guessed it, debugging for debug builds
+    debug g_commands["debug"] =
+    (Session* session, string[] args)
     {
-        g_commands["test-error"] =
-        (Session*, string[])
-        {
-            throw new Exception("error test");
-        };
+        if (args.length == 0)
+            throw new Exception("Missing action");
         
-        // ^H is binded to ctrl+backspace.
-        g_keys[Mod.ctrl|Key.J] =
-        Keybind((Session*, string[])
+        // Don't need a throw command, this throws plenty
+        switch (args[0]) {
+        case "msg":
+            // Very long message by default
+            string msg = args.length > 1 ?
+                args[1] :
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"~
+                "aaaaaa"; // Otherwise, 86x 'a'
+            
+            message(msg);
+            break;
+        case "dump":
+            string target = args.length > 1 ? args[1] : "ddhx_dump.txt";
+            
+            import std.stdio : File;
+            import std.datetime : Clock;
+            import platform : TARGET_ENV, TARGET_OS, TARGET_PLATFORM;
+            File file; // Old LDC opAssign bug might resurface, idk
+            file.open(target, "w");
+            file.writeln("ddhx debug dump");
+            file.writeln("Time\t: ", Clock.currTime());
+            file.writeln("Version\t: ", DDHX_VERSION);
+            file.writeln("System\t: ", TARGET_OS);
+            file.writeln("Environment\t: ", TARGET_ENV);
+            file.writeln("Platform\t: ", TARGET_PLATFORM);
+            file.writeln();
+            
+            import core.memory : GC;
+            GC.Stats stats = GC.stats();
+            file.writeln("GC");
+            file.writeln("\t", stats.freeSize, " B Free");
+            file.writeln("\t", stats.usedSize, " B Used");
+            file.writeln("\t", stats.allocatedInCurrentThread, " B Allocated (thread)");
+            /*GC.ProfileStats profiler = GC.profileStats(); // Useless if not enabled?
+            file.writeln("\t", profiler.numCollections, " Cycles");
+            file.writeln("\t", profiler.totalCollectionTime, " Total Collection Time");
+            file.writeln("\t", profiler.totalPauseTime, " Total Pause Time");
+            file.writeln("\t", profiler.maxPauseTime, " Max Pause Time");
+            file.writeln("\t", profiler.maxCollectionTime, " Max Collection Time");*/
+            
+            file.writeln("Globals");
+            file.writeln("\tg_messagebuf.length\t: ", g_messagebuf.length);
+            file.writeln("\tg_message.length\t: ", g_message.length);
+            file.writeln("\tg_needle.length\t: ", g_needle.length);
+            file.writeln("\tg_editcurpos\t: ", g_editcurpos);
+            file.writeln("\tg_editdigit\t: ", g_editdigit);
+            file.writeln("\tg_clipboard_ptr\t: ", g_clipboard_ptr);
+            file.writeln("\tg_clipboard_len\t: ", g_clipboard_len);
+            file.writeln("\tg_commands.length\t: ", g_commands.length);
+            file.writeln("\tg_keys.length\t: ", g_keys.length);
+            
+            file.writeln("Session");
+            file.writeln("\tg_session.position_cursor\t: ", g_session.position_cursor);
+            file.writeln("\tg_session.position_view\t: ", g_session.position_view);
+            file.writeln("\tg_session.target\t: ", g_session.target);
+            file.writeln("\tg_session.selection.anchor\t: ", g_session.selection.anchor);
+            file.writeln("\tg_session.selection.status\t: ", g_session.selection.status);
+            
+            file.writeln("RC");
+            file.writeln("\tg_session.rc.address_spacing\t: ", g_session.rc.address_spacing);
+            file.writeln("\tg_session.rc.address_type\t: ", g_session.rc.address_type);
+            file.writeln("\tg_session.rc.charset\t: ", g_session.rc.charset);
+            file.writeln("\tg_session.rc.columns\t: ", g_session.rc.columns);
+            file.writeln("\tg_session.rc.data_type\t: ", g_session.rc.data_type);
+            file.writeln("\tg_session.rc.header\t: ", g_session.rc.header);
+            file.writeln("\tg_session.rc.status\t: ", g_session.rc.status);
+            file.writeln("\tg_session.rc.mirror_cursor\t: ", g_session.rc.mirror_cursor);
+            file.writeln("\tg_session.rc.writemode\t: ", g_session.rc.writemode);
+            
+            // TODO: Make IDocumentEditor return original IDocument
+            //       I don't keep a reference because it can change at any time
+            /*
+            if (IDocument doc = session.editor.doc())
             {
-                throw new Exception("error test");
-            },
-            null
-        );
-    }
+                file.writeln("Document");
+            }
+            */
+            
+            import editor.piecev2 : PieceV2DocumentEditor;
+            file.writeln("Editor");
+            file.writeln("\tClass\t: ", session.editor); // prints type!
+            file.writeln("\tSize\t: ", session.editor.size());
+            file.writeln("\tEdited\t: ", session.editor.edited());
+            /*
+            if (PieceV2DocumentEditor piecev2 = cast(PieceV2DocumentEditor)session.editor)
+            {
+                // TODO: Make PieceV2DocumentEditor internals visible
+                //       Piece table (pos+size), command history, buffer size, etc.
+            }
+            */
+            
+            file.flush();
+            file.close();
+            break;
+        default:
+            throw new Exception("Exception");
+        }
+    };
 }
 
 // Bind a key to a command with default set of parameters
