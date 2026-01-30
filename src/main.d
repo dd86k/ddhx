@@ -314,7 +314,19 @@ void main(string[] args)
             import std.path : baseName;
             
             bool readonly = rc.writemode == WritingMode.readonly;
-            editor.open(new FileDocument(target, readonly));
+            try
+            {
+                editor.open(new FileDocument(target, readonly));
+            }
+            catch (Exception ex)
+            {
+                // Retry as read-only if tried as writable, throws on error anyway
+                if (readonly == false)
+                {
+                    editor.open(new FileDocument(target, true));
+                    rc.writemode = WritingMode.readonly;
+                }
+            }
             
             initmsg = baseName(target);
         }
