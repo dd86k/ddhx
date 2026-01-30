@@ -132,14 +132,10 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     /// Last search needle buffer (find commands use this).
     ubyte[] g_needle;
     
-    // TODO: Should be turned into a "reader" (struct+function)
-    //       Allows additional unittests and settings (e.g., RTL).
     // location where edit started
     long g_editcurpos;
-    // position of digit for edit, starting at most-significant digit
-    size_t g_editdigit;
-    // 
-    ubyte[8] g_editbuf;
+        
+    InputFormatter g_input;
     
     /// Global clipboard buffer.
     ubyte *g_clipboard_ptr;
@@ -380,7 +376,7 @@ void initdefaults()
             file.writeln("\tg_message.length\t: ", g_message.length);
             file.writeln("\tg_needle.length\t: ", g_needle.length);
             file.writeln("\tg_editcurpos\t: ", g_editcurpos);
-            file.writeln("\tg_editdigit\t: ", g_editdigit);
+            file.writeln("\tg_input.index\t: ", g_input.index);
             file.writeln("\tg_clipboard_ptr\t: ", g_clipboard_ptr);
             file.writeln("\tg_clipboard_len\t: ", g_clipboard_len);
             file.writeln("\tg_commands.length\t: ", g_commands.length);
@@ -497,6 +493,8 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     g_session.target = path;    // assign target path, a NULL value is valid
     g_session.editor = editor;  // assign editor instance
     
+    g_input.change(rc.data_type);
+    
     message(initmsg);
     
     loop(g_session);
@@ -597,22 +595,18 @@ Lread:
         // We have a valid key and mode, so disrupt selection
         session.selection.status = 0;
         
-        if (g_editdigit == 0) // start new edit
+        int d = keydata(session.rc.data_type, input.key);
+        if (d < 0) return;
+        
+        // start new edit
+        if (g_input.index == 0)
         {
             g_editcurpos = session.position_cursor;
-            import core.stdc.string : memset;
-            memset(g_editbuf.ptr, 0, g_editbuf.length);
+            g_input.reset();
         }
         
-        g_status |= UEDITING;
-        shfdata(g_editbuf.ptr, g_editbuf.length, session.rc.data_type, kv, g_editdigit++);
-        
-        DataSpec spec = dataSpec(session.rc.data_type);
-        int chars = spec.spacing;
-        
-        // If entered an edit fully or cursor position changed,
-        // add edit into history stack
-        if (g_editdigit >= chars)
+        // add digit, if filled, move cursor
+        if (g_input.add( d ) == true)
         {
             // Forcing to move cursor forces the edit to be applied,
             // since cursor position when starting an edit is saved
@@ -623,6 +617,8 @@ Lread:
                 message(ex.msg);
             }
         }
+        
+        g_status |= UEDITING;
         break;
     default:
         goto Lread;
@@ -699,8 +695,8 @@ Lread:
 // For example, 'a' will return 0xa, and 'r' will return -1, an error.
 int keydata(DataType type, int keychar) @safe
 {
-    switch (type) with (DataType) {
-    case x8:
+    final switch (type) with (DataType) {
+    case x8, x16:
         if (keychar >= '0' && keychar <= '9')
             return keychar - '0';
         if (keychar >= 'A' && keychar <= 'F')
@@ -720,7 +716,6 @@ int keydata(DataType type, int keychar) @safe
             return keychar - '0';
         break;
     */
-    default:
     }
     return -1;
 }
@@ -751,34 +746,6 @@ int keydata(DataType type, int keychar) @safe
     assert(keydata(DataType.o8, 'a') < 0);
     assert(keydata(DataType.o8, 'L') < 0);
     */
-}
-
-void shfdata(void *b, size_t len, DataType t, int d, size_t digit)
-{
-    enum XSHIFT = 4;  // << 4
-    enum DSHIFT = 10; // * 10
-    enum OSHIFT = 8;  // * 8
-    size_t space;
-    switch (t) {
-    case DataType.x8:
-        space = 2;
-    //Lxshift:
-        // from current number of digits entered to digit position
-        size_t p = ((2 - 1) - digit);
-        *cast(ubyte*)b |= d << (XSHIFT * p);
-        break;
-    default:
-        throw new Exception("TODO");
-    }
-}
-unittest
-{
-    ubyte[8] b;
-    long* s64 = cast(long*)b.ptr;
-    shfdata(b.ptr, b.length, DataType.x8, 1,   0);
-    assert(*s64 == 0x10);
-    shfdata(b.ptr, b.length, DataType.x8, 0xf, 1);
-    assert(*s64 == 0x1f);
 }
 
 // Command requires argument
@@ -976,14 +943,14 @@ void moverel(Session *session, long pos)
 void moveabs(Session *session, long pos)
 {
     // If the cursor position changed while editing... Just save the edit.
-    // Both _editdigit and _editcurpos are set by the editor reliably.
-    if (g_editdigit && g_editcurpos != pos)
+    if (g_input.index && g_editcurpos != pos)
     {
-        g_editdigit = 0;
+        ubyte[] data = g_input.data;
         if (session.rc.writemode == WritingMode.overwrite)
-            session.editor.replace(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+            session.editor.replace(g_editcurpos, data.ptr, data.length);
         else
-            session.editor.insert(g_editcurpos, g_editbuf.ptr, ubyte.sizeof);
+            session.editor.insert(g_editcurpos, data.ptr, data.length);
+        g_input.reset(); // needed so new input isn't confused
         g_status |= UVIEW; // new data
     }
     
@@ -1195,7 +1162,7 @@ void update_view(Session *session, TerminalSize termsize)
                 if (i != sl0) terminalInvertColor();
                 terminalWrite(" "); // data-data spacer
                 if (i == sl0) terminalInvertColor();
-                terminalWrite(dfmt.formatdata());
+                terminalWrite(dfmt.formatdata()); dfmt.step();
                 terminalResetColor();
                 continue;
             }
@@ -1218,12 +1185,10 @@ void update_view(Session *session, TerminalSize termsize)
             }
             
             // Print data
-            if (g_editdigit && highlight) // apply current edit at position
+            if (g_input.index && highlight) // apply current edit at position
             {
-                dfmt.skip(); // skip this element since it's in the edit buffer
-                terminalWrite(
-                    formatData(txtbuf, g_editbuf.ptr, g_editbuf.length, session.rc.data_type)
-                );
+                dfmt.step(); // skip this element since it's in the edit buffer
+                terminalWrite(g_input.format);
             }
             else if (i < readlen) // apply data
             {
@@ -1234,6 +1199,7 @@ void update_view(Session *session, TerminalSize termsize)
                     buffwriter.put(dfmt.formatdata());
                     version (Windows) buffwriter.flush(); // windows cursor fix
                 }
+                dfmt.step();
             }
             else // no data, print spacer
             {

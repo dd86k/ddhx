@@ -158,6 +158,9 @@ unittest
 enum DataType
 {
     x8,     /// 8-bit hexadecimal (e.g., 0xff will be ff)
+    x16,
+    //x32,
+    //x64,
     //u8,     /// 8-bit unsigned decimal (0xff -> 255)
     //o8,     /// 8-bit unsigned octal (0xff -> 377)
     //s8,     /// 8-bit signal decimal
@@ -170,6 +173,8 @@ struct DataSpec
     string name;
     /// Number of characters it occupies at maximum. Used for alignment.
     int spacing;
+    /// Size of data type in bytes.
+    int size_of;
 }
 /// Get specification for this data type.
 /// Params: type = Data type.
@@ -177,7 +182,8 @@ struct DataSpec
 DataSpec dataSpec(DataType type)
 {
     final switch (type) {
-    case DataType.x8: return DataSpec("x8", 2);
+    case DataType.x8:  return DataSpec("x8",  2, ubyte.sizeof);
+    case DataType.x16: return DataSpec("x16", 4, ushort.sizeof);
     //case DataType.u8: return DataSpec("u8", 3);
     //case DataType.o8: return DataSpec("o8", 3);
     }
@@ -188,34 +194,9 @@ DataSpec dataSpec(DataType type)
 string dataTypeToString(DataType type)
 {
     final switch (type) {
-    case DataType.x8: return "x8";
+    case DataType.x8:  return "x8";
+    case DataType.x16: return "x16";
     }
-}
-/// Format element depending on editor settings.
-/// Params:
-///     buf = Character buffer.
-///     dat = Pointer to data.
-///     len = Length of data.
-///     type = Data type.
-/// Returns: String slice with formatted data.
-/// Throws: An exception when length criteria isn't met.
-string formatData(char[] buf, void *dat, size_t len, DataType type)
-{
-    final switch (type) {
-    case DataType.x8:
-        assertion(len >= ubyte.sizeof, "length ran out");
-        return formatx8(buf, *cast(ubyte*)dat, true);
-    }
-}
-unittest
-{
-    char[32] buf = void;
-    ubyte a = 0x00;
-    assert(formatData(buf, &a, ubyte.sizeof, DataType.x8) == "00");
-    ubyte b = 0x01;
-    assert(formatData(buf, &b, ubyte.sizeof, DataType.x8) == "01");
-    ubyte c = 0xff;
-    assert(formatData(buf, &c, ubyte.sizeof, DataType.x8) == "ff");
 }
 
 /// Format element as x8.
@@ -224,7 +205,7 @@ unittest
 ///     v = Element value.
 ///     zeros = If true, prepend with zeros.
 /// Returns: String slice.
-string formatx8(char[] buf, ubyte v, bool zeros)
+string formatx8(char[] buf, ubyte v, bool zeros) // DataFormatter uses this...
 {
     return cast(string)sformat(buf, zeros ? "%02x" : "%2x", v);
 }
@@ -238,34 +219,57 @@ unittest
     assert(formatx8(buf, 0x01, false) == " 1");
     assert(formatx8(buf, 0xff, false) == "ff");
 }
+string formatx16(char[] buf, ushort v, bool zeros)
+{
+    return cast(string)sformat(buf, zeros ? "%04x" : "%4x", v);
+}
+unittest
+{
+    char[32] buf = void;
+    assert(formatx16(buf, 0x0001, true)  == "0001");
+    assert(formatx16(buf, 0x0101, true)  == "0101");
+    assert(formatx16(buf, 0xff01, true)  == "ff01");
+    assert(formatx16(buf, 0x0001, false) == "   1");
+    assert(formatx16(buf, 0x0101, false) == " 101");
+    assert(formatx16(buf, 0xff01, false) == "ff01");
+}
 
 /// Helper structure that walks over a buffer and formats every element.
 struct DataFormatter
 {
     /// New instance
-    this(DataType dtype, const(ubyte) *data, size_t len)
+    this(DataType dtype, const(void) *data, size_t len)
     {
-        buffer = data;
-        max = buffer + len;
-        
-        switch (dtype) {
+        // TODO: Partial formatting
+        final switch (dtype) {
         case DataType.x8:
-            formatdata = () {
-                if (buffer + size > max)
-                    return null;
-                return formatx8(textbuf, *cast(ubyte*)(buffer++), true);
-            };
             size = ubyte.sizeof;
+            formatdata = () {
+                if (i >= max)
+                    return null;
+                return formatx8(textbuf, (cast(ubyte*)buffer)[i], true);
+            };
             break;
-        default:
-            throw new NotImplementedException();
+        case DataType.x16:
+            // TODO: Fix formatting for x16
+            size = ushort.sizeof;
+            formatdata = () {
+                if (i >= max)
+                    return null;
+                return formatx16(textbuf, (cast(ushort*)buffer)[i], true);
+            };
+            break;
         }
+        
+        buffer = data;
+        //max = buffer + (len * size);
+        max = len;
     }
     
-    /// Skip an element.
-    void skip()
+    void step()
     {
-        buffer += size;
+        //buffer += size;
+        i++;
     }
     
     /// Format an element.
@@ -275,19 +279,201 @@ struct DataFormatter
     /// Set in ctor.
     string delegate() formatdata;
     
+    ubyte[] data()
+    {
+        return (cast(ubyte*)(buffer + (i * size)))[0..size];
+    }
+    
 private:
-    char[32] textbuf = void;
-    size_t size;
+    size_t size;    /// Size of one element
+    size_t i;
+    size_t max;
     const(void) *buffer;
-    const(void) *max;
+    char[24] textbuf = void;
 }
 unittest
 {
     immutable ubyte[] data = [ 0x00, 0x01, 0xa0, 0xff ];
     DataFormatter formatter = DataFormatter(DataType.x8, data.ptr, data.length);
-    assert(formatter.formatdata() == "00");
-    assert(formatter.formatdata() == "01");
-    assert(formatter.formatdata() == "a0");
-    assert(formatter.formatdata() == "ff");
+    assert(formatter.formatdata() == "00"); formatter.step();
+    assert(formatter.formatdata() == "01"); formatter.step();
+    assert(formatter.formatdata() == "a0"); formatter.step();
+    assert(formatter.formatdata() == "ff"); formatter.step();
     assert(formatter.formatdata() == null);
+    
+    // TODO: Fix position issue
+    /*
+    immutable ushort[] data16 = [ 0x0101, 0xf0f0 ];
+    formatter = DataFormatter(DataType.x16, data16.ptr, data16.length);
+    assert(formatter.formatdata() == "0101"); formatter.step();
+    import std.stdio : writeln;
+    writeln("d==========->", formatter.formatdata());
+    assert(formatter.formatdata() == "f0f0"); formatter.step();
+    assert(formatter.formatdata() == null);
+    */
+}
+
+/// Helps inputting data and formatting said input
+///
+/// They act like relays, clat clat
+struct InputFormatter
+{
+    void change(DataType newtype)
+    {
+        type = newtype;
+        spec = dataSpec(newtype);
+        final switch (newtype) {
+        case DataType.x8:
+            fmtspec = spec_x8;
+            break;
+        case DataType.x16:
+            fmtspec = spec_x16;
+            break;
+        }
+        reset();
+    }
+    
+    void reset()
+    {
+        d = b = t = 0;
+        buffer[] = 0;
+    }
+    
+    size_t index() // digit index
+    {
+        return t;
+    }
+    
+    // Add digit, goes left to right
+    bool add(int digit)
+    {
+        //   +---- d=0
+        //   |+--- d=1
+        // 0x12
+        //   ||
+        //   ++-- b=0
+        
+        int dp = (spec.spacing - 1 - t);
+        final switch (type) {
+        case DataType.x8:
+            // t=0 -> digit << 4
+            // t=1 -> digit << 0
+            u8 |= digit << (dp * XSHIFT);
+            break;
+        case DataType.x16:
+            // t=0 -> digit << 12
+            // t=1 -> digit << 8
+            // t=2 -> digit << 4
+            // t=3 -> digit << 0
+            u16 |= digit << (dp * XSHIFT);
+            break;
+        }
+        
+        t++;
+        
+        // completed data type (x8=2 chars, x16=4 chars, etc.)
+        if (++d >= spec.spacing)
+        {
+            b = spec.size_of;
+            d = 0; // reset digit index
+            return true;
+        }
+        
+        return false;
+    }
+    
+    // Format what's in the buffer
+    string format()
+    {
+        final switch (type) {
+        case DataType.x8:
+            return cast(string)sformat(txtbuffer, fmtspec, spec.spacing, u8);
+        case DataType.x16:
+            return cast(string)sformat(txtbuffer, fmtspec, spec.spacing, u16);
+        }
+    }
+    alias toString = format;
+    
+    // Return data because entering numbers from left to right
+    ubyte[] data()
+    {
+        version (LittleEndian)
+        {
+            int r = spec.size_of - 1;
+            for (int i; i < spec.size_of; i++, r--)
+            {
+                outbuffer[i] = buffer[r];
+            }
+            
+            return outbuffer[0..spec.size_of];
+        }
+        else return buffer[0..spec.size_of]; // BigEndian :-)
+    }
+    
+private:
+    enum XSHIFT = 4;  // << 4
+    enum DSHIFT = 10; // * 10
+    enum OSHIFT = 8;  // * 8
+    
+    static immutable string spec_x8 =  "%0*x";
+    static immutable string spec_x16 = spec_x8;
+    string fmtspec = spec_x8;
+    
+    DataType type = DataType.x8;
+    DataSpec spec;
+    int d; /// digit index
+    int b; /// buffer index
+    int t; /// total digits
+    
+    union // NOTE: Using integers for math is easier
+    {
+        ubyte[8] buffer = void;
+        ubyte   u8 = void;
+        ushort u16 = void;
+        uint   u32 = void;
+        ulong  u64 = void;
+    }
+    version (LittleEndian) ubyte[8] outbuffer = void;
+    char[24] txtbuffer = void;
+}
+unittest
+{
+    InputFormatter input;
+    
+    input.change(DataType.x8);
+    
+    assert(input.data   == [ 0 ]);
+    
+    assert(input.add(1) == false);
+    assert(input.data   == [ 0x10 ]);
+    assert(input.format == "10");
+    
+    assert(input.add(2) == true);
+    assert(input.data   == [ 0x12 ]);
+    assert(input.format == "12");
+    
+    // TODO: Fix endianness
+    //       Bad if we want to print as x16
+    //       0xffaa
+    //       Little: [ 0xaa, 0xff ]
+    //       Big   : [ 0xff, 0xaa ]
+    input.change(DataType.x16);
+    
+    assert(input.data   == [ 0, 0 ]);
+    
+    assert(input.add(0xf) == false);
+    assert(input.data   == [ 0xf0, 0x00 ]);
+    assert(input.format == "f000");
+    
+    assert(input.add(2) == false);
+    assert(input.data   == [ 0xf2, 0x00 ]);
+    assert(input.format == "f200");
+    
+    assert(input.add(0xa) == false);
+    assert(input.data   == [ 0xf2, 0xa0 ]);
+    assert(input.format == "f2a0");
+    
+    assert(input.add(4) == true);
+    assert(input.data   == [ 0xf2, 0xa4 ]);
+    assert(input.format == "f2a4");
 }
