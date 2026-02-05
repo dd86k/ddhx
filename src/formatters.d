@@ -6,12 +6,13 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module formatters;
 
-// TODO: Could be renamed to "formatters"
+// TODO: Could be renamed to "formatting"
 
 import platform : assertion;
 import std.format;
 import transcoder : CharacterSet;
 import platform : NotImplementedException;
+import list;
 
 /// Indicates which writing mode is active when entering data.
 enum WritingMode
@@ -135,30 +136,30 @@ unittest
     
     // Address offset in left panel
     address.change(AddressType.hex, false);
-    assert(address.format(       0x00, 10) == "         0");
-    assert(address.format(       0x01, 10) == "         1");
-    assert(address.format(       0x80, 10) == "        80");
-    assert(address.format(       0xff, 10) == "        ff");
-    assert(address.format(      0x100, 10) == "       100");
-    assert(address.format(     0x1000, 10) == "      1000");
-    assert(address.format(    0x10000, 10) == "     10000");
-    assert(address.format(   0x100000, 10) == "    100000");
-    assert(address.format(  0x1000000, 10) == "   1000000");
-    assert(address.format(0x10000000,  10) == "  10000000");
-    assert(address.format(0x100000000, 10) == " 100000000");
-    assert(address.format(0x100000000, 10) == " 100000000");
-    assert(address.format(ulong.max,   10) == "ffffffffffffffff");
+    assert(address.format(        0x00, 10) == "         0");
+    assert(address.format(        0x01, 10) == "         1");
+    assert(address.format(        0x80, 10) == "        80");
+    assert(address.format(        0xff, 10) == "        ff");
+    assert(address.format(       0x100, 10) == "       100");
+    assert(address.format(      0x1000, 10) == "      1000");
+    assert(address.format(     0x10000, 10) == "     10000");
+    assert(address.format(    0x100000, 10) == "    100000");
+    assert(address.format(   0x1000000, 10) == "   1000000");
+    assert(address.format(  0x10000000, 10) == "  10000000");
+    assert(address.format( 0x100000000, 10) == " 100000000");
+    assert(address.format(0x1000000000, 10) == "1000000000");
+    assert(address.format(   ulong.max, 10) == "ffffffffffffffff");
 }
 
 //
 // Data handling
 //
 
-/// Describes how a single element should be formatted.
+/// Data representation.
 enum DataType
 {
-    x8,     /// 8-bit hexadecimal (e.g., 0xff will be ff)
-    x16,
+    x8,     /// 8-bit hexadecimal (e.g., 0xff -> "ff")
+    x16,    /// 16-bit hexadecimal
     //x32,
     //x64,
     //u8,     /// 8-bit unsigned decimal (0xff -> 255)
@@ -166,32 +167,104 @@ enum DataType
     //s8,     /// 8-bit signal decimal
     //i8,     /// 8-bit signal octal
 }
+import std.traits : EnumMembers;
+import os.terminal;
+/// Data type count.
+enum TYPES = EnumMembers!DataType.length;
+
+DataType selectDataType(string type)
+{
+    switch (type) {
+    case "x8":      return DataType.x8;
+    case "x16":     return DataType.x16;
+    default:        throw new Exception("Unknown data type");
+    }
+}
+
+/// Can represent a single "element"
+///
+/// Used in "goto", "skip-forward", etc. to select a single "element"
+union Element
+{
+    long    u64;
+    uint    u32;
+    ushort  u16;
+    ubyte   u8;
+    ubyte[8] raw;
+    // Could make this structure "richer" by giving it data type,
+    // but there aren't any actual needs at the moment.
+}
+
+// Size of a data type in bytes.
+//
+// This exists since there are a lot of places we only need data type size and
+// DataType(...) keeps recreating structure instance (wasteful).
+// Optimized for View system, returns int to make it easier to calculate with
+// terminal size.
+int size_of(DataType type)
+{
+    static immutable int[TYPES] sizes = [ ubyte.sizeof, ushort.sizeof ];
+    size_t i = cast(size_t)type;
+    assert(i < sizes.sizeof);
+    return sizes[i];
+}
+unittest
+{
+    assert(size_of(DataType.x8)  == ubyte.sizeof);
+    assert(size_of(DataType.x16) == ushort.sizeof);
+    
+    // Test all
+    for (int i; i < TYPES; i++)
+        cast(void)size_of(cast(DataType)i);
+}
+
 /// Data specification for this data type.
 struct DataSpec
 {
+    // Construct from DataType enum
+    this(DataType type)
+    {
+        final switch (type) {
+        case DataType.x8:  this = DataSpec("x8",  "%0*x", 2, ubyte.sizeof); break;
+        case DataType.x16: this = DataSpec("x16", "%0*x", 4, ushort.sizeof); break;
+        }
+    }
+    
+    // Manual configuration
+    this(string shortname, string fmt, int chars, int sizeof)
+    {
+        name = shortname;
+        fmtspec = fmt;
+        spacing = chars;
+        size_of = sizeof;
+    }
+    
     /// Name (e.g., "x8").
     string name;
-    /// Number of characters it occupies at maximum. Used for alignment.
+    /// Format specifier for format/sformat/printf.
+    string fmtspec;
+    /// Number of characters it occupies at maximum. Used for text alignment.
     int spacing;
     /// Size of data type in bytes.
-    int size_of;
+    int size_of; // Avoids conflict with .sizeof
 }
 /// Get specification for this data type.
 /// Params: type = Data type.
 /// Returns: Data specification.
-DataSpec dataSpec(DataType type)
+DataSpec dataSpec(DataType type) // TODO: Deprecate and rely on DataSpec(DataType)
 {
     final switch (type) {
-    case DataType.x8:  return DataSpec("x8",  2, ubyte.sizeof);
-    case DataType.x16: return DataSpec("x16", 4, ushort.sizeof);
+    case DataType.x8:  return DataSpec("x8",  "%0*x", 2, ubyte.sizeof);
+    case DataType.x16: return DataSpec("x16", "%0*x", 4, ushort.sizeof);
     //case DataType.u8: return DataSpec("u8", 3);
     //case DataType.o8: return DataSpec("o8", 3);
     }
 }
+
 /// Get label for this data type.
 /// Params: type = Data type.
 /// Returns: Label.
-string dataTypeToString(DataType type)
+string dataTypeToString(DataType type) // Only used in statusbar code
 {
     final switch (type) {
     case DataType.x8:  return "x8";
@@ -199,118 +272,78 @@ string dataTypeToString(DataType type)
     }
 }
 
-/// Format element as x8.
-/// Params:
-///     buf = Character buffer.
-///     v = Element value.
-///     zeros = If true, prepend with zeros.
-/// Returns: String slice.
-string formatx8(char[] buf, ubyte v, bool zeros) // DataFormatter uses this...
-{
-    return cast(string)sformat(buf, zeros ? "%02x" : "%2x", v);
-}
-unittest
-{
-    char[32] buf = void;
-    assert(formatx8(buf, 0x00, true)  == "00");
-    assert(formatx8(buf, 0x01, true)  == "01");
-    assert(formatx8(buf, 0xff, true)  == "ff");
-    assert(formatx8(buf, 0x00, false) == " 0");
-    assert(formatx8(buf, 0x01, false) == " 1");
-    assert(formatx8(buf, 0xff, false) == "ff");
-}
-string formatx16(char[] buf, ushort v, bool zeros)
-{
-    return cast(string)sformat(buf, zeros ? "%04x" : "%4x", v);
-}
-unittest
-{
-    char[32] buf = void;
-    assert(formatx16(buf, 0x0001, true)  == "0001");
-    assert(formatx16(buf, 0x0101, true)  == "0101");
-    assert(formatx16(buf, 0xff01, true)  == "ff01");
-    assert(formatx16(buf, 0x0001, false) == "   1");
-    assert(formatx16(buf, 0x0101, false) == " 101");
-    assert(formatx16(buf, 0xff01, false) == "ff01");
-}
-
 /// Helper structure that walks over a buffer and formats every element.
 struct DataFormatter
 {
-    /// New instance
+    // NOTE: Endianness setting could be here, too
+    /// Make a new instance with data and byte length
     this(DataType dtype, const(void) *data, size_t len)
     {
-        // TODO: Partial formatting
-        final switch (dtype) {
-        case DataType.x8:
-            size = ubyte.sizeof;
-            formatdata = () {
-                if (i >= max)
-                    return null;
-                return formatx8(textbuf, (cast(ubyte*)buffer)[i], true);
-            };
-            break;
-        case DataType.x16:
-            // TODO: Fix formatting for x16
-            size = ushort.sizeof;
-            formatdata = () {
-                if (i >= max)
-                    return null;
-                return formatx16(textbuf, (cast(ushort*)buffer)[i], true);
-            };
-            break;
-        }
-        
+        assert(data);
+        datatype = dtype;
+        spec = DataSpec(dtype);
         buffer = data;
-        //max = buffer + (len * size);
-        max = len;
+        size = len;
     }
     
-    void step()
-    {
-        //buffer += size;
-        i++;
-    }
+    void step() { i += spec.size_of; }
     
     /// Format an element.
-    ///
-    /// Returns null when done.
-    ///
-    /// Set in ctor.
-    string delegate() formatdata;
-    
-    ubyte[] data()
+    /// Returns: Formatted data or null when end of data.
+    string print()
     {
-        return (cast(ubyte*)(buffer + (i * size)))[0..size];
+        if (i >= size)
+            return cast(string)sformat(textbuf, "%*s", spec.spacing, "");
+        
+        final switch (datatype) {
+        case DataType.x8:
+            ubyte v = *cast(ubyte*)(buffer + i);
+            return cast(string)sformat(textbuf, spec.fmtspec, spec.spacing, v);
+        case DataType.x16:
+            ushort v = void;
+            switch (size - i) { // left
+            case 1:
+                v = *cast(ubyte*)(buffer + i);
+                break;
+            default:
+                v = *cast(ushort*)(buffer + i);
+            }
+            return cast(string)sformat(textbuf, spec.fmtspec, spec.spacing, v);
+        }
     }
     
 private:
-    size_t size;    /// Size of one element
-    size_t i;
-    size_t max;
+    size_t i;       /// Byte index
+    size_t size;    /// Size of input data in bytes
     const(void) *buffer;
+    DataType datatype;
+    DataSpec spec;
     char[24] textbuf = void;
 }
 unittest
 {
-    immutable ubyte[] data = [ 0x00, 0x01, 0xa0, 0xff ];
-    DataFormatter formatter = DataFormatter(DataType.x8, data.ptr, data.length);
-    assert(formatter.formatdata() == "00"); formatter.step();
-    assert(formatter.formatdata() == "01"); formatter.step();
-    assert(formatter.formatdata() == "a0"); formatter.step();
-    assert(formatter.formatdata() == "ff"); formatter.step();
-    assert(formatter.formatdata() == null);
+    DataFormatter formatter;
     
-    // TODO: Fix position issue
-    /*
+    immutable ubyte[] data = [ 0x00, 0x01, 0xa0, 0xff ];
+    formatter = DataFormatter(DataType.x8, data.ptr, data.length);
+    assert(formatter.print() == "00"); formatter.step();
+    assert(formatter.print() == "01"); formatter.step();
+    assert(formatter.print() == "a0"); formatter.step();
+    assert(formatter.print() == "ff"); formatter.step();
+    assert(formatter.print() == "  ");
+    
     immutable ushort[] data16 = [ 0x0101, 0xf0f0 ];
-    formatter = DataFormatter(DataType.x16, data16.ptr, data16.length);
-    assert(formatter.formatdata() == "0101"); formatter.step();
-    import std.stdio : writeln;
-    writeln("d==========->", formatter.formatdata());
-    assert(formatter.formatdata() == "f0f0"); formatter.step();
-    assert(formatter.formatdata() == null);
-    */
+    formatter = DataFormatter(DataType.x16, data16.ptr, data16.length * ushort.sizeof);
+    assert(formatter.print() == "0101"); formatter.step();
+    assert(formatter.print() == "f0f0"); formatter.step();
+    assert(formatter.print() == "    ");
+    
+    // Test partial data formatting
+    immutable ubyte[] data16p = [ 0xab, 0xab, 0xab ];
+    formatter = DataFormatter(DataType.x16, data16p.ptr, data16p.length);
+    assert(formatter.print() == "abab"); formatter.step();
+    assert(formatter.print() == "00ab"); formatter.step();
+    assert(formatter.print() == "    ");
 }
 
 /// Helps inputting data and formatting said input
@@ -335,15 +368,21 @@ struct InputFormatter
     
     void reset()
     {
-        d = b = t = 0;
+        d = 0;
         buffer[] = 0;
     }
     
     size_t index() // digit index
     {
-        return t;
+        return d;
     }
     
+    // TODO: Have a text buffer just for char input
+    //       Let this translate char to digit value
+    //       DO NOT immediately translate, just translate when confirmed (length or confirm() func)
+    // TODO: Don't rely on caller, reject key silently
+    //       Avoid making caller transform key value itself to stay reliable
+    //       Will need changing the unittests
     // Add digit, goes left to right
     bool add(int digit)
     {
@@ -353,7 +392,7 @@ struct InputFormatter
         //   ||
         //   ++-- b=0
         
-        int dp = (spec.spacing - 1 - t);
+        int dp = (spec.spacing - 1 - d);
         final switch (type) {
         case DataType.x8:
             // t=0 -> digit << 4
@@ -369,17 +408,8 @@ struct InputFormatter
             break;
         }
         
-        t++;
-        
         // completed data type (x8=2 chars, x16=4 chars, etc.)
-        if (++d >= spec.spacing)
-        {
-            b = spec.size_of;
-            d = 0; // reset digit index
-            return true;
-        }
-        
-        return false;
+        return ++d >= spec.spacing;
     }
     
     // Format what's in the buffer
@@ -394,20 +424,12 @@ struct InputFormatter
     }
     alias toString = format;
     
-    // Return data because entering numbers from left to right
+    /// Return raw data, useful to be parsed later.
+    /// Warning: Inverted in LittleEndian builds.
+    /// Returns: Buffer slice.
     ubyte[] data()
     {
-        version (LittleEndian)
-        {
-            int r = spec.size_of - 1;
-            for (int i; i < spec.size_of; i++, r--)
-            {
-                outbuffer[i] = buffer[r];
-            }
-            
-            return outbuffer[0..spec.size_of];
-        }
-        else return buffer[0..spec.size_of]; // BigEndian :-)
+        return buffer[0..spec.size_of];
     }
     
 private:
@@ -419,11 +441,9 @@ private:
     static immutable string spec_x16 = spec_x8;
     string fmtspec = spec_x8;
     
-    DataType type = DataType.x8;
+    DataType type;
     DataSpec spec;
     int d; /// digit index
-    int b; /// buffer index
-    int t; /// total digits
     
     union // NOTE: Using integers for math is easier
     {
@@ -452,28 +472,169 @@ unittest
     assert(input.data   == [ 0x12 ]);
     assert(input.format == "12");
     
-    // TODO: Fix endianness
-    //       Bad if we want to print as x16
-    //       0xffaa
-    //       Little: [ 0xaa, 0xff ]
-    //       Big   : [ 0xff, 0xaa ]
     input.change(DataType.x16);
     
     assert(input.data   == [ 0, 0 ]);
     
     assert(input.add(0xf) == false);
-    assert(input.data   == [ 0xf0, 0x00 ]);
     assert(input.format == "f000");
+    version (LittleEndian)
+        assert(input.data   == [ 0x00, 0xf0 ]);
+    else
+        assert(input.data   == [ 0xf0, 0x00 ]);
     
     assert(input.add(2) == false);
-    assert(input.data   == [ 0xf2, 0x00 ]);
     assert(input.format == "f200");
+    version (LittleEndian)
+        assert(input.data   == [ 0x00, 0xf2 ]);
+    else
+        assert(input.data   == [ 0xf2, 0x00 ]);
     
     assert(input.add(0xa) == false);
-    assert(input.data   == [ 0xf2, 0xa0 ]);
     assert(input.format == "f2a0");
+    version (LittleEndian)
+        assert(input.data   == [ 0xa0, 0xf2 ]);
+    else
+        assert(input.data   == [ 0xf2, 0xa0 ]);
     
     assert(input.add(4) == true);
-    assert(input.data   == [ 0xf2, 0xa4 ]);
     assert(input.format == "f2a4");
+    version (LittleEndian)
+        assert(input.data   == [ 0xa4, 0xf2 ]);
+    else
+        assert(input.data   == [ 0xf2, 0xa4 ]);
+}
+
+/* Remember, we only have 8 usable colors in a 16-color space (fg == bg -> bad).
+   And only 6 (excluding "bright" variants) of them can be used for a purpose,
+   other than white/black for defaults.
+   BUT, a color scheme can always be mapped to something else (by preference).
+   For now, do hard-coded fg/bg values.
+   Should be able to configure "color:normal" to a specific mapping.
+*/
+enum ColorScheme
+{
+    normal,
+    cursor,
+    selection,
+    mirror,
+    // The following are just future ideas
+    //modified,   // edited data
+    //address,    // layout: address/offset
+    //constant,   // layout: known constant value
+    //bookmark,
+    //search,     // search result
+    //diff_added,     // 
+    //diff_removed,   // 
+    //diff_changed,   // 
+}
+enum SCHEMES = EnumMembers!(ColorScheme).length;
+
+enum
+{
+    COLORMAP_INVERTED    = 1,    /// 
+    COLORMAP_FOREGROUND  = 2,    /// 
+    COLORMAP_BACKGROUND  = 4,    ///
+}
+// ColorPair[ColorScheme] mapping;
+struct ColorMap
+{
+    int flags;
+    TermColor fg;
+    TermColor bg;
+}
+struct ColorMapper
+{
+    // Initial color specifications
+    ColorMap[SCHEMES] maps = [
+        // normal
+        { 0,                    TermColor.init, TermColor.init },
+        // cursor
+        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
+        // selection
+        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
+        // mirror
+        { COLORMAP_BACKGROUND,  TermColor.init, TermColor.red },
+    ];
+    
+    ColorMap get(ColorScheme scheme)
+    {
+        size_t i = cast(size_t)scheme;
+        assert(i < SCHEMES);
+        return maps[i];
+    }
+    void set(ColorScheme scheme, ColorMap map)
+    {
+        size_t i = cast(size_t)scheme;
+        assert(i < SCHEMES);
+        maps[i] = map;
+    }
+}
+
+struct LineSegment
+{
+    // NOTE: Don't call this variable "text", it will call std.conv.text.
+    // small string optimization because the segment engine is that simple at the moment
+    // and bufferedwriter still saves us
+    char[32] data;
+    size_t sz;
+    ColorScheme scheme;
+}
+struct Line
+{
+    List!LineSegment segments;
+    
+    // "reserve" is a function in object.d. DO NOT try to collide with it.
+    this(size_t segment_count)
+    {
+        segments = List!LineSegment(segment_count);
+    }
+    ~this()
+    {
+        destroy(segments);
+    }
+    
+    void reset() { segments.reset(); }
+    
+    // Manual add
+    void add(string text, ColorScheme scheme)
+    {
+        import core.stdc.string : memcpy;
+        assert(text.length < 32);
+        LineSegment segment = void;
+        memcpy(segment.data.ptr, text.ptr, text.length);
+        segment.sz = text.length;
+        segment.scheme = scheme;
+        segments ~= segment;
+    }
+    
+    // No color
+    void normal(string[] texts...)
+    {
+        foreach (text; texts)
+            add(text, ColorScheme.normal);
+    }
+    
+    void cursor(string text)
+    {
+        add(text, ColorScheme.cursor);
+    }
+    
+    void selection(string text)
+    {
+        add(text, ColorScheme.selection);
+    }
+    
+    void mirror(string text)
+    {
+        add(text, ColorScheme.mirror);
+    }
+}
+unittest
+{
+    /*
+    assert(line.segments[5].inverted == true);
+    assert(line.segments[6].text == " ");
+    assert(line.segments[6].inverted == true);
+    */
 }

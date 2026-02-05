@@ -175,9 +175,15 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_address_spacing
     },
     {
-        "addressing", "Addressing offset format displayed",
+        // TODO: "addressing" is dumb, revert to "address"
+        "addressing", "Address representation format",
         `"h[exadecimal]", "o[ctal]", "d[ecimal]"`, `"hexadecimal"`,
-        &configure_addressing
+        &configure_address
+    },
+    {
+        "data", "Data representation format",
+        `"x8", "x16"`, `"x8"`,
+        &configure_data
     },
     {
         "autoresize", "(deprecated) If set, fit columns on screen",
@@ -287,7 +293,7 @@ void configure_columns(ref RC rc, string value, bool conf = false)
     rc.columns_set = true;
 }
 
-void configure_addressing(ref RC rc, string value, bool conf = false)
+void configure_address(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.address_type_set)
         return;
@@ -303,6 +309,16 @@ void configure_addressing(ref RC rc, string value, bool conf = false)
     default: goto Lerror;
     }
     rc.address_type_set = true;
+}
+
+void configure_data(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.data_type_set)
+        return;
+    
+    import formatters : selectDataType;
+    rc.data_type = selectDataType(value);
+    rc.data_type_set = true;
 }
 
 void configure_address_spacing(ref RC rc, string value, bool conf = false)

@@ -156,6 +156,7 @@ void main(string[] args)
     try
     {
         // TODO: --color/--no-color: Force color option (overrides rc)
+        // TODO: --mirror-cursor
         res = getopt(args, config.caseSensitive,
         // Secret options
         "assistant",    "", &printpage,
@@ -173,10 +174,16 @@ void main(string[] args)
             {
                 configure_columns(rc, val);
             },
+        // TODO: Change back to "address"
         "A|addressing", `Set address mode ("hex"/"dec"/"oct", default: "hex")`,
             (string _, string val)
             {
-                configure_addressing(rc, val);
+                configure_address(rc, val);
+            },
+        "D|data", `Set data mode ("x8","x16",etc., default: "x8")`,
+            (string _, string val)
+            {
+                configure_data(rc, val);
             },
         "address-spacing", "Set address spacing in characters (default: 11)",
             (string _, string val)

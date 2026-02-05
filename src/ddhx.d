@@ -1,6 +1,7 @@
-/// Interactive hex editor application.
+/// Interactive hex editor application, defines behavior for main program.
 ///
-/// Defines behavior for main program.
+/// Also dubbed the View System. It attempts to visually represent types
+/// on screen.
 /// 
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
@@ -114,8 +115,11 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // Editor status, resetted every time update() is called
     int g_status;
     
-    // Number of effective rows in view, updated every time update() is called
+    // Number of effective rows in view, updated by update()
     int g_rows;
+    
+    // Number of bytes for a row, updated by update()
+    int g_linesize;
     
     // HACK: Global for screen resize events
     // Eventually, a session manager could hold multiple sessions and return
@@ -132,9 +136,9 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     /// Last search needle buffer (find commands use this).
     ubyte[] g_needle;
     
-    // location where edit started
+    /// Position of cursor when edit started
     long g_editcurpos;
-        
+    /// Input system
     InputFormatter g_input;
     
     /// Global clipboard buffer.
@@ -145,6 +149,9 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     command_func[string] g_commands;
     /// Registered shortcuts
     Keybind[int] g_keys;
+    
+    /// 
+    ColorMapper g_colors;
 }
 
 /// Represents a command with a name (required), a shortcut, and a function
@@ -281,7 +288,6 @@ immutable Command[] default_commands = [
     { "goto",                       "Navigate or jump to a specific position",
         Mod.ctrl|Key.G,             &goto_ },
     // Reports
-    // NOTE: "report-position" will be useless once customizable statusbar is implemented
     { "report-position",            "Report position, document size, and % in bytes",
         Mod.ctrl|Key.P,             &report_position },
     { "report-name",                "Report document name on screen",
@@ -388,6 +394,12 @@ void initdefaults()
             file.writeln("\tg_session.target\t: ", g_session.target);
             file.writeln("\tg_session.selection.anchor\t: ", g_session.selection.anchor);
             file.writeln("\tg_session.selection.status\t: ", g_session.selection.status);
+            
+            file.writeln("Selection");
+            Selection sel = selection(g_session);
+            file.writeln("\tselection.start\t: ", sel.start);
+            file.writeln("\tselection.end\t: ", sel.end);
+            file.writeln("\tselection.length\t: ", sel.length);
             
             file.writeln("RC");
             file.writeln("\tg_session.rc.address_spacing\t: ", g_session.rc.address_spacing);
@@ -965,22 +977,27 @@ void moveabs(Session *session, long pos)
     else if (pos > docsize)
         pos = docsize;
     
+    int data_size = size_of(session.rc.data_type);
+    
+    // Adjust cursor position to base depending on data size
+    pos -= pos % data_size;
+    
     // No need to update if it's at the same place
     if (pos == session.position_cursor)
         return;
     
-    // Adjust base (camera/view) position if the moved cursor (new position)
-    // is behind or ahead of the view.
+    // Adjust view position if cursor outside of view
     import utils : align64down, align64up;
-    int count = session.rc.columns * g_rows;
+    int g = session.rc.columns * data_size; // group size
+    int count = g * g_rows;
     if (pos < session.position_view) // cursor is behind view
     {
-        session.position_view = align64down(pos, session.rc.columns);
+        session.position_view = align64down(pos, g);
         g_status |= UVIEW; // missing data
     }
     else if (pos >= session.position_view + count) // cursor is ahead of view
     {
-        session.position_view = align64up(pos - count + 1, session.rc.columns);
+        session.position_view = align64up(pos - count + data_size, g);
         g_status |= UVIEW; // missing data
     }
     
@@ -1024,6 +1041,7 @@ void update_header(Session *session, TerminalSize termsize)
     }, 256) buffwriter;
     
     AddressFormatter address = AddressFormatter(session.rc.address_type);
+    DataSpec dataspec = dataSpec(session.rc.data_type);
     
     // Print spacers and current address type
     string atype = addressTypeToString(session.rc.address_type);
@@ -1033,11 +1051,10 @@ void update_header(Session *session, TerminalSize termsize)
     buffwriter.put(' ', 1);
     
     int cols = session.rc.columns;
-    int cwidth = dataSpec(session.rc.data_type).spacing; // data width spec (for alignment with col headers)
-    for (int col; col < cols; ++col)
+    for (int col, ad; col < cols; ++col, ad += dataspec.size_of)
     {
         buffwriter.put(' ', 1);
-        buffwriter.put(address.format(col, cwidth));
+        buffwriter.put(address.format(ad, dataspec.spacing));
     }
     
     // Fill rest of upper bar with spaces
@@ -1047,6 +1064,53 @@ void update_header(Session *session, TerminalSize termsize)
     
     buffwriter.flush();
     terminalFlush();
+}
+
+struct ElementState
+{
+    // booleans are fine for now, not looking into high performance right now
+    bool isSelected;
+    bool isCursor;
+    bool hasData;
+    bool isActiveEdit;
+    
+    ColorScheme dataScheme(PanelType panel, bool mirror)
+    {
+        if (isCursor && panel == PanelType.data)
+            return ColorScheme.cursor;
+        
+        if (isSelected && (panel == PanelType.data || mirror))
+            return ColorScheme.selection;
+        
+        if (isCursor && mirror && panel != PanelType.data)
+            return ColorScheme.mirror;
+        
+        return ColorScheme.normal;
+    }
+    
+    ColorScheme textScheme(PanelType panel, bool mirror) {
+        if (isCursor && panel == PanelType.text)
+            return ColorScheme.cursor;
+        
+        if (isSelected && (panel == PanelType.text || mirror))
+            return ColorScheme.selection;
+        
+        if (isCursor && mirror && panel != PanelType.text)
+            return ColorScheme.mirror;
+        
+        return ColorScheme.normal;
+    }
+}
+ElementState getElementState(int elementIndex, int viewpos, int sl0, int sl1, 
+                             bool selectionActive, int readlen, size_t inputIndex = 0)
+{
+    bool isCursor = elementIndex == viewpos;
+    return ElementState(
+        selectionActive && elementIndex >= sl0 && elementIndex <= sl1,
+        isCursor,
+        elementIndex < readlen,
+        inputIndex && isCursor
+    );
 }
 
 // Render view with data on screen
@@ -1071,11 +1135,18 @@ void update_view(Session *session, TerminalSize termsize)
     __gshared ubyte[] result;   /// View buffer slice (result)
     __gshared int readlen;      /// Slice length in int, easier to add with col/row
     
+    DataSpec data_spec = DataSpec(session.rc.data_type);
+    
+    g_linesize = cols * data_spec.size_of; // line is worth this many bytes
+    
+    /// Requested size of view buffer
+    size_t viewsize = count * data_spec.size_of;
+    
     // Bit of a hack to force update when buffer size changes (config or otherwise)
     // Only useful when screen resizes, but fails when data changes (ie, a paste)
-    if (viewbuf.length != count) // only resize if required
+    if (viewbuf.length != viewsize) // only resize if required
     {
-        viewbuf.length = count;
+        viewbuf.length = viewsize;
         g_status |= UVIEW;
     }
     
@@ -1113,172 +1184,159 @@ void update_view(Session *session, TerminalSize termsize)
     // If col count not flush (near EOF) and view full, add row
     else if (readlen % cols) erows++;
     
-    debug if (logging) sw.start();
-    
-    // Selection stuff
-    Selection sel = selection(session);
-    int sl0   = cast(int)(sel.start - address);
-    int sl1   = cast(int)(sel.end   - address);
+    // Selection stuff (relative to view)
+    // NOTE: Watch out for element-oriented views, selection is byte-wise
+    Selection sel   = selection(session);
+    int sel_start   = cast(int)(sel.start - address);
+    int sel_end     = cast(int)(sel.end   - address);
     
     // Render view
-    char[32] txtbuf = void; // Still used for data in edit buffer...
-    int viewpos     = cast(int)(curpos - address); // relative cursor position in view
-    int datawidth   = dataSpec(session.rc.data_type).spacing; // data element width
+    int viewpos     = cast(int)(curpos - address) / data_spec.size_of; // relative cursor position in view
     PanelType panel = session.panel;
-    if (logging) // branch avoids pushing all of this for nothing (and lazy adds instructions)
-        log("address=%d viewpos=%d cols=%d rows=%d count=%d Dwidth=%d readlen=%d panel=%s "~
-            "select.anchor=%d select.status=%#x sl0=%d sl1=%d",
-            address, viewpos, cols, rows, count, datawidth, readlen, panel,
-            session.selection.anchor, session.selection.status, sl0, sl1);
+    
+    if (logging)
+    {
+        log("address=%d viewpos=%d cols=%d rows=%d count=%d readlen=%d panel=%s "~
+            "select.anchor=%d selection=%#x sel_start=%d sel_end=%d",
+            address, viewpos, cols, rows, count, readlen, panel,
+            session.selection.anchor, session.selection.status, sel_start, sel_end);
+    }
+    
+    static immutable string DEFAULT = ".";
+    
+    debug if (logging) sw.start();
+    
+    int row;
+    int rowdisp = session.rc.header ? 1 : 0; // lazy hack if header is present
+    
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     AddressFormatter afmt = AddressFormatter(session.rc.address_type);
     
+    Line line = Line(16);
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
     }, 256) buffwriter;
-    int row;
-    int rowdisp = session.rc.header ? 1 : 0; // lazy
-    for (; row < erows; ++row, address += cols)
+    size_t ci; // character index
+    for (; row < erows; ++row, address += g_linesize)
     {
-        // newline processing could be disabled
-        terminalCursor(0, row + rowdisp);
+        line.reset();
         
-        buffwriter.reset();
+        // Add address
+        line.normal(afmt.format(address, session.rc.address_spacing), " ");
         
-        buffwriter.put(afmt.format(address, session.rc.address_spacing));
-        buffwriter.put(" ");
-        
-        // Render view data
-        for (int col; col < cols; ++col)
+        // Render data by element, so by column
+        ElementState prev;
+        for (int col; col < cols; col++)
         {
-            int i = (row * cols) + col;
+            int elemidx = (row * cols) + col;
             
-            // Selection overwrite
-            if (session.selection.status && i >= sl0 && i <= sl1 &&
-                (panel == PanelType.data || session.rc.mirror_cursor))
-            {
-                buffwriter.flush;
-                // Depending where spacer is placed, invert its color earlier
-                if (i != sl0) terminalInvertColor();
-                terminalWrite(" "); // data-data spacer
-                if (i == sl0) terminalInvertColor();
-                terminalWrite(dfmt.formatdata()); dfmt.step();
-                terminalResetColor();
-                continue;
-            }
+            ElementState state = getElementState(
+                elemidx, viewpos, sel_start, sel_end, session.selection.status != 0,
+                readlen, g_input.index);
             
-            buffwriter.put(" ");
+            ColorScheme current = state.dataScheme(panel, session.rc.mirror_cursor);
             
-            // Current cursor position
-            bool highlight = i == viewpos && panel == PanelType.data;
-            bool second    = i == viewpos && session.rc.mirror_cursor;
-            if (highlight)
+            // Add spacer with scheme continuous to previous one
+            ColorScheme spacerscheme = ColorScheme.normal;
+            if (col) // might not even need this check
             {
-                buffwriter.flush(); // for windows
-                terminalInvertColor();
-            }
-            else if (second)
-            {
-                buffwriter.flush(); // for windows
-                terminalForeground(TermColor.white);
-                terminalBackground(TermColor.red);
-            }
-            
-            // Print data
-            if (g_input.index && highlight) // apply current edit at position
-            {
-                dfmt.step(); // skip this element since it's in the edit buffer
-                terminalWrite(g_input.format);
-            }
-            else if (i < readlen) // apply data
-            {
-                if (highlight || second)
-                    terminalWrite(dfmt.formatdata());
-                else
+                ColorScheme spacerprev = prev.dataScheme(panel, session.rc.mirror_cursor);
+                
+                // If both previous and current are highlighted (not normal), spacer gets same color
+                if (spacerprev != ColorScheme.normal && current != ColorScheme.normal)
                 {
-                    buffwriter.put(dfmt.formatdata());
-                    version (Windows) buffwriter.flush(); // windows cursor fix
+                    // Use the current scheme for continuity
+                    // (selection/cursor/mirror all look good this way)
+                    spacerscheme = current;
                 }
+            }
+            line.add(" ", spacerscheme);
+            
+            // Add data text
+            string data;
+            if (state.isActiveEdit)
+            {
+                data = g_input.format;
                 dfmt.step();
             }
-            else // no data, print spacer
+            else // state.hasData
             {
-                if (highlight || second)
-                    terminalWriteChar(' ', datawidth);
-                else
-                    buffwriter.put(' ', datawidth);
+                data = dfmt.print();
+                dfmt.step();
             }
-            
-            if (highlight || second) terminalResetColor();
+            assert(data);
+            line.add(data, current);
         }
         
         // data-text spacer
-        buffwriter.put(' ', 2);
+        line.normal("  ");
         
-        // Render character data
-        for (int col; col < cols; ++col)
+        // Render text by byte
+        for (int idx; idx < g_linesize; idx++, ci++)
         {
-            int i = (row * cols) + col;
+            // Convert byte offset to element index for state checking
+            int elementIndex = ((row * g_linesize) + idx) / data_spec.size_of;
             
-            // Selection override
-            if (session.selection.status && i >= sl0 && i <= sl1 &&
-                (panel == PanelType.text || session.rc.mirror_cursor))
-            {
-                buffwriter.flush();
-                terminalInvertColor();
-                string c = transcode(result[i], session.rc.charset);
-                terminalWrite(c ? c : ".");
-                terminalResetColor();
-                continue;
-            }
+            // Calculate element state
+            ElementState state = getElementState(elementIndex, viewpos, sel_start, sel_end,
+                                                session.selection.status != 0, readlen);
             
-            // Current cursor position
-            bool highlight = i == viewpos && panel == PanelType.text;
-            bool second    = i == viewpos && session.rc.mirror_cursor;
-            if (highlight)
+            // Get color scheme for this element in text panel
+            ColorScheme scheme = state.textScheme(panel, session.rc.mirror_cursor);
+            
+            // Get character
+            string text;
+            if (ci < result.length)
             {
-                buffwriter.flush(); // for windows colors
-                terminalInvertColor();
+                string c = transcode(result[ci], session.rc.charset);
+                text = c ? c : DEFAULT;
             }
-            else if (second)
+            else
             {
-                buffwriter.flush(); // for windows colors
-                terminalForeground(TermColor.white);
-                terminalBackground(TermColor.red);
+                text = " ";
             }
             
-            if (i < readlen)
-            {
-                // NOTE: Escape codes do not seem to be a worry with tests
-                string c = transcode(result[i], session.rc.charset);
-                if (c == null) // default char
-                    c = ".";
-                
-                if (highlight || second)
-                    terminalWrite(c);
-                else
-                {
-                    buffwriter.put(c);
-                    version (Windows) buffwriter.flush(); // windows cursor fix
-                }
-            }
-            else // no data
-            {
-                if (highlight || second)
-                    terminalWrite(" ");
-                else
-                    buffwriter.put(' ', 1);
-            }
-            
-            if (highlight || second) terminalResetColor();
+            line.add(text, scheme);
         }
         
-        // Fill rest of spaces
-        int f = termsize.columns - cast(int)buffwriter.length();
-        if (f > 0)
-            buffwriter.put(' ', f);
+        // TODO: Fill rest of line
         
-        buffwriter.flush;
+        
+        // Before BufferedWriter: 2 ms 220 µs
+        // After                : 252 µs
+        // Render line on screen
+        buffwriter.reset();
+        terminalCursor(0, row + rowdisp);
+        int last_scheme_flags;
+        foreach (ref segment; line.segments)
+        {
+            ColorMap map = g_colors.get(segment.scheme);
+            
+            // If incoming color is different, flush, because we are changing attributes
+            bool different = last_scheme_flags != map.flags;
+            
+            if (different)
+                buffwriter.flush();
+            
+            if (map.flags & COLORMAP_FOREGROUND)
+                terminalForeground(map.fg);
+            if (map.flags & COLORMAP_BACKGROUND)
+                terminalBackground(map.bg);
+            if (map.flags & COLORMAP_INVERTED)
+                terminalInvertColor();
+            
+            buffwriter.put(segment.data[0..segment.sz]);
+            
+            if (different)
+            {
+                buffwriter.flush();
+                terminalResetColor();
+            }
+            
+            last_scheme_flags = map.flags;
+        }
+        buffwriter.flush(); // important overall, notably Windows
+        terminalFlush(); // important for fbcon, no-op on Windows
     }
     
     // NOTE: terminalWriteChar does buffering on its own
@@ -1313,13 +1371,15 @@ void update_status(Session *session, TerminalSize termsize)
     {
         msg = g_message;
     }
-    else if (sel) // Active selection
+    else if (sel.length) // Active selection
     {
         address.change(session.rc.address_type);
         AddressFormatter address_end = address; // has its own buffer, copy only Type+Spec
-        string start = address.format(sel.start, 1);
-        string end   = address_end.format(sel.end, 1);
-        msg = cast(string)sformat(g_messagebuf, "SEL: %s-%s (%d Bytes)", start, end, sel.length);
+        msg = cast(string)sformat(g_messagebuf, "SEL: %s-%s (%d Bytes)",
+            address.format(sel.start, 1),
+            address_end.format(sel.end, 1),
+            sel.length
+        );
     }
     else // Regular status bar
     {
@@ -1614,14 +1674,14 @@ void move_left(Session *session, string[] args)
     if (session.position_cursor == 0)
         return;
     
-    moverel(session, -1);
+    moverel(session, -size_of(session.rc.data_type));
 }
 // Move forward a single item
 void move_right(Session *session, string[] args)
 {
     unselect(session);
     
-    moverel(session, +1);
+    moverel(session, +size_of(session.rc.data_type));
 }
 // Move back a row
 void move_up(Session *session, string[] args)
@@ -1631,14 +1691,14 @@ void move_up(Session *session, string[] args)
     if (session.position_cursor == 0)
         return;
     
-    moverel(session, -session.rc.columns);
+    moverel(session, -(session.rc.columns * size_of(session.rc.data_type)));
 }
 // Move forward a row
 void move_down(Session *session, string[] args)
 {
     unselect(session);
     
-    moverel(session, +session.rc.columns);
+    moverel(session, +(session.rc.columns * size_of(session.rc.data_type)));
 }
 // Move back a page
 void move_pg_up(Session *session, string[] args)
@@ -1648,28 +1708,30 @@ void move_pg_up(Session *session, string[] args)
     if (session.position_cursor == 0)
         return;
     
-    moverel(session, -(g_rows * session.rc.columns));
+    moverel(session, -(g_rows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move forward a page
 void move_pg_down(Session *session, string[] args)
 {
     unselect(session);
     
-    moverel(session, +(g_rows * session.rc.columns));
+    moverel(session, +(g_rows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move to start of line
 void move_ln_start(Session *session, string[] args) // move to start of line
 {
     unselect(session);
     
-    moverel(session, -(session.position_cursor % session.rc.columns));
+    int g = session.rc.columns * size_of(session.rc.data_type);
+    moverel(session, -(session.position_cursor % g));
 }
 // Move to end of line
 void move_ln_end(Session *session, string[] args) // move to end of line
 {
     unselect(session);
     
-    moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
+    int g = (session.rc.columns * size_of(session.rc.data_type));
+    moverel(session, +(g - (session.position_cursor % g)) - 1);
 }
 // Move to absolute start of document
 void move_abs_start(Session *session, string[] args)
@@ -1703,7 +1765,7 @@ void move_skip_backward(Session *session, string[] args)
     // Selection: needle
     ubyte[] needle;
     Selection sel = selection(session);
-    if (sel)
+    if (sel.length)
     {
         if (sel.length > MiB!256)
             throw new Exception("Selection too big");
@@ -1714,10 +1776,12 @@ void move_skip_backward(Session *session, string[] args)
     }
     else // data by cursor position
     {
+        int sz = size_of(session.rc.data_type);
+        
         // Get current element
-        ubyte buffer = void;
-        needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
-        if (needle.length < ubyte.sizeof)
+        Element elem;
+        needle = session.editor.view(curpos, elem.raw.ptr, sz);
+        if (needle.length < sz)
             return; // Nothing to do
         sel.start = curpos;
     }
@@ -1755,7 +1819,7 @@ void move_skip_forward(Session *session, string[] args)
     // Selection: Needle
     ubyte[] needle;
     Selection sel = selection(session);
-    if (sel)
+    if (sel.length)
     {
         if (sel.length > MiB!256)
             throw new Exception("Selection too big");
@@ -1766,10 +1830,12 @@ void move_skip_forward(Session *session, string[] args)
     }
     else // data by cursor position
     {
+        int sz = size_of(session.rc.data_type);
+        
         // Get current element
-        ubyte buffer = void;
-        needle = session.editor.view(curpos, &buffer, ubyte.sizeof);
-        if (needle.length < ubyte.sizeof)
+        Element elem;
+        needle = session.editor.view(curpos, elem.raw.ptr, sz);
+        if (needle.length < sz)
             return; // Nothing to do
         sel.start = curpos;
     }
@@ -1820,7 +1886,7 @@ void delete_front(Session *session, string[] args)
         g_status |= UVIEW;
         return;
     }
-    else if (sel)
+    else if (sel.length)
     {
         session.editor.remove(sel.start, sel.length);
         unselect(session);
@@ -1836,14 +1902,14 @@ void delete_front(Session *session, string[] args)
     long curpos = session.position_cursor;
     if (curpos == session.editor.size()) // nothing to delete in front
         return;
-    session.editor.remove(curpos, 1);
+    session.editor.remove(curpos, size_of(session.rc.data_type));
     g_status |= UVIEW;
 }
 
 void delete_back(Session *session, string[] args)
 {
     Selection sel = selection(session);
-    if (sel)
+    if (sel.length)
     {
         session.editor.remove(sel.start, sel.length);
         unselect(session);
@@ -1857,8 +1923,9 @@ void delete_back(Session *session, string[] args)
     // Delete element behind cursor
     if (session.position_cursor == 0) // nothing to delete behind cursor
         return;
-    moverel(session, -1);
-    session.editor.remove(session.position_cursor, 1);
+    int s = size_of(session.rc.data_type);
+    moverel(session, -s);
+    session.editor.remove(session.position_cursor, s);
     g_status |= UVIEW;
 }
 
@@ -1870,7 +1937,6 @@ void delete_back(Session *session, string[] args)
 struct Selection
 {
     long start, end, length;
-    alias length this;
 }
 
 // Force unselection
@@ -1889,14 +1955,17 @@ Selection selection(Session *session)
     if (session.selection.status == 0)
         return sel;
     
+    int g = size_of(session.rc.data_type);
+    
+    // NOTE: Adjustment in moveabs right now fucks a little with sel.end
     sel.start = min(session.selection.anchor, session.position_cursor);
     sel.end   = max(session.selection.anchor, session.position_cursor);
     
     if (sel.end >= session.editor.size())
-        sel.end--;
+        sel.end -= g;
     
     // End marker is inclusive
-    sel.length = sel.end - sel.start + 1;
+    sel.length = sel.end - sel.start + g;
     
     return sel;
 }
@@ -1909,12 +1978,13 @@ unittest
     
     // Not selected
     Selection sel = selection(&session);
-    assert(sel == 0);
+    assert(sel.length == 0);
     
     // Emulate a selection where cursor is behind anchor
     session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 4;
     session.position_cursor  = 2;
+    session.rc.data_type     = DataType.x8;
     
     sel = selection(&session);
     assert(sel.length == 3);
@@ -1929,6 +1999,27 @@ unittest
     assert(sel.length == 1);
     assert(sel.start  == 2);
     assert(sel.end    == 2);
+    
+    // Test x16
+    /*
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = 0;
+    session.position_cursor  = 2;
+    session.rc.data_type     = DataType.x16;
+    sel = selection(&session);
+    assert(sel.length == 2);
+    assert(sel.start  == 0);
+    assert(sel.end    == 2);
+    
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = 4;
+    session.position_cursor  = 2;
+    session.rc.data_type     = DataType.x16;
+    sel = selection(&session);
+    assert(sel.length == 4);
+    assert(sel.start  == 2);
+    assert(sel.end    == 4);
+    */
 }
 
 // Expand selection backward
@@ -1940,7 +2031,7 @@ void select_left(Session *session, string[] args)
         session.selection.anchor = session.position_cursor;
     }
     
-    moverel(session, -1);
+    moverel(session, -size_of(session.rc.data_type));
 }
 
 // Expand selection forward
@@ -1952,7 +2043,7 @@ void select_right(Session *session, string[] args)
         session.selection.anchor = session.position_cursor;
     }
     
-    moverel(session, +1);
+    moverel(session, +size_of(session.rc.data_type));
 }
 
 // Expand selection back a line
@@ -1964,7 +2055,7 @@ void select_up(Session *session, string[] args)
         session.selection.anchor = session.position_cursor;
     }
     
-    moverel(session, -session.rc.columns);
+    moverel(session, -(session.rc.columns * size_of(session.rc.data_type)));
 }
 
 // Expand selection forward a line
@@ -1976,7 +2067,7 @@ void select_down(Session *session, string[] args)
         session.selection.anchor = session.position_cursor;
     }
     
-    moverel(session, +session.rc.columns);
+    moverel(session, +(session.rc.columns * size_of(session.rc.data_type)));
 }
 
 // Expand selection towards end of line
@@ -1988,7 +2079,8 @@ void select_home(Session *session, string[] args)
         session.selection.anchor = session.position_cursor;
     }
     
-    moverel(session, -(session.position_cursor % session.rc.columns));
+    int g = session.rc.columns * size_of(session.rc.data_type);
+    moverel(session, -(session.position_cursor % g));
 }
 
 // Expand selection forward a line
@@ -2000,7 +2092,8 @@ void select_end(Session *session, string[] args)
         session.selection.anchor = session.position_cursor;
     }
     
-    moverel(session, +(session.rc.columns - (session.position_cursor % session.rc.columns)) - 1);
+    int g = session.rc.columns * size_of(session.rc.data_type);
+    moverel(session, +(g - (session.position_cursor % g)) - 1);
 }
 
 // Select from current position to start of document
@@ -2010,8 +2103,8 @@ void select_top(Session *session, string[] args)
     if (docsize <= 0)
         return;
     
-    session.selection.anchor = session.position_cursor;
     session.position_cursor  = 0;
+    session.selection.anchor = session.position_cursor;
     session.selection.status = SELECT_ACTIVE;
 }
 
@@ -2022,8 +2115,8 @@ void select_bottom(Session *session, string[] args)
     if (docsize <= 0)
         return;
     
-    session.selection.anchor = session.position_cursor;
     session.position_cursor  = docsize - 1;
+    session.selection.anchor = session.position_cursor;
     session.selection.status = SELECT_ACTIVE;
 }
 
@@ -2034,8 +2127,8 @@ void select_all(Session *session, string[] args)
     if (docsize <= 0)
         return;
     
-    session.selection.anchor = 0;
     session.position_cursor  = docsize - 1;
+    session.selection.anchor = 0;
     session.selection.status = SELECT_ACTIVE;
 }
 
@@ -2044,8 +2137,8 @@ void select(Session *session, string[] args)
 {
     Range ran = askrange(args, 0, "Range: ");
     
-    session.selection.anchor = ran.start;
     session.position_cursor  = ran.end;
+    session.selection.anchor = ran.start;
     session.selection.status = SELECT_ACTIVE;
 }
 
@@ -2121,35 +2214,26 @@ void change_panel(Session *session, string[] args)
 void undo(Session *session, string[] args)
 {
     long pos = session.editor.undo();
-    if (pos >= 0)
-    {
-        unselect(session);
-        moveabs(session, pos);
-        g_status |= UVIEW; // new data
-    }
+    if (pos < 0)
+        return;
+    
+    unselect(session);
+    moveabs(session, pos);
+    g_status |= UVIEW; // new data
 }
 
 // 
 void redo(Session *session, string[] args)
 {
     long pos = session.editor.redo();
-    if (pos >= 0)
-    {
-        unselect(session);
-        moveabs(session, pos);
-        g_status |= UVIEW; // new data
-    }
+    if (pos < 0)
+        return;
+    
+    unselect(session);
+    moveabs(session, pos);
+    g_status |= UVIEW; // new data
 }
 
-union B // Used in goto for now.
-{
-    ubyte[8] buf;
-    long    u64;
-    uint    u32;
-    ushort  u16;
-    ubyte   u8;
-    alias buf this;
-}
 // Go to position in document
 void goto_(Session *session, string[] args)
 {
@@ -2160,25 +2244,24 @@ void goto_(Session *session, string[] args)
     
     // Selection
     Selection sel = selection(session);
-    if (sel)
+    if (sel.length)
     {
         if (sel.length > long.sizeof)
             throw new Exception("Selection too large");
         
-        B b; // = {0}
+        Element e;
+        ubyte[] res = session.editor.view(sel.start, e.raw.ptr, cast(size_t)sel.length);
         
-        ubyte[] res = session.editor.view(sel.start, b.ptr, cast(size_t)sel.length);
-        
-        absolute = true;
+        absolute = true; // eh, just assuming
         
         if (res.length > uint.sizeof) // same as selection length but.. size_t
-            position = b.u64;
+            position = e.u64;
         else if (res.length > ushort.sizeof)
-            position = b.u32;
+            position = e.u32;
         else if (res.length > ubyte.sizeof)
-            position = b.u16;
+            position = e.u16;
         else
-            position = b.u8;
+            position = e.u8;
     }
     else
     {
@@ -2230,9 +2313,12 @@ void goto_(Session *session, string[] args)
 // Report cursor position on screen
 void report_position(Session *session, string[] args)
 {
+    // TODO: Repurpose "report-position" to show ROW/COL *and* percent
+    //       Then remove after statusbar customization
+    
     long docsize = session.editor.size();
     Selection sel = selection(session);
-    if (sel)
+    if (sel.length)
     {
         message("%d-%d B (%f%%-%f%%)",
             sel.start, sel.end,
@@ -2341,8 +2427,7 @@ void replace_(Session *session, string[] args)
         throw new Exception("Cannot edit, read-only");
     
     Selection sel = selection(session);
-    
-    if (sel)
+    if (sel.length)
     {
         if (args.length < 1)
         {
@@ -2379,8 +2464,7 @@ void insert_(Session *session, string[] args)
         throw new Exception("Cannot edit, read-only");
     
     Selection sel = selection(session);
-    
-    if (sel)
+    if (sel.length)
     {
         if (args.length < 1)
         {
@@ -2702,7 +2786,7 @@ void find(Session *session, string[] args)
         g_needle = pattern(session.rc.charset, args);
         sel.start = session.position_cursor + g_needle.length;
     }
-    else if (sel) // selection
+    else if (sel.length) // selection
     {
         if (sel.length > SEARCH_LIMIT)
             throw new Exception("Selection too big");
@@ -2745,7 +2829,7 @@ void find_back(Session *session, string[] args)
         g_needle = pattern(session.rc.charset, args);
         sel.start = session.position_cursor - g_needle.length;
     }
-    else if (sel) // selection
+    else if (sel.length) // selection
     {
         if (sel.length > SEARCH_LIMIT)
             throw new Exception("Selection too big");
@@ -2839,7 +2923,7 @@ void quit(Session *session, string[] args)
             save(session, null); // save and continue to quit
             break;
         default:
-            // Canceling isn't an error
+            // Canceling isn't an error, don't know
             message("Canceled");
             return;
         }
