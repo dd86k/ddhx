@@ -244,6 +244,29 @@ triggered with Ctrl+G and accepts decimal, octal, and hexadecimal values.
 To view all available commands, run: ddhx --help-commands
 
 ////////////////////////////////////////////////////////////////////////////////
+// Searching
+
+Finding data uses the "find" (Ctrl+F) and "find-back" (Ctrl+B) commands.
+
+The search command uses the pattern system.
+
+Once a search needle is defined, it can be re-used using "find-next" (Ctrl+N)
+and "find-prev" (Shift+N).
+
+For example, looking for `hi\0\0` (these are equivalent):
+  >find s:hi x:00 00
+  >find \"hi\" 0x0000
+  >find x:68 69 00 00
+
+Practical example: PDF
+
+Use the "find s:endstream" command to search for string "endstream", then hit
+Ctrl+N ("find-next") to go to next result or Shift+N ("find-prev") to go to
+the previous result.
+
+LIMITATION: Search does not wrap and depends on cursor position.
+
+////////////////////////////////////////////////////////////////////////////////
 // Patterns
 
 A pattern consists of one or more prefixed patterns, where they can be matched
@@ -283,29 +306,6 @@ Examples:
   >insert 100 x:90         - Insert 100 0x90 bytes at current position
 
 Supported commands: insert, replace, select, and delete.
-
-////////////////////////////////////////////////////////////////////////////////
-// Searching
-
-Finding data uses the "find" (Ctrl+F) and "find-back" (Ctrl+B) commands.
-
-The search command uses the pattern system.
-
-Once a search needle is defined, it can be re-used using "find-next" (Ctrl+N)
-and "find-prev" (Shift+N).
-
-For example, looking for `hi\0\0` (these are equivalent):
-  >find s:hi x:00 00
-  >find \"hi\" 0x0000
-  >find x:68 69 00 00
-
-Practical example: PDF
-
-Use the "find s:endstream" command to search for string "endstream", then hit
-Ctrl+N ("find-next") to go to next result or Shift+N ("find-prev") to go to
-the previous result.
-
-LIMITATION: Search does not wrap and depends on cursor position.
 
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration
