@@ -174,8 +174,7 @@ void main(string[] args)
             {
                 configure_columns(rc, val);
             },
-        // TODO: Change back to "address"
-        "A|addressing", `Set address mode ("hex"/"dec"/"oct", default: "hex")`,
+        "A|address", `Set address mode ("hex"/"dec"/"oct", default: "hex")`,
             (string _, string val)
             {
                 configure_address(rc, val);

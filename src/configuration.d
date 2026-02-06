@@ -175,8 +175,7 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_address_spacing
     },
     {
-        // TODO: "addressing" is dumb, revert to "address"
-        "addressing", "Address representation format",
+        "address", "Address representation format",
         `"h[exadecimal]", "o[ctal]", "d[ecimal]"`, `"hexadecimal"`,
         &configure_address
     },
