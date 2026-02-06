@@ -335,6 +335,8 @@ void main(string[] args)
             }
             
             initmsg = baseName(target);
+            if (readonly)
+                initmsg ~= " [readonly]";
         }
         else
         {
