@@ -1106,7 +1106,7 @@ void update_view(Session *session, TerminalSize termsize)
     }
     
     // Effective number of rows to render
-    int erows = readlen / cols;
+    int erows = readlen / (cols * data_spec.size_of);
     // If col count flush and "view incomplete", add row
     if (readlen % cols == 0 && readlen < count) erows++;
     // If col count not flush (near EOF) and view full, add row
@@ -1115,8 +1115,8 @@ void update_view(Session *session, TerminalSize termsize)
     // Selection stuff (relative to view)
     // NOTE: Watch out for element-oriented views, selection is byte-wise
     Selection sel   = selection(session);
-    int sel_start   = cast(int)(sel.start - address);
-    int sel_end     = cast(int)(sel.end   - address);
+    int sel_start   = cast(int)(sel.start - address) / data_spec.size_of;
+    int sel_end     = cast(int)(sel.end   - address) / data_spec.size_of;
     
     // Render view
     int viewpos     = cast(int)(curpos - address) / data_spec.size_of; // relative cursor position in view
@@ -1126,7 +1126,7 @@ void update_view(Session *session, TerminalSize termsize)
     {
         log("address=%d viewpos=%d cols=%d rows=%d count=%d readlen=%d panel=%s "~
             "select.anchor=%d selection=%#x sel_start=%d sel_end=%d",
-            address, viewpos, cols, rows, count, readlen, panel,
+            address, viewpos, cols, erows, count, readlen, panel,
             session.selection.anchor, session.selection.status, sel_start, sel_end);
     }
     
