@@ -14,7 +14,10 @@ class FileDocument : IDocument
     /// New file document from path.
     this(string path, bool readonly)
     {
-        file.open(path, readonly ? OFlags.read | OFlags.exists : OFlags.readWrite);
+        // Right now, editor doesn't need write access, so this acts as a
+        // poor man's write check without having to explicitly check permissions.
+        // Bonus: exists imply file needs to exist in any case.
+        file.open(path, (readonly ? OFlags.read : OFlags.readWrite) | OFlags.exists);
     }
     
     /// Size of document in bytes.

@@ -18,6 +18,7 @@ import ddhx;
 import formatters : WritingMode;
 import logger;
 import editor;
+import document.file : FileDocument;
 
 private:
 
@@ -143,6 +144,19 @@ void printpage(string opt)
         break;
     }
     exit(EXIT_SUCCESS);
+}
+
+// Attempt to open file as writable then fallback to readonly
+FileDocument openfile(string path, out bool readonly)
+{
+    if (readonly)
+        return new FileDocument(path, true);
+    
+    try return new FileDocument(path, false);
+    catch (Exception) {}
+    
+    readonly = true;
+    return new FileDocument(path, true);
 }
 
 void main(string[] args)
@@ -284,7 +298,7 @@ void main(string[] args)
     log(`target="%s"`, target);
     string initmsg;
     switch (target) {
-    case null:
+    case null: // no filename
         import os.terminal : terminalInputIsPipe;
         if (terminalInputIsPipe())
             goto case "-";
@@ -302,44 +316,43 @@ void main(string[] args)
         initmsg = MSG_NEWBUF;
         break;
     default: // target is set, to either: file, disk (todo), or PID (todo)
-        import std.file : exists;
+        import std.path : baseName;
         
-        // Thanks to the null case, there is no need to check if target
-        // is null (unset).
-        // NOTE: exists(string) doesn't play well with \\.\PhysicalDriveN
+        // NOTE: Open strategy
         //
-        //       Introducing a special Windows-only drive syntax (e.g, mapping
-        //       "C:" to "\\.\PhysicalDrive0") would be simpler than trying to
-        //       open the drive and be confused how to handle failures (can't
-        //       assume we can save using basename either).
+        //       Because the 'std.file.exists' function can't check UNC paths
+        //       (like "\\.\PhysicalDrive0"), try opening as-is.
         //
-        //       Either way, ddhx doesn't officially currently support disk editing.
-        if (exists(target))
+        //       First, by default, as read-write, then read-only.
+        //       If all fails, assume file doesn't exist because read-only would
+        //       at least assume that the file exists and is readable.
+        //
+        //       Otherwise, if it exists and it is still not readable...
+        //       TODO: Open as NEW file (read-write) to really check if file can
+        //       be saved to.
+        bool readonly = rc.writemode == WritingMode.readonly;
+        try
         {
-            import document.file : FileDocument;
-            import std.path : baseName;
-            
-            bool readonly = rc.writemode == WritingMode.readonly;
-            try
-            {
-                editor.open(new FileDocument(target, readonly));
-            }
-            catch (Exception ex)
-            {
-                // Retry as read-only if tried as writable, throws on error anyway
-                if (readonly == false)
-                {
-                    editor.open(new FileDocument(target, true));
-                    rc.writemode = WritingMode.readonly;
-                }
-            }
+            // open file will retry to reopen as readonly when invoked as readonly=false.
+            // FileDocument wants a file to exist to be consistent.
+            // right now, there is no need to filter by file type.
+            // Let the OS handle permissions.
+            editor.open(openfile(target, readonly));
             
             initmsg = baseName(target);
             if (readonly)
+            {
+                rc.writemode = WritingMode.readonly; // openfile can change readonly
                 initmsg ~= " [readonly]";
+            }
         }
-        else
+        catch (Exception ex)
         {
+            // TODO: Open as NEW file (read-write) to really check if file can be saved to.
+            //       Otherwise, it's pointless when we were given a path and we can't write
+            //       to.
+            debug log("%s", ex);
+            else  log("%s", ex.msg);
             initmsg = MSG_NEWFILE;
         }
     }
