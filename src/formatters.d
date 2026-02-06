@@ -181,18 +181,109 @@ DataType selectDataType(string type)
     }
 }
 
+// Given the data type (hex, dec, oct) return the value
+// of the keychar to a digit/nibble.
+//
+// For example, 'a' will return 0xa, and 'r' will return -1, an error.
+private
+int keydata_hex(int keychar) @safe
+{
+    if (keychar >= '0' && keychar <= '9')
+        return keychar - '0';
+    if (keychar >= 'A' && keychar <= 'F')
+        return (keychar - 'A') + 10;
+    if (keychar >= 'a' && keychar <= 'f')
+        return (keychar - 'a') + 10;
+    
+    return -1;
+}
+@safe unittest
+{
+    assert(keydata_hex('a') == 0xa);
+    assert(keydata_hex('b') == 0xb);
+    assert(keydata_hex('A') == 0xa);
+    assert(keydata_hex('B') == 0xb);
+    assert(keydata_hex('0') == 0);
+    assert(keydata_hex('3') == 3);
+    assert(keydata_hex('9') == 9);
+    assert(keydata_hex('j') < 0);
+}
+
 /// Can represent a single "element"
 ///
 /// Used in "goto", "skip-forward", etc. to select a single "element"
 union Element
 {
+    ubyte[8] raw;
     long    u64;
     uint    u32;
     ushort  u16;
     ubyte   u8;
-    ubyte[8] raw;
+    float   f32;
+    double  f64;
+    
     // Could make this structure "richer" by giving it data type,
     // but there aren't any actual needs at the moment.
+    
+    void reset(DataType type)
+    {
+        final switch (type) {
+        case DataType.x8:
+        case DataType.x16:
+            u64 = 0;
+            break;
+        }
+    }
+    
+    bool parse(DataType type, inout(char)[] input)
+    {
+        DataSpec spec = DataSpec(type);
+        
+        if (input.length == 0)
+            return false;
+        if (input.length > spec.spacing)
+            return false;
+        
+        enum SHIFTX = 4;
+        final switch (type) {
+        case DataType.x8:
+            int d = keydata_hex(input[0]);
+            if (d < 0)
+                return false;
+            
+            u8 = cast(ubyte)(d << 4);
+            
+            if (input.length <= 1)
+                return true;
+            
+            d = keydata_hex(input[1]);
+            if (d < 0)
+                return false;
+            
+            u8 |= d;
+            return true;
+        case DataType.x16:
+            u16 = 0;
+            int s = 12;
+            for (int i; i < input.length && spec.spacing; i++, s -= SHIFTX)
+            {
+                u16 |= keydata_hex(input[i]) << s;
+            }
+            return true;
+        }
+    }
+}
+unittest
+{
+    Element elem;
+    assert(elem.parse(DataType.x8, "0") == true);
+    assert(elem.u8 == 0);
+    assert(elem.parse(DataType.x8, "10") == true);
+    assert(elem.u8 == 0x10);
+    assert(elem.parse(DataType.x16, "0") == true);
+    assert(elem.u16 == 0);
+    assert(elem.parse(DataType.x16, "1010") == true);
+    assert(elem.u16 == 0x1010);
 }
 
 // Size of a data type in bytes.
@@ -355,21 +446,14 @@ struct InputFormatter
     {
         type = newtype;
         spec = dataSpec(newtype);
-        final switch (newtype) {
-        case DataType.x8:
-            fmtspec = spec_x8;
-            break;
-        case DataType.x16:
-            fmtspec = spec_x16;
-            break;
-        }
         reset();
     }
     
     void reset()
     {
         d = 0;
-        buffer[] = 0;
+        txtbuffer[] = ' ';
+        element.reset(type);
     }
     
     size_t index() // digit index
@@ -377,50 +461,33 @@ struct InputFormatter
         return d;
     }
     
-    // TODO: Have a text buffer just for char input
-    //       Let this translate char to digit value
-    //       DO NOT immediately translate, just translate when confirmed (length or confirm() func)
-    // TODO: Don't rely on caller, reject key silently
-    //       Avoid making caller transform key value itself to stay reliable
-    //       Will need changing the unittests
-    // Add digit, goes left to right
-    bool add(int digit)
+    bool add(char character)
     {
-        //   +---- d=0
-        //   |+--- d=1
-        // 0x12
-        //   ||
-        //   ++-- b=0
+        return replace(character, d);
+    }
+    bool replace(char character, size_t idx)
+    {
+        if (idx >= spec.spacing) return false;
         
-        int dp = (spec.spacing - 1 - d);
         final switch (type) {
-        case DataType.x8:
-            // t=0 -> digit << 4
-            // t=1 -> digit << 0
-            u8 |= digit << (dp * XSHIFT);
-            break;
-        case DataType.x16:
-            // t=0 -> digit << 12
-            // t=1 -> digit << 8
-            // t=2 -> digit << 4
-            // t=3 -> digit << 0
-            u16 |= digit << (dp * XSHIFT);
+        case DataType.x8, DataType.x16:
+            if (keydata_hex(character) < 0) return false;
             break;
         }
         
-        // completed data type (x8=2 chars, x16=4 chars, etc.)
-        return ++d >= spec.spacing;
+        txtbuffer[idx] = character;
+        d = idx + 1;
+        return true;
+    }
+    bool full()
+    {
+        return d >= spec.spacing;
     }
     
     // Format what's in the buffer
     string format()
     {
-        final switch (type) {
-        case DataType.x8:
-            return cast(string)sformat(txtbuffer, fmtspec, spec.spacing, u8);
-        case DataType.x16:
-            return cast(string)sformat(txtbuffer, fmtspec, spec.spacing, u16);
-        }
+        return cast(string)txtbuffer[0..spec.spacing];
     }
     alias toString = format;
     
@@ -429,32 +496,18 @@ struct InputFormatter
     /// Returns: Buffer slice.
     ubyte[] data()
     {
-        return buffer[0..spec.size_of];
+        if (d)
+            assertion(element.parse(type, txtbuffer[0..d]));
+        return element.raw[0..spec.size_of];
     }
     
 private:
-    enum XSHIFT = 4;  // << 4
-    enum DSHIFT = 10; // * 10
-    enum OSHIFT = 8;  // * 8
-    
-    static immutable string spec_x8 =  "%0*x";
-    static immutable string spec_x16 = spec_x8;
-    string fmtspec = spec_x8;
-    
     DataType type;
     DataSpec spec;
-    int d; /// digit index
+    size_t d; /// digit index
     
-    union // NOTE: Using integers for math is easier
-    {
-        ubyte[8] buffer = void;
-        ubyte   u8 = void;
-        ushort u16 = void;
-        uint   u32 = void;
-        ulong  u64 = void;
-    }
-    version (LittleEndian) ubyte[8] outbuffer = void;
     char[24] txtbuffer = void;
+    Element element = void;
 }
 unittest
 {
@@ -462,47 +515,58 @@ unittest
     
     input.change(DataType.x8);
     
-    assert(input.data   == [ 0 ]);
+    assert(input.data       == [ 0 ]);
     
-    assert(input.add(1) == false);
-    assert(input.data   == [ 0x10 ]);
-    assert(input.format == "10");
+    assert(input.add('1')   == true);
+    assert(input.data       == [ 0x10 ]);
+    assert(input.format     == "1 ");
+    assert(input.full()     == false);
     
-    assert(input.add(2) == true);
-    assert(input.data   == [ 0x12 ]);
-    assert(input.format == "12");
+    assert(input.add('2')   == true);
+    assert(input.data       == [ 0x12 ]);
+    assert(input.format     == "12");
+    
+    assert(input.full()     == true);
+    assert(input.add('3')   == false);
     
     input.change(DataType.x16);
     
-    assert(input.data   == [ 0, 0 ]);
+    assert(input.data       == [ 0, 0 ]);
+    assert(input.full()     == false);
     
-    assert(input.add(0xf) == false);
-    assert(input.format == "f000");
+    assert(input.add('f')   == true);
+    assert(input.format     == "f   ");
     version (LittleEndian)
         assert(input.data   == [ 0x00, 0xf0 ]);
     else
         assert(input.data   == [ 0xf0, 0x00 ]);
+    assert(input.full()     == false);
     
-    assert(input.add(2) == false);
-    assert(input.format == "f200");
+    assert(input.add('2')   == true);
+    assert(input.format     == "f2  ");
     version (LittleEndian)
         assert(input.data   == [ 0x00, 0xf2 ]);
     else
         assert(input.data   == [ 0xf2, 0x00 ]);
+    assert(input.full()     == false);
     
-    assert(input.add(0xa) == false);
-    assert(input.format == "f2a0");
+    assert(input.add('a')   == true);
+    assert(input.format     == "f2a ");
     version (LittleEndian)
         assert(input.data   == [ 0xa0, 0xf2 ]);
     else
         assert(input.data   == [ 0xf2, 0xa0 ]);
+    assert(input.full()     == false);
     
-    assert(input.add(4) == true);
-    assert(input.format == "f2a4");
+    assert(input.add('4')   == true);
+    assert(input.format     == "f2a4");
     version (LittleEndian)
         assert(input.data   == [ 0xa4, 0xf2 ]);
     else
         assert(input.data   == [ 0xf2, 0xa4 ]);
+    
+    assert(input.add('5')   == false);
+    assert(input.full()     == true);
 }
 
 /* Remember, we only have 8 usable colors in a 16-color space (fg == bg -> bad).
@@ -579,6 +643,11 @@ struct LineSegment
     char[32] data;
     size_t sz;
     ColorScheme scheme;
+    
+    string toString()
+    {
+        return cast(string)data[0..sz];
+    }
 }
 struct Line
 {

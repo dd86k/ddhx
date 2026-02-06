@@ -580,22 +580,6 @@ Lread:
             goto Lupdate;
         }
         
-        // Check if key is for data input.
-        // Otherwise, ignore key.
-        int kv = void;
-        switch (session.panel) {
-        case PanelType.data:
-            // If the key input doesn't match the current data or text type, ignore
-            // Should be at most 0-9, a-f, and A-F.
-            kv = keydata(session.rc.data_type, input.key);
-            if (kv < 0) // not a data input, so don't do anything
-                goto Lread;
-            break;
-        default:
-            message("Edit unsupported in panel: %s", session.panel);
-            goto Lupdate;
-        }
-        
         // Check if the writing mode is valid
         switch (session.rc.writemode) {
         case WritingMode.readonly:
@@ -604,33 +588,35 @@ Lread:
         default:
         }
         
+        // start new edit
+        if (g_input.index == 0)
+            g_editcurpos = session.position_cursor;
+        
+        // Prefer kbuffer to key because key gets translated (e.g., 'f' -> 'F')
+        if (g_input.add(cast(char)input.kbuffer[0]) == false)
+            goto Lread; // don't even bother updating the screen
+        
         // We have a valid key and mode, so disrupt selection
         session.selection.status = 0;
         
-        int d = keydata(session.rc.data_type, input.key);
-        if (d < 0) return;
-        
-        // start new edit
-        if (g_input.index == 0)
-        {
-            g_editcurpos = session.position_cursor;
-            g_input.reset();
-        }
-        
-        // add digit, if filled, move cursor
-        if (g_input.add( d ) == true)
+        // if full, move cursor
+        if (g_input.full())
         {
             // Forcing to move cursor forces the edit to be applied,
-            // since cursor position when starting an edit is saved
+            // since cursor position when starting an edit is saved.
+            // The other of this is in moveabs. It detects when cursor
+            // has moved and will proceed with saving, but might throw
+            // too.
             try move_right(g_session, null);
             catch (Exception ex)
             {
                 log("%s", ex);
                 message(ex.msg);
             }
+            goto Lupdate;
         }
         
-        g_status |= UEDITING;
+        g_status |= UEDITING; // active edit
         break;
     default:
         goto Lread;
@@ -699,65 +685,6 @@ Lread:
         throw new Exception("Cancelled");
     
     return input.key;
-}
-
-// Given the data type (hex, dec, oct) return the value
-// of the keychar to a digit/nibble.
-//
-// For example, 'a' will return 0xa, and 'r' will return -1, an error.
-int keydata(DataType type, int keychar) @safe
-{
-    final switch (type) with (DataType) {
-    case x8, x16:
-        if (keychar >= '0' && keychar <= '9')
-            return keychar - '0';
-        if (keychar >= 'A' && keychar <= 'F')
-            return (keychar - 'A') + 10;
-        if (keychar >= 'a' && keychar <= 'f')
-            return (keychar - 'a') + 10;
-        break;
-    /*
-    case dec:
-        if (keychar >= '0' && keychar <= '9')
-            return keychar - '0';
-        break;
-    */
-    /*
-    case oct:
-        if (keychar >= '0' && keychar <= '7')
-            return keychar - '0';
-        break;
-    */
-    }
-    return -1;
-}
-@safe unittest
-{
-    assert(keydata(DataType.x8, 'a') == 0xa);
-    assert(keydata(DataType.x8, 'b') == 0xb);
-    assert(keydata(DataType.x8, 'A') == 0xa);
-    assert(keydata(DataType.x8, 'B') == 0xb);
-    assert(keydata(DataType.x8, '0') == 0);
-    assert(keydata(DataType.x8, '3') == 3);
-    assert(keydata(DataType.x8, '9') == 9);
-    assert(keydata(DataType.x8, 'j') < 0);
-    
-    /*
-    assert(keydata(DataType.d8, '0') == 0);
-    assert(keydata(DataType.d8, '1') == 1);
-    assert(keydata(DataType.d8, '9') == 9);
-    assert(keydata(DataType.d8, 't') < 0);
-    assert(keydata(DataType.d8, 'a') < 0);
-    assert(keydata(DataType.d8, 'A') < 0);
-    */
-    /*
-    assert(keydata(DataType.o8, '0') == 0);
-    assert(keydata(DataType.o8, '1') == 1);
-    assert(keydata(DataType.o8, '7') == 7);
-    assert(keydata(DataType.o8, '9') < 0);
-    assert(keydata(DataType.o8, 'a') < 0);
-    assert(keydata(DataType.o8, 'L') < 0);
-    */
 }
 
 // Command requires argument
@@ -1046,21 +973,21 @@ void update_header(Session *session, TerminalSize termsize)
     // Print spacers and current address type
     string atype = addressTypeToString(session.rc.address_type);
     int prespaces = session.rc.address_spacing - cast(int)atype.length;
-    buffwriter.put(' ', prespaces);
+    buffwriter.repeat(' ', prespaces);
     buffwriter.put(atype);
-    buffwriter.put(' ', 1);
+    buffwriter.repeat(' ', 1);
     
     int cols = session.rc.columns;
     for (int col, ad; col < cols; ++col, ad += dataspec.size_of)
     {
-        buffwriter.put(' ', 1);
+        buffwriter.repeat(' ', 1);
         buffwriter.put(address.format(ad, dataspec.spacing));
     }
     
     // Fill rest of upper bar with spaces
     int rem = termsize.columns - cast(int)buffwriter.length();
     if (rem > 0)
-        buffwriter.put(' ', rem);
+        buffwriter.repeat(' ', rem);
     
     buffwriter.flush();
     terminalFlush();
@@ -1088,7 +1015,8 @@ struct ElementState
         return ColorScheme.normal;
     }
     
-    ColorScheme textScheme(PanelType panel, bool mirror) {
+    ColorScheme textScheme(PanelType panel, bool mirror)
+    {
         if (isCursor && panel == PanelType.text)
             return ColorScheme.cursor;
         
@@ -1212,10 +1140,12 @@ void update_view(Session *session, TerminalSize termsize)
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     AddressFormatter afmt = AddressFormatter(session.rc.address_type);
     
-    Line line = Line(16);
+    // TODO: Fix x16 printing when longer than terminal window (columns)
+    Line line = Line(128); // init with 128 segments
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
     }, 256) buffwriter;
+    bool prev_selected;
     size_t ci; // character index
     for (; row < erows; ++row, address += g_linesize)
     {
@@ -1224,10 +1154,15 @@ void update_view(Session *session, TerminalSize termsize)
         // Add address
         line.normal(afmt.format(address, session.rc.address_spacing), " ");
         
+        // expected amount of characters to be rendered on screen
+        size_t chars;
+        
         // Render data by element, so by column
-        ElementState prev;
         for (int col; col < cols; col++)
         {
+            if (chars > termsize.columns)
+                break;
+            
             int elemidx = (row * cols) + col;
             
             ElementState state = getElementState(
@@ -1237,20 +1172,11 @@ void update_view(Session *session, TerminalSize termsize)
             ColorScheme current = state.dataScheme(panel, session.rc.mirror_cursor);
             
             // Add spacer with scheme continuous to previous one
-            ColorScheme spacerscheme = ColorScheme.normal;
-            if (col) // might not even need this check
-            {
-                ColorScheme spacerprev = prev.dataScheme(panel, session.rc.mirror_cursor);
-                
-                // If both previous and current are highlighted (not normal), spacer gets same color
-                if (spacerprev != ColorScheme.normal && current != ColorScheme.normal)
-                {
-                    // Use the current scheme for continuity
-                    // (selection/cursor/mirror all look good this way)
-                    spacerscheme = current;
-                }
-            }
+            ColorScheme spacerscheme =
+                state.isSelected && prev_selected && panel == PanelType.data ?
+                ColorScheme.selection : ColorScheme.normal;
             line.add(" ", spacerscheme);
+            prev_selected = state.isSelected;
             
             // Add data text
             string data;
@@ -1266,14 +1192,21 @@ void update_view(Session *session, TerminalSize termsize)
             }
             assert(data);
             line.add(data, current);
+            
+            chars += data_spec.spacing + 1;
         }
         
         // data-text spacer
-        line.normal("  ");
+        static immutable string data_text_spacer = "  ";
+        line.normal(data_text_spacer);
+        chars += data_text_spacer.length;
         
         // Render text by byte
         for (int idx; idx < g_linesize; idx++, ci++)
         {
+            if (chars > termsize.columns)
+                break;
+            
             // Convert byte offset to element index for state checking
             int elementIndex = ((row * g_linesize) + idx) / data_spec.size_of;
             
@@ -1297,13 +1230,10 @@ void update_view(Session *session, TerminalSize termsize)
             }
             
             line.add(text, scheme);
+            
+            chars++;
         }
         
-        // TODO: Fill rest of line
-        
-        
-        // Before BufferedWriter: 2 ms 220 µs
-        // After                : 252 µs
         // Render line on screen
         buffwriter.reset();
         terminalCursor(0, row + rowdisp);
@@ -1325,7 +1255,7 @@ void update_view(Session *session, TerminalSize termsize)
             if (map.flags & COLORMAP_INVERTED)
                 terminalInvertColor();
             
-            buffwriter.put(segment.data[0..segment.sz]);
+            buffwriter.put(segment.toString());
             
             if (different)
             {
@@ -1335,8 +1265,17 @@ void update_view(Session *session, TerminalSize termsize)
             
             last_scheme_flags = map.flags;
         }
-        buffwriter.flush(); // important overall, notably Windows
-        terminalFlush(); // important for fbcon, no-op on Windows
+        
+        // Fill rest of term with spaces
+        if (chars < termsize.columns)
+        {
+            buffwriter.flush();     // important overall, notably Windows
+            terminalResetColor();   // fixes colors when in text column
+            buffwriter.repeat(' ', termsize.columns - chars);
+        }
+        
+        buffwriter.flush();     // important overall, notably Windows
+        terminalFlush();        // important for fbcon, no-op on Windows
     }
     
     // NOTE: terminalWriteChar does buffering on its own
@@ -1471,10 +1410,10 @@ void update_progress(Session *session, long position, long total)
         terminalWrite(data, size);
     }, 256) buffwriter;
     
-    buffwriter.put('[', 1);
-    buffwriter.put('#', x);
-    buffwriter.put(' ', rem);
-    buffwriter.put(']', 1);
+    buffwriter.repeat('[', 1);
+    buffwriter.repeat('#', x);
+    buffwriter.repeat(' ', rem);
+    buffwriter.repeat(']', 1);
     
     buffwriter.flush();
     terminalFlush();
