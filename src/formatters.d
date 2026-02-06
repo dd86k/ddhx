@@ -358,7 +358,6 @@ struct DataFormatter
     /// Make a new instance with data and byte length
     this(DataType dtype, const(void) *data, size_t len)
     {
-        assert(data);
         datatype = dtype;
         spec = DataSpec(dtype);
         buffer = data;
