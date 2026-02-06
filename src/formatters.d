@@ -339,18 +339,6 @@ struct DataSpec
     /// Size of data type in bytes.
     int size_of; // Avoids conflict with .sizeof
 }
-/// Get specification for this data type.
-/// Params: type = Data type.
-/// Returns: Data specification.
-DataSpec dataSpec(DataType type) // TODO: Deprecate and rely on DataSpec(DataType)
-{
-    final switch (type) {
-    case DataType.x8:  return DataSpec("x8",  "%0*x", 2, ubyte.sizeof);
-    case DataType.x16: return DataSpec("x16", "%0*x", 4, ushort.sizeof);
-    //case DataType.u8: return DataSpec("u8", 3);
-    //case DataType.o8: return DataSpec("o8", 3);
-    }
-}
 
 /// Get label for this data type.
 /// Params: type = Data type.
@@ -445,7 +433,7 @@ struct InputFormatter
     void change(DataType newtype)
     {
         type = newtype;
-        spec = dataSpec(newtype);
+        spec = DataSpec(newtype);
         reset();
     }
     

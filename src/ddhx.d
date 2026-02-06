@@ -932,12 +932,6 @@ void moveabs(Session *session, long pos)
     g_status |= USTATUSBAR;
 }
 
-// TODO: To ease on memory allocations, could be possible to go @nogc.
-//       string[]... parameters, copy strings into realloc'd buffer.
-//       Integer/Floats can be used with a "fast" string (struct with static buffer).
-//       As of writing, there are 38 invocations of this template function,
-//       so having a runtime-focused function with typesafe variadtic parameters
-//       should help with file size.
 // TODO: Handle multiple messages.
 //       It COULD happen that multiple messages are sent before they
 //       are displayed. Right now, only the last message is taken into
@@ -968,7 +962,7 @@ void update_header(Session *session, TerminalSize termsize)
     }, 256) buffwriter;
     
     AddressFormatter address = AddressFormatter(session.rc.address_type);
-    DataSpec dataspec = dataSpec(session.rc.data_type);
+    DataSpec dataspec = DataSpec(session.rc.data_type);
     
     // Print spacers and current address type
     string atype = addressTypeToString(session.rc.address_type);
@@ -1140,7 +1134,6 @@ void update_view(Session *session, TerminalSize termsize)
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     AddressFormatter afmt = AddressFormatter(session.rc.address_type);
     
-    // TODO: Fix x16 printing when longer than terminal window (columns)
     Line line = Line(128); // init with 128 segments
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
@@ -2307,7 +2300,7 @@ unittest
 void autosize(Session *session, string[] args)
 {
     int adspacing = session.rc.address_spacing;
-    DataSpec spec = dataSpec(session.rc.data_type);
+    DataSpec spec = DataSpec(session.rc.data_type);
     TerminalSize tsize = terminalSize();
     
     session.rc.columns = suggestcols(tsize.columns, adspacing, spec.spacing);

@@ -447,11 +447,9 @@ TerminalSize terminalSize()
         size.rows    = c.srWindow.Bottom - c.srWindow.Top + 1;
         size.columns = c.srWindow.Right - c.srWindow.Left + 1;
         
-        // TODO: Consider support for ESC[18t (Windows)
+        // TODO: Consider support for ESC[18t (Windows) for terminal size
         // NOTE: Windows Terminal supports ESC[18t
         //       conhost/OpenConsole and ConsoleZ do not.
-        
-        // TODO: Consider saving changes from ReadConsoleInput
     }
     else version (Posix)
     {
