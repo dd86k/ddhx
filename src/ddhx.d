@@ -501,6 +501,8 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     g_status = UINIT;
     g_messagebuf.length = 4096;
     
+    g_input = new InputFormatter; // hack due to escapes
+    
     g_session = new Session(rc);
     g_session.target = path;    // assign target path, a NULL value is valid
     g_session.editor = editor;  // assign editor instance
