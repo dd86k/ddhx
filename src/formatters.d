@@ -14,6 +14,13 @@ import transcoder : CharacterSet;
 import platform : NotImplementedException;
 import list;
 
+// This alias exists because more recent compilers complain about local
+// static buffers being escape despite that's exactly what I want...
+// Oh well, so much for locality.
+// 24 chars because worst offender is long.min %o: 1000000000000000000000 (22 chars)
+/// Buffer alias
+alias ElementText = char[24];
+
 /// Indicates which writing mode is active when entering data.
 enum WritingMode
 {
@@ -77,17 +84,15 @@ struct AddressFormatter
         }
         type = newtype;
     }
-    string format(long value, int spacing)
-    {
-        debug assertion(spec);
-        debug assertion(spacing <= buffer.sizeof);
-        return cast(string)sformat(buffer, spec, spacing, value);
-    }
     void opAssign(AddressFormatter fmt)
     {
         // Only copy type and spec
         type = fmt.type;
         spec = fmt.spec;
+    }
+    string textual(char[] buf, long value, int spacing) // avoid .text/.format clash
+    {
+        return cast(string)sformat(buf, spec, spacing, value);
     }
 private:
     static immutable string s_hex  = "%*x";
@@ -98,57 +103,57 @@ private:
     static immutable string s_oct0 = "%0*o";
     AddressType type = AddressType.hex;
     string spec = s_hex;
-    // worst offender is long.min %o: 1000000000000000000000 (22 chars)
-    char[24] buffer = void;
 }
 unittest
 {
+    ElementText buf = void;
+    
     AddressFormatter address;
     
     // Address offset in column
     address.change(AddressType.hex, false);
-    assert(address.format(0x00, 2)  == " 0");
-    assert(address.format(0x01, 2)  == " 1");
-    assert(address.format(0x80, 2)  == "80");
-    assert(address.format(0xff, 2)  == "ff");
+    assert(address.textual(buf, 0x00, 2)  == " 0");
+    assert(address.textual(buf, 0x01, 2)  == " 1");
+    assert(address.textual(buf, 0x80, 2)  == "80");
+    assert(address.textual(buf, 0xff, 2)  == "ff");
     
     address.change(AddressType.hex, true);
-    assert(address.format(0xf,  3)  == "00f");
+    assert(address.textual(buf, 0xf,  3)  == "00f");
     
     address.change(AddressType.dec, false);
-    assert(address.format(0,    2)  ==  " 0");
-    assert(address.format(0,    3)  == "  0");
-    assert(address.format(0xff, 2)  == "255");
-    assert(address.format(0xff, 3)  == "255");
+    assert(address.textual(buf, 0,    2)  ==  " 0");
+    assert(address.textual(buf, 0,    3)  == "  0");
+    assert(address.textual(buf, 0xff, 2)  == "255");
+    assert(address.textual(buf, 0xff, 3)  == "255");
     
     address.change(AddressType.dec, true);
-    assert(address.format(0xf, 3)   == "015");
+    assert(address.textual(buf, 0xf, 3)   == "015");
     
     address.change(AddressType.oct, true);
-    assert(address.format(0xff, 2) == "377");
+    assert(address.textual(buf, 0xff, 2) == "377");
     
     // Test opAssign
     AddressFormatter add2 = address;
-    assert(address.format(0xff, 2) == "377");
+    assert(add2.textual(buf, 0xff, 2) == "377");
     
-    address.change(AddressType.oct, false);
-    assert(address.format(0xf, 3) == " 17");
+    add2.change(AddressType.oct, false);
+    assert(add2.textual(buf, 0xf, 3) == " 17");
     
     // Address offset in left panel
-    address.change(AddressType.hex, false);
-    assert(address.format(        0x00, 10) == "         0");
-    assert(address.format(        0x01, 10) == "         1");
-    assert(address.format(        0x80, 10) == "        80");
-    assert(address.format(        0xff, 10) == "        ff");
-    assert(address.format(       0x100, 10) == "       100");
-    assert(address.format(      0x1000, 10) == "      1000");
-    assert(address.format(     0x10000, 10) == "     10000");
-    assert(address.format(    0x100000, 10) == "    100000");
-    assert(address.format(   0x1000000, 10) == "   1000000");
-    assert(address.format(  0x10000000, 10) == "  10000000");
-    assert(address.format( 0x100000000, 10) == " 100000000");
-    assert(address.format(0x1000000000, 10) == "1000000000");
-    assert(address.format(   ulong.max, 10) == "ffffffffffffffff");
+    add2.change(AddressType.hex, false);
+    assert(add2.textual(buf,         0x00, 10) == "         0");
+    assert(add2.textual(buf,         0x01, 10) == "         1");
+    assert(add2.textual(buf,         0x80, 10) == "        80");
+    assert(add2.textual(buf,         0xff, 10) == "        ff");
+    assert(add2.textual(buf,        0x100, 10) == "       100");
+    assert(add2.textual(buf,       0x1000, 10) == "      1000");
+    assert(add2.textual(buf,      0x10000, 10) == "     10000");
+    assert(add2.textual(buf,     0x100000, 10) == "    100000");
+    assert(add2.textual(buf,    0x1000000, 10) == "   1000000");
+    assert(add2.textual(buf,   0x10000000, 10) == "  10000000");
+    assert(add2.textual(buf,  0x100000000, 10) == " 100000000");
+    assert(add2.textual(buf, 0x1000000000, 10) == "1000000000");
+    assert(add2.textual(buf,    ulong.max, 10) == "ffffffffffffffff");
 }
 
 //
@@ -367,16 +372,17 @@ struct DataFormatter
     void step() { i += spec.size_of; }
     
     /// Format an element.
+    /// Params: buf = Buffer.
     /// Returns: Formatted data or null when end of data.
-    string print()
+    string textual(char[] buf)
     {
         if (i >= size)
-            return cast(string)sformat(textbuf, "%*s", spec.spacing, "");
+            return cast(string)sformat(buf, "%*s", spec.spacing, "");
         
         final switch (datatype) {
         case DataType.x8:
             ubyte v = *cast(ubyte*)(buffer + i);
-            return cast(string)sformat(textbuf, spec.fmtspec, spec.spacing, v);
+            return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
         case DataType.x16:
             ushort v = void;
             switch (size - i) { // left
@@ -386,7 +392,7 @@ struct DataFormatter
             default:
                 v = *cast(ushort*)(buffer + i);
             }
-            return cast(string)sformat(textbuf, spec.fmtspec, spec.spacing, v);
+            return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
         }
     }
     
@@ -396,37 +402,35 @@ private:
     const(void) *buffer;
     DataType datatype;
     DataSpec spec;
-    char[24] textbuf = void;
 }
 unittest
 {
+    ElementText buf = void;
+    
     DataFormatter formatter;
     
     immutable ubyte[] data = [ 0x00, 0x01, 0xa0, 0xff ];
     formatter = DataFormatter(DataType.x8, data.ptr, data.length);
-    assert(formatter.print() == "00"); formatter.step();
-    assert(formatter.print() == "01"); formatter.step();
-    assert(formatter.print() == "a0"); formatter.step();
-    assert(formatter.print() == "ff"); formatter.step();
-    assert(formatter.print() == "  ");
+    assert(formatter.textual(buf) == "00"); formatter.step();
+    assert(formatter.textual(buf) == "01"); formatter.step();
+    assert(formatter.textual(buf) == "a0"); formatter.step();
+    assert(formatter.textual(buf) == "ff"); formatter.step();
+    assert(formatter.textual(buf) == "  ");
     
     immutable ushort[] data16 = [ 0x0101, 0xf0f0 ];
     formatter = DataFormatter(DataType.x16, data16.ptr, data16.length * ushort.sizeof);
-    assert(formatter.print() == "0101"); formatter.step();
-    assert(formatter.print() == "f0f0"); formatter.step();
-    assert(formatter.print() == "    ");
+    assert(formatter.textual(buf) == "0101"); formatter.step();
+    assert(formatter.textual(buf) == "f0f0"); formatter.step();
+    assert(formatter.textual(buf) == "    ");
     
     // Test partial data formatting
     immutable ubyte[] data16p = [ 0xab, 0xab, 0xab ];
     formatter = DataFormatter(DataType.x16, data16p.ptr, data16p.length);
-    assert(formatter.print() == "abab"); formatter.step();
-    assert(formatter.print() == "00ab"); formatter.step();
-    assert(formatter.print() == "    ");
+    assert(formatter.textual(buf) == "abab"); formatter.step();
+    assert(formatter.textual(buf) == "00ab"); formatter.step();
+    assert(formatter.textual(buf) == "    ");
 }
 
-/// Helps inputting data and formatting said input
-///
-/// They act like relays, clat clat
 struct InputFormatter
 {
     void change(DataType newtype)

@@ -971,11 +971,12 @@ void update_header(Session *session, TerminalSize termsize)
     buffwriter.put(atype);
     buffwriter.repeat(' ', 1);
     
+    ElementText buf = void;
     int cols = session.rc.columns;
     for (int col, ad; col < cols; ++col, ad += dataspec.size_of)
     {
         buffwriter.repeat(' ', 1);
-        buffwriter.put(address.format(ad, dataspec.spacing));
+        buffwriter.put(address.textual(buf, ad, dataspec.spacing));
     }
     
     // Fill rest of upper bar with spaces
@@ -1138,14 +1139,16 @@ void update_view(Session *session, TerminalSize termsize)
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
     }, 256) buffwriter;
+    ElementText buf_addr = void;
+    ElementText buf_data = void;
     bool prev_selected;
-    size_t ci; // character index
+    size_t ci; // character index because lazy
     for (; row < erows; ++row, address += g_linesize)
     {
         line.reset();
         
         // Add address
-        line.normal(afmt.format(address, session.rc.address_spacing), " ");
+        line.normal(afmt.textual(buf_addr, address, session.rc.address_spacing), " ");
         
         // expected amount of characters to be rendered on screen
         size_t chars;
@@ -1180,7 +1183,7 @@ void update_view(Session *session, TerminalSize termsize)
             }
             else // state.hasData
             {
-                data = dfmt.print();
+                data = dfmt.textual(buf_data);
                 dfmt.step();
             }
             assert(data);
@@ -1296,6 +1299,8 @@ void update_status(Session *session, TerminalSize termsize)
     terminalCursor(0, termsize.rows - 1);
     
     AddressFormatter address = void;
+    ElementText buf0 = void;
+    ElementText buf1 = void;
     
     Selection sel = selection(session);
     string msg = void;
@@ -1305,11 +1310,9 @@ void update_status(Session *session, TerminalSize termsize)
     }
     else if (sel.length) // Active selection
     {
-        address.change(session.rc.address_type);
-        AddressFormatter address_end = address; // has its own buffer, copy only Type+Spec
         msg = cast(string)sformat(g_messagebuf, "SEL: %s-%s (%d Bytes)",
-            address.format(sel.start, 1),
-            address_end.format(sel.end, 1),
+            address.textual(buf0, sel.start, 1),
+            address.textual(buf1, sel.end, 1),
             sel.length
         );
     }
@@ -1322,7 +1325,7 @@ void update_status(Session *session, TerminalSize termsize)
             writingModeToString(session.rc.writemode),
             dataTypeToString(session.rc.data_type),
             charsetID(session.rc.charset),
-            address.format(session.position_cursor, 8));
+            address.textual(buf0, session.position_cursor, 8));
     }
     
     // Attempt to fit the new message on screen
@@ -2747,7 +2750,9 @@ void find(Session *session, string[] args)
     
     moveabs(session, p);
     
-    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
+    ElementText buf = void;
+    AddressFormatter addr = AddressFormatter(session.rc.address_type);
+    message("Found at %s", addr.textual(buf, p, 1));
 }
 
 //
@@ -2790,7 +2795,9 @@ void find_back(Session *session, string[] args)
     
     moveabs(session, p);
     
-    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
+    ElementText buf = void;
+    AddressFormatter addr = AddressFormatter(session.rc.address_type);
+    message("Found at %s", addr.textual(buf, p, 1));
 }
 
 // 
@@ -2815,7 +2822,9 @@ void find_next(Session *session, string[] args)
     
     moveabs(session, p);
     
-    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
+    ElementText buf = void;
+    AddressFormatter addr = AddressFormatter(session.rc.address_type);
+    message("Found at %s", addr.textual(buf, p, 1));
 }
 
 // 
@@ -2840,7 +2849,9 @@ void find_prev(Session *session, string[] args)
     
     moveabs(session, p);
     
-    message("Found at %s", AddressFormatter(session.rc.address_type).format(p, 1));
+    ElementText buf = void;
+    AddressFormatter addr = AddressFormatter(session.rc.address_type);
+    message("Found at %s", addr.textual(buf, p, 1));
 }
 
 // Quit app

@@ -261,7 +261,7 @@ unittest
     configRC(rc, "columns", "10");
     assert(rc.columns == 10);
     
-    configRC(rc, "addressing", "dec");
+    configRC(rc, "address", "dec");
     assert(rc.address_type == AddressType.dec);
     
     configRC(rc, "address-spacing", "5");
