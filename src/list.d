@@ -11,7 +11,6 @@ module list;
 // "when pressured" (which is never).
 
 import core.stdc.stdlib : malloc, calloc, realloc, free;
-import core.stdc.string : memcpy;
 
 struct List(T)
 {
@@ -22,28 +21,38 @@ struct List(T)
     // disable copies
     @disable this(this);
 
-    this(size_t capacity_)
+    this(size_t newcapacity)
     {
-        if (capacity_ == 0)
-            throw new Exception("list:itemsize==0");
-        buffer = cast(T*) malloc(T.sizeof * capacity_);
-        if (buffer == null)
-            throw new Exception("list:malloc==null");
-        
-        cap = capacity_;
-        count = 0;
+        init(newcapacity);
     }
-
     ~this()
     {
-        if (buffer)
-            free(buffer);
+        deinit();
+    }
+    
+    void init(size_t newcapacity)
+    {
+        if (newcapacity == 0)
+            throw new Exception("list:itemsize==0");
+        T *p = cast(T*) realloc(buffer, T.sizeof * newcapacity);
+        if (p == null)
+            throw new Exception("list:malloc==null");
+        
+        cap = newcapacity;
+        count = 0;
+        buffer = p;
+    }
+    void deinit()
+    {
+        if (buffer) free(buffer);
         buffer = null;
     }
 
     // foreach interfaces
     int opApply(scope int delegate(ref T) dg)
     {
+        if (buffer == null)
+            return 0;
         for (size_t i; i < count; i++)
         {
             if (int r = dg(buffer[i])) return r;
@@ -52,6 +61,8 @@ struct List(T)
     }
     int opApply(scope int delegate(size_t, ref T) dg)
     {
+        if (buffer == null)
+            return 0;
         for (size_t i; i < count; i++)
         {
             if (int r = dg(i, buffer[i])) return r;
@@ -61,6 +72,8 @@ struct List(T)
     
     T opIndex(size_t idx)
     {
+        if (buffer == null)
+            init(16);
         if (idx >= count)
             throw new Exception("idx");
         
@@ -70,7 +83,8 @@ struct List(T)
     // append
     void opOpAssign(string op)(T item) if (op == "~")
     {
-        assert(buffer);
+        if (buffer == null)
+            init(16);
 
         // Increase capacity
         if (count >= cap)

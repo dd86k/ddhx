@@ -1141,8 +1141,7 @@ void update_view(Session *session, TerminalSize termsize)
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
     }, 256) buffwriter;
-    ElementText buf_addr = void;
-    ElementText buf_data = void;
+    ElementText buf = void;
     bool prev_selected;
     size_t ci; // character index because lazy
     for (; row < erows; ++row, address += g_linesize)
@@ -1150,7 +1149,7 @@ void update_view(Session *session, TerminalSize termsize)
         line.reset();
         
         // Add address
-        line.normal(afmt.textual(buf_addr, address, session.rc.address_spacing), " ");
+        line.normal(afmt.textual(buf, address, session.rc.address_spacing), " ");
         
         // expected amount of characters to be rendered on screen
         size_t chars;
@@ -1185,7 +1184,7 @@ void update_view(Session *session, TerminalSize termsize)
             }
             else // state.hasData
             {
-                data = dfmt.textual(buf_data);
+                data = dfmt.textual(buf);
                 dfmt.step();
             }
             assert(data);
@@ -1232,7 +1231,7 @@ void update_view(Session *session, TerminalSize termsize)
             chars++;
         }
         
-        // Render line on screen
+        // Render line segments on screen
         buffwriter.reset();
         terminalCursor(0, row + rowdisp);
         int last_scheme_flags;
@@ -1312,6 +1311,8 @@ void update_status(Session *session, TerminalSize termsize)
     }
     else if (sel.length) // Active selection
     {
+        address.change(session.rc.address_type);
+        
         msg = cast(string)sformat(g_messagebuf, "SEL: %s-%s (%d Bytes)",
             address.textual(buf0, sel.start, 1),
             address.textual(buf1, sel.end, 1),

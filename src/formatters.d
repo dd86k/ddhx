@@ -636,6 +636,11 @@ struct Line
         destroy(segments);
     }
     
+    LineSegment opIndex(size_t i)
+    {
+        return segments[i];
+    }
+    
     void reset() { segments.reset(); }
     
     // Manual add
@@ -674,9 +679,21 @@ struct Line
 }
 unittest
 {
-    /*
-    assert(line.segments[5].inverted == true);
-    assert(line.segments[6].text == " ");
-    assert(line.segments[6].inverted == true);
-    */
+    Line line;
+    
+    line.normal("test", "second");
+    line.cursor("ff");
+    line.selection("ffff");
+    
+    assert(line[0].toString()   == "test");
+    assert(line[0].scheme       == ColorScheme.normal);
+    
+    assert(line[1].toString()   == "second");
+    assert(line[1].scheme       == ColorScheme.normal);
+    
+    assert(line[2].toString()   == "ff");
+    assert(line[2].scheme       == ColorScheme.cursor);
+    
+    assert(line[3].toString()   == "ffff");
+    assert(line[3].scheme       == ColorScheme.selection);
 }
