@@ -47,6 +47,9 @@ struct RC
     /// If set, sets the cursor mirror.
     bool mirror_cursor; // could be paired with "mirror-color" later
     
+    /// Gray out zeros.
+    bool gray_zeros;
+    
 private:
     // Fixes when RC file has config and CLI already set a field.
     bool address_type_set;
@@ -58,6 +61,7 @@ private:
     bool header_set;
     bool status_set;
     bool mirror_cursor_set;
+    bool gray_zeros_set;
 }
 
 /// Return true/false given sting input.
@@ -214,6 +218,11 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         "mirror-cursor", "If set, mirrors the cursor for both columns",
         "Boolean", `"off"`,
         &configure_mirror_cursor
+    },
+    {
+        "gray-zeros", "If set, zero values are printed as gray",
+        "Boolean", `"off"`,
+        &configure_gray_zeros
     },
 ];
 unittest
@@ -376,4 +385,15 @@ void configure_autoresize(ref RC rc, string value, bool conf = false)
     
     rc.columns = boolean(value) ? COLUMNS_AUTO : 16;
     rc.columns_set = true;
+}
+
+// 
+void configure_gray_zeros(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.gray_zeros_set)
+        return;
+    
+    // Eventually could just set the color mapping directly
+    rc.gray_zeros = boolean(value);
+    rc.gray_zeros_set = true;
 }

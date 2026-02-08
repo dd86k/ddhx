@@ -725,7 +725,7 @@ void terminalBackground(TermColor col)
 {
     version (Windows)
     {
-        static immutable ushort[16] FGCOLORS = [ // foreground colors
+        static immutable ushort[16] BGCOLORS = [ // background colors
             // TermColor.black
             0,
             // TermColor.blue
@@ -764,11 +764,11 @@ void terminalBackground(TermColor col)
         GetConsoleScreenBufferInfo(hOut, &csbi);
         WORD current = csbi.wAttributes;
         
-        cast(void)SetConsoleTextAttribute(hOut, (current & 0xf) | FGCOLORS[col]);
+        cast(void)SetConsoleTextAttribute(hOut, (current & 0xf) | BGCOLORS[col]);
     }
     else version (Posix)
     {
-        static immutable string[16] FGCOLORS = [ // foreground colors
+        static immutable string[16] BGCOLORS = [ // background colors
             // TermColor.black
             "\033[40m",
             // TermColor.blue
@@ -803,7 +803,7 @@ void terminalBackground(TermColor col)
             "\033[107m",
         ];
         
-        terminalWrite(FGCOLORS[col]);
+        terminalWrite(BGCOLORS[col]);
     } // version (Posix)
 }
 

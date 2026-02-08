@@ -164,20 +164,23 @@ struct Command
     command_func impl;  /// Implementation
 }
 
-// Reserved (Idea: Ctrl=Action, Alt=Alternative):
-// - "toggle-*" (Alt+Key): Hiding/showing panels
-// - "save-settings": Save session settings into .ddhxrc
+// Reserved (Ideal: Ctrl=Action, Alt=Alternative):
+// - "toggle-inspector" (Alt+I): Toggle data inspector
 // - "hash": Hash selection with result in status
 //           Mostly checksums and digests under 256 bits.
 //           256 bits -> 32 Bytes -> 64 hex characters
-// - "save-status": Save status/message content into file...?
+// - "bookmark-add RANGE": Add bookmark
+// - "bookmark-remove RANGE": Remove all bookmarks touched by RANGE
+// - "bookmark-next": Next bookmark
+// - "bookmark-prev": Previous bookmark
 // NOTE: Command names
 //       Because navigation keys are the most essential, they get short names.
 //       For example, mpv uses LEFT and RIGHT to bind to "seek -10" and "seek 10".
 //       Here, both "bind ctrl+9 right" and "bind ctrl+9 goto +1" are both valid.
-//       Otherwise, it's better to name them "do-thing" syntax.
+//       I probably would have preferred to go with "do-thing" syntax, but
+//       I somehow decided to go with "thing-do". Oh well.
 // NOTE: Command designs
-//       - Names: If commonly used (ie, navigation), one word
+//       - Names: If commonly used (ie, navigation), command is one word
 //       - Selection: command parameters are prioritized over selections
 /// List of default commands and shortcuts
 immutable Command[] default_commands = [
@@ -756,6 +759,7 @@ string tempName(string basename)
     return format("%s.tmp-ddhx-%u", basename, uniform(10_000, 100_000)); // 10,000..99,999 incl.
 }
 
+// Save changes to file target
 void save_to_file(IDocumentEditor editor, string target)
 {
     log("target='%s'", target);
@@ -997,6 +1001,7 @@ struct ElementState
     bool isCursor;
     bool hasData;
     bool isActiveEdit;
+    bool isZero;
     
     ColorScheme dataScheme(PanelType panel, bool mirror)
     {
@@ -1008,6 +1013,9 @@ struct ElementState
         
         if (isCursor && mirror && panel != PanelType.data)
             return ColorScheme.mirror;
+        
+        if (isZero)
+            return ColorScheme.unimportant;
         
         return ColorScheme.normal;
     }
@@ -1023,18 +1031,23 @@ struct ElementState
         if (isCursor && mirror && panel != PanelType.text)
             return ColorScheme.mirror;
         
+        if (isZero)
+            return ColorScheme.unimportant;
+        
         return ColorScheme.normal;
     }
 }
 ElementState getElementState(int elementIndex, int viewpos, int sl0, int sl1, 
-                             bool selectionActive, int readlen, size_t inputIndex = 0)
+                             bool selectionActive, int readlen, size_t inputIndex,
+                             bool zero)
 {
     bool isCursor = elementIndex == viewpos;
     return ElementState(
         selectionActive && elementIndex >= sl0 && elementIndex <= sl1,
         isCursor,
         elementIndex < readlen,
-        inputIndex && isCursor
+        inputIndex && isCursor,
+        zero
     );
 }
 
@@ -1162,9 +1175,12 @@ void update_view(Session *session, TerminalSize termsize)
             
             int elemidx = (row * cols) + col;
             
+            // Is element zero?
+            bool zero = session.rc.gray_zeros && dfmt.iszero();
+            
             ElementState state = getElementState(
                 elemidx, viewpos, sel_start, sel_end, session.selection.status != 0,
-                readlen, g_input.index);
+                readlen, g_input.index, zero);
             
             ColorScheme current = state.dataScheme(panel, session.rc.mirror_cursor);
             
@@ -1197,9 +1213,12 @@ void update_view(Session *session, TerminalSize termsize)
             // Convert byte offset to element index for state checking
             int elementIndex = ((row * g_linesize) + idx) / data_spec.size_of;
             
+            // Is element zero?
+            bool zero = session.rc.gray_zeros && ci < result.length ? result[ci] == 0 : false;
+            
             // Calculate element state
             ElementState state = getElementState(elementIndex, viewpos, sel_start, sel_end,
-                                                session.selection.status != 0, readlen);
+                                                session.selection.status != 0, readlen, g_input.index, zero);
             
             // Get color scheme for this element in text panel
             ColorScheme scheme = state.textScheme(panel, session.rc.mirror_cursor);
@@ -1227,19 +1246,22 @@ void update_view(Session *session, TerminalSize termsize)
         {
             ColorMap map = g_colors.get(segment.scheme);
             
-            // If incoming color is different, flush, because we are changing attributes
-            if (last_scheme_flags != map.flags)
-                buffwriter.flush();
+            bool change = last_scheme_flags != map.flags;
             
-            // Apply attribute(s) or reset
-            if (map.flags & COLORMAP_FOREGROUND)
+            // If incoming color is different, flush, because we are changing attributes
+            if (change)
+            {
+                buffwriter.flush();
+                terminalResetColor(); // fixes runaway color with invert (cursor) on POSIX
+            }
+            
+            // Apply attribute(s)
+            if (map.flags & COLORMAP_FOREGROUND && change)
                 terminalForeground(map.fg);
-            if (map.flags & COLORMAP_BACKGROUND)
+            if (map.flags & COLORMAP_BACKGROUND && change)
                 terminalBackground(map.bg);
-            if (map.flags & COLORMAP_INVERTED)
+            if (map.flags & COLORMAP_INVERTED && change)
                 terminalInvertColor();
-            if (map.flags == 0)
-                terminalResetColor();
             
             buffwriter.put(segment.toString());
             
@@ -1249,12 +1271,12 @@ void update_view(Session *session, TerminalSize termsize)
         // Fill rest of term with spaces
         if (chars < termsize.columns)
         {
-            buffwriter.flush();     // important overall, notably Windows
+            buffwriter.flush();     // important for conhost
             terminalResetColor();   // fixes colors when in text column
             buffwriter.repeat(' ', termsize.columns - chars);
         }
         
-        buffwriter.flush();     // important overall, notably Windows
+        buffwriter.flush();     // important for conhost
         terminalFlush();        // important for fbcon, no-op on Windows
     }
     

@@ -216,6 +216,7 @@ void main(string[] args)
             },
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,
+        "gray-zeros",   "Gray out zeros", &rc.gray_zeros,
         //
         // Pages
         //

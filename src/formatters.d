@@ -349,6 +349,9 @@ string dataTypeToString(DataType type) // Only used in statusbar code
     }
 }
 
+// TODO: Make DataWalker that modifies Element instances
+//       Because then, Element can has iszero() more consistently
+//       And have its own format function.
 /// Helper structure that walks over a buffer and formats every element.
 struct DataFormatter
 {
@@ -377,7 +380,7 @@ struct DataFormatter
             ubyte v = *cast(ubyte*)(buffer + i);
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
         case DataType.x16:
-            ushort v = void;
+            ushort v;
             switch (size - i) { // left
             case 1:
                 v = *cast(ubyte*)(buffer + i);
@@ -386,6 +389,29 @@ struct DataFormatter
                 v = *cast(ushort*)(buffer + i);
             }
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
+        }
+    }
+    
+    // 
+    bool iszero()
+    {
+        if (i >= size)
+            return false;
+        
+        // lazy lol
+        final switch (datatype) {
+        case DataType.x8:
+            return *cast(ubyte*)(buffer + i) == 0;
+        case DataType.x16:
+            ushort v;
+            switch (size - i) { // left
+            case 1:
+                v = *cast(ubyte*)(buffer + i);
+                break;
+            default:
+                v = *cast(ushort*)(buffer + i);
+            }
+            return v == 0;
         }
     }
     
@@ -404,23 +430,23 @@ unittest
     
     immutable ubyte[] data = [ 0x00, 0x01, 0xa0, 0xff ];
     formatter = DataFormatter(DataType.x8, data.ptr, data.length);
-    assert(formatter.textual(buf) == "00"); formatter.step();
-    assert(formatter.textual(buf) == "01"); formatter.step();
-    assert(formatter.textual(buf) == "a0"); formatter.step();
-    assert(formatter.textual(buf) == "ff"); formatter.step();
+    assert(formatter.textual(buf) == "00"); assert( formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "01"); assert(!formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "a0"); assert(!formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "ff"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "  ");
     
     immutable ushort[] data16 = [ 0x0101, 0xf0f0 ];
     formatter = DataFormatter(DataType.x16, data16.ptr, data16.length * ushort.sizeof);
-    assert(formatter.textual(buf) == "0101"); formatter.step();
-    assert(formatter.textual(buf) == "f0f0"); formatter.step();
+    assert(formatter.textual(buf) == "0101"); assert(!formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "f0f0"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "    ");
     
     // Test partial data formatting
     immutable ubyte[] data16p = [ 0xab, 0xab, 0xab ];
     formatter = DataFormatter(DataType.x16, data16p.ptr, data16p.length);
-    assert(formatter.textual(buf) == "abab"); formatter.step();
-    assert(formatter.textual(buf) == "00ab"); formatter.step();
+    assert(formatter.textual(buf) == "abab"); assert(!formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "00ab"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "    ");
 }
 
@@ -555,6 +581,7 @@ enum ColorScheme
     cursor,
     selection,
     mirror,
+    unimportant,    // ie, zero
     // The following are just future ideas
     //modified,   // edited data
     //address,    // layout: address/offset
@@ -592,7 +619,10 @@ struct ColorMapper
         { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
         // mirror
         { COLORMAP_BACKGROUND,  TermColor.init, TermColor.red },
+        // unimportant
+        { COLORMAP_FOREGROUND,  TermColor.gray, TermColor.init },
     ];
+    static assert(maps.length == SCHEMES);
     
     ColorMap get(ColorScheme scheme)
     {
@@ -606,12 +636,18 @@ struct ColorMapper
         assert(i < SCHEMES);
         maps[i] = map;
     }
+    // TODO: static ColorMap parse(string)
+    //       "default"/"normal"/"reset" -> 0
+    //       "invert"       -> COLORMAP_INVERTED
+    //       "fg:bg"        -> COLORMAP_FOREGROUND|COLORMAP_BACKGROUND
+    //       "fg:normal"    -> COLORMAP_FOREGROUND
 }
 
 // TODO: Eventually, this will do coalescing with a character buffer
 //       Beneficial to render function to potentially trim out BufferedWriter
 //       and thus making the code a lot simpler.
 //       Change "char[32] data" to "string data" and remove "size_t sz".
+//       Sneaking suspicion this will be required if I wish to make a data inspector panel
 struct LineSegment
 {
     // NOTE: Don't call this variable "text", it will call std.conv.text.
