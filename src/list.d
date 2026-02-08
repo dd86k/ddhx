@@ -18,7 +18,8 @@ struct List(T)
     size_t count;   /// Current item count
     T* buffer;      /// Item buffer
     
-    // disable copies
+    // Disable copies since it can actually cause issues
+    // Example seen with writef (segfault)... To be fixed later?
     @disable this(this);
 
     this(size_t newcapacity)

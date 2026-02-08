@@ -1148,7 +1148,7 @@ void update_view(Session *session, TerminalSize termsize)
     {
         line.reset();
         
-        // Add address
+        // Add address + one spacer
         line.normal(afmt.textual(buf, address, session.rc.address_spacing), " ");
         
         // expected amount of characters to be rendered on screen
@@ -1168,35 +1168,25 @@ void update_view(Session *session, TerminalSize termsize)
             
             ColorScheme current = state.dataScheme(panel, session.rc.mirror_cursor);
             
-            // Add spacer with scheme continuous to previous one
+            // Add spacer (before element) with scheme continuous to previous one
             ColorScheme spacerscheme =
-                state.isSelected && prev_selected && panel == PanelType.data ?
+                col &&                      // avoid first spacer being styled
+                state.isSelected &&         // current element selected
+                prev_selected &&            // previous element selected
+                panel == PanelType.data ?   // focused on data panel
                 ColorScheme.selection : ColorScheme.normal;
-            line.add(" ", spacerscheme);
+            chars += line.add(" ", spacerscheme);
             prev_selected = state.isSelected;
             
             // Add data text
-            string data;
-            if (state.isActiveEdit)
-            {
-                data = g_input.format;
-                dfmt.step();
-            }
-            else // state.hasData
-            {
-                data = dfmt.textual(buf);
-                dfmt.step();
-            }
-            assert(data);
-            line.add(data, current);
-            
-            chars += data_spec.spacing + 1;
+            string data = state.isActiveEdit ? g_input.format : dfmt.textual(buf);
+            assertion(data);
+            dfmt.step();
+            chars += line.add(data, current);
         }
         
-        // data-text spacer
-        static immutable string data_text_spacer = "  ";
-        line.normal(data_text_spacer);
-        chars += data_text_spacer.length;
+        // data-text spacers
+        chars += line.normal("  ");
         
         // Render text by byte
         for (int idx; idx < g_linesize; idx++, ci++)
@@ -1226,39 +1216,32 @@ void update_view(Session *session, TerminalSize termsize)
                 text = " ";
             }
             
-            line.add(text, scheme);
-            
-            chars++;
+            chars += line.add(text, scheme);
         }
         
         // Render line segments on screen
         buffwriter.reset();
         terminalCursor(0, row + rowdisp);
-        int last_scheme_flags;
+        int last_scheme_flags; // ColorScheme might not be normal at address
         foreach (ref segment; line.segments)
         {
             ColorMap map = g_colors.get(segment.scheme);
             
             // If incoming color is different, flush, because we are changing attributes
-            bool different = last_scheme_flags != map.flags;
-            
-            if (different)
+            if (last_scheme_flags != map.flags)
                 buffwriter.flush();
             
+            // Apply attribute(s) or reset
             if (map.flags & COLORMAP_FOREGROUND)
                 terminalForeground(map.fg);
             if (map.flags & COLORMAP_BACKGROUND)
                 terminalBackground(map.bg);
             if (map.flags & COLORMAP_INVERTED)
                 terminalInvertColor();
+            if (map.flags == 0)
+                terminalResetColor();
             
             buffwriter.put(segment.toString());
-            
-            if (different)
-            {
-                buffwriter.flush();
-                terminalResetColor();
-            }
             
             last_scheme_flags = map.flags;
         }
