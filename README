@@ -118,20 +118,20 @@ This list may change at any given time without notice.
 - [x] 0.8.3: FIFO/Pipe detection
 
 0.9: TBD
+- [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
+- [ ] Endian-specific pattern prefixes (e.g., u32le:)
+- [ ] Inspect data panel (replaces text panel when toggled)
+- [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
-- [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
 - [ ] Diff view (vs. opened document)
 - [ ] Document: Disk
 - [ ] Document: Process memory
-- [ ] Endian-specific pattern prefixes (e.g., u32le:)
 - [ ] File browser (to insert files)
-- [ ] Inspect data panel (replaces text panel when toggled)
 - [ ] Layout system (akin to ImHex Patterns)
 - [ ] Patch system (maybe with an ed(1) front-end?)
 - [ ] Snapshot tree system (explore different edit branches)
-- [ ] View: Other data types (d8, o8, d16, f32, etc.)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Usage
@@ -158,7 +158,7 @@ To quit the editor, use Ctrl+Q, or use the "quit" command.
 Minimum recommended terminal size is 80x24 characters.
 
 ////////////////////////////////////////////////////////////////////////////////
-// Navigation & Selection
+// Navigation
 
 Left/Right Arrow Keys   Move cursor by one element
 Up/Down Arrow Keys      Move cursor by a row
@@ -171,8 +171,37 @@ Shift+Navigation        Extend selection while navigating
 
 Navigation should resemble most text editors.
 
-If the shift key is unavailable, the "mark" and "unmark" commands can be used
-to start and stop a selection.
+// Selection
+
+Some commands support selection. Selection makes certain commands work
+differently. For example, with an active selection, the "replace" command
+doesn't need a range expression, only a pattern.
+
+If the shift key (used in selection) is unavailable, the "mark" and "unmark"
+commands can be used to start and stop a selection. The selection commands,
+such as "select RANGE", "select-end", etc., remain available.
+
+// Skipping
+
+Typically, the Ctrl+Left and Ctrl+Right keys skip the same element until
+a different element is found. This is particularly useful skipping wide
+empty spaces, even gigabytes!
+
+To skip a group of data (as a pattern), first, select a range of data:
+
+  00 ff 00 aa 00 ff 00 aa 00 ff 00 aa 00 ff 00 aa
+ [00 ff 00 aa]00 ff 00 aa 00 ff 00 aa 00 ff 00 aa
+  00 ff 00 aa 00 ff 00 aa 00 ff 00 aa 00 ff 00 aa
+  ...
+  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+Then, to go forward, press Ctrl+Right. The cursor will skip this pattern:
+
+  00 ff 00 aa 00 ff 00 aa 00 ff 00 aa 00 ff 00 aa
+  00 ff 00 aa 00 ff 00 aa 00 ff 00 aa 00 ff 00 aa
+  00 ff 00 aa 00 ff 00 aa 00 ff 00 aa 00 ff 00 aa
+  ...
+ [00]00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 
 To view all default keybindings, run: ddhx --help-keys
 
@@ -185,12 +214,12 @@ Ctrl+R                  Redo previous change
 Ctrl+S                  Save document
 Ctrl+O                  Save As another name and set new target
 Tab                     Change between data and text columns
-Alt+C                   Copy data into internal buffer
-Alt+X                   Cut data into internal buffer
-Alt+V                   Paste data from internal buffer to document
+Alt+C                   Copy selected data into internal buffer
+Alt+X                   Cut selected data into internal buffer
+Alt+V                   Paste data from internal buffer into document
 
-Edit single elements using a-f and 0-9 keys. The editor is currently byte-
-oriented, so typing "ff" will insert or replace a byte (element).
+Edit single elements using a-f and 0-9 keys. The editor is currently element-
+oriented, so typing "ff" will insert or replace an element.
 
 It's also possible to use a command over a selection, like "replace x:00", to
 replace a selection with zeros.
@@ -200,33 +229,31 @@ To insert a file into the document at the current cursor position, use the
 done using "replace-file PATH", where the file replaces content instead using
 the file's length.
 
-The writing mode (modal) affects manual edits and pasting data.
-
-Some commands support selection. Selection makes certain commands work
-differently. For example, with an active selection, the "replace" command
-doesn't need a range expression, only patterns.
+The writing mode (modal) currently affects:
+- Manual edits;
+- And pasting data from the clipboard.
 
 Commands:
-  insert RANGE PATTERNS...         - Insert data
-  insert-file RANGE PATTERNS...    - Insert file
-  replace RANGE PATTERNS...        - Replace data
-  replace-file RANGE PATTERNS...   - Replace data using a file
+  insert RANGE PATTERNS...        - Insert data
+  replace RANGE PATTERNS...       - Replace data
+  insert-file PATH                - Insert file at cursor position
+  replace-file PATH               - Replace data using a file
 
 ////////////////////////////////////////////////////////////////////////////////
 // Commands
 
-All actions in the editor are backed by commands. Commands can be executed via
-keyboard shortcuts or by typing them directly into the command prompt.
+All actions in the editor are backed by commands. Many commands are mapped to
+keys, and can be invoked from the command prompt.
 
-Press Enter to open the command prompt, type your command, then press Enter
-again to execute it.
+To invoke the command prompt, press the Enter (Return) key. Type your command,
+and then press Enter again to execute it.
 
-To cancel a prompt input, give it an empty line or hit Ctrl+C.
+To cancel a prompt input, hit Escape, Ctrl+C, or give it empty input.
 
 // Command Arguments
 
-Commands may require arguments. If you omit them, the editor will prompt you
-for the missing values.
+Some commands require arguments. If you omit them, the editor will prompt you
+for the missing arguments, or continue if there is an active selection.
 
 Example - jumping forward 32 bytes:
   >goto +0x20
@@ -239,7 +266,7 @@ triggered with Ctrl+G and accepts decimal, octal, and hexadecimal values.
   >goto 0x10        Jump to position 16 (hexadecimal)
   >goto +020        Jump forward 16 bytes (octal)
   >goto -5          Jump backward 5 bytes (decimal)
-  >goto %45.1       Jump to 45.1% through the document
+  >goto %45.1       Jump to 45.1% of the size of the document
 
 To view all available commands, run: ddhx --help-commands
 
@@ -269,8 +296,8 @@ LIMITATION: Search does not wrap and depends on cursor position.
 ////////////////////////////////////////////////////////////////////////////////
 // Patterns
 
-A pattern consists of one or more prefixed patterns, where they can be matched
-in order (left to right).
+A pattern expression consists of one or more prefixed patterns, where they can
+be matched in order (left to right).
 
 For example, "x:00 01" will yield a pattern of [ 0x00, 0x01 ], and
 "s:hi x:ffff" a pattern of [ 0x68, 0x69, 0xff, 0xff ].
@@ -288,35 +315,39 @@ Supported commands: find, find-back, insert, and replace.
 // Ranges
 
 A range expression represents a start and end position inclusively, typically
-in the START:END format.
-
-Without the separator (:), it only denotes a length, including the cursor
-position. Instead of ".:+3" (current position + 3 elements), "4" can be typed.
+in the START:END format. Supports hexadecimal, decimal, and octal values.
 
 Special markers:
   . - Current cursor position.
-  $ - End Of File (document size minus one)
+  $ - End Of File (document size minus one
   + - (End only) End is not a position, but an addition to start position
+
+Without the separator (:), it only denotes a length, including the cursor
+position. Instead of ".:+3" (current position + 3 elements), "4" can be used.
 
 Examples:
   >select 0x10:0x19        - Selects positions 0x10 to 0x19
   >select 0x10:+9          - Selects positions 0x10 to 0x19 (0x10+9=0x19)
+  >select 0x10:.           - Selects positions 0x10 to cursor position
+  >select 0x10:$           - Selects positions 0x10 to end of document
   >replace 200:$ x:00      - Replace bytes from address 200 to EOF with zeros
   >replace 200:. x:00      - Replace from 200 to current position with zeros
   >insert 100 x:90         - Insert 100 0x90 bytes at current position
 
-Supported commands: insert, replace, select, and delete.
+Supported commands: select, insert, replace, and delete.
 
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration
 
-Runtime changes do not persist across sessions. To make settings permanent,
-add them to your configuration file.
+To adjust runtime settings, use the "set" command.
 
-Settings can be changed at runtime using the "set" command:
+Most settings can also be configured via command-line flags. For example, both
+"-c" and "--columns=" correspond to the "columns" configuration setting.
+
+The "set" command expects a configuration field and one or more values:
   set CONFIG VALUE
 
-Keys can be bound to commands using the "bind" command:
+Keys can also be bound to commands using the "bind" command:
   bind KEY COMMAND [PARAMS...]
 
 Examples:
@@ -327,13 +358,13 @@ To remove bindings:
   >unbind KEY                   Remove specific binding from KEY
   >reset-keys                   Reset all bindings to defaults
 
-Most settings can also be configured via command-line flags. For example, both
-"-c" and "--columns=" correspond to the "columns" setting.
+However, runtime changes do not persist across sessions. To make settings permanent,
+add them to your configuration file.
 
 Example configuration file:
   # EBCDIC character set
   charset ebcdic
-  # 32 columns
+  # 32 columns per row of elements
   columns 32
   # Vim-style navigation
   bind h left
@@ -379,7 +410,7 @@ Since things might break, there are unit testing and logging facilities.
 
 Run unit tests (useful for new platforms):
   $ dub test
-Run unit tests with log traces:
+Run unit tests with log traces to stderr:
   $ dub test --d-version=Trace
 Run a specific system integration test:
   $ dub test -b TYPE
