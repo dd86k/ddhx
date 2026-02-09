@@ -201,14 +201,21 @@ void main(string[] args)
         "address-spacing", "Set address spacing in characters (default: 11)",
             (string _, string val)
             {
-                configure_charset(rc, val);
+                configure_address_spacing(rc, val);
             },
         //"filler",       "Set non-printable default character (default='.')", &cliOption,
         "C|charset",    `Set character translation (default="ascii")`,
             (string _, string val)
             {
-                configRC(rc, "charset", val);
+                configure_charset(rc, val);
             },
+        "gray-zeros",   "Gray out zeros",
+            {
+                configure_gray_zeros(rc, "on");
+            },
+        //
+        // Misc
+        //
         "R|readonly",   "Open file as read-only and restrict editing",
             ()
             {
@@ -216,7 +223,6 @@ void main(string[] args)
             },
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,
-        "gray-zeros",   "Gray out zeros", &rc.gray_zeros,
         //
         // Pages
         //
