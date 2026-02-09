@@ -119,14 +119,6 @@ else version (Posix)
         private extern (C) int ioctl(int fd, ulong request, ...);
     }
     
-    version (Darwin)
-        version = IncludeTTYCOM;
-    version (OpenBSD)
-        version = IncludeTTYCOM;
-    
-    version (IncludeTTYCOM)
-        import core.sys.posix.sys.ttycom; // Darwin/OpenBSD need this for TIOCGWINSZ
-    
     private __gshared termios old_ios, new_ios;
 }
 
