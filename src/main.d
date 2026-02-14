@@ -297,11 +297,16 @@ void main(string[] args)
     IDocumentEditor editor = spawnEditor( environment.get("DDHX_BACKEND") );
     log("backend=%s", editor);
     
+    string target = args.length >= 2 ? args[1] : null;
+    
+    // Create a session here.
+    // Messy, but needed to start tracking files...
+    Session *session = create_session(editor, rc, target);
+    
     // Open buffer or file where (imitating GNU nano):
     // - No args:  New empty buffer
     // - "-":      Read from stdin
     // - FILENAME: Attempt to open FILE
-    string target = args.length >= 2 ? args[1] : null;
     log(`target="%s"`, target);
     string initmsg;
     switch (target) {
@@ -340,11 +345,17 @@ void main(string[] args)
         bool readonly = rc.writemode == WritingMode.readonly;
         try
         {
+            import document.base : IDocument;
+            
             // open file will retry to reopen as readonly when invoked as readonly=false.
             // FileDocument wants a file to exist to be consistent.
             // right now, there is no need to filter by file type.
             // Let the OS handle permissions.
-            editor.open(openfile(target, readonly));
+            IDocument doc = openfile(target, readonly);
+            
+            editor.open(doc);
+            
+            session.documents ~= doc;
             
             initmsg = baseName(target);
             if (readonly)
@@ -366,7 +377,7 @@ void main(string[] args)
     log(`initmsg="%s"`, target);
     assert(initmsg, "Forgot initmsg?");
     
-    try startddhx(editor, rc, target, initmsg);
+    try start_session(session, initmsg);
     catch (Exception ex)
     {
         writeln(); // if cursor was at some weird place, start at newline

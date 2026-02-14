@@ -10,6 +10,8 @@ module ddhx;
 
 import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
+import document.base : IDocument;
+import document.file : FileDocument;
 import document.file;
 import editor.base : IDocumentEditor;
 import formatters;
@@ -96,6 +98,28 @@ struct Session
     
     /// 
     IDocumentEditor editor;
+    
+    // NOTE: Maximum number of handles
+    //
+    //       The front-end uses FileDocument class to open files, which uses OSFile.
+    //       OSFile uses the operating system native File API, and not the C runtime's,
+    //       which is typically limited from 512 to 4096 handles per process (and 32-bit seeks).
+    //
+    //       On Windows, that's typically about 64K (Win32) or 16M (Win64) file handles.
+    //       16K for network files.
+    //
+    //       On Linux, querying prlimit.1 (6.17-generic amd64), or /proc/self/limits,
+    //       for NOFILE ("Max open files"), yields 1024 as a soft limit, and 524288 as a
+    //       hard limit.
+    //
+    //       Don't even worry about closing handles for undo operations because a redo will
+    //       require to re-open that file anyway.
+    /// Opened documents.
+    ///
+    /// Since the front-end is the one opening files, make it the one to track
+    /// them as well. This leaves editors without the duty to manage them,
+    /// making testing easier.
+    IDocument[] documents;
     
     /// Active selection
     CurrentSelection selection;
@@ -416,14 +440,7 @@ void initdefaults()
             file.writeln("\tg_session.rc.mirror_cursor\t: ", g_session.rc.mirror_cursor);
             file.writeln("\tg_session.rc.writemode\t: ", g_session.rc.writemode);
             
-            // TODO: Make IDocumentEditor return original IDocument
-            //       I don't keep a reference because it can change at any time
-            /*
-            if (IDocument doc = session.editor.doc())
-            {
-                file.writeln("Document");
-            }
-            */
+            // TODO: Dump open documents information
             
             import editor.piecev2 : PieceV2DocumentEditor;
             file.writeln("Editor");
@@ -488,13 +505,16 @@ const(Keybind)* binded(int key)
     return key in g_keys;
 }
 
-/// Start a new instance of the hex editor.
-/// Params:
-///     editor = Document editor instance.
-///     rc = Copy of the RC instance.
-///     path = Target path.
-///     initmsg = Initial message.
-void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
+
+Session* create_session(IDocumentEditor editor, ref RC rc, string path)
+{
+    Session *session = new Session(rc);
+    session.target = path;    // assign target path, a NULL value is valid
+    session.editor = editor;  // assign editor instance
+    return session;
+}
+
+void start_session(Session *session, string initmsg)
 {
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
     // NOTE: Alternate buffers are usually "clean" except on framebuffers (fbcon)
@@ -502,19 +522,16 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     terminalResizeHandler(&onresize);
     terminalHideCursor();
     
+    g_session = session;
+    
     g_status = UINIT;
     g_messagebuf.length = 4096;
     
-    g_input = new InputFormatter; // hack due to escapes
-    
-    g_session = new Session(rc);
-    g_session.target = path;    // assign target path, a NULL value is valid
-    g_session.editor = editor;  // assign editor instance
+    g_input = new InputFormatter; // hack due to buffer escapes
+    g_input.change(session.rc.data_type);
 
     // Sync editor options
-    editor.coalescing = rc.coalescing;
-
-    g_input.change(rc.data_type);
+    session.editor.coalescing = session.rc.coalescing;
     
     message(initmsg);
     
@@ -2447,12 +2464,10 @@ void replace_file(Session *session, string[] args)
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception("Cannot edit, read-only");
     
-    import document.file : FileDocument;
-    import document.base : IDocument;
-    
     string path = askstring(args, 0, "File: ");
     
     IDocument file = new FileDocument(path, true);
+    session.documents ~= file;
     long curpos = session.position_cursor;
     
     session.editor.fileReplace(curpos, file);
@@ -2465,12 +2480,10 @@ void insert_file(Session *session, string[] args)
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception("Cannot edit, read-only");
     
-    import document.file : FileDocument;
-    import document.base : IDocument;
-    
     string path = askstring(args, 0, "File: ");
     
     IDocument file = new FileDocument(path, true);
+    session.documents ~= file;
     long curpos = session.position_cursor;
     
     session.editor.fileInsert(curpos, file);
