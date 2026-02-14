@@ -12,6 +12,7 @@ import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 import document.file;
 import editor.base : IDocumentEditor;
+import editor.piecev3 : PieceV3DocumentEditor;
 import formatters;
 import logger;
 import os.terminal;
@@ -57,6 +58,7 @@ private enum PanelType
 {
     data,
     text,
+    //inspector,
 }
 
 private alias command_func = void function(Session*, string[]);
@@ -509,7 +511,11 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     g_session = new Session(rc);
     g_session.target = path;    // assign target path, a NULL value is valid
     g_session.editor = editor;  // assign editor instance
-    
+
+    // Sync coalescing option if piecev3 is selected
+    if (auto e = cast(PieceV3DocumentEditor)editor)
+        e.coalescing = rc.coalescing;
+
     g_input.change(rc.data_type);
     
     message(initmsg);
@@ -2686,6 +2692,10 @@ void set(Session *session, string[] args)
     string value   = askstring(args, 1, "Value: ");
     
     configRC(session.rc, setting, value);
+
+    // To sync coalescing option
+    if (auto e = cast(PieceV3DocumentEditor)session.editor)
+        e.coalescing = session.rc.coalescing;
 }
 
 // Bind key to action (command + parameters)

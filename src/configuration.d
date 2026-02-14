@@ -50,6 +50,9 @@ struct RC
     /// Gray out zeros.
     bool gray_zeros;
     
+    /// Enable coalescing
+    bool coalescing = true;
+    
 private:
     // Fixes when RC file has config and CLI already set a field.
     bool address_type_set;
@@ -62,6 +65,7 @@ private:
     bool status_set;
     bool mirror_cursor_set;
     bool gray_zeros_set;
+    bool coalescing_set;
 }
 
 /// Return true/false given sting input.
@@ -223,6 +227,11 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         "gray-zeros", "If set, zero values are printed as gray",
         "Boolean", `"off"`,
         &configure_gray_zeros
+    },
+    {
+        "coalesce", "If set, edits are coalescing",
+        "Boolean", `"on"`,
+        &configure_coalescing
     },
 ];
 unittest
@@ -387,7 +396,6 @@ void configure_autoresize(ref RC rc, string value, bool conf = false)
     rc.columns_set = true;
 }
 
-// 
 void configure_gray_zeros(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.gray_zeros_set)
@@ -396,4 +404,13 @@ void configure_gray_zeros(ref RC rc, string value, bool conf = false)
     // Eventually could just set the color mapping directly
     rc.gray_zeros = boolean(value);
     rc.gray_zeros_set = true;
+}
+
+void configure_coalescing(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.coalescing_set)
+        return;
+    
+    rc.coalescing = boolean(value);
+    rc.coalescing_set = true;
 }
