@@ -210,28 +210,18 @@ class PieceV2DocumentEditor : IDocumentEditor
     
     /// Close document.
     ///
-    /// This closes all references to other opened documents.
     /// Make sure to save it before closing!
     void close()
     {
-        // close documents
-        if (basedoc)
-        {
-            basedoc.close();
-            basedoc = null;
-        }
-        foreach (ref IDocument doc; docs)
-        {
-            doc.close();
-            doc = null;
-        }
-        docs.length = 0;
-        
+        basedoc = null;
+
         // reset internals
         tree.clear();
         history.clear();
         history_index = history_saved = 0;
         logical_size = 0;
+        add_buffer.length = 0;
+        add_size = 0;
     }
     
     /// Total size of document in bytes with edits.
@@ -453,11 +443,10 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (doc !is null, "doc !is null")
     {
         log("REPLACE FILE pos=%d", position);
-        docs ~= doc;
         Piece piece = Piece.makefile( 0, doc.size(), doc );
         replacePiece(position, piece);
     }
-    
+
     /// Insert new data at this position
     /// Params:
     ///     position = Base position.
@@ -499,7 +488,6 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (doc !is null, "doc !is null")
     {
         log("INSERT FILE pos=%d", position);
-        docs ~= doc;
         Piece piece = Piece.makefile( 0, doc.size(), doc );
         insertPiece(position, piece);
     }
@@ -553,23 +541,11 @@ private:
     size_t history_index;   /// Current history index
     size_t history_saved;   /// History index when last saved
     
-    // NOTE: Document handling
-    //
-    //       While I forgot the reason why I separated "base doc" and "docs",
-    //       any additional document are added to docs[]. The docs[] variable
-    //       is only to hold a reference and useful when closing.
-    
     /// Source document to apply edits on.
     ///
     /// Nullable.
     IDocument basedoc;
     
-    // NOTE: OSFile
-    //       OSFile uses the operating system native File API, and not the C runtime's,
-    //       which is typically limited to 1024 handles per process (and 32-bit seeks).
-    //       Don't even worry about closing handles on undo because of possible redos.
-    /// Additional documents added within this document.
-    IDocument[] docs;
     
     // Optimize right-side trim operation
     Piece trimPiece(Piece piece, long skip, long keep)
@@ -1509,6 +1485,28 @@ unittest
     assert(e.view(_10GB - 10, buf) == [ 'M','a','y','b','e','.','.','.','M','e' ]);
     assert(e.view(_10GB -  5, buf) == [ '.','.','.','M','e','?','M','e','?','M' ]);
     assert(e.view(_10GB     , buf) == [ '?','M','e','?','M','e','?','M','e','?' ]);
+}
+
+/// Close-open test
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0013");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    MemoryDocument memdoc = new MemoryDocument(data);
+
+    ubyte[32] buffer;
+    
+    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(memdoc);
+    assert(e.view(0, buffer) == data);
+    
+    e.close();
+    assert(e.view(0, buffer) == []);
+    
+    e.open(memdoc);
+    assert(e.view(0, buffer) == data);
 }
 
 /// Common tests
