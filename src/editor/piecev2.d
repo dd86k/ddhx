@@ -531,7 +531,9 @@ class PieceV2DocumentEditor : IDocumentEditor
         applyOperation( op );
         return op.position + op.affected;
     }
-    
+
+    void coalescing(bool) {}
+
 private:
     /// The piece table indexed using a self-balancing tree.
     Tree tree;

@@ -75,6 +75,8 @@ class DummyDocumentEditor : IDocumentEditor
     {
         throw new NotImplementedException();
     }
+
+    void coalescing(bool) {}
     
     void patternInsert(long, long, const(void)*, size_t)
     {

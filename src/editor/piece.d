@@ -512,7 +512,9 @@ class PieceDocumentEditor : IDocumentEditor
         
         return snapshot.end;
     }
-    
+
+    void coalescing(bool) {}
+
 private:
     /// Source document to apply edits on.
     ///

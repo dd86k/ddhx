@@ -188,7 +188,8 @@ class PieceV3DocumentEditor : IDocumentEditor
     }
     
     /// Enable or disable coalescing of consecutive same-type operations.
-    bool coalescing = true;
+    /// Params: v = If set, enables coalescing.
+    void coalescing(bool v) { _coalescing = v; }
 
     /// Open document.
     /// Params: doc = IDocument-based document.
@@ -617,8 +618,11 @@ private:
     size_t history_index;   /// Current history index
     size_t history_saved;   /// History index when last saved
 
+    /// If piece coalescing is enabled.
+    bool _coalescing;
+
     /// Coalescing state for combining consecutive same-type operations.
-    private struct CoalesceState
+    struct CoalesceState
     {
         bool valid;
         OperationType type;
@@ -635,7 +639,7 @@ private:
 
     bool canCoalesce(OperationType type, long position, long len, const(void)* newBufferPtr)
     {
-        if (!coalescing || !_coalesce.valid)
+        if (!_coalescing || !_coalesce.valid)
             return false;
         if (_coalesce.type != type)
             return false;

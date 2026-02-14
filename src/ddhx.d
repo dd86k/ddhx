@@ -12,7 +12,6 @@ import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 import document.file;
 import editor.base : IDocumentEditor;
-import editor.piecev3 : PieceV3DocumentEditor;
 import formatters;
 import logger;
 import os.terminal;
@@ -512,9 +511,8 @@ void startddhx(IDocumentEditor editor, ref RC rc, string path, string initmsg)
     g_session.target = path;    // assign target path, a NULL value is valid
     g_session.editor = editor;  // assign editor instance
 
-    // Sync coalescing option if piecev3 is selected
-    if (auto e = cast(PieceV3DocumentEditor)editor)
-        e.coalescing = rc.coalescing;
+    // Sync editor options
+    editor.coalescing = rc.coalescing;
 
     g_input.change(rc.data_type);
     
@@ -2693,9 +2691,8 @@ void set(Session *session, string[] args)
     
     configRC(session.rc, setting, value);
 
-    // To sync coalescing option
-    if (auto e = cast(PieceV3DocumentEditor)session.editor)
-        e.coalescing = session.rc.coalescing;
+    // Sync editor options
+    session.editor.coalescing = session.rc.coalescing;
 }
 
 // Bind key to action (command + parameters)

@@ -50,6 +50,16 @@ interface IDocumentEditor
     long undo();
     /// Returns: Postion+Length (end position of affected region) or -1
     long redo();
+
+    // NOTE: This works fine as an isolated property of an editor.
+    //       Which leaves to think, should we have a structure,
+    //       akin to RC (src/configuration.d), as EditorSettings?
+    // NOTE: Handling not implementated issues
+    //       While a normal thinking mind would think that throwing an exception
+    //       is a good idea, it is better to simply make it a no-op, because
+    //       (a) this is not an exceptional issue and (b) not worth reporting on.
+    /// Enable or disable coalescing of consecutive same-type operations.
+    void coalescing(bool);
 }
 
 // NOTE: These tests only hinder new backend development
