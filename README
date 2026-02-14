@@ -118,10 +118,11 @@ This list may change at any given time without notice.
 - [x] 0.8.3: FIFO/Pipe detection
 
 0.9: TBD
+- [x] Piece Coalescing
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
 - [ ] Inspect data panel (replaces text panel when toggled)
-- [ ] View: Other data types (d8, o8, d16, f32, etc.)
+- [x] View: Other data types (d8, o8, d16, f32, etc.)
 
 Wishlist:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
@@ -424,7 +425,7 @@ Environment variables:
   - Forces BACKEND to be selected.
   - Version: Since 0.7
   - Default: "piecev2" (since 0.8)
-  - Backends: "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5 <0.8.2)
+  - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5 <0.8.2)
 
 ********************************************************************************
 *                                    NOTICE                                    *
