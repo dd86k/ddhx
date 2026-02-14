@@ -4,7 +4,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor.piecev2;
+module editor.piecev3;
 
 import std.algorithm.comparison : min, max;
 import std.container.array : Array;
@@ -177,7 +177,7 @@ struct Operation
 
 /// Document editor implementing a Piece List with RedBlackTree for indexing
 /// and command history.
-class PieceV2DocumentEditor : IDocumentEditor
+class PieceV3DocumentEditor : IDocumentEditor
 {
     /// New document editor with a new empty buffer.
     this()
@@ -187,11 +187,15 @@ class PieceV2DocumentEditor : IDocumentEditor
         tree = new Tree();
     }
     
+    /// Enable or disable coalescing of consecutive same-type operations.
+    bool coalescing = true;
+
     /// Open document.
     /// Params: doc = IDocument-based document.
     /// Returns: Editor instance.
     typeof(this) open(IDocument doc)
     {
+        invalidateCoalesce();
         long docsize = doc.size();
         basedoc = doc;
         
@@ -214,6 +218,7 @@ class PieceV2DocumentEditor : IDocumentEditor
     /// Make sure to save it before closing!
     void close()
     {
+        invalidateCoalesce();
         // close documents
         if (basedoc)
         {
@@ -358,19 +363,46 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (len > 0, "len > 0")
     {
         log("REMOVE pos=%d len=%u", position, len);
-        
+
+        if (canCoalesce(OperationType.remove, position, len, null))
+        {
+            reverseOperation(history[--history_index]);
+            if (position == _coalesce.position)
+            {
+                // Forward delete: remove at same position, combined size
+                long combinedSize = _coalesce.size + len;
+                removeImpl(position, combinedSize);
+                updateCoalesceState(OperationType.remove, position, combinedSize, null);
+            }
+            else
+            {
+                // Backward delete: pos + len == _coalesce.position
+                long combinedSize = len + _coalesce.size;
+                removeImpl(position, combinedSize);
+                updateCoalesceState(OperationType.remove, position, combinedSize, null);
+            }
+        }
+        else
+        {
+            removeImpl(position, len);
+            updateCoalesceState(OperationType.remove, position, len, null);
+        }
+    }
+
+    private void removeImpl(long position, long len)
+    {
         // Nothing to remove
         if (logical_size == 0)
             return;
-        
+
         // Editors should avoid deleting nothing at EOF...
         assertion(position < logical_size, "position < cur_snap.logical_size");
-        
+
         // Clamp removal to actual document size
         long removed = min(len, logical_size - position);
         // End position of removal
         long end = position + removed;
-        
+
         // Create operation with required info, read tree only
         Operation op = Operation(position, -removed, OperationType.remove, position, removed);
         // Walk tree and RECORD what needs to change (tree remains unchanged!)
@@ -379,13 +411,13 @@ class PieceV2DocumentEditor : IDocumentEditor
         {
             long piece_start = cumulative;
             long piece_end = idx.cumulative;
-            
+
             // Does this piece overlap with the removal region?
             if (piece_start < end && piece_end > position)
             {
                 // Record this piece for removal
                 op.removed ~= idx;
-                
+
                 // If piece extends before removal region, keep left portion
                 if (piece_start < position)
                 {
@@ -393,7 +425,7 @@ class PieceV2DocumentEditor : IDocumentEditor
                     left.size = position - piece_start;
                     op.added ~= left;
                 }
-                
+
                 // If piece extends after removal region, keep right portion
                 if (piece_end > end)
                 {
@@ -404,10 +436,10 @@ class PieceV2DocumentEditor : IDocumentEditor
                     op.added ~= right;
                 }
             }
-            
+
             cumulative = idx.cumulative;
         }
-        
+
         applyOperation(op);
         addOperation(op);
     }
@@ -423,8 +455,22 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (len > 0,  "len > 0")
     {
         log("REPLACE pos=%d len=%u data=%s", position, len, data);
-        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
-        replacePiece(position, piece);
+        void* newBuf = bufferAdd(data, len);
+
+        if (canCoalesce(OperationType.replace, position, len, newBuf))
+        {
+            reverseOperation(history[--history_index]);
+            long combinedSize = _coalesce.size + len;
+            Piece piece = Piece.makebuffer(0, _coalesce.bufferStart, cast(size_t)combinedSize);
+            replacePiece(_coalesce.position, piece);
+            updateCoalesceState(OperationType.replace, _coalesce.position, combinedSize, _coalesce.bufferStart);
+        }
+        else
+        {
+            Piece piece = Piece.makebuffer(0, newBuf, len);
+            replacePiece(position, piece);
+            updateCoalesceState(OperationType.replace, position, len, newBuf);
+        }
     }
     
     /// Replace data using a pattern.
@@ -439,6 +485,7 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (data != null, "data != NULL")
     in (datlen > 0, "datlen > 0")
     {
+        invalidateCoalesce();
         log("REPLACE PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
         Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         replacePiece(position, piece);
@@ -452,6 +499,7 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (position >= 0, "position >= 0")
     in (doc !is null, "doc !is null")
     {
+        invalidateCoalesce();
         log("REPLACE FILE pos=%d", position);
         docs ~= doc;
         Piece piece = Piece.makefile( 0, doc.size(), doc );
@@ -469,8 +517,22 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (len > 0, "len > 0")
     {
         log("INSERT pos=%d len=%u data=%s", position, len, data);
-        Piece piece = Piece.makebuffer( 0, bufferAdd(data, len), len );
-        insertPiece(position, piece);
+        void* newBuf = bufferAdd(data, len);
+
+        if (canCoalesce(OperationType.insert, position, len, newBuf))
+        {
+            reverseOperation(history[--history_index]);
+            long combinedSize = _coalesce.size + len;
+            Piece piece = Piece.makebuffer(0, _coalesce.bufferStart, cast(size_t)combinedSize);
+            insertPiece(_coalesce.position, piece);
+            updateCoalesceState(OperationType.insert, _coalesce.position, combinedSize, _coalesce.bufferStart);
+        }
+        else
+        {
+            Piece piece = Piece.makebuffer(0, newBuf, len);
+            insertPiece(position, piece);
+            updateCoalesceState(OperationType.insert, position, len, newBuf);
+        }
     }
     
     /// Insert data using a pattern.
@@ -485,6 +547,7 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (data != null, "data != NULL")
     in (datlen > 0, "datlen > 0")
     {
+        invalidateCoalesce();
         log("INSERT PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
         Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         insertPiece(position, piece);
@@ -498,6 +561,7 @@ class PieceV2DocumentEditor : IDocumentEditor
     in (position >= 0, "position >= 0")
     in (doc !is null, "doc !is null")
     {
+        invalidateCoalesce();
         log("INSERT FILE pos=%d", position);
         docs ~= doc;
         Piece piece = Piece.makefile( 0, doc.size(), doc );
@@ -508,6 +572,7 @@ class PieceV2DocumentEditor : IDocumentEditor
     /// Returns: Suggested position of the cursor for this modification.
     long undo()
     {
+        invalidateCoalesce();
         log("UNDO Hi=%u", history_index);
         
         if (history_index <= 0)
@@ -522,6 +587,7 @@ class PieceV2DocumentEditor : IDocumentEditor
     /// Returns: Suggested position of the cursor for this modification. (Position+Length)
     long redo()
     {
+        invalidateCoalesce();
         log("REDO Hi=%u", history_index);
         
         if (history_index >= history.length)
@@ -550,6 +616,66 @@ private:
     Array!Operation history;
     size_t history_index;   /// Current history index
     size_t history_saved;   /// History index when last saved
+
+    /// Coalescing state for combining consecutive same-type operations.
+    private struct CoalesceState
+    {
+        bool valid;
+        OperationType type;
+        long position;              /// Start of coalesced region
+        long size;                  /// Total size of coalesced region
+        const(ubyte)* bufferStart;  /// Start of data in add_buffer (null for remove)
+    }
+    CoalesceState _coalesce;
+
+    void invalidateCoalesce()
+    {
+        _coalesce.valid = false;
+    }
+
+    bool canCoalesce(OperationType type, long position, long len, const(void)* newBufferPtr)
+    {
+        if (!coalescing || !_coalesce.valid)
+            return false;
+        if (_coalesce.type != type)
+            return false;
+        if (history_index == 0)
+            return false;
+        // Don't coalesce when at save point, otherwise edited() would
+        // return false after the coalesced op replaces the entry at h_i-1.
+        if (history_index == history_saved)
+            return false;
+
+        final switch (type)
+        {
+        case OperationType.insert:
+        case OperationType.replace:
+            // Forward adjacency: new position is right after the coalesced region
+            if (position != _coalesce.position + _coalesce.size)
+                return false;
+            // Buffer contiguity: new data immediately follows old data in add_buffer
+            if (cast(const(ubyte)*)newBufferPtr != _coalesce.bufferStart + _coalesce.size)
+                return false;
+            return true;
+        case OperationType.remove:
+            // Forward delete: removing at the same position (bytes shift left)
+            if (position == _coalesce.position)
+                return true;
+            // Backward delete: new removal ends where old removal started
+            if (position + len == _coalesce.position)
+                return true;
+            return false;
+        }
+    }
+
+    void updateCoalesceState(OperationType type, long position, long size, const(void)* bufferStart)
+    {
+        _coalesce.valid = true;
+        _coalesce.type = type;
+        _coalesce.position = position;
+        _coalesce.size = size;
+        _coalesce.bufferStart = cast(const(ubyte)*)bufferStart;
+    }
     
     // NOTE: Document handling
     //
@@ -955,7 +1081,7 @@ unittest
 {
     log("TEST-0001");
     
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
     
     ubyte[32] buffer;
     
@@ -978,24 +1104,22 @@ unittest
     assert(e.size() == data.length + insert1.length);
     assert(e.view(0, buffer) == data ~ insert1); // "hi example"
     
-    // Undo
-    assert(e.undo() == data.length);
-    assert(e.edited());
-    assert(e.size() == 2);
-    assert(e.view(0, buffer) == data);
+    // Undo (inserts were coalesced into single "hi example" operation)
+    assert(e.undo() == 0);
+    assert(e.edited() == false);
+    assert(e.size() == 0);
+    assert(e.view(0, buffer) == []);
     // Redo
     assert(e.redo() == data.length + insert1.length);
     assert(e.edited());
     assert(e.size() == data.length + insert1.length);
     assert(e.view(0, buffer) == data ~ insert1); // "hi example"
-    
-    // Undo three times - Cursor positions should be start of change
-    assert(e.undo() == data.length);
+
+    // Undo twice - only 1 coalesced op to undo
     assert(e.undo() == 0);
     assert(e.undo() < 0);
-    
-    // Redo three times - Curspor positions should be end of change
-    assert(e.redo() == data.length);
+
+    // Redo twice - only 1 coalesced op to redo
     assert(e.redo() == data.length + insert1.length);
     assert(e.redo() < 0);
 }
@@ -1008,7 +1132,7 @@ unittest
     log("TEST-0002");
     
     static immutable string data = "hello";
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(cast(ubyte[])data)
     );
     
@@ -1063,7 +1187,7 @@ unittest
     log("TEST-0003");
     
     static immutable string data = "very good string!";
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(cast(ubyte[])data)
     );
     
@@ -1084,7 +1208,7 @@ unittest
     log("TEST-0004");
     
     static immutable string data = "very good string!";
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(cast(ubyte[])data)
     );
     
@@ -1105,7 +1229,7 @@ unittest
     //  0   1   2   3   4  5  6   7   8   9
         4,  7,  9, 13, 17, 3, 4,  5, 13, 15, // 0
     ];
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
     
@@ -1157,7 +1281,7 @@ unittest
        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
        40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
     ];
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
     
@@ -1257,7 +1381,7 @@ unittest
        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
        40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
     ];
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
     
@@ -1299,7 +1423,7 @@ unittest
        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, // 30
        40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // 40
     ];
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
     
@@ -1324,7 +1448,7 @@ unittest
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 10
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 20
     ];
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
     
@@ -1396,7 +1520,7 @@ unittest
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 10
         0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 20
     ];
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor().open(
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
     
@@ -1450,7 +1574,7 @@ unittest
     
     log("TEST-0011");
     
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
     
     ubyte dd = 0xdd;
     e.replace(0, &dd, ubyte.sizeof);
@@ -1471,7 +1595,7 @@ unittest
     
     log("TEST-0012");
     
-    scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
     
     enum P0 = 0xda; //    K      M      G
     enum _10GB = 10L * 1024 * 1024 * 1024;
@@ -1513,5 +1637,275 @@ unittest
 unittest
 {
     import editor.base : editorTests;
-    editorTests!PieceV2DocumentEditor();
+    editorTests!PieceV3DocumentEditor();
+}
+
+/// Coalescing: consecutive forward inserts
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0013");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    // First insert (not coalesced due to save point guard)
+    ubyte a = 0xAA;
+    e.insert(5, &a, 1);
+    // Second insert (coalesces with first)
+    ubyte b = 0xBB;
+    e.insert(6, &b, 1);
+
+    assert(e.size() == 12);
+    assert(e.view(0, buffer) == [0, 1, 2, 3, 4, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+
+    // Single undo should restore original
+    e.undo();
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: consecutive forward replaces
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0014");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    // First replace
+    ubyte a = 0xAA;
+    e.replace(3, &a, 1);
+    // Second replace (coalesces)
+    ubyte b = 0xBB;
+    e.replace(4, &b, 1);
+
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+
+    // Single undo should restore original
+    e.undo();
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: forward delete
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0015");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    // Forward delete at position 3 twice
+    e.remove(3, 1);
+    e.remove(3, 1);
+
+    assert(e.size() == 8);
+    assert(e.view(0, buffer) == [0, 1, 2, 5, 6, 7, 8, 9]);
+
+    // Single undo should restore original
+    e.undo();
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: backward delete
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0016");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    // Backward delete (like backspace): delete pos 4, then pos 3
+    e.remove(4, 1);
+    e.remove(3, 1);
+
+    assert(e.size() == 8);
+    assert(e.view(0, buffer) == [0, 1, 2, 5, 6, 7, 8, 9]);
+
+    // Single undo should restore original
+    e.undo();
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: non-adjacent breaks coalescing
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0017");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    ubyte x = 0xCC;
+    e.replace(2, &x, 1);
+    // Non-adjacent replace (pos 5 != 2+1)
+    ubyte y = 0xDD;
+    e.replace(5, &y, 1);
+
+    assert(e.view(0, buffer) == [0, 1, 0xCC, 3, 4, 0xDD, 6, 7, 8, 9]);
+
+    // Two separate undo steps needed
+    e.undo();
+    assert(e.view(0, buffer) == [0, 1, 0xCC, 3, 4, 5, 6, 7, 8, 9]);
+    e.undo();
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: type change breaks coalescing
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0018");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    ubyte x = 0xCC;
+    e.replace(3, &x, 1);
+    // Type change: insert instead of replace
+    ubyte y = 0xDD;
+    e.insert(4, &y, 1);
+
+    assert(e.size() == 11);
+    assert(e.view(0, buffer) == [0, 1, 2, 0xCC, 0xDD, 4, 5, 6, 7, 8, 9]);
+
+    // Two separate undo steps
+    e.undo();
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == [0, 1, 2, 0xCC, 4, 5, 6, 7, 8, 9]);
+    e.undo();
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: undo/redo breaks coalescing
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0019");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    ubyte x = 0xAA;
+    e.replace(3, &x, 1);
+    e.undo();
+    e.redo();
+    // After undo+redo, coalescing is invalidated
+    ubyte y = 0xBB;
+    e.replace(4, &y, 1);
+
+    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+
+    // Two separate undo steps
+    e.undo();
+    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 4, 5, 6, 7, 8, 9]);
+    e.undo();
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: save point prevents coalescing
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0020");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    ubyte x = 0xAA;
+    e.replace(3, &x, 1);
+    e.markSaved();
+    assert(e.edited() == false);
+    // Adjacent replace, but save point prevents coalescing
+    ubyte y = 0xBB;
+    e.replace(4, &y, 1);
+
+    assert(e.edited());
+    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+
+    // Two separate undo steps, with edited() correctness
+    e.undo();
+    assert(e.edited() == false);
+    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 4, 5, 6, 7, 8, 9]);
+    e.undo();
+    assert(e.edited());
+    assert(e.view(0, buffer) == data);
+}
+
+/// Coalescing: multi-step coalesce (typing "hello" char-by-char)
+unittest
+{
+    import document.memory : MemoryDocument;
+
+    log("TEST-0021");
+
+    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    // Type "hello" char-by-char at position 5
+    string hello = "hello";
+    foreach (i, c; hello)
+    {
+        ubyte b = cast(ubyte)c;
+        e.insert(cast(long)(5 + i), &b, 1);
+    }
+
+    assert(e.size() == 15);
+    assert(e.view(0, buffer) == [0, 1, 2, 3, 4, 'h', 'e', 'l', 'l', 'o', 5, 6, 7, 8, 9]);
+
+    // Single undo clears all 5 chars
+    e.undo();
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == data);
 }

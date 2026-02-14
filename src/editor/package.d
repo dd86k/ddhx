@@ -8,6 +8,7 @@ module editor;
 public import editor.base : IDocumentEditor;
 import editor.piece : PieceDocumentEditor;
 import editor.piecev2 : PieceV2DocumentEditor;
+import editor.piecev3 : PieceV3DocumentEditor;
 
 // Convenience function used in main.d and benchmarks.
 /// Select and initiate new document editor instance.
@@ -19,13 +20,13 @@ import editor.piecev2 : PieceV2DocumentEditor;
 IDocumentEditor spawnEditor(string name)
 {
     import std.conv : text;
-    import std.process : environment;
-    import logger : log;
-    switch (name) { // null=default
+    switch (name) { // NOTE: null chooses default backend
     case "piece":
         return new PieceDocumentEditor();
     case "piecev2", null:
         return new PieceV2DocumentEditor();
+    case "piecev3":
+        return new PieceV3DocumentEditor();
     default:
         throw new Exception(text("Backend does not exist: ", name));
     }

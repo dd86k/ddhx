@@ -37,3 +37,6 @@ ddhx_dump.txt
 # Personal
 perso/
 examples/
+
+# Assistants
+.claude/
