@@ -619,7 +619,7 @@ private:
     size_t history_saved;   /// History index when last saved
 
     /// If piece coalescing is enabled.
-    bool _coalescing;
+    bool _coalescing = true; // Enabled by default, important for tests!
 
     /// Coalescing state for combining consecutive same-type operations.
     struct CoalesceState
