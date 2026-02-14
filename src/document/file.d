@@ -19,6 +19,7 @@ class FileDocument : IDocument
         // Bonus: exists imply file needs to exist in any case.
         file.open(path, (readonly ? OFlags.read : OFlags.readWrite) | OFlags.exists);
     }
+    ~this() { close(); }
     
     /// Size of document in bytes.
     /// Returns: Size in bytes.

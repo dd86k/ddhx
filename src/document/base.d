@@ -15,4 +15,6 @@ interface IDocument
     ubyte[] readAt(long at, ubyte[] buf);
     // TODO: string type()
     //       Short identifier on type: "file", "storage", "process", etc.
+    /// Close document (handles).
+    void close();
 }

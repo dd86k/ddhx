@@ -20,6 +20,11 @@ class DummyDocumentEditor : IDocumentEditor
     {
         throw new NotImplementedException();
     }
+    
+    void close()
+    {
+        throw new NotImplementedException();
+    }
 
     long size()
     {

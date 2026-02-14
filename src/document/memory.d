@@ -17,6 +17,9 @@ class MemoryDocument : IDocument
     /// New document from existing data
     this(const(ubyte)[] data) { buffer = data; }
     
+    /// Close document by clearning buffer.
+    void close() { buffer = null; }
+    
     /// Append data to document.
     /// Params: data = Byte array data.
     void append(const(ubyte)[] data)

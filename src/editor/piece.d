@@ -184,6 +184,14 @@ class PieceDocumentEditor : IDocumentEditor
         return this;
     }
     
+    void close()
+    {
+        snapshots.clear();
+        snapshot_index = 0;
+        basedoc.close();
+        basedoc = null;
+    }
+    
     /// Total size of document in bytes with edits.
     /// Returns: Size of current document.
     long size()

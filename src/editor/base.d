@@ -9,8 +9,11 @@ import document.base : IDocument;
 
 interface IDocumentEditor
 {
-    /// Open with document.
+    /// Open document with this editor instance.
     typeof(this) open(IDocument);
+    
+    /// Close document editor and all references.
+    void close();
     
     /// Return size of document, with edits, in bytes.
     long size();

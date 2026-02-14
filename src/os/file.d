@@ -21,6 +21,7 @@ version (Windows)
     private alias SEEK_END = FILE_END;
     
     private enum OFLAG_OPENONLY = OPEN_EXISTING;
+    private enum INVALID_OSHANDLE = INVALID_HANDLE_VALUE;
 }
 else version (Posix)
 {
@@ -78,6 +79,7 @@ else version (Posix)
     //       to force myself using lseek64 definitions.
     
     private alias OSHANDLE = int;
+    private enum INVALID_OSHANDLE = -1;
 }
 else
 {
@@ -116,7 +118,7 @@ enum OFlags
 /// Represents an OS abstracted file instance.
 struct OSFile
 {
-    private OSHANDLE handle;
+    private OSHANDLE handle = INVALID_OSHANDLE;
 
     // TODO: Share file.
     //       By default, at least on Windows, files aren't shared. Enabling
@@ -326,15 +328,20 @@ struct OSFile
     {
         version (Windows)
         {
-            CloseHandle(handle);
-            
-            handle = INVALID_HANDLE_VALUE;
+            if (handle != INVALID_HANDLE_VALUE)
+            {
+                CloseHandle(handle);
+                handle = INVALID_HANDLE_VALUE;
+            }
         }
         else version (Posix)
         {
-            .close(handle);
-            
-            handle = 0;
+            // 0 is stdin, we better be careful!
+            if (handle >= 0)
+            {
+                .close(handle);
+                handle = -1;
+            }
         }
     }
 }

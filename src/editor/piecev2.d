@@ -22,12 +22,7 @@ import logger;
 //       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
 //       Instead of an array of structures, having array of fields tend to help
 //       processor cache, in particular, architectures with cache lines of 64 Bytes.
-//       Not a current necessity, as no one is pushing the editor this much *yet*.
-// TODO: File handling
-//       Currently, when a file is inserted, its handle lives until program quits.
-//       Which might confuse some, since files we open (particlarly on Windows) aren't shared.
-//       So if I integrate a "close" (document) command, these handles are still up, which
-//       may cause trouble.
+//       Not a current necessity, as no one is pushing the editor this limit *yet*.
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
@@ -215,6 +210,32 @@ class PieceV2DocumentEditor : IDocumentEditor
         tree.insert(IndexedPiece(docsize, Piece(Source.source, 0, docsize)));
         
         return this;
+    }
+    
+    /// Close document.
+    ///
+    /// This closes all references to other opened documents.
+    /// Make sure to save it before closing!
+    void close()
+    {
+        // close documents
+        if (basedoc)
+        {
+            basedoc.close();
+            basedoc = null;
+        }
+        foreach (ref IDocument doc; docs)
+        {
+            doc.close();
+            doc = null;
+        }
+        docs.length = 0;
+        
+        // reset internals
+        tree.clear();
+        history.clear();
+        history_index = history_saved = 0;
+        logical_size = 0;
     }
     
     /// Total size of document in bytes with edits.
@@ -410,6 +431,12 @@ class PieceV2DocumentEditor : IDocumentEditor
         replacePiece(position, piece);
     }
     
+    /// Replace data using a pattern.
+    /// Params:
+    ///     position = Base position.
+    ///     len = Length that the pattern will affect.
+    ///     data = Pattern data.
+    ///     datlen = Pattern data length.
     void patternReplace(long position, long len, const(void) *data, size_t datlen)
     in (position >= 0, "position >= 0")
     in (len > 0, "len > 0")
@@ -421,11 +448,16 @@ class PieceV2DocumentEditor : IDocumentEditor
         replacePiece(position, piece);
     }
     
+    /// Replace data using a document.
+    /// Params:
+    ///     position = Base position.
+    ///     doc = Document (file, etc.)
     void fileReplace(long position, IDocument doc)
     in (position >= 0, "position >= 0")
     in (doc !is null, "doc !is null")
     {
         log("REPLACE FILE pos=%d", position);
+        docs ~= doc;
         Piece piece = Piece.makefile( 0, doc.size(), doc );
         replacePiece(position, piece);
     }
@@ -445,6 +477,12 @@ class PieceV2DocumentEditor : IDocumentEditor
         insertPiece(position, piece);
     }
     
+    /// Insert data using a pattern.
+    /// Params:
+    ///     position = Base position.
+    ///     len = Length that the pattern will affect.
+    ///     data = Pattern data.
+    ///     datlen = Pattern data length.
     void patternInsert(long position, long len, const(void) *data, size_t datlen)
     in (position >= 0, "position >= 0")
     in (len > 0, "len > 0")
@@ -456,11 +494,16 @@ class PieceV2DocumentEditor : IDocumentEditor
         insertPiece(position, piece);
     }
     
+    /// Insert data using a document.
+    /// Params:
+    ///     position = Base position.
+    ///     doc = Document (file, etc.)
     void fileInsert(long position, IDocument doc)
     in (position >= 0, "position >= 0")
     in (doc !is null, "doc !is null")
     {
         log("INSERT FILE pos=%d", position);
+        docs ~= doc;
         Piece piece = Piece.makefile( 0, doc.size(), doc );
         insertPiece(position, piece);
     }
@@ -512,10 +555,23 @@ private:
     size_t history_index;   /// Current history index
     size_t history_saved;   /// History index when last saved
     
+    // NOTE: Document handling
+    //
+    //       While I forgot the reason why I separated "base doc" and "docs",
+    //       any additional document are added to docs[]. The docs[] variable
+    //       is only to hold a reference and useful when closing.
+    
     /// Source document to apply edits on.
     ///
     /// Nullable.
     IDocument basedoc;
+    
+    // NOTE: OSFile
+    //       OSFile uses the operating system native File API, and not the C runtime's,
+    //       which is typically limited to 1024 handles per process (and 32-bit seeks).
+    //       Don't even worry about closing handles on undo because of possible redos.
+    /// Additional documents added within this document.
+    IDocument[] docs;
     
     // Optimize right-side trim operation
     Piece trimPiece(Piece piece, long skip, long keep)
