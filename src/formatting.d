@@ -163,10 +163,13 @@ enum DataType
 {
     x8,     /// 8-bit hexadecimal (e.g., 0xff -> ff)
     x16,    /// 16-bit hexadecimal
+    x32,    /// 32-bit hexadecimal
     d8,     /// 8-bit unsigned decimal (0xff -> 255)
     d16,    /// 16-bit unsigned decimal
+    d32,    /// 32-bit unsigned decimal
     o8,     /// 8-bit unsigned octal (0xff -> 377)
     o16,    /// 16-bit unsigned octal
+    o32,    /// 32-bit unsigned octal
 }
 import std.traits : EnumMembers;
 /// Data type count.
@@ -174,15 +177,19 @@ enum TYPES = EnumMembers!DataType.length;
 
 // Connects data types to definitions
 private immutable static DataSpec[] data_specs = [
-    { DataType.x8,  DataType.x8.stringof,   "%0*x", 2, ubyte.sizeof },
-    { DataType.x16, DataType.x16.stringof,  "%0*x", 4, ushort.sizeof },
-    { DataType.d8,  DataType.d8.stringof,   "%0*d", 3, ubyte.sizeof },
-    { DataType.d16, DataType.d16.stringof,  "%0*d", 5, ushort.sizeof },
-    { DataType.o8,  DataType.o8.stringof,   "%0*o", 3, ubyte.sizeof },
-    { DataType.o16, DataType.o16.stringof,  "%0*o", 6, ushort.sizeof },
+    { DataType.x8,  DataType.x8.stringof,   "%0*x", 2,  ubyte.sizeof },
+    { DataType.x16, DataType.x16.stringof,  "%0*x", 4,  ushort.sizeof },
+    { DataType.x32, DataType.x32.stringof,  "%0*x", 8,  uint.sizeof },
+    { DataType.d8,  DataType.d8.stringof,   "%0*d", 3,  ubyte.sizeof },
+    { DataType.d16, DataType.d16.stringof,  "%0*d", 5,  ushort.sizeof },
+    { DataType.d32, DataType.d32.stringof,  "%0*d", 10, uint.sizeof },
+    { DataType.o8,  DataType.o8.stringof,   "%0*o", 3,  ubyte.sizeof },
+    { DataType.o16, DataType.o16.stringof,  "%0*o", 6,  ushort.sizeof },
+    { DataType.o32, DataType.o32.stringof,  "%0*o", 11, uint.sizeof },
 ];
 unittest
 {
+    // Check array aligns with DataType members
     foreach (i, type; EnumMembers!DataType)
     {
         assert(type == data_specs[i].type);
@@ -323,10 +330,13 @@ union Element
         try final switch (type) {
         case DataType.x8:   u8  = to!ubyte(stripped, 16); return true;
         case DataType.x16:  u16 = to!ushort(stripped, 16); return true;
+        case DataType.x32:  u32 = to!uint(stripped, 16); return true;
         case DataType.d8:   u8  = to!ubyte(stripped, 10); return true;
         case DataType.d16:  u16 = to!ushort(stripped, 10); return true;
+        case DataType.d32:  u32 = to!uint(stripped, 10); return true;
         case DataType.o8:   u8  = to!ubyte(stripped, 8); return true;
         case DataType.o16:  u16 = to!ushort(stripped, 8); return true;
+        case DataType.o32:  u32 = to!uint(stripped, 8); return true;
         }
         catch (Exception ex) {}
         return false;
@@ -366,6 +376,10 @@ unittest
     assert(elem.u8 == 25);
     assert(elem.parse(DataType.d8, "255") == true);
     assert(elem.u8 == 255);
+    
+    // Octal
+    assert(elem.parse(DataType.o32, "37777777777") == true);
+    assert(elem.u32 == 0xffffffff);
 }
 
 // Size of a data type in bytes.
@@ -404,10 +418,13 @@ string dataTypeToString(DataType type) // Only used in statusbar code
     final switch (type) {
     case DataType.x8:   return DataType.x8.stringof;
     case DataType.x16:  return DataType.x16.stringof;
+    case DataType.x32:  return DataType.x32.stringof;
     case DataType.d8:   return DataType.d8.stringof;
     case DataType.d16:  return DataType.d16.stringof;
+    case DataType.d32:  return DataType.d32.stringof;
     case DataType.o8:   return DataType.o8.stringof;
     case DataType.o16:  return DataType.o16.stringof;
+    case DataType.o32:  return DataType.o32.stringof;
     }
 }
 unittest
@@ -440,6 +457,8 @@ struct DataFormatter
         if (i >= size)
             return cast(string)sformat(buf, "%*s", spec.spacing, "");
         
+        import core.stdc.string : memcpy;
+        
         final switch (spec.type) {
         case DataType.x8:
         case DataType.d8:
@@ -450,13 +469,15 @@ struct DataFormatter
         case DataType.d16:
         case DataType.o16:
             ushort v;
-            switch (size - i) { // left
-            case 1:
-                v = *cast(ubyte*)(buffer + i);
-                break;
-            default:
-                v = *cast(ushort*)(buffer + i);
-            }
+            ptrdiff_t left = size - i;
+            memcpy(&v, buffer + i, left >= ushort.sizeof ? ushort.sizeof : left);
+            return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
+        case DataType.x32:
+        case DataType.d32:
+        case DataType.o32:
+            uint v;
+            ptrdiff_t left = size - i;
+            memcpy(&v, buffer + i, left >= uint.sizeof ? uint.sizeof : left);
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
         }
     }
@@ -466,6 +487,8 @@ struct DataFormatter
     {
         if (i >= size)
             return false;
+        
+        import core.stdc.string : memcpy;
         
         // lazy lol
         final switch (spec.type) {
@@ -477,20 +500,22 @@ struct DataFormatter
         case DataType.d16:
         case DataType.o16:
             ushort v;
-            switch (size - i) { // left
-            case 1:
-                v = *cast(ubyte*)(buffer + i);
-                break;
-            default:
-                v = *cast(ushort*)(buffer + i);
-            }
+            ptrdiff_t left = size - i;
+            memcpy(&v, buffer + i, left >= ushort.sizeof ? ushort.sizeof : left);
+            return v == 0;
+        case DataType.x32:
+        case DataType.d32:
+        case DataType.o32:
+            uint v;
+            ptrdiff_t left = size - i;
+            memcpy(&v, buffer + i, left >= uint.sizeof ? uint.sizeof : left);
             return v == 0;
         }
     }
     
 private:
-    size_t i;       /// Byte index
-    size_t size;    /// Size of input data in bytes
+    ptrdiff_t i;       /// Byte index
+    ptrdiff_t size;    /// Size of input data in bytes
     const(void) *buffer;
     DataSpec spec;
 }
@@ -562,13 +587,13 @@ class InputFormatter
         if (idx >= spec.spacing) return false;
         
         final switch (spec.type) {
-        case DataType.x8, DataType.x16:
+        case DataType.x8, DataType.x16, DataType.x32:
             if (keydata_hex(character) < 0) return false;
             break;
-        case DataType.d8, DataType.d16:
+        case DataType.d8, DataType.d16, DataType.d32:
             if (keydata_dec(character) < 0) return false;
             break;
-        case DataType.o8, DataType.o16:
+        case DataType.o8, DataType.o16, DataType.o32:
             if (keydata_oct(character) < 0) return false;
             break;
         }

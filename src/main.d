@@ -324,6 +324,11 @@ void main(string[] args)
             //       It is wrong to eagerly check permissions because they can
             //       change at any given moment.
             //       To bypass GVFS restrictions, open as read-only (O_RDONLY).
+            // TODO: Re-introduce trying to open file as read-write (O_RDWR)
+            //       With the new save strategy, it would be highly beneficial.
+            //       If the file is opened as read-only, fallback to legacy function
+            //       (write to tmp file + replace).
+            //       Has no corrolation to restricted (aka read-only) mode (-R).
             IDocument doc = new FileDocument(target);
             editor.open(doc);
             session.documents ~= doc; // front-end tracks opened documents
