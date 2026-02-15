@@ -11,13 +11,18 @@ import os.file;
 /// File document.
 class FileDocument : IDocument
 {
+    enum DEFAULT_FLAGS = OFlags.read | OFlags.exists;
+    
     /// New file document from path.
-    this(string path, bool readonly)
+    this(string path, bool readonly = true) // legacy ctor
     {
-        // Right now, editor doesn't need write access, so this acts as a
-        // poor man's write check without having to explicitly check permissions.
-        // Bonus: exists imply file needs to exist in any case.
-        file.open(path, (readonly ? OFlags.read : OFlags.readWrite) | OFlags.exists);
+        // Opening read-only as default avoids GVFS/network-share failures that reject O_RDWR.
+        this(path, (readonly ? OFlags.read : OFlags.readWrite) | OFlags.exists);
+    }
+    /// New file document from path with flags.
+    this(string path, OFlags flags) // non-optional due to previous ctor
+    {
+        file.open(path, flags);
     }
     ~this() { close(); }
     

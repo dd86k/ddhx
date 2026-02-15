@@ -858,7 +858,15 @@ void save_to_file(IDocumentEditor editor, string target)
     //    Windows: Hidden, system, etc.
     //    POSIX: Permissions
     if (target_exists)
-        setAttributes(target, attr);
+    {
+        // NOTE: GVFS might refuse to set attributes, a minor defect.
+        //       A good test is using chmod.1, it will spit out an error.
+        try setAttributes(target, attr);
+        catch (Exception ex)
+        {
+            log("[WARNING] setAttributes failed: %s", ex);
+        }
+    }
     editor.markSaved();
     
     // Generic house cleaning
@@ -2681,9 +2689,6 @@ void save(Session *session, string[] args)
 // Save as file
 void save_as(Session *session, string[] args)
 {
-    if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot save, read-only");
-    
     string name = askstring(args, 0, "Save as: ");
     
     message("Saving...");

@@ -146,19 +146,6 @@ void printpage(string opt)
     exit(EXIT_SUCCESS);
 }
 
-// Attempt to open file as writable then fallback to readonly
-FileDocument openfile(string path, out bool readonly)
-{
-    if (readonly)
-        return new FileDocument(path, true);
-    
-    try return new FileDocument(path, false);
-    catch (Exception) {}
-    
-    readonly = true;
-    return new FileDocument(path, true);
-}
-
 void main(string[] args)
 {
     enum SECRETCOUNT = 1;
@@ -329,52 +316,33 @@ void main(string[] args)
         break;
     default: // target is set, to either: file, disk (todo), or PID (todo)
         import std.path : baseName;
+        import document.base : IDocument;
         
-        // NOTE: Open strategy
-        //
-        //       Because the 'std.file.exists' function can't check UNC paths
-        //       (like "\\.\PhysicalDrive0"), try opening as-is.
-        //
-        //       First, by default, as read-write, then read-only.
-        //       If all fails, assume file doesn't exist because read-only would
-        //       at least assume that the file exists and is readable.
-        //
-        //       Otherwise, if it exists and it is still not readable...
-        //       TODO: Open as NEW file (read-write) to really check if file can
-        //       be saved to.
-        bool readonly = rc.writemode == WritingMode.readonly;
         try
         {
-            import document.base : IDocument;
-            
-            // open file will retry to reopen as readonly when invoked as readonly=false.
-            // FileDocument wants a file to exist to be consistent.
-            // right now, there is no need to filter by file type.
-            // Let the OS handle permissions.
-            IDocument doc = openfile(target, readonly);
-            
+            // NOTE: File permissions
+            //       It is wrong to eagerly check permissions because they can
+            //       change at any given moment.
+            //       To bypass GVFS restrictions, open as read-only (O_RDONLY).
+            IDocument doc = new FileDocument(target);
             editor.open(doc);
-            
-            session.documents ~= doc;
+            session.documents ~= doc; // front-end tracks opened documents
             
             initmsg = baseName(target);
-            if (readonly)
+            if (rc.writemode == WritingMode.readonly)
             {
-                rc.writemode = WritingMode.readonly; // openfile can change readonly
                 initmsg ~= " [readonly]";
             }
         }
         catch (Exception ex)
         {
-            // TODO: Open as NEW file (read-write) to really check if file can be saved to.
-            //       Otherwise, it's pointless when we were given a path and we can't write
-            //       to.
             debug log("%s", ex);
             else  log("%s", ex.msg);
+            // TODO: Wouldn't it be wise to check if file exists?
             initmsg = MSG_NEWFILE;
         }
     }
-    log(`initmsg="%s"`, target);
+    log(`initmsg="%s"`, initmsg);
     assert(initmsg, "Forgot initmsg?");
     
     try start_session(session, initmsg);
