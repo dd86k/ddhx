@@ -6,7 +6,6 @@
 module editor;
 
 public import editor.base : IDocumentEditor;
-import editor.piece : PieceDocumentEditor;
 import editor.piecev2 : PieceV2DocumentEditor;
 import editor.piecev3 : PieceV3DocumentEditor;
 
@@ -21,11 +20,9 @@ IDocumentEditor spawnEditor(string name)
 {
     import std.conv : text;
     switch (name) { // NOTE: null chooses default backend
-    case "piece":
-        return new PieceDocumentEditor();
-    case "piecev2", null:
+    case "piecev2":
         return new PieceV2DocumentEditor();
-    case "piecev3":
+    case "piecev3", null:
         return new PieceV3DocumentEditor();
     default:
         throw new Exception(text("Backend does not exist: ", name));
