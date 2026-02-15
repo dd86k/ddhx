@@ -176,15 +176,46 @@ import std.traits : EnumMembers;
 /// Data type count.
 enum TYPES = EnumMembers!DataType.length;
 
-// TODO: Flawed. Should be selecting from global static array
+// Connects data types to definitions
+private immutable static DataSpec[] data_specs = [
+    { DataType.x8,  "x8",     "%0*x", 2, ubyte.sizeof },
+    { DataType.x16, "x16",    "%0*x", 4, ushort.sizeof },
+    { DataType.d8,  "d8",     "%0*d", 3, ubyte.sizeof },
+    { DataType.d16, "d16",    "%0*d", 5, ushort.sizeof },
+];
+unittest
+{
+    foreach (i, type; EnumMembers!DataType)
+    {
+        assert(type == data_specs[i].type);
+    }
+}
+
+// string alias -> data type enum
 DataType selectDataType(string type)
 {
-    switch (type) {
-    case "x8":      return DataType.x8;
-    case "x16":     return DataType.x16;
-    case "d8":      return DataType.d8;
-    case "d16":     return DataType.d16;
-    default:        throw new Exception("Unknown data type");
+    foreach (ref spec; data_specs)
+    {
+        if (spec.name == type)
+            return spec.type;
+    }
+    throw new Exception("Unknown data type");
+}
+// data type enum -> data specifications
+DataSpec selectDataSpec(DataType type)
+{
+    size_t i = cast(size_t)type;
+    version (D_NoBoundsChecks)
+    {
+        assertion(i < data_specs.length, "selectDataSpec: OOB");
+    }
+    return data_specs[i];
+}
+unittest
+{
+    foreach (i, type; EnumMembers!DataType)
+    {
+        assert(selectDataSpec(type).type == data_specs[i].type);
     }
 }
 
@@ -258,28 +289,25 @@ union Element
     
     bool parse(DataType type, inout(char)[] input)
     {
-        import std.conv : to; // lazy lazy
-        
-        DataSpec spec = DataSpec(type);
-        
+        import std.conv : to; // lazy, but convenient
+        import std.string : strip;
+
+        DataSpec spec = selectDataSpec(type);
+
         if (input.length == 0)
             return false;
         if (input.length > spec.spacing)
             return false;
-        
+
+        auto stripped = strip(input);
+        if (stripped.length == 0)
+            return false;
+
         try final switch (type) {
-        case DataType.x8:
-            u8 = to!ubyte(input, 16);
-            return true;
-        case DataType.x16:
-            u16 = to!ushort(input, 16);
-            return true;
-        case DataType.d8:
-            u8 = to!ubyte(input, 10);
-            return true;
-        case DataType.d16:
-            u16 = to!ushort(input, 10);
-            return true;
+        case DataType.x8:   u8  = to!ubyte(stripped, 16); return true;
+        case DataType.x16:  u16 = to!ushort(stripped, 16); return true;
+        case DataType.d8:   u8  = to!ubyte(stripped, 10); return true;
+        case DataType.d16:  u16 = to!ushort(stripped, 10); return true;
         }
         catch (Exception ex) {}
         return false;
@@ -294,68 +322,51 @@ unittest
     assert(elem.u8 == 0);
     assert(elem.parse(DataType.x8, "1") == true);
     assert(elem.u8 == 1);
+    assert(elem.parse(DataType.x8, "01") == true);
+    assert(elem.u8 == 1);
+    assert(elem.parse(DataType.x8, " 1") == true);
+    assert(elem.u8 == 1);
     assert(elem.parse(DataType.x8, "10") == true);
     assert(elem.u8 == 0x10);
+
     assert(elem.parse(DataType.x16, "0") == true);
     assert(elem.u16 == 0);
+    assert(elem.parse(DataType.x16, "0101") == true);
+    assert(elem.u16 == 0x0101);
+    assert(elem.parse(DataType.x16, " 101") == true);
+    assert(elem.u16 == 0x0101);
     assert(elem.parse(DataType.x16, "1010") == true);
     assert(elem.u16 == 0x1010);
-    
+
     // Decimal
     assert(elem.parse(DataType.d8, "0") == true);
     assert(elem.u8 == 0);
+    assert(elem.parse(DataType.d8, "025") == true);
+    assert(elem.u8 == 25);
+    assert(elem.parse(DataType.d8, " 25") == true);
+    assert(elem.u8 == 25);
     assert(elem.parse(DataType.d8, "255") == true);
     assert(elem.u8 == 255);
 }
 
 // Size of a data type in bytes.
 //
-// This exists since there are a lot of places we only need data type size and
-// DataType(...) keeps recreating structure instance (wasteful).
-// Optimized for View system, returns int to make it easier to calculate with
-// terminal size.
+// Mostly used by view module.
 int size_of(DataType type)
 {
-    // TODO: Dangerous hack! global array definitions needed NOW due to crash.
-    static immutable int[TYPES] sizes = [ ubyte.sizeof, ushort.sizeof, ubyte.sizeof, ushort.sizeof ];
-    size_t i = cast(size_t)type;
-    assert(i < sizes.sizeof);
-    return sizes[i];
+    return selectDataSpec(type).size_of;
 }
 unittest
 {
     assert(size_of(DataType.x8)  == ubyte.sizeof);
     assert(size_of(DataType.x16) == ushort.sizeof);
-    
-    // Test all
-    // TODO: Flawed test, remove entirely
-    for (int i; i < TYPES; i++)
-        cast(void)size_of(cast(DataType)i);
 }
 
 /// Data specification for this data type.
 struct DataSpec
 {
-    // Construct from DataType enum
-    this(DataType type)
-    {
-        final switch (type) {
-        case DataType.x8:  this = DataSpec("x8",  "%0*x", 2, ubyte.sizeof); break;
-        case DataType.x16: this = DataSpec("x16", "%0*x", 4, ushort.sizeof); break;
-        case DataType.d8:  this = DataSpec("d8",  "%0*u", 3, ubyte.sizeof); break;
-        case DataType.d16: this = DataSpec("d16", "%0*u", 5, ushort.sizeof); break;
-        }
-    }
-    
-    // Manual configuration
-    this(string shortname, string fmt, int chars, int sizeof)
-    {
-        name = shortname;
-        fmtspec = fmt;
-        spacing = chars;
-        size_of = sizeof;
-    }
-    
+    /// Data type associated
+    DataType type;
     /// Name (e.g., "x8").
     string name;
     /// Format specifier for format/sformat/printf.
@@ -389,8 +400,7 @@ struct DataFormatter
     /// Make a new instance with data and byte length
     this(DataType dtype, const(void) *data, size_t len)
     {
-        datatype = dtype;
-        spec = DataSpec(dtype);
+        spec = selectDataSpec(dtype);
         buffer = data;
         size = len;
     }
@@ -405,7 +415,7 @@ struct DataFormatter
         if (i >= size)
             return cast(string)sformat(buf, "%*s", spec.spacing, "");
         
-        final switch (datatype) {
+        final switch (spec.type) {
         case DataType.x8:
         case DataType.d8:
             ubyte v = *cast(ubyte*)(buffer + i);
@@ -431,7 +441,7 @@ struct DataFormatter
             return false;
         
         // lazy lol
-        final switch (datatype) {
+        final switch (spec.type) {
         case DataType.x8:
         case DataType.d8:
             return *cast(ubyte*)(buffer + i) == 0;
@@ -453,7 +463,6 @@ private:
     size_t i;       /// Byte index
     size_t size;    /// Size of input data in bytes
     const(void) *buffer;
-    DataType datatype;
     DataSpec spec;
 }
 unittest
@@ -499,8 +508,7 @@ class InputFormatter
 {
     void change(DataType newtype)
     {
-        type = newtype;
-        spec = DataSpec(newtype);
+        spec = selectDataSpec(newtype);
         reset();
     }
     
@@ -508,7 +516,7 @@ class InputFormatter
     {
         d = 0;
         txtbuffer[] = ' ';
-        element.reset(type);
+        element.reset(spec.type);
     }
     
     size_t index() // digit index
@@ -524,7 +532,7 @@ class InputFormatter
     {
         if (idx >= spec.spacing) return false;
         
-        final switch (type) {
+        final switch (spec.type) {
         case DataType.x8, DataType.x16:
             if (keydata_hex(character) < 0) return false;
             break;
@@ -556,12 +564,11 @@ class InputFormatter
     {
         // TODO: fix "f " -> move cursor -> 0x0f issue ugh
         if (d)
-            assertion(element.parse(type, txtbuffer[0..d]));
+            assertion(element.parse(spec.type, txtbuffer[0..d]));
         return element.raw[0..spec.size_of];
     }
     
 private:
-    DataType type;
     DataSpec spec;
     size_t d; /// digit index
     

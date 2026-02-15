@@ -998,7 +998,7 @@ void update_header(Session *session, TerminalSize termsize)
     }, 256) buffwriter;
     
     AddressFormatter address = AddressFormatter(session.rc.address_type);
-    DataSpec dataspec = DataSpec(session.rc.data_type);
+    DataSpec dataspec = selectDataSpec(session.rc.data_type);
     
     // Print spacers and current address type
     string atype = addressTypeToString(session.rc.address_type);
@@ -1103,7 +1103,7 @@ void update_view(Session *session, TerminalSize termsize)
     __gshared ubyte[] result;   /// View buffer slice (result)
     __gshared int readlen;      /// Slice length in int, easier to add with col/row
     
-    DataSpec data_spec = DataSpec(session.rc.data_type);
+    DataSpec data_spec = selectDataSpec(session.rc.data_type);
     
     g_linesize = cols * data_spec.size_of; // line is worth this many bytes
     
@@ -2341,7 +2341,7 @@ unittest
 void autosize(Session *session, string[] args)
 {
     int adspacing = session.rc.address_spacing;
-    DataSpec spec = DataSpec(session.rc.data_type);
+    DataSpec spec = selectDataSpec(session.rc.data_type);
     TerminalSize tsize = terminalSize();
     
     session.rc.columns = suggestcols(tsize.columns, adspacing, spec.spacing);
