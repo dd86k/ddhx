@@ -203,7 +203,7 @@ void main(string[] args)
         //
         // Misc
         //
-        "R|readonly",   "Open file as read-only and restrict editing",
+        "R|restrict",   "Restrict editing",
             ()
             {
                 rc.writemode = WritingMode.readonly;
