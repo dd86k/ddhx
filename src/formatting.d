@@ -158,19 +158,15 @@ unittest
 // Data handling
 //
 
-// TODO: Should be worthwhile to "define" static types
-//       Each define their own functions to provide parsers with valid keys/translations
-
 /// Data representation.
 enum DataType
 {
     x8,     /// 8-bit hexadecimal (e.g., 0xff -> ff)
     x16,    /// 16-bit hexadecimal
-    //x32,
-    //x64,
     d8,     /// 8-bit unsigned decimal (0xff -> 255)
     d16,    /// 16-bit unsigned decimal
-    //o8,     /// 8-bit unsigned octal (0xff -> 377)
+    o8,     /// 8-bit unsigned octal (0xff -> 377)
+    o16,    /// 16-bit unsigned octal
 }
 import std.traits : EnumMembers;
 /// Data type count.
@@ -178,10 +174,12 @@ enum TYPES = EnumMembers!DataType.length;
 
 // Connects data types to definitions
 private immutable static DataSpec[] data_specs = [
-    { DataType.x8,  "x8",     "%0*x", 2, ubyte.sizeof },
-    { DataType.x16, "x16",    "%0*x", 4, ushort.sizeof },
-    { DataType.d8,  "d8",     "%0*d", 3, ubyte.sizeof },
-    { DataType.d16, "d16",    "%0*d", 5, ushort.sizeof },
+    { DataType.x8,  DataType.x8.stringof,   "%0*x", 2, ubyte.sizeof },
+    { DataType.x16, DataType.x16.stringof,  "%0*x", 4, ushort.sizeof },
+    { DataType.d8,  DataType.d8.stringof,   "%0*d", 3, ubyte.sizeof },
+    { DataType.d16, DataType.d16.stringof,  "%0*d", 5, ushort.sizeof },
+    { DataType.o8,  DataType.o8.stringof,   "%0*o", 3, ubyte.sizeof },
+    { DataType.o16, DataType.o16.stringof,  "%0*o", 6, ushort.sizeof },
 ];
 unittest
 {
@@ -265,6 +263,25 @@ int keydata_dec(int keychar) @safe
     assert(keydata_dec('9') == 9);
     assert(keydata_dec('j') < 0);
 }
+private
+int keydata_oct(int keychar) @safe
+{
+    if (keychar >= '0' && keychar <= '7')
+        return keychar - '0';
+    
+    return -1;
+}
+@safe unittest
+{
+    assert(keydata_oct('a') < 0);
+    assert(keydata_oct('b') < 0);
+    assert(keydata_oct('A') < 0);
+    assert(keydata_oct('B') < 0);
+    assert(keydata_oct('0') == 0);
+    assert(keydata_oct('3') == 3);
+    assert(keydata_oct('9') < 0);
+    assert(keydata_oct('j') < 0);
+}
 
 /// Can represent a single "element"
 ///
@@ -308,6 +325,8 @@ union Element
         case DataType.x16:  u16 = to!ushort(stripped, 16); return true;
         case DataType.d8:   u8  = to!ubyte(stripped, 10); return true;
         case DataType.d16:  u16 = to!ushort(stripped, 10); return true;
+        case DataType.o8:   u8  = to!ubyte(stripped, 8); return true;
+        case DataType.o16:  u16 = to!ushort(stripped, 8); return true;
         }
         catch (Exception ex) {}
         return false;
@@ -383,11 +402,17 @@ struct DataSpec
 string dataTypeToString(DataType type) // Only used in statusbar code
 {
     final switch (type) {
-    case DataType.x8:   return "x8";
-    case DataType.x16:  return "x16";
-    case DataType.d8:   return "d8";
-    case DataType.d16:  return "d16";
+    case DataType.x8:   return DataType.x8.stringof;
+    case DataType.x16:  return DataType.x16.stringof;
+    case DataType.d8:   return DataType.d8.stringof;
+    case DataType.d16:  return DataType.d16.stringof;
+    case DataType.o8:   return DataType.o8.stringof;
+    case DataType.o16:  return DataType.o16.stringof;
     }
+}
+unittest
+{
+    assert(dataTypeToString(DataType.x8) == "x8");
 }
 
 // TODO: Make DataWalker that modifies Element instances
@@ -418,10 +443,12 @@ struct DataFormatter
         final switch (spec.type) {
         case DataType.x8:
         case DataType.d8:
+        case DataType.o8:
             ubyte v = *cast(ubyte*)(buffer + i);
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
         case DataType.x16:
         case DataType.d16:
+        case DataType.o16:
             ushort v;
             switch (size - i) { // left
             case 1:
@@ -444,9 +471,11 @@ struct DataFormatter
         final switch (spec.type) {
         case DataType.x8:
         case DataType.d8:
+        case DataType.o8:
             return *cast(ubyte*)(buffer + i) == 0;
         case DataType.x16:
         case DataType.d16:
+        case DataType.o16:
             ushort v;
             switch (size - i) { // left
             case 1:
@@ -538,6 +567,9 @@ class InputFormatter
             break;
         case DataType.d8, DataType.d16:
             if (keydata_dec(character) < 0) return false;
+            break;
+        case DataType.o8, DataType.o16:
+            if (keydata_oct(character) < 0) return false;
             break;
         }
         
