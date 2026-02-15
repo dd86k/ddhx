@@ -14,7 +14,7 @@ import document.base : IDocument;
 import document.file : FileDocument;
 import document.file;
 import editor.base : IDocumentEditor;
-import formatters;
+import formatting;
 import logger;
 import os.terminal;
 import patterns;

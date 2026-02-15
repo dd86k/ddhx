@@ -15,7 +15,7 @@ import std.process : environment;
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
 import configuration;
 import ddhx;
-import formatters : WritingMode;
+import formatting : WritingMode;
 import logger;
 import editor;
 import document.file : FileDocument;

@@ -9,7 +9,7 @@ module configuration;
 // "rc" local variable names.
 
 import transcoder : CharacterSet, selectCharacterSet;
-import formatters : WritingMode, AddressType, DataType;
+import formatting : WritingMode, AddressType, DataType, selectDataType;
 import std.conv : text, to;
 
 /// Special value for RC.columns to autoresize.
@@ -333,7 +333,6 @@ void configure_data(ref RC rc, string value, bool conf = false)
     if (conf && rc.data_type_set)
         return;
     
-    import formatters : selectDataType;
     rc.data_type = selectDataType(value);
     rc.data_type_set = true;
 }
