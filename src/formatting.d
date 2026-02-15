@@ -6,11 +6,11 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module formatting;
 
-import platform : assertion;
+import list;
+import os.terminal : TermColor; // For color schemes
+import platform : assertion, NotImplementedException;
 import std.format;
 import transcoder : CharacterSet;
-import platform : NotImplementedException;
-import list;
 
 // This alias exists because more recent compilers complain about local
 // static buffers being escape despite that's exactly what I want...
@@ -164,25 +164,26 @@ unittest
 /// Data representation.
 enum DataType
 {
-    x8,     /// 8-bit hexadecimal (e.g., 0xff -> "ff")
+    x8,     /// 8-bit hexadecimal (e.g., 0xff -> ff)
     x16,    /// 16-bit hexadecimal
     //x32,
     //x64,
-    //u8,     /// 8-bit unsigned decimal (0xff -> 255)
+    d8,     /// 8-bit unsigned decimal (0xff -> 255)
+    d16,    /// 16-bit unsigned decimal
     //o8,     /// 8-bit unsigned octal (0xff -> 377)
-    //s8,     /// 8-bit signal decimal
-    //i8,     /// 8-bit signal octal
 }
 import std.traits : EnumMembers;
-import os.terminal;
 /// Data type count.
 enum TYPES = EnumMembers!DataType.length;
 
+// TODO: Flawed. Should be selecting from global static array
 DataType selectDataType(string type)
 {
     switch (type) {
     case "x8":      return DataType.x8;
     case "x16":     return DataType.x16;
+    case "d8":      return DataType.d8;
+    case "d16":     return DataType.d16;
     default:        throw new Exception("Unknown data type");
     }
 }
@@ -214,6 +215,25 @@ int keydata_hex(int keychar) @safe
     assert(keydata_hex('9') == 9);
     assert(keydata_hex('j') < 0);
 }
+private
+int keydata_dec(int keychar) @safe
+{
+    if (keychar >= '0' && keychar <= '9')
+        return keychar - '0';
+    
+    return -1;
+}
+@safe unittest
+{
+    assert(keydata_dec('a') < 0);
+    assert(keydata_dec('b') < 0);
+    assert(keydata_dec('A') < 0);
+    assert(keydata_dec('B') < 0);
+    assert(keydata_dec('0') == 0);
+    assert(keydata_dec('3') == 3);
+    assert(keydata_dec('9') == 9);
+    assert(keydata_dec('j') < 0);
+}
 
 /// Can represent a single "element"
 ///
@@ -230,15 +250,10 @@ union Element
     
     // Could make this structure "richer" by giving it data type,
     // but there aren't any actual needs at the moment.
-    
     void reset(DataType type)
     {
-        final switch (type) {
-        case DataType.x8:
-        case DataType.x16:
-            u64 = 0;
-            break;
-        }
+        // Right now, we only support integer types
+        u64 = 0;
     }
     
     bool parse(DataType type, inout(char)[] input)
@@ -252,16 +267,19 @@ union Element
         if (input.length > spec.spacing)
             return false;
         
-        try
-        {
-            final switch (type) {
-            case DataType.x8:
-                u8 = to!ubyte(input, 16);
-                return true;
-            case DataType.x16:
-                u16 = to!ushort(input, 16);
-                return true;
-            }
+        try final switch (type) {
+        case DataType.x8:
+            u8 = to!ubyte(input, 16);
+            return true;
+        case DataType.x16:
+            u16 = to!ushort(input, 16);
+            return true;
+        case DataType.d8:
+            u8 = to!ubyte(input, 10);
+            return true;
+        case DataType.d16:
+            u16 = to!ushort(input, 10);
+            return true;
         }
         catch (Exception ex) {}
         return false;
@@ -270,6 +288,8 @@ union Element
 unittest
 {
     Element elem;
+    
+    // Hexadecimal
     assert(elem.parse(DataType.x8, "0") == true);
     assert(elem.u8 == 0);
     assert(elem.parse(DataType.x8, "1") == true);
@@ -280,6 +300,12 @@ unittest
     assert(elem.u16 == 0);
     assert(elem.parse(DataType.x16, "1010") == true);
     assert(elem.u16 == 0x1010);
+    
+    // Decimal
+    assert(elem.parse(DataType.d8, "0") == true);
+    assert(elem.u8 == 0);
+    assert(elem.parse(DataType.d8, "255") == true);
+    assert(elem.u8 == 255);
 }
 
 // Size of a data type in bytes.
@@ -290,7 +316,8 @@ unittest
 // terminal size.
 int size_of(DataType type)
 {
-    static immutable int[TYPES] sizes = [ ubyte.sizeof, ushort.sizeof ];
+    // TODO: Dangerous hack! global array definitions needed NOW due to crash.
+    static immutable int[TYPES] sizes = [ ubyte.sizeof, ushort.sizeof, ubyte.sizeof, ushort.sizeof ];
     size_t i = cast(size_t)type;
     assert(i < sizes.sizeof);
     return sizes[i];
@@ -301,6 +328,7 @@ unittest
     assert(size_of(DataType.x16) == ushort.sizeof);
     
     // Test all
+    // TODO: Flawed test, remove entirely
     for (int i; i < TYPES; i++)
         cast(void)size_of(cast(DataType)i);
 }
@@ -314,6 +342,8 @@ struct DataSpec
         final switch (type) {
         case DataType.x8:  this = DataSpec("x8",  "%0*x", 2, ubyte.sizeof); break;
         case DataType.x16: this = DataSpec("x16", "%0*x", 4, ushort.sizeof); break;
+        case DataType.d8:  this = DataSpec("d8",  "%0*u", 3, ubyte.sizeof); break;
+        case DataType.d16: this = DataSpec("d16", "%0*u", 5, ushort.sizeof); break;
         }
     }
     
@@ -342,8 +372,10 @@ struct DataSpec
 string dataTypeToString(DataType type) // Only used in statusbar code
 {
     final switch (type) {
-    case DataType.x8:  return "x8";
-    case DataType.x16: return "x16";
+    case DataType.x8:   return "x8";
+    case DataType.x16:  return "x16";
+    case DataType.d8:   return "d8";
+    case DataType.d16:  return "d16";
     }
 }
 
@@ -375,9 +407,11 @@ struct DataFormatter
         
         final switch (datatype) {
         case DataType.x8:
+        case DataType.d8:
             ubyte v = *cast(ubyte*)(buffer + i);
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
         case DataType.x16:
+        case DataType.d16:
             ushort v;
             switch (size - i) { // left
             case 1:
@@ -399,8 +433,10 @@ struct DataFormatter
         // lazy lol
         final switch (datatype) {
         case DataType.x8:
+        case DataType.d8:
             return *cast(ubyte*)(buffer + i) == 0;
         case DataType.x16:
+        case DataType.d16:
             ushort v;
             switch (size - i) { // left
             case 1:
@@ -426,6 +462,7 @@ unittest
     
     DataFormatter formatter;
     
+    // Test x8
     immutable ubyte[] data = [ 0x00, 0x01, 0xa0, 0xff ];
     formatter = DataFormatter(DataType.x8, data.ptr, data.length);
     assert(formatter.textual(buf) == "00"); assert( formatter.iszero()); formatter.step();
@@ -434,6 +471,7 @@ unittest
     assert(formatter.textual(buf) == "ff"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "  ");
     
+    // Test x16
     immutable ushort[] data16 = [ 0x0101, 0xf0f0 ];
     formatter = DataFormatter(DataType.x16, data16.ptr, data16.length * ushort.sizeof);
     assert(formatter.textual(buf) == "0101"); assert(!formatter.iszero()); formatter.step();
@@ -446,6 +484,14 @@ unittest
     assert(formatter.textual(buf) == "abab"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "00ab"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "    ");
+    
+    // Test decimal
+    formatter = DataFormatter(DataType.d8, data.ptr, data.length);
+    assert(formatter.textual(buf) == "000"); assert( formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "001"); assert(!formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "160"); assert(!formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "255"); assert(!formatter.iszero()); formatter.step();
+    assert(formatter.textual(buf) == "   ");
 }
 
 // NOTE: class is a cheap hack to deal with escapes
@@ -481,6 +527,9 @@ class InputFormatter
         final switch (type) {
         case DataType.x8, DataType.x16:
             if (keydata_hex(character) < 0) return false;
+            break;
+        case DataType.d8, DataType.d16:
+            if (keydata_dec(character) < 0) return false;
             break;
         }
         

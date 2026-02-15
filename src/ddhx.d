@@ -942,6 +942,7 @@ void moveabs(Session *session, long pos)
     int data_size = size_of(session.rc.data_type);
     
     // Adjust cursor position to base depending on data size
+    // NOTE: Can throw SIGFPE if data_size is wrong (zero?)
     pos -= pos % data_size;
     
     // No need to update if it's at the same place
