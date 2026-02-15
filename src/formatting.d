@@ -562,9 +562,14 @@ class InputFormatter
     /// Returns: Buffer slice.
     ubyte[] data()
     {
-        // TODO: fix "f " -> move cursor -> 0x0f issue ugh
         if (d)
-            assertion(element.parse(spec.type, txtbuffer[0..d]));
+        {
+            // Right-padding zeros fixes "f " registering as 0xf
+            ElementText buf2 = void;
+            buf2[0..d] = txtbuffer[0..d];
+            buf2[d..spec.spacing] = '0';
+            assertion(element.parse(spec.type, buf2[0..spec.spacing]));
+        }
         return element.raw[0..spec.size_of];
     }
     
@@ -572,7 +577,7 @@ private:
     DataSpec spec;
     size_t d; /// digit index
     
-    char[24] txtbuffer = void;
+    ElementText txtbuffer = void;
     Element element = void;
 }
 unittest
@@ -585,6 +590,7 @@ unittest
     
     assert(input.add('1')   == true);
     assert(input.format     == "1 ");
+    assert(input.data()     == [ 0x10 ]);
     assert(input.full()     == false);
     
     assert(input.add('2')   == true);
