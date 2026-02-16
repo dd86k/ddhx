@@ -38,13 +38,14 @@ immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 
 private enum // Internal editor status flags
 {
-    // Update the current view
-    UVIEW       = 1 << 1,
+    // Read from editor, content changed
+    UREAD       = 1 << 1,
+    UVIEW       = UREAD,    // older alias for UREAD
     // Update the header
     UHEADER     = 1 << 2,
     // Update statusbar
     USTATUS     = 1 << 3,
-    USTATUSBAR  = USTATUS, // older alias
+    USTATUSBAR  = USTATUS,  // older alias for USTATUS
     
     // Pending message
     UMESSAGE    = 1 << 16,
@@ -52,7 +53,8 @@ private enum // Internal editor status flags
     UEDITING    = 1 << 17,
     
     //
-    UINIT = UHEADER | UVIEW | USTATUSBAR,
+    UALL    = UHEADER | UVIEW | USTATUS,
+    UINIT   = UALL,         // older alias for UALL
 }
 
 private enum PanelType
@@ -554,7 +556,7 @@ void onresize() // NOTE: I/O is allowed here
     version (Windows)
         terminalHideCursor();
     
-    g_status |= UHEADER | UVIEW | USTATUSBAR; // draw everything
+    g_status |= UINIT; // draw everything
     update(g_session);
 }
 
@@ -965,7 +967,7 @@ void moveabs(Session *session, long pos)
     }
     
     session.position_cursor = pos;
-    g_status |= USTATUSBAR;
+    g_status |= USTATUS;
 }
 
 // TODO: Handle multiple messages.
@@ -979,7 +981,7 @@ void message(A...)(string fmt, A args)
     try
     {
         g_message = cast(string)sformat(g_messagebuf, fmt, args);
-        g_status |= UMESSAGE | USTATUSBAR;
+        g_status |= UMESSAGE | USTATUS;
     }
     catch (Exception ex)
     {
@@ -1181,9 +1183,6 @@ void update_view(Session *session, TerminalSize termsize)
     AddressFormatter afmt = AddressFormatter(session.rc.address_type);
     
     Line line = Line(128); // init with 128 segments
-    BufferedWriter!((void *data, size_t size) {
-        terminalWrite(data, size);
-    }, 256) buffwriter;
     ElementText buf = void;
     bool prev_selected;
     size_t ci; // character index because lazy
@@ -1269,22 +1268,17 @@ void update_view(Session *session, TerminalSize termsize)
         }
         
         // Render line segments on screen
-        buffwriter.reset();
         terminalCursor(0, row + rowdisp);
         int last_scheme_flags; // ColorScheme might not be normal at address
         foreach (ref segment; line.segments)
         {
             ColorMap map = g_colors.get(segment.scheme);
-            
+
             bool change = last_scheme_flags != map.flags;
-            
-            // If incoming color is different, flush, because we are changing attributes
+
             if (change)
-            {
-                buffwriter.flush();
                 terminalResetColor(); // fixes runaway color with invert (cursor) on POSIX
-            }
-            
+
             // Apply attribute(s)
             if (map.flags & COLORMAP_FOREGROUND && change)
                 terminalForeground(map.fg);
@@ -1292,21 +1286,19 @@ void update_view(Session *session, TerminalSize termsize)
                 terminalBackground(map.bg);
             if (map.flags & COLORMAP_INVERTED && change)
                 terminalInvertColor();
-            
-            buffwriter.put(segment.toString());
-            
+
+            terminalWrite(segment.data);
+
             last_scheme_flags = map.flags;
         }
-        
+
         // Fill rest of term with spaces
         if (chars < termsize.columns)
         {
-            buffwriter.flush();     // important for conhost
             terminalResetColor();   // fixes colors when in text column
-            buffwriter.repeat(' ', termsize.columns - chars);
+            terminalWriteChar(' ', cast(int)(termsize.columns - chars));
         }
-        
-        buffwriter.flush();     // important for conhost
+
         terminalFlush();        // important for fbcon, no-op on Windows
     }
     
@@ -2162,7 +2154,7 @@ void change_writemode(Session *session, string[] args)
             session.rc.writemode == WritingMode.insert ?
             WritingMode.overwrite : WritingMode.insert;
     }
-    g_status |= USTATUSBAR;
+    g_status |= USTATUS;
 }
 
 // Refresh screen
@@ -2409,7 +2401,7 @@ void replace_(Session *session, string[] args)
         }
         ubyte[] p = pattern(session.rc.charset, args);
         session.editor.patternReplace(sel.start, sel.length, p.ptr, p.length);
-        g_status |= UVIEW | UHEADER | USTATUSBAR;
+        g_status |= UVIEW | UHEADER | USTATUS;
         return;
     }
     
@@ -2427,7 +2419,7 @@ void replace_(Session *session, string[] args)
     Range r = askrange(args, 0, "Range: ");
     ubyte[] p = pattern(session.rc.charset, args[1..$]);
     session.editor.patternReplace(r.start, rangelen(r), p.ptr, p.length);
-    g_status |= UVIEW | UHEADER | USTATUSBAR;
+    g_status |= UVIEW | UHEADER | USTATUS;
 }
 
 // Insert data using pattern
@@ -2446,7 +2438,7 @@ void insert_(Session *session, string[] args)
         }
         ubyte[] p = pattern(session.rc.charset, args);
         session.editor.patternInsert(sel.start, sel.length, p.ptr, p.length);
-        g_status |= UVIEW | UHEADER | USTATUSBAR;
+        g_status |= UVIEW | UHEADER | USTATUS;
         return;
     }
     
@@ -2464,7 +2456,7 @@ void insert_(Session *session, string[] args)
     Range r = askrange(args, 0, "Range: ");
     ubyte[] p = pattern(session.rc.charset, args[1..$]);
     session.editor.patternInsert(r.start, rangelen(r), p.ptr, p.length);
-    g_status |= UVIEW | UHEADER | USTATUSBAR;
+    g_status |= UVIEW | UHEADER | USTATUS;
 }
 
 // Replace data using file

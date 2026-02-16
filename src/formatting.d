@@ -760,26 +760,19 @@ struct ColorMapper
     //       "fg:normal"    -> COLORMAP_FOREGROUND
 }
 
-// TODO: Eventually, this will do coalescing with a character buffer
-//       Beneficial to render function to potentially trim out BufferedWriter
-//       and thus making the code a lot simpler.
-//       Change "char[32] data" to "string data" and remove "size_t sz".
-//       Sneaking suspicion this will be required if I wish to make a data inspector panel
 struct LineSegment
 {
-    // NOTE: Don't call this variable "text", it will call std.conv.text.
-    // small string optimization because the segment engine is that simple at the moment
-    // and bufferedwriter still saves us
-    char[32] data;
-    size_t sz;
+    string data;
     ColorScheme scheme;
-    
-    string toString() const { return cast(string)data[0..sz]; }
+
+    string toString() const { return data; }
 }
 struct Line
 {
     List!LineSegment segments;
-    
+    char[4 * 1024] textbuf;
+    size_t textpos;
+
     // "reserve" is a function in object.d. DO NOT try to collide with it.
     this(size_t segment_count)
     {
@@ -789,25 +782,38 @@ struct Line
     {
         destroy(segments);
     }
-    
+
     LineSegment opIndex(size_t i)
     {
         return segments[i];
     }
-    
+
     // Setting index=0 is faster than de- and re-allocating
-    void reset() { segments.reset(); }
-    
-    // Manual add
+    void reset() { segments.reset(); textpos = 0; }
+
     size_t add(string text, ColorScheme scheme)
     {
         import core.stdc.string : memcpy;
-        assert(text.length < 32);
-        LineSegment segment = void;
-        memcpy(segment.data.ptr, text.ptr, text.length);
-        segment.sz = text.length;
-        segment.scheme = scheme;
-        segments ~= segment;
+
+        assertion(textpos + text.length <= textbuf.length);
+
+        memcpy(textbuf.ptr + textpos, text.ptr, text.length);
+
+        // Coalesce: extend previous segment if same scheme
+        if (segments.count > 0 && segments.buffer[segments.count - 1].scheme == scheme)
+        {
+            auto prev = &segments.buffer[segments.count - 1];
+            prev.data = cast(string) textbuf[textpos - prev.data.length .. textpos + text.length];
+        }
+        else
+        {
+            LineSegment segment;
+            segment.data = cast(string) textbuf[textpos .. textpos + text.length];
+            segment.scheme = scheme;
+            segments ~= segment;
+        }
+
+        textpos += text.length;
         return text.length;
     }
     
@@ -838,31 +844,29 @@ struct Line
 unittest
 {
     Line line;
-    
+
     assert(line.normal("test", "second") == 10);
     assert(line.cursor("ff") == 2);
     assert(line.selection("ffff") == 4);
-    
-    assert(line[0].toString()   == "test");
+
+    // "test" and "second" coalesce into one normal segment
+    assert(line[0].toString()   == "testsecond");
     assert(line[0].scheme       == ColorScheme.normal);
-    
-    assert(line[1].toString()   == "second");
-    assert(line[1].scheme       == ColorScheme.normal);
-    
-    assert(line[2].toString()   == "ff");
-    assert(line[2].scheme       == ColorScheme.cursor);
-    
-    assert(line[3].toString()   == "ffff");
-    assert(line[3].scheme       == ColorScheme.selection);
+
+    assert(line[1].toString()   == "ff");
+    assert(line[1].scheme       == ColorScheme.cursor);
+
+    assert(line[2].toString()   == "ffff");
+    assert(line[2].scheme       == ColorScheme.selection);
 }
 unittest
 {
     Line line; // Emulate a line of 4 x8 columns...
-    
+
     // address
     assert(line.normal("    1000000") == 11);
     assert(line.normal(" ")     == 1);
-    
+
     // data
     assert(line.normal(" ")     == 1);
     assert(line.normal("ff")    == 2);
@@ -872,55 +876,28 @@ unittest
     assert(line.selection("ff") == 2);
     assert(line.selection(" ")  == 1);
     assert(line.selection("ff") == 2);
-    
+
     // data-text spacers
     assert(line.normal("  ")    == 2);
-    
+
     // text
     assert(line.normal(".")     == 1);
     assert(line.normal(".")     == 1);
     assert(line.normal(".")     == 1);
     assert(line.normal(".")     == 1);
-    
-    assert(line[0].toString()   == "    1000000");
+
+    // Adjacent same-scheme segments coalesce:
+    // [0] normal:    "    1000000  ff ff " (address + data before selection)
+    // [1] selection: "ff ff"               (selected data)
+    // [2] normal:    "  ...."              (spacer + text)
+    assert(line.segments.count == 3);
+
+    assert(line[0].toString()   == "    1000000  ff ff ");
     assert(line[0].scheme       == ColorScheme.normal);
-    
-    assert(line[1].toString()   == " ");
-    assert(line[1].scheme       == ColorScheme.normal);
-    
-    assert(line[2].toString()   == " ");
+
+    assert(line[1].toString()   == "ff ff");
+    assert(line[1].scheme       == ColorScheme.selection);
+
+    assert(line[2].toString()   == "  ....");
     assert(line[2].scheme       == ColorScheme.normal);
-    
-    assert(line[3].toString()   == "ff");
-    assert(line[3].scheme       == ColorScheme.normal);
-    
-    assert(line[4].toString()   == " ");
-    assert(line[4].scheme       == ColorScheme.normal);
-    
-    assert(line[5].toString()   == "ff");
-    assert(line[5].scheme       == ColorScheme.normal);
-    
-    assert(line[6].toString()   == " ");
-    assert(line[6].scheme       == ColorScheme.normal);
-    
-    assert(line[7].toString()   == "ff");
-    assert(line[7].scheme       == ColorScheme.selection);
-    
-    assert(line[8].toString()   == " ");
-    assert(line[8].scheme       == ColorScheme.selection);
-    
-    assert(line[9].toString()   == "ff");
-    assert(line[9].scheme       == ColorScheme.selection);
-    
-    assert(line[10].toString()  == "  ");
-    assert(line[10].scheme      == ColorScheme.normal);
-    
-    assert(line[11].toString()  == ".");
-    assert(line[11].scheme      == ColorScheme.normal);
-    assert(line[12].toString()  == ".");
-    assert(line[12].scheme      == ColorScheme.normal);
-    assert(line[13].toString()  == ".");
-    assert(line[13].scheme      == ColorScheme.normal);
-    assert(line[14].toString()  == ".");
-    assert(line[14].scheme      == ColorScheme.normal);
 }
