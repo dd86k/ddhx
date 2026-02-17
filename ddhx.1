@@ -1,0 +1,738 @@
+.\" ddhx - modal hex editor
+.\" Copyright (c) 2017-2026 dd86k <dd@dax.moe>
+.\" MIT License
+.TH DDHX 1 "2026-02-16" "ddhx 0.9" "User Commands"
+.
+.SH NAME
+ddhx \- modal TUI hex editor
+.
+.SH SYNOPSIS
+.B ddhx
+.RI [ FILE | \- ]
+.RI [ OPTIONS ]
+.br
+.B ddhx
+.RB { \-h | \-\-help | \-\-version | \-\-ver }
+.
+.SH DESCRIPTION
+.B ddhx
+is a simple modal TUI hex editor.
+.PP
+It supports viewing and editing binary files with multiple data representations,
+pattern-based search, unlimited undo/redo, and files up to 8\ EiB in size.
+.PP
+When invoked with no arguments,
+.B ddhx
+opens an empty buffer or, if there is data, will open the standard input stream
+into an in-memory buffer.
+.PP
+Minimum recommended terminal size is 80x24 characters.
+.
+.SS Features
+.IP \(bu 2
+Supports insert, overwrite, and delete operations
+.IP \(bu
+Unlimited undo/redo
+.IP \(bu
+Large file support: up to 8 EiB
+.IP \(bu
+Visual selection and range commands
+.IP \(bu
+Multiple charset representations: ascii, mac, cp437, ebcdic
+.IP \(bu
+Search data with a powerful pattern syntax
+.IP \(bu
+Skip identical data or repeating patterns by selection
+.IP \(bu
+Customizable with configuration file
+.IP \(bu
+Copy, Cut, and Paste data at will
+.
+.SH OPTIONS
+.
+.SS Configuration
+.TP
+.BI "\-c, \-\-columns=" N
+Set the number of columns per row. Use
+.B auto
+to fit the terminal width. Default: 16.
+.TP
+.BI "\-A, \-\-address=" MODE
+Set address display mode:
+.BR hex ,
+.BR dec ,
+or
+.BR oct .
+Default:
+.BR hex .
+.TP
+.BI "\-D, \-\-data=" MODE
+Set data display mode:
+.BR x8 ,
+.BR x16 ,
+.BR x32 ,
+.BR d8 ,
+.BR d16 ,
+.BR d32 ,
+.BR o8 ,
+.BR o16 ,
+or
+.BR o32 .
+Default:
+.BR x8 .
+.TP
+.BI \-\-address\-spacing= N
+Set the address column width in characters. Default: 11.
+.TP
+.BI "\-C, \-\-charset=" CHARSET
+Set character translation:
+.BR ascii ,
+.BR cp437 ,
+.BR mac ,
+or
+.BR ebcdic .
+Default:
+.BR ascii .
+.TP
+.B \-\-gray\-zeros
+Gray out zero values in the display.
+.TP
+.B \-R, \-\-restrict
+Restrict document editing.
+.TP
+.B \-I, \-\-norc
+Ignore user configuration files and use defaults.
+.TP
+.BI "\-f, \-\-rcfile=" PATH
+Use the specified file for configuration instead of the default locations.
+.
+.SS Information
+.TP
+.BR \-h ", " \-\-help
+Print a help summary and exit.
+.TP
+.B \-\-version
+Print full version information and exit.
+.TP
+.B \-\-ver
+Print the version number only and exit.
+.TP
+.B \-\-help\-keys
+Print default keybindings and exit.
+.TP
+.B \-\-help\-commands
+Print all available commands and exit.
+.TP
+.B \-\-help\-config
+Print configuration options and file paths and exit.
+.
+.SH USAGE
+.PP
+Create a new empty document:
+.RS
+.nf
+$ ddhx
+.fi
+.RE
+.PP
+Open an existing or create a new file:
+.RS
+.nf
+$ ddhx FILENAME
+.fi
+.RE
+.PP
+Create a new document from stream data:
+.RS
+.nf
+$ echo test | ddhx
+.fi
+.RE
+.PP
+To quit the editor, use
+.B Ctrl+Q
+or the
+.B quit
+command.
+.
+.SH WRITING MODES
+The editor supports three writing modes, shown in the status bar:
+.TP
+.B R/O
+Read-only. No editing is permitted.
+.TP
+.B OVR
+Overwrite. Typed data replaces existing bytes at the cursor. This is the default.
+.TP
+.B INS
+Insert. Typed data is inserted before the cursor position.
+.PP
+Press
+.B Insert
+or use the
+.B change\-mode
+command to cycle between modes.
+.PP
+The writing mode currently affects manual edits and pasting data from the
+internal clipboard.
+.
+.SH KEYBINDINGS
+.
+.SS Navigation
+.TS
+lb l.
+Left/Right	Move cursor by one element
+Up/Down	Move cursor by one row
+Page Up/Down	Move cursor by one screen
+Home/End	Move to start/end of row
+Ctrl+Home/End	Move to start/end of document
+Ctrl+Up/Down	Scroll view without moving cursor
+Ctrl+Left/Right	Skip identical elements
+Ctrl+G	Goto address
+.TE
+.PP
+Navigation should resemble most text editors.
+.
+.SS Selection
+.TS
+lb l.
+Shift+Left/Right	Extend selection by one element
+Shift+Up/Down	Extend selection by one row
+Shift+Home/End	Extend selection to row start/end
+Ctrl+Shift+Home/End	Extend selection to document start/end
+Ctrl+A	Select entire document
+.TE
+.PP
+Some commands support selection.
+Selection makes certain commands work differently.
+For example, with an active selection, the
+.B replace
+command doesn't need a range expression, only a pattern.
+.PP
+If the shift key is unavailable, the
+.B mark
+and
+.B unmark
+commands can be used to start and stop a selection.
+The selection commands, such as
+.BR "select \fIRANGE\fP" ", " select\-end ,
+etc., also remain available.
+.
+.SS Skipping
+Typically,
+.B Ctrl+Left
+and
+.B Ctrl+Right
+skip the same element until a different element is found.
+This is particularly useful for skipping wide empty spaces, even gigabytes.
+.PP
+To skip a group of data as a pattern, first select a range of data, then press
+.B Ctrl+Right
+to skip forward.
+The cursor will skip over all consecutive occurrences of the selected pattern
+until a mismatch is found.
+.
+.SS Editing
+.TS
+lb l.
+a\-f, 0\-9	Start inserting or replacing data at cursor
+Insert	Cycle writing mode (OVR, INS)
+Delete	Delete element at cursor
+Backspace	Delete element before cursor
+Ctrl+U	Undo
+Ctrl+R	Redo
+Ctrl+S	Save document
+Ctrl+O	Save As another name and set new target
+Tab	Switch between data and text columns
+Alt+C	Copy selection
+Alt+X	Cut selection
+Alt+V	Paste
+.TE
+.PP
+Edit single elements using the
+.B a\-f
+and
+.B 0\-9
+keys.
+The editor is element-oriented, so typing "ff" will insert or replace one element.
+.PP
+It is also possible to use a command over a selection, like
+.BR "replace x:00" ,
+to replace a selection with zeros.
+.PP
+To insert a file into the document at the current cursor position, use the
+.B insert\-file
+command.
+The same can be done using
+.BR replace\-file ,
+where the file replaces content using the file's length.
+.
+.SS Search
+.TS
+lb l.
+Ctrl+F	Find forward
+Ctrl+B	Find backward
+Ctrl+N	Find next (repeat forward)
+Shift+N	Find previous (repeat backward)
+.TE
+.
+.SS Other
+.TS
+lb l.
+Enter	Open command prompt
+Ctrl+P	Report position
+Ctrl+L	Refresh screen
+Alt+R	Auto-resize columns
+Ctrl+Q	Quit
+.TE
+.
+.SH COMMANDS
+All actions in the editor are backed by commands, many of which are mapped
+to keys.
+.PP
+To invoke the command prompt, press the
+.B Enter
+(Return) key.
+Type a command and press
+.B Enter
+again to execute it.
+.PP
+To cancel a prompt input, press
+.BR Escape ,
+.BR Ctrl+C ,
+or give it empty input.
+.PP
+Some commands require arguments. If omitted, the editor will prompt for the
+missing arguments, or continue if there is an active selection.
+.
+.SS Navigation Commands
+.TP
+.BI goto " ADDRESS"
+Jump to the specified address. Supports hexadecimal
+.RB ( 0x
+prefix), octal
+.RB ( 0
+prefix), decimal, and percentage
+.RB ( %
+prefix) formats. A leading
+.B +
+or
+.B \-
+makes the jump relative to the current position.
+.PP
+.RS
+Examples:
+.RS
+.nf
+goto 0x10        \fRJump to position 16 (hexadecimal)\fP
+goto +020        \fRJump forward 16 bytes (octal)\fP
+goto \-5          \fRJump backward 5 bytes (decimal)\fP
+goto %45.1       \fRJump to 45.1% of the document size\fP
+.fi
+.RE
+.RE
+.
+.SS Search Commands
+.TP
+.BI find " PATTERN"
+Search forward for
+.IR PATTERN .
+.TP
+.BI find\-back " PATTERN"
+Search backward for
+.IR PATTERN .
+.TP
+.B find\-next
+Repeat the last search forward.
+.TP
+.B find\-prev
+Repeat the last search backward.
+.PP
+Once a search needle is defined, it can be reused using
+.B find\-next
+.RB ( Ctrl+N )
+and
+.B find\-prev
+.RB ( Shift+N ).
+.PP
+Example: looking for
+.B "hi\e0\e0"
+(these are all equivalent):
+.RS
+.nf
+find s:hi x:00 00
+find "hi" 0x0000
+find x:68 69 00 00
+.fi
+.RE
+.PP
+Practical example for PDF files: use
+.B find s:endstream
+to search for the string "endstream", then hit
+.B Ctrl+N
+to go to the next result or
+.B Shift+N
+to go to the previous result.
+.PP
+.BR "LIMITATION:" " Search does not wrap and depends on cursor position."
+.
+.SS Editing Commands
+.TP
+.BI insert " [COUNT] PATTERN"
+Insert
+.I PATTERN
+at the cursor position.
+.I COUNT
+specifies the number of repetitions.
+.TP
+.BI replace " [RANGE] PATTERN"
+Replace data in
+.I RANGE
+with
+.IR PATTERN .
+With an active selection, only a pattern is needed.
+.TP
+.BI insert\-file " PATH"
+Insert the contents of a file at the cursor position.
+.TP
+.BI replace\-file " PATH"
+Replace data at the cursor with the contents of a file.
+.TP
+.BI select " RANGE"
+Select the specified range.
+.TP
+.B mark
+Start a selection at the current cursor position (alternative to Shift key).
+.TP
+.B unmark
+Clear the current selection.
+.TP
+.B copy
+Copy selected data to the internal clipboard.
+.TP
+.B cut
+Cut selected data to the internal clipboard.
+.TP
+.B paste
+Paste data from the internal clipboard.
+.TP
+.B delete
+Delete the element at the cursor position.
+.TP
+.B undo
+Undo the last change.
+.TP
+.B redo
+Redo the last undone change.
+.
+.SS File Commands
+.TP
+.B save
+Save the current document.
+.TP
+.BI save\-as " PATH"
+Save the document to a new file and set it as the current target.
+.TP
+.BI export\-range " RANGE PATH"
+Export the specified range to a file.
+.
+.SS Configuration Commands
+.TP
+.BI set " OPTION VALUE"
+Change a configuration setting at runtime. See
+.SM
+.B CONFIGURATION
+for available options.
+Runtime changes do not persist across sessions.
+To make settings permanent, add them to a configuration file.
+.TP
+.BI bind " KEY COMMAND \fR[\fPPARAMS...\fR]\fP"
+Bind a key to a command.
+.TP
+.BI unbind " KEY"
+Remove a keybinding.
+.TP
+.B reset\-keys
+Restore all keybindings to their defaults.
+.PP
+Examples:
+.RS
+.nf
+set charset mac              \fRSet character set to Mac\fP
+bind right\-arrow goto +32    \fRBind Right Arrow to jump 32 bytes\fP
+unbind right\-arrow           \fRRemove the binding\fP
+reset\-keys                   \fRReset all bindings to defaults\fP
+.fi
+.RE
+.
+.SH PATTERNS
+A pattern expression consists of one or more prefixed patterns, which can be
+matched in order (left to right).
+.PP
+For example,
+.B "x:00 01"
+will yield a pattern of [ 0x00, 0x01 ], and
+.B "s:hi x:ffff"
+a pattern of [ 0x68, 0x69, 0xff, 0xff ].
+.PP
+Supported prefixes:
+.TP
+.BI x: VALUE "\fR, \fP" 0x VALUE
+Hexadecimal unsigned integer.
+Example:
+.BR "x:00" ", " "0xff" ", " "x:0101" .
+.TP
+.BI d: VALUE
+Decimal signed integer.
+Example:
+.BR "d:255" .
+.TP
+.BI o: VALUE
+Octal signed integer.
+Example:
+.BR "o:377" .
+.TP
+.BI s: STRING "\fR, \fP" \(dq STRING \(dq
+String (currently ASCII only). Quoted strings need a terminator.
+Example:
+.BR "s:hello" ", " "\(dqtest\(dq" .
+.PP
+Supported commands:
+.BR find ,
+.BR find\-back ,
+.BR insert ,
+and
+.BR replace .
+.
+.SH RANGES
+A range expression represents a start and end position inclusively, typically
+in the
+.IB START : END
+format. Supports hexadecimal, decimal, and octal values.
+.PP
+Special markers:
+.TP
+.B .
+Current cursor position.
+.TP
+.B $
+End of document (document size minus one).
+.TP
+.B +
+(End only) End is not a position, but an addition to start position.
+.PP
+Without the separator
+.RB ( : ),
+it only denotes a length, including the cursor position.
+Instead of
+.BR ".:+3"
+(current position + 3 elements),
+.B "4"
+can be used.
+.PP
+Examples:
+.RS
+.nf
+select 0x10:0x19     \fRSelect positions 0x10 to 0x19\fP
+select 0x10:+9       \fRSame range (0x10 + 9 = 0x19)\fP
+select 0x10:.        \fRFrom 0x10 to cursor position\fP
+select 0x10:$        \fRFrom 0x10 to end of document\fP
+replace 200:$ x:00   \fRReplace from address 200 to EOF with zeros\fP
+replace 200:. x:00   \fRReplace from 200 to cursor with zeros\fP
+insert 100 x:90      \fRInsert 100 0x90 bytes at cursor\fP
+select 4             \fRSelect 4 elements from cursor\fP
+.fi
+.RE
+.PP
+Supported commands:
+.BR select ,
+.BR insert ,
+.BR replace ,
+and
+.BR delete .
+.
+.SH CONFIGURATION
+Configuration can be set via command-line options, configuration files, or the
+.B set
+command at runtime.
+Runtime changes do not persist across sessions. To make settings permanent,
+add them to a configuration file.
+.
+.SS Configuration File
+The configuration file is a plain text file with one setting per line.
+Comments start with
+.BR # .
+Lines take the form:
+.RS
+.IB setting " " value
+.RE
+.PP
+Keybindings can also be set in the configuration file:
+.RS
+.BI "bind " "KEY COMMAND" " [" "PARAMS..." ]
+.RE
+.
+.SS Configuration File Locations
+Configuration files are searched in the following order (first found wins):
+.TP
+1.
+Path specified with
+.BR \-f / \-\-rcfile .
+.TP
+2.
+.I ~/.ddhxrc
+.TP
+3.
+.I ~/.config/ddhx/.ddhxrc
+.TP
+4.
+.I /etc/ddhx/.ddhxrc
+.
+.SS Settings
+.TP
+.BR address " \fRhexadecimal\fP | octal | decimal"
+Address display format. Default:
+.BR hexadecimal .
+.TP
+.BI "address\-spacing " N
+Address column width. Default:
+.BR 11 .
+.TP
+.BR charset " \fRascii\fP | cp437 | mac | ebcdic"
+Character set for the text column. Default:
+.BR ascii .
+.TP
+.BR coalesce " \fRon\fP | off"
+Enable edit coalescing (group consecutive edits into single undo steps). Default:
+.BR on .
+.TP
+.BI columns " N \fR|\fP auto"
+Number of elements per row. Default:
+.BR 16 .
+.TP
+.BR data " \fRx8\fP | x16 | x32 | d8 | d16 | d32 | o8 | o16 | o32"
+Data display format. Default:
+.BR x8 .
+.TP
+.BR gray\-zeros " on | \fRoff\fP"
+Gray out zero values. Default:
+.BR off .
+.TP
+.BR header " \fRon\fP | off"
+Show the header bar. Default:
+.BR on .
+.TP
+.BR mirror\-cursor " on | \fRoff\fP"
+Show the cursor in both data and text columns. Default:
+.BR off .
+.TP
+.BR status " \fRon\fP | off"
+Show the status bar. Default:
+.BR on .
+.
+.SS Example Configuration
+.RS
+.nf
+# Use EBCDIC character set
+charset ebcdic
+# 32 columns per row
+columns 32
+# Vim-style navigation
+bind h left
+bind j down
+bind k up
+bind l right
+bind : menu
+.fi
+.RE
+.
+.SH LIMITATIONS
+.
+.SS Output
+.B ddhx
+currently only outputs UTF-8.
+You might want to stick to the ASCII charset if your terminal lacks UTF-8
+capabilities.
+On Windows, the editor will attempt to use the 65001 (UTF-8) codepage
+automatically.
+.
+.SS Input
+On POSIX platforms, the editor supports most xterm, vt100, and vt220 sequences.
+It assumes UTF-8 for input.
+.PP
+The editor assumes these keys:
+.IP \(bu 2
+\fB^H\fP (\\010) for Ctrl+Backspace
+.IP \(bu
+\fBDEL\fP (0x7f) for Backspace
+.IP \(bu
+\fB\\033[3~\fP for Delete
+.PP
+Not all key combinations can be detected by terminal applications.
+Your terminal emulator or framebuffer may intercept certain shortcuts for its
+own features.
+For example, VTE-based terminals (GNOME Terminal, Terminator, Tilix) often
+capture Ctrl+Shift+Arrow keys for tab/pane navigation.
+Most framebuffers will capture Shift+PageUp for scrolling the buffer upward.
+.PP
+If a shortcut doesn't work, the
+.B bind
+command allows binding a command to a different shortcut.
+For example,
+.B bind alt+e select\-end
+binds Alt+E to extend the selection to the end of the line.
+Commands can still be executed from the command prompt.
+.
+.SH ENVIRONMENT
+.TP
+.B DDHX_LOG
+If set, enables logging debugging information to the specified file path.
+Available since version 0.7.
+.TP
+.B DDHX_BACKEND
+Forces the specified editor backend to be selected.
+Available since version 0.7.
+Default:
+.B piecev3
+(since 0.9).
+Available backends:
+.B piecev3
+(>=0.9),
+.B piecev2
+(>=0.8),
+.B piece
+(>=0.7, <0.9),
+.B chunk
+(>=0.5, <0.8.2).
+.
+.SH NOTES
+This software is provided with NO WARRANTY as it is marked as EXPERIMENTAL.
+.PP
+ALWAYS make backups of your files before editing them.
+.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Command-line error.
+.TP
+.B 2
+Fatal runtime error.
+.
+.SH LICENSE
+MIT
+.
+.SH AUTHORS
+dd86k <dd@dax.moe>
+.
+.SH BUGS
+Report bugs at
+.UR https://github.com/dd86k/ddhx/issues
+.UE .
+.
+.SH SEE ALSO
+.BR xxd (1),
+.BR hexdump (1),
+.BR od (1)
