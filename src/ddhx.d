@@ -340,6 +340,8 @@ immutable Command[] default_commands = [
         0,                          &bind },
     { "unbind",                     "Remove or reset a bind shortcut",
         0,                          &unbind },
+    { "color",                      "Change scheme color for this session",
+        0,                          &color, },
     { "reset-keys",                 "Reset all binded keys to default for this session",
         0,                          &reset_keys },
     { "menu",                       "Invoke command prompt",
@@ -509,6 +511,10 @@ const(Keybind)* binded(int key)
     return key in g_keys;
 }
 
+void setcolor(ColorScheme scheme, ColorMap map)
+{
+    g_colors.set(scheme, map);
+}
 
 Session* create_session(IDocumentEditor editor, ref RC rc, string path)
 {
@@ -521,8 +527,7 @@ Session* create_session(IDocumentEditor editor, ref RC rc, string path)
 void start_session(Session *session, string initmsg)
 {
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
-    // NOTE: Alternate buffers are usually "clean" except on framebuffers (fbcon)
-    terminalClear();
+    terminalClear(); // alt buffers usually clears, except on framebuffers (e.g., fbcon)
     terminalResizeHandler(&onresize);
     terminalHideCursor();
     
@@ -532,10 +537,8 @@ void start_session(Session *session, string initmsg)
     g_messagebuf.length = 4096;
     
     g_input = new InputFormatter; // hack due to buffer escapes
-    g_input.change(session.rc.data_type);
-
-    // Sync editor options
-    session.editor.coalescing = session.rc.coalescing;
+    
+    sync_settings();
     
     message(initmsg);
     
@@ -546,6 +549,15 @@ void start_session(Session *session, string initmsg)
 
 private:
 
+// Sync RC options to various front-end components
+void sync_settings()
+{
+    // Editor options
+    g_session.editor.coalescing = g_session.rc.coalescing;
+    // Input system
+    g_input.change(g_session.rc.data_type);
+}
+
 void onresize() // NOTE: I/O is allowed here
 {
     // TODO: Consider rendering something like "SMALL" if screen too small
@@ -555,8 +567,7 @@ void onresize() // NOTE: I/O is allowed here
         autosize(g_session, null);
     
     // Yes, on resize, conhost will show the console's cursor again
-    version (Windows)
-        terminalHideCursor();
+    version (Windows) terminalHideCursor();
     
     g_status |= UINIT; // draw everything
     update(g_session);
@@ -2707,10 +2718,7 @@ void set(Session *session, string[] args)
     
     configRC(session.rc, setting, value);
 
-    // Sync editor options
-    session.editor.coalescing = session.rc.coalescing;
-    // Sync input setting
-    g_input.change(session.rc.data_type);
+    sync_settings();
 }
 
 // Bind key to action (command + parameters)
@@ -2738,6 +2746,19 @@ void reset_keys(Session *session, string[] args)
     g_keys.clear();
     initdefaults();
     message("All keys reset");
+}
+
+// Set color scheme at runtime
+void color(Session *session, string[] args)
+{
+    if (args.length < 1)
+        throw new Exception("Missing scheme");
+    if (args.length < 2)
+        throw new Exception("Missing color");
+    setcolor(
+        getScheme(args[0]),
+        ColorMap.parse(args[1])
+    );
 }
 
 /// Artificial needle size limit for find/find-back.

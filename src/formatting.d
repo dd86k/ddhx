@@ -172,6 +172,7 @@ enum DataType
     o32,    /// 32-bit unsigned octal
 }
 import std.traits : EnumMembers;
+import std.path;
 /// Data type count.
 enum TYPES = EnumMembers!DataType.length;
 
@@ -715,8 +716,6 @@ unittest
    And only 6 (excluding "bright" variants) of them can be used for a purpose,
    other than white/black for defaults.
    BUT, a color scheme can always be mapped to something else (by preference).
-   For now, do hard-coded fg/bg values.
-   Should be able to configure "color:normal" to a specific mapping.
 */
 enum ColorScheme
 {
@@ -737,6 +736,21 @@ enum ColorScheme
 }
 enum SCHEMES = EnumMembers!(ColorScheme).length;
 
+ColorScheme getScheme(string name)
+{
+    // Maps one or more names to a scheme
+    switch (name) {
+    case "normal":      return ColorScheme.normal;
+    case "cursor":      return ColorScheme.cursor;
+    case "selection":   return ColorScheme.selection;
+    case "mirror":      return ColorScheme.mirror;
+    case "unimportant": return ColorScheme.unimportant;
+    default:
+        import std.conv : text;
+        throw new Exception(text("Unknown scheme: ", name));
+    }
+}
+
 enum
 {
     COLORMAP_INVERTED    = 1,    /// 
@@ -749,7 +763,103 @@ struct ColorMap
     int flags;
     TermColor fg;
     TermColor bg;
+    
+    static ColorMap parse(string colorstr)
+    {
+        import std.string : indexOf;
+        
+        /*
+        ┌──────────┬─────────┬─────────┬──────────┐
+        │  Input   │   fg    │   bg    │  Flags   │
+        ├──────────┼─────────┼─────────┼──────────┤
+        │ red:blue │ red     │ blue    │ FG+BG    │
+        ├──────────┼─────────┼─────────┼──────────┤
+        │ red:     │ red     │ default │ FG       │
+        ├──────────┼─────────┼─────────┼──────────┤
+        │ red      │ red     │ default │ FG       │
+        ├──────────┼─────────┼─────────┼──────────┤
+        │ :blue    │ default │ blue    │ BG       │
+        ├──────────┼─────────┼─────────┼──────────┤
+        │ invert   │ -       │ -       │ INVERTED │
+        └──────────┴─────────┴─────────┴──────────┘
+        */
+        // "default:red" -> bg=red
+        // ":red"       -> bg=red
+        // "red:"       -> fg=red
+        // "red"        -> fg=red
+        if (colorstr is null || colorstr.length == 0)
+            throw new Exception("Color cannot be empty");
+        
+        ColorMap map;
+        string fg = void;
+        string bg = void;
+        
+        ptrdiff_t i = indexOf(colorstr, ':');
+        if (i >= 0) // foreground + background
+        {
+            fg = colorstr[0..i];
+            bg = colorstr[i+1..$];
+        }
+        else
+        {
+            fg = colorstr;
+            bg = null;
+        }
+        
+        ColorMap.mapterm(map, fg, COLORMAP_FOREGROUND);
+        ColorMap.mapterm(map, bg, COLORMAP_BACKGROUND);
+        
+        return map;
+    }
+    private static void mapterm(ref ColorMap map, string term, int pre)
+    {
+        // Final switch asserts...
+        TermColor color = void;
+        switch (term) {
+        case "", "default": return; // leave .init default
+        case "invert": map.flags |= COLORMAP_INVERTED; return;
+        case "black":   color = TermColor.black; break;
+        case "blue":    color = TermColor.blue; break;
+        case "green":   color = TermColor.green; break;
+        case "aqua":    color = TermColor.aqua; break;
+        case "red":     color = TermColor.red; break;
+        case "purple":  color = TermColor.purple; break;
+        case "yellow":  color = TermColor.yellow; break;
+        case "gray":    color = TermColor.gray; break;
+        case "lightgray":   color = TermColor.lightgray; break;
+        case "brightblue":  color = TermColor.brightblue; break;
+        case "brightgreen": color = TermColor.brightgreen; break;
+        case "brightaqua":  color = TermColor.brightaqua; break;
+        case "brightred":   color = TermColor.brightred; break;
+        case "brightpurple":color = TermColor.brightpurple; break;
+        case "brightyellow":color = TermColor.brightyellow; break;
+        case "white":       color = TermColor.white; break;
+        default:
+            import std.conv : text;
+            throw new Exception(text("Unknown color: ", term));
+        }
+        // No magic here
+        map.flags |= pre;
+        if (pre & COLORMAP_FOREGROUND)
+            map.fg = color;
+        else
+            map.bg = color;
+    }
 }
+unittest
+{
+    assert(ColorMap.parse("default:default") == ColorMap(0, TermColor.init, TermColor.init));
+    assert(ColorMap.parse("default")        == ColorMap(0, TermColor.init, TermColor.init));
+    assert(ColorMap.parse("invert")         == ColorMap(COLORMAP_INVERTED, TermColor.init, TermColor.init));
+    
+    assert(ColorMap.parse("red:default")    == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
+    assert(ColorMap.parse("red:")           == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
+    assert(ColorMap.parse("red")            == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
+    
+    assert(ColorMap.parse("default:red")    == ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red));
+    assert(ColorMap.parse(":red")           == ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red));
+}
+
 struct ColorMapper
 {
     // Initial color specifications
@@ -779,11 +889,6 @@ struct ColorMapper
         assert(i < SCHEMES);
         maps[i] = map;
     }
-    // TODO: static ColorMap parse(string)
-    //       "default"/"normal"/"reset" -> 0
-    //       "invert"       -> COLORMAP_INVERTED
-    //       "fg:bg"        -> COLORMAP_FOREGROUND|COLORMAP_BACKGROUND
-    //       "fg:normal"    -> COLORMAP_FOREGROUND
 }
 
 struct LineSegment

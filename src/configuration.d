@@ -106,8 +106,9 @@ unittest
 void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_throw)
 {
     import utils : arguments;
-    import ddhx  : bindkey;
+    import ddhx  : bindkey, setcolor;
     import os.terminal : terminal_keybind;
+    import formatting : ColorMapper, ColorMap, getScheme;
     // NOTE: The strategy is to only update value in RC if they're default.
     //       Otherwise, if the value is different than default, then it was set
     //       at the command-line, and thus should not be changed.
@@ -123,7 +124,7 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
         
         // Special
         switch (args[0]) {
-        case "bind":
+        case "bind": // bind KEY COMMAND [ARGS...]
             if (args.length < 3)
                 throw new Exception("Missing command");
             bindkey(
@@ -131,11 +132,17 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
                 args[2],
                 args.length > 3 ? args[3..$] : null);
             continue;
+        case "color": // color SCHEME COLOR
+            if (args.length < 3)
+                throw new Exception("Missing color");
+            setcolor(
+                getScheme(args[1]),
+                ColorMap.parse(args[2])
+            );
+            continue;
         default:
+            configRC(rc, args[0], args[1], true);
         }
-        
-        // Config
-        configRC(rc, args[0], args[1], true);
     }
 }
 unittest
