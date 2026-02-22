@@ -163,8 +163,10 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     /// Last search needle buffer (find commands use this).
     ubyte[] g_needle;
     
+    // TODO: Move to Session. Invalid as global
     /// Position of cursor when edit started
     long g_editcurpos;
+    // TODO: Move to Session. Invalid as global
     /// Input system
     InputFormatter g_input;
     
@@ -1299,6 +1301,9 @@ void update_view(Session *session, TerminalSize termsize)
             terminalWriteChar(' ', cast(int)(termsize.columns - chars));
         }
 
+        // TODO: Need to include newline (\n) to help with text copy (ie, VTE)
+        //       Currently affects last line if I include it as-is
+        //       Should be row < erows
         terminalFlush();        // important for fbcon, no-op on Windows
     }
     
@@ -2704,6 +2709,8 @@ void set(Session *session, string[] args)
 
     // Sync editor options
     session.editor.coalescing = session.rc.coalescing;
+    // Sync input setting
+    g_input.change(session.rc.data_type);
 }
 
 // Bind key to action (command + parameters)
