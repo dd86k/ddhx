@@ -177,12 +177,15 @@ enum TYPES = EnumMembers!DataType.length;
 
 // Connects data types to definitions
 private immutable static DataSpec[] data_specs = [
+    // hex
     { DataType.x8,  DataType.x8.stringof,   "%0*x", 2,  ubyte.sizeof },
     { DataType.x16, DataType.x16.stringof,  "%0*x", 4,  ushort.sizeof },
     { DataType.x32, DataType.x32.stringof,  "%0*x", 8,  uint.sizeof },
+    // dec
     { DataType.d8,  DataType.d8.stringof,   "%0*d", 3,  ubyte.sizeof },
     { DataType.d16, DataType.d16.stringof,  "%0*d", 5,  ushort.sizeof },
     { DataType.d32, DataType.d32.stringof,  "%0*d", 10, uint.sizeof },
+    // oct
     { DataType.o8,  DataType.o8.stringof,   "%0*o", 3,  ubyte.sizeof },
     { DataType.o16, DataType.o16.stringof,  "%0*o", 6,  ushort.sizeof },
     { DataType.o32, DataType.o32.stringof,  "%0*o", 11, uint.sizeof },
@@ -683,6 +686,29 @@ unittest
     
     assert(input.add('5')   == false);
     assert(input.full()     == true);
+    
+    input.change(DataType.d8);
+    
+    assert(input.add('f')   == false);
+    assert(input.add('2')   == true);
+    assert(input.add('2')   == true);
+    assert(input.add('5')   == true);
+    assert(input.full()     == true);
+    assert(input.add('0')   == false);
+    assert(input.format     == "225");
+    assert(input.data       == [ 0xe1 ]);
+    
+    input.change(DataType.o8);
+    
+    assert(input.add('f')   == false);
+    assert(input.add('9')   == false);
+    assert(input.add('2')   == true);
+    assert(input.add('2')   == true);
+    assert(input.add('5')   == true);
+    assert(input.full()     == true);
+    assert(input.add('0')   == false);
+    assert(input.format     == "225");
+    assert(input.data       == [ 0x95 ]);
 }
 
 /* Remember, we only have 8 usable colors in a 16-color space (fg == bg -> bad).
