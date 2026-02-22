@@ -2753,12 +2753,24 @@ void color(Session *session, string[] args)
 {
     if (args.length < 1)
         throw new Exception("Missing scheme");
+    
+    if (args[0] == "reset") // reset all
+    {
+        import std.traits : EnumMembers;
+        foreach (scheme; EnumMembers!(ColorScheme))
+        {
+            setcolor(scheme, ColorMapper.default_(scheme));
+        }
+        return;
+    }
+    
     if (args.length < 2)
         throw new Exception("Missing color");
-    setcolor(
-        getScheme(args[0]),
-        ColorMap.parse(args[1])
-    );
+    
+    // reset: reset only for this scheme
+    ColorScheme scheme = getScheme(args[0]);
+    setcolor(scheme,
+        args[1] == "reset" ? ColorMapper.default_(scheme) : ColorMap.parse(args[1]));
 }
 
 /// Artificial needle size limit for find/find-back.

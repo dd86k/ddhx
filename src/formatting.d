@@ -855,6 +855,7 @@ unittest
     assert(ColorMap.parse("red:default")    == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
     assert(ColorMap.parse("red:")           == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
     assert(ColorMap.parse("red")            == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
+    assert(ColorMap.parse("purple")         == ColorMap(COLORMAP_FOREGROUND, TermColor.purple, TermColor.init));
     
     assert(ColorMap.parse("default:red")    == ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red));
     assert(ColorMap.parse(":red")           == ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red));
@@ -880,14 +881,36 @@ struct ColorMapper
     ColorMap get(ColorScheme scheme)
     {
         size_t i = cast(size_t)scheme;
-        assert(i < SCHEMES);
+        version (D_NoBoundsChecks)
+            if (i < SCHEMES) throw new Exception("assert: i < SCHEMES");
         return maps[i];
     }
     void set(ColorScheme scheme, ColorMap map)
     {
         size_t i = cast(size_t)scheme;
-        assert(i < SCHEMES);
+        version (D_NoBoundsChecks)
+            if (i < SCHEMES) throw new Exception("assert: i < SCHEMES");
         maps[i] = map;
+    }
+    
+    static immutable ColorMap[SCHEMES] defaults = [
+        // normal
+        { 0,                    TermColor.init, TermColor.init },
+        // cursor
+        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
+        // selection
+        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
+        // mirror
+        { COLORMAP_BACKGROUND,  TermColor.init, TermColor.red },
+        // unimportant
+        { COLORMAP_FOREGROUND,  TermColor.gray, TermColor.init },
+    ];
+    static ColorMap default_(ColorScheme scheme)
+    {
+        size_t i = cast(size_t)scheme;
+        version (D_NoBoundsChecks)
+            if (i < SCHEMES) throw new Exception("assert: i < SCHEMES");
+        return defaults[i];
     }
 }
 
