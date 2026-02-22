@@ -1282,12 +1282,12 @@ void update_view(Session *session, TerminalSize termsize)
         
         // Render line segments on screen
         terminalCursor(0, row + rowdisp);
-        int last_scheme_flags; // ColorScheme might not be normal at address
+        ColorMap lastmap; // Need to track full color range...
         foreach (ref segment; line.segments)
         {
             ColorMap map = g_colors.get(segment.scheme);
 
-            bool change = last_scheme_flags != map.flags;
+            bool change = lastmap != map;
 
             if (change)
                 terminalResetColor(); // fixes runaway color with invert (cursor) on POSIX
@@ -1302,7 +1302,7 @@ void update_view(Session *session, TerminalSize termsize)
 
             terminalWrite(segment.data);
 
-            last_scheme_flags = map.flags;
+            lastmap = map;
         }
 
         // Fill rest of term with spaces
