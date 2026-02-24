@@ -1247,12 +1247,21 @@ void update_header(Session *session, TerminalSize termsize)
     DataSpec dataspec = selectDataSpec(session.rc.data_type);
     
     // Print spacers and current address type
+    import std.math : abs;
     string atype = addressTypeToString(session.rc.address_type);
-    int prespaces = session.rc.address_spacing - cast(int)atype.length;
-    buffwriter.repeat(' ', prespaces);
-    buffwriter.put(atype);
+    int prespaces = abs( session.rc.address_spacing ) - cast(int)atype.length;
+    if (session.rc.address_spacing < 0) // left-align
+    {
+        buffwriter.put(atype);
+        buffwriter.repeat(' ', prespaces);
+    }
+    else
+    {
+        buffwriter.repeat(' ', prespaces);
+        buffwriter.put(atype);
+    }
     buffwriter.repeat(' ', 1);
-    
+
     ElementText buf = void;
     int cols = session.rc.columns;
     for (int col, ad; col < cols; ++col, ad += dataspec.size_of)
@@ -2579,7 +2588,8 @@ unittest
 // using the currently selected data mode.
 void autosize(Session *session, string[] args)
 {
-    int adspacing = session.rc.address_spacing;
+    import std.math : abs;
+    int adspacing = abs( session.rc.address_spacing );
     DataSpec spec = selectDataSpec(session.rc.data_type);
     TerminalSize tsize = terminalSize();
     

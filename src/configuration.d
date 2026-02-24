@@ -345,8 +345,8 @@ void configure_address_spacing(ref RC rc, string value, bool conf = false)
         return;
     
     int spacing = to!int(value);
-    if (spacing < 3) // due to offset indicator ("hex",etc.)
-        throw new Exception("Can't have address spacing lower than 3");
+    if (spacing < 3 && spacing > -3) // due to offset indicator ("hex",etc.)
+        throw new Exception("Address spacing too low (3 or more needed)");
     rc.address_spacing = spacing;
     rc.address_spacing_set = true;
 }
