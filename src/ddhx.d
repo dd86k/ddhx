@@ -971,7 +971,7 @@ unittest
     scope(exit) remove(path);
 
     // open read-only, create editor and edit
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
     static immutable string newdata = "plane";
     scope IDocumentEditor editor = spawnEditor();
     editor.open(fdoc);
@@ -1004,7 +1004,7 @@ unittest
     scope(exit) remove(path);
 
     // open read-only, create editor and edit
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
     static immutable string newdata = "plane";
     scope IDocumentEditor editor = spawnEditor();
     editor.open(fdoc);
@@ -1037,7 +1037,7 @@ unittest
     scope(exit) remove(path);
 
     // open read-only, create editor and edit
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
     static immutable string newdata = "dd!";
     scope IDocumentEditor editor = spawnEditor();
     editor.open(fdoc);
@@ -1071,7 +1071,7 @@ unittest
     scope(exit) remove(path);
 
     // open read-only, create editor and edit
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
     static immutable string newdata = "planet Earth! What should we do today?";
     scope IDocumentEditor editor = spawnEditor();
     editor.open(fdoc);
@@ -1105,7 +1105,7 @@ unittest
     scope(exit) remove(path);
 
     // open read-only, create editor and edit
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
     scope IDocumentEditor editor = spawnEditor();
     editor.open(fdoc);
     editor.remove(0, 13);
@@ -1134,7 +1134,7 @@ unittest
     scope(exit) remove(path);
 
     // open read-only, create editor and edit
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
     static immutable string data = "hello, world!";
     scope IDocumentEditor editor = spawnEditor();
     editor.open(fdoc);
