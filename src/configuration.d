@@ -8,9 +8,13 @@ module configuration;
 // Module is named configuration to avoid confusion with std.getopt.config and
 // "rc" local variable names.
 
-import transcoder : CharacterSet, selectCharacterSet;
-import formatting : WritingMode, AddressType, DataType, selectDataType;
+import coloring;
+import ddhx  : bindkey, setcolor;
+import formatting;
+import os.terminal : terminal_keybind;
 import std.conv : text, to;
+import transcoder : CharacterSet, selectCharacterSet;
+import utils : arguments;
 
 /// Special value for RC.columns to autoresize.
 enum COLUMNS_AUTO = 0;
@@ -105,10 +109,6 @@ unittest
 ///     text = Configuration text.
 void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_throw)
 {
-    import utils : arguments;
-    import ddhx  : bindkey, setcolor;
-    import os.terminal : terminal_keybind;
-    import formatting : ColorMapper, ColorMap, getScheme;
     // NOTE: The strategy is to only update value in RC if they're default.
     //       Otherwise, if the value is different than default, then it was set
     //       at the command-line, and thus should not be changed.

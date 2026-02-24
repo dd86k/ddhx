@@ -8,6 +8,7 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx;
 
+import coloring;
 import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 import document.base : IDocument;
