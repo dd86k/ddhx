@@ -48,7 +48,7 @@ struct RC
     bool mirror_cursor; // could be paired with "mirror-color" later
     
     /// Gray out zeros.
-    bool gray_zeros;
+    bool gray_zeros = true;
     
     /// Enable coalescing
     bool coalescing = true;
