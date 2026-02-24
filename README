@@ -57,20 +57,22 @@ Title font: Shaded Blocky (FIGlet)
 This list may change at any given time without notice.
 
 0.9: WIP
+- [x] Color themes
+- [x] In-place saving (Fast Save Optimization)
 - [x] Piece Coalescing
 - [x] View: Other data types (d8, o8, d16, f32, etc.)
 
-Wishlist:
+0.10:
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
+- [ ] Layout system
+
+Wishlist:
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
 - [ ] Diff view (vs. opened document)
 - [ ] Document: Disk
 - [ ] Document: Process memory
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
 - [ ] Inspect data panel (replaces text panel when toggled)
-- [ ] Layout system
-- [ ] Patch system (maybe with an ed(1) front-end?)
-- [ ] Snapshot tree system (explore different edit branches)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Getting Started
@@ -146,7 +148,7 @@ Environment variables:
   - Forces BACKEND to be selected.
   - Version: Since 0.7
   - Default: "piecev2" (since 0.8)
-  - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8), "piece" (>=0.7), "chunk" (>=0.5 <0.8.2)
+  - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8), "piece" (>=0.7 <0.9)
 
 ********************************************************************************
 *                                    NOTICE                                    *
