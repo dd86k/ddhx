@@ -111,10 +111,6 @@ enum OFlags
     share   = 1 << 5,   /// Share file with read access to other programs.
 }
 
-// TODO: Set file size (to extend or truncate file, allocate size)
-//       useful when writing all changes to file
-//       Win32: Seek + SetEndOfFile
-//       others: ftruncate
 /// Represents an OS abstracted file instance.
 struct OSFile
 {
@@ -226,7 +222,7 @@ struct OSFile
         {
             stat_t stats = void;
             if (fstat(handle, &stats) < 0)
-                throw new OSException("Couldn't get file size");
+                throw new OSException("fstat");
             
             int typ = stats.st_mode & S_IFMT;
             switch (typ) {
@@ -281,7 +277,7 @@ struct OSFile
     /// Write file at current position.
     /// Params: data = Byte buffer.
     /// Returns: Amount written.
-    size_t write(ubyte[] data)
+    size_t write(inout(ubyte)[] data)
     {
         return write(data.ptr, data.length);
     }
@@ -292,7 +288,7 @@ struct OSFile
     ///     size = Buffer size.
     /// Returns: Amount written.
     /// Throws: OSException.
-    size_t write(ubyte *data, size_t size)
+    size_t write(inout(ubyte) *data, size_t size)
     {
         version (Windows)
         {
@@ -310,6 +306,26 @@ struct OSFile
         }
     }
     
+    /// Set file size (truncate or extend).
+    void resize(long size)
+    {
+        version (Windows)
+        {
+            LARGE_INTEGER i = void;
+            i.QuadPart = size;
+            if (SetFilePointerEx(handle, i, null, FILE_BEGIN) == FALSE)
+                throw new OSException("SetFilePointerEx");
+            if (SetEndOfFile(handle) == FALSE)
+                throw new OSException("SetEndOfFile");
+        }
+        else version (Posix)
+        {
+            import core.sys.posix.unistd : ftruncate;
+            if (ftruncate(handle, size) < 0)
+                throw new OSException("ftruncate");
+        }
+    }
+
     /// Flush data to disk.
     void flush()
     {
