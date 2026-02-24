@@ -203,7 +203,9 @@ class PieceV2DocumentEditor : IDocumentEditor
         
         // New tree
         tree.clear();
-        tree.insert(IndexedPiece(docsize, Piece(Source.source, 0, docsize)));
+        // Avoid cumulative size of zero
+        if (docsize > 0)
+            tree.insert(IndexedPiece(docsize, Piece(Source.source, 0, docsize)));
         
         return this;
     }
