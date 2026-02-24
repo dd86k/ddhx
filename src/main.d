@@ -325,22 +325,43 @@ void main(string[] args)
             editor.open(doc);
             session.ogdoc = doc;
             
-            // TODO: Fix when files exists but failed to open as read-only too
-            //       For example, opening /dev/sda (as a regular use) fails,
-            //       but the target is assumed to not exist (big no no).
-            //       
-
             initmsg = baseName(target);
-            if (rc.writemode == WritingMode.readonly)
-            {
-                initmsg ~= " [readonly]";
-            }
         }
         catch (Exception ex)
         {
             debug log("%s", ex);
             else  log("%s", ex.msg);
-            initmsg = MSG_NEWFILE;
+
+            // Only treat as new file if the file truly doesn't exist.
+            // Other errors (permission denied, unsupported type, etc.)
+            // should be reported to the user.
+            import os.error : OSException;
+            bool notfound = false;
+            if (OSException exos = cast(OSException) ex)
+            {
+                version (Windows)
+                {
+                    import core.sys.windows.windef : ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND;
+                    notfound = exos.oscode == ERROR_FILE_NOT_FOUND
+                            || exos.oscode == ERROR_PATH_NOT_FOUND;
+                }
+                else
+                {
+                    import core.stdc.errno : ENOENT;
+                    notfound = exos.oscode == ENOENT;
+                }
+            }
+            
+            // If not found, then it is considered a new file
+            if (notfound)
+                initmsg = MSG_NEWFILE;
+            else // ie, permission denied
+                throw ex;
+        }
+        
+        if (rc.writemode == WritingMode.readonly)
+        {
+            initmsg ~= " [readonly]";
         }
     }
     log(`initmsg="%s"`, initmsg);
