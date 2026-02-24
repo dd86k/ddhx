@@ -2070,8 +2070,8 @@ unittest
 }
 
 /// dirtyRegions: replace produces correct dirty regions  
-unittest                                                                
-{                                                                       
+unittest
+{
     import document.memory : MemoryDocument;
     import editor.base : IDirtyRange, DirtyRegion;
 
@@ -2092,4 +2092,25 @@ unittest
     assert(region.data == [0xAA]);
     dirty.popFront();
     assert(dirty.empty());
+}
+
+/// Test empty document
+unittest
+{
+    import document.memory : MemoryDocument;
+    import editor.base : IDirtyRange, DirtyRegion;
+
+    log("TEST-0024");
+
+    static immutable ubyte[] data = [];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+    
+    ubyte[32] buffer;
+    assert(e.view(0, buffer) == []);
+    
+    static immutable ubyte[] newdata = [ 0, 1, 2, 3, 4 ];
+    e.insert(0, newdata.ptr, newdata.length);
+    assert(e.view(0, buffer) == newdata);
 }
