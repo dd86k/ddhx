@@ -161,7 +161,8 @@ struct OSFile
                 oflags |= O_WRONLY;
             else if (flags & OFlags.read)
                 oflags |= O_RDONLY;
-            handle = .open(path.toStringz, oflags);
+            import std.conv : octal;
+            handle = .open(path.toStringz, oflags, octal!644); // rw-r--r--
             if (handle < 0)
                 throw new OSException("open");
         }
