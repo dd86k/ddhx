@@ -317,22 +317,19 @@ void main(string[] args)
     default: // target is set, to either: file, disk (todo), or PID (todo)
         import std.path : baseName;
         import document.base : IDocument;
-        
+        import document.file : OFlags;
+
         try
         {
-            // NOTE: File permissions
-            //       It is wrong to eagerly check permissions because they can
-            //       change at any given moment.
-            //       To bypass GVFS restrictions, open as read-only (O_RDONLY).
-            // TODO: Re-introduce trying to open file as read-write (O_RDWR)
-            //       With the new save strategy, it would be highly beneficial.
-            //       If the file is opened as read-only, fallback to legacy function
-            //       (write to tmp file + replace).
-            //       Has no corrolation to restricted (aka read-only) mode (-R).
-            IDocument doc = new FileDocument(target);
+            IDocument doc = new FileDocument(target, OFlags.read | OFlags.exists | OFlags.share);
             editor.open(doc);
-            session.documents ~= doc; // front-end tracks opened documents
+            session.ogdoc = doc;
             
+            // TODO: Fix when files exists but failed to open as read-only too
+            //       For example, opening /dev/sda (as a regular use) fails,
+            //       but the target is assumed to not exist (big no no).
+            //       
+
             initmsg = baseName(target);
             if (rc.writemode == WritingMode.readonly)
             {
@@ -343,7 +340,6 @@ void main(string[] args)
         {
             debug log("%s", ex);
             else  log("%s", ex.msg);
-            // TODO: Wouldn't it be wise to check if file exists?
             initmsg = MSG_NEWFILE;
         }
     }

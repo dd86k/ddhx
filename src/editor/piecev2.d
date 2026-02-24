@@ -9,7 +9,7 @@ module editor.piecev2;
 import std.algorithm.comparison : min, max;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
-import editor.base : IDocumentEditor;
+import editor.base : IDocumentEditor, IDirtyRange, DirtyRegion;
 import document.base : IDocument;
 import platform : assertion;
 import logger;
@@ -524,6 +524,12 @@ class PieceV2DocumentEditor : IDocumentEditor
 
     void coalescing(bool) {}
 
+    /// Returns an input range over dirty (non-source) regions.
+    IDirtyRange dirtyRegions(bool includeDisplaced = false)
+    {
+        return new PieceV2DirtyRange(tree, basedoc, includeDisplaced);
+    }
+
 private:
     /// The piece table indexed using a self-balancing tree.
     Tree tree;
@@ -930,11 +936,152 @@ private:
     }
 }
 
+/// Dirty range implementation for PieceV2.
+/// Walks the piece tree, skipping Source.source pieces, and materializes
+/// non-source pieces into a shared buffer yielding DirtyRegion chunks.
+private class PieceV2DirtyRange : IDirtyRange
+{
+    this(Tree tree, IDocument basedoc, bool includeDisplaced)
+    {
+        this._treeRange = tree[];
+        this._basedoc = basedoc;
+        this._includeDisplaced = includeDisplaced;
+        this._buf.length = BUFFER_SIZE;
+        _prevCumulative = 0;
+        advanceToNextDirty();
+    }
+
+    bool empty()
+    {
+        return _done;
+    }
+
+    DirtyRegion front()
+    {
+        return _current;
+    }
+
+    void popFront()
+    {
+        _pieceOffset += _currentChunkSize;
+        if (_pieceOffset < _currentPieceSize)
+        {
+            materializeChunk();
+            return;
+        }
+        _prevCumulative = _currentIdx.cumulative;
+        _treeRange.popFront();
+        _pieceOffset = 0;
+        advanceToNextDirty();
+    }
+
+private:
+    enum BUFFER_SIZE = 16 * 1024;
+
+    Tree.Range _treeRange;
+    IDocument _basedoc;
+    ubyte[] _buf;
+    long _prevCumulative;
+    DirtyRegion _current;
+    bool _done;
+    bool _includeDisplaced;
+
+    IndexedPiece _currentIdx;
+    long _currentPieceSize;
+    long _pieceOffset;
+    size_t _currentChunkSize;
+    long _logicalStart;
+
+    bool isDirty(IndexedPiece idx)
+    {
+        if (idx.piece.source != Source.source)
+            return true;
+        if (_includeDisplaced)
+        {
+            long logicalPos = idx.cumulative - idx.piece.size;
+            return logicalPos != idx.piece.position;
+        }
+        return false;
+    }
+
+    void advanceToNextDirty()
+    {
+        while (!_treeRange.empty)
+        {
+            auto idx = _treeRange.front;
+            if (isDirty(idx))
+            {
+                _currentIdx = idx;
+                _logicalStart = idx.cumulative - idx.piece.size;
+                _currentPieceSize = idx.piece.size;
+                _pieceOffset = 0;
+                materializeChunk();
+                return;
+            }
+            _prevCumulative = idx.cumulative;
+            _treeRange.popFront();
+        }
+        _done = true;
+    }
+
+    void materializeChunk()
+    {
+        import core.stdc.string : memcpy, memset;
+
+        long remaining = _currentPieceSize - _pieceOffset;
+        size_t chunkSize = cast(size_t)(remaining < BUFFER_SIZE ? remaining : BUFFER_SIZE);
+        _currentChunkSize = chunkSize;
+
+        final switch (_currentIdx.piece.source) {
+        case Source.source:
+            _basedoc.readAt(
+                _currentIdx.piece.position + _pieceOffset,
+                _buf[0..chunkSize]);
+            break;
+        case Source.buffer:
+            memcpy(_buf.ptr,
+                _currentIdx.piece.buffer.data + _currentIdx.piece.buffer.skip + _pieceOffset,
+                chunkSize);
+            break;
+        case Source.pattern:
+            if (_currentIdx.piece.pattern.ogsize == 1)
+            {
+                memset(_buf.ptr,
+                    *cast(ubyte*)_currentIdx.piece.pattern.data,
+                    chunkSize);
+            }
+            else
+            {
+                size_t psize = _currentIdx.piece.pattern.ogsize;
+                size_t patOff = cast(size_t)((_currentIdx.piece.pattern.skip + _pieceOffset) % psize);
+                size_t written;
+                while (written < chunkSize)
+                {
+                    size_t avail = psize - patOff;
+                    size_t w = min(chunkSize - written, avail);
+                    memcpy(_buf.ptr + written,
+                        _currentIdx.piece.pattern.data + patOff, w);
+                    written += w;
+                    patOff = 0;
+                }
+            }
+            break;
+        case Source.document:
+            _currentIdx.piece.doc.doc.readAt(
+                _currentIdx.piece.position + _pieceOffset,
+                _buf[0..chunkSize]);
+            break;
+        }
+
+        _current = DirtyRegion(_logicalStart + _pieceOffset, _buf[0..chunkSize]);
+    }
+}
+
 /// New empty document
 unittest
 {
     log("TEST-0001");
-    
+
     scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();
     
     ubyte[32] buffer;

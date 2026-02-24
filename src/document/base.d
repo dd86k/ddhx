@@ -12,9 +12,12 @@ interface IDocument
     long size();
     /// Read at this position.
     /// Should this read past EOF, do not throw, only partially fill the buffer.
-    ubyte[] readAt(long at, ubyte[] buf);
-    // TODO: string type()
-    //       Short identifier on type: "file", "storage", "process", etc.
+    ubyte[] readAt(long pos, ubyte[] buf);
+    /// Write at this position.
+    /// If position is past EOF, throw.
+    void writeAt(long pos, ubyte[] buf);
+    /// Flush buffered data to media (or no-op).
+    void flush();
     /// Close document (handles).
     void close();
 }

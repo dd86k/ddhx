@@ -139,10 +139,12 @@ struct OSFile
             //       Phobos internally uses tempCStringW from std.internal
             //       but I doubt it's meant for us to use so...
             //       Legacy baggage?
+            uint dwShare = flags & OFlags.share ? FILE_SHARE_READ | FILE_SHARE_WRITE : 0;
+
             handle = CreateFileW(
                 path.toUTF16z,  // lpFileName
                 dwAccess,       // dwDesiredAccess
-                0,              // dwShareMode
+                dwShare,        // dwShareMode
                 null,           // lpSecurityAttributes
                 dwCreation,     // dwCreationDisposition
                 0,              // dwFlagsAndAttributes

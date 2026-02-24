@@ -6,7 +6,7 @@
 module editor.dummy;
 
 import document.base : IDocument;
-import editor.base : IDocumentEditor;
+import editor.base : IDocumentEditor, IDirtyRange;
 import platform : NotImplementedException;
 
 class DummyDocumentEditor : IDocumentEditor
@@ -97,7 +97,12 @@ class DummyDocumentEditor : IDocumentEditor
     {
         throw new NotImplementedException();
     }
-    
+
+    IDirtyRange dirtyRegions(bool includeDisplaced = false)
+    {
+        throw new NotImplementedException();
+    }
+
 private:
     immutable(ubyte)[] _data;
 }

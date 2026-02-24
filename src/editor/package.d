@@ -16,7 +16,7 @@ import editor.piecev3 : PieceV3DocumentEditor;
 /// Params: name = Backend name.
 /// Returns: Document editor instance.
 /// Throws: When unknown name given.
-IDocumentEditor spawnEditor(string name)
+IDocumentEditor spawnEditor(string name = null)
 {
     import std.conv : text;
     switch (name) { // NOTE: null chooses default backend

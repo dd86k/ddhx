@@ -9,7 +9,7 @@ module editor.piecev3;
 import std.algorithm.comparison : min, max;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
-import editor.base : IDocumentEditor;
+import editor.base : IDocumentEditor, IDirtyRange, DirtyRegion;
 import document.base : IDocument;
 import platform : assertion;
 import logger;
@@ -190,6 +190,12 @@ class PieceV3DocumentEditor : IDocumentEditor
     /// Enable or disable coalescing of consecutive same-type operations.
     /// Params: v = If set, enables coalescing.
     void coalescing(bool v) { _coalescing = v; }
+
+    /// Returns an input range over dirty (non-source) regions.
+    IDirtyRange dirtyRegions(bool includeDisplaced = false)
+    {
+        return new PieceV3DirtyRange(tree, basedoc, includeDisplaced);
+    }
 
     /// Open document.
     /// Params: doc = IDocument-based document.
@@ -1058,6 +1064,155 @@ private:
     }
 }
 
+/// Dirty range implementation for PieceV3.
+/// Walks the piece tree, skipping Source.source pieces, and materializes
+/// non-source pieces into a shared buffer yielding DirtyRegion chunks.
+private class PieceV3DirtyRange : IDirtyRange
+{
+    this(Tree tree, IDocument basedoc, bool includeDisplaced)
+    {
+        this._treeRange = tree[];
+        this._basedoc = basedoc;
+        this._includeDisplaced = includeDisplaced;
+        this._buf.length = BUFFER_SIZE;
+        // Track cumulative to compute logical positions
+        _prevCumulative = 0;
+        // Advance to first dirty piece
+        advanceToNextDirty();
+    }
+
+    bool empty()
+    {
+        return _done;
+    }
+
+    DirtyRegion front()
+    {
+        return _current;
+    }
+
+    void popFront()
+    {
+        // If current piece has more data to yield, continue chunking
+        _pieceOffset += _currentChunkSize;
+        if (_pieceOffset < _currentPieceSize)
+        {
+            materializeChunk();
+            return;
+        }
+        // Move past current piece
+        _prevCumulative = _currentIdx.cumulative;
+        _treeRange.popFront();
+        _pieceOffset = 0;
+        advanceToNextDirty();
+    }
+
+private:
+    enum BUFFER_SIZE = 16 * 1024;
+
+    Tree.Range _treeRange;
+    IDocument _basedoc;
+    ubyte[] _buf;
+    long _prevCumulative;
+    DirtyRegion _current;
+    bool _done;
+    bool _includeDisplaced;
+
+    // State for chunking large pieces
+    IndexedPiece _currentIdx;
+    long _currentPieceSize;
+    long _pieceOffset;
+    size_t _currentChunkSize;
+    long _logicalStart; // logical start of current piece
+
+    bool isDirty(IndexedPiece idx)
+    {
+        if (idx.piece.source != Source.source)
+            return true;
+        if (_includeDisplaced)
+        {
+            // Source piece is displaced if its logical position
+            // no longer matches its original file offset.
+            long logicalPos = idx.cumulative - idx.piece.size;
+            return logicalPos != idx.piece.position;
+        }
+        return false;
+    }
+
+    void advanceToNextDirty()
+    {
+        while (!_treeRange.empty)
+        {
+            auto idx = _treeRange.front;
+            if (isDirty(idx))
+            {
+                _currentIdx = idx;
+                _logicalStart = idx.cumulative - idx.piece.size;
+                _currentPieceSize = idx.piece.size;
+                _pieceOffset = 0;
+                materializeChunk();
+                return;
+            }
+            _prevCumulative = idx.cumulative;
+            _treeRange.popFront();
+        }
+        _done = true;
+    }
+
+    void materializeChunk()
+    {
+        import core.stdc.string : memcpy, memset;
+
+        long remaining = _currentPieceSize - _pieceOffset;
+        size_t chunkSize = cast(size_t)(remaining < BUFFER_SIZE ? remaining : BUFFER_SIZE);
+        _currentChunkSize = chunkSize;
+
+        final switch (_currentIdx.piece.source) {
+        case Source.source:
+            // Displaced source piece: read from original document
+            _basedoc.readAt(
+                _currentIdx.piece.position + _pieceOffset,
+                _buf[0..chunkSize]);
+            break;
+        case Source.buffer:
+            memcpy(_buf.ptr,
+                _currentIdx.piece.buffer.data + _currentIdx.piece.buffer.skip + _pieceOffset,
+                chunkSize);
+            break;
+        case Source.pattern:
+            if (_currentIdx.piece.pattern.ogsize == 1)
+            {
+                memset(_buf.ptr,
+                    *cast(ubyte*)_currentIdx.piece.pattern.data,
+                    chunkSize);
+            }
+            else
+            {
+                size_t psize = _currentIdx.piece.pattern.ogsize;
+                size_t patOff = cast(size_t)((_currentIdx.piece.pattern.skip + _pieceOffset) % psize);
+                size_t written;
+                while (written < chunkSize)
+                {
+                    size_t avail = psize - patOff;
+                    size_t w = min(chunkSize - written, avail);
+                    memcpy(_buf.ptr + written,
+                        _currentIdx.piece.pattern.data + patOff, w);
+                    written += w;
+                    patOff = 0;
+                }
+            }
+            break;
+        case Source.document:
+            _currentIdx.piece.doc.doc.readAt(
+                _currentIdx.piece.position + _pieceOffset,
+                _buf[0..chunkSize]);
+            break;
+        }
+
+        _current = DirtyRegion(_logicalStart + _pieceOffset, _buf[0..chunkSize]);
+    }
+}
+
 /// New empty document
 unittest
 {
@@ -1629,7 +1784,7 @@ unittest
 
     log("TEST-0013");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1644,7 +1799,7 @@ unittest
     e.insert(6, &b, 1);
 
     assert(e.size() == 12);
-    assert(e.view(0, buffer) == [0, 1, 2, 3, 4, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 3, 4, 0xAA, 0xBB, 5, 6, 7, 8, 9 ]);
 
     // Single undo should restore original
     e.undo();
@@ -1659,7 +1814,7 @@ unittest
 
     log("TEST-0014");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1674,7 +1829,7 @@ unittest
     e.replace(4, &b, 1);
 
     assert(e.size() == 10);
-    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9 ]);
 
     // Single undo should restore original
     e.undo();
@@ -1689,7 +1844,7 @@ unittest
 
     log("TEST-0015");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1716,7 +1871,7 @@ unittest
 
     log("TEST-0016");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1743,7 +1898,7 @@ unittest
 
     log("TEST-0017");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1772,7 +1927,7 @@ unittest
 
     log("TEST-0018");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1786,12 +1941,12 @@ unittest
     e.insert(4, &y, 1);
 
     assert(e.size() == 11);
-    assert(e.view(0, buffer) == [0, 1, 2, 0xCC, 0xDD, 4, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 0xCC, 0xDD, 4, 5, 6, 7, 8, 9 ]);
 
     // Two separate undo steps
     e.undo();
     assert(e.size() == 10);
-    assert(e.view(0, buffer) == [0, 1, 2, 0xCC, 4, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 0xCC, 4, 5, 6, 7, 8, 9 ]);
     e.undo();
     assert(e.view(0, buffer) == data);
 }
@@ -1803,7 +1958,7 @@ unittest
 
     log("TEST-0019");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1818,11 +1973,11 @@ unittest
     ubyte y = 0xBB;
     e.replace(4, &y, 1);
 
-    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9 ]);
 
     // Two separate undo steps
     e.undo();
-    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 4, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 0xAA, 4, 5, 6, 7, 8, 9 ]);
     e.undo();
     assert(e.view(0, buffer) == data);
 }
@@ -1834,7 +1989,7 @@ unittest
 
     log("TEST-0020");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1850,12 +2005,12 @@ unittest
     e.replace(4, &y, 1);
 
     assert(e.edited());
-    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 0xAA, 0xBB, 5, 6, 7, 8, 9 ]);
 
     // Two separate undo steps, with edited() correctness
     e.undo();
     assert(e.edited() == false);
-    assert(e.view(0, buffer) == [0, 1, 2, 0xAA, 4, 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 0xAA, 4, 5, 6, 7, 8, 9 ]);
     e.undo();
     assert(e.edited());
     assert(e.view(0, buffer) == data);
@@ -1868,7 +2023,7 @@ unittest
 
     log("TEST-0021");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
         new MemoryDocument(data)
     );
@@ -1884,7 +2039,7 @@ unittest
     }
 
     assert(e.size() == 15);
-    assert(e.view(0, buffer) == [0, 1, 2, 3, 4, 'h', 'e', 'l', 'l', 'o', 5, 6, 7, 8, 9]);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 3, 4, 'h', 'e', 'l', 'l', 'o', 5, 6, 7, 8, 9 ]);
 
     // Single undo clears all 5 chars
     e.undo();
@@ -1899,7 +2054,7 @@ unittest
 
     log("TEST-0022");
 
-    static immutable ubyte[] data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
     MemoryDocument memdoc = new MemoryDocument(data);
 
     ubyte[32] buffer;
@@ -1912,4 +2067,29 @@ unittest
     
     e.open(memdoc);
     assert(e.view(0, buffer) == data);
+}
+
+/// dirtyRegions: replace produces correct dirty regions  
+unittest                                                                
+{                                                                       
+    import document.memory : MemoryDocument;
+    import editor.base : IDirtyRange, DirtyRegion;
+
+    log("TEST-0023");
+
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte x = 0xAA;
+    e.replace(3, &x, 1);
+
+    IDirtyRange dirty = e.dirtyRegions();
+    assert(!dirty.empty());
+    DirtyRegion region = dirty.front();
+    assert(region.position == 3);
+    assert(region.data == [0xAA]);
+    dirty.popFront();
+    assert(dirty.empty());
 }

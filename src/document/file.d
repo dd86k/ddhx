@@ -7,6 +7,7 @@ module document.file;
 
 import document.base;
 import os.file;
+public import os.file : OFlags;
 
 /// File document.
 class FileDocument : IDocument
@@ -23,6 +24,7 @@ class FileDocument : IDocument
     this(string path, OFlags flags) // non-optional due to previous ctor
     {
         file.open(path, flags);
+        oflags = flags;
     }
     ~this() { close(); }
     
@@ -44,6 +46,28 @@ class FileDocument : IDocument
         return file.read(buffer);
     }
     
+    /// Returns: True whether the file was opened with write access.
+    bool writable() { return (oflags & OFlags.write) != 0; }
+
+    /// Write data at a specific position in the file.
+    void writeAt(long pos, ubyte[] data)
+    {
+        file.seek(Seek.start, pos);
+        file.write(data);
+    }
+
+    /// Set file size (truncate or extend).
+    void resize(long size)
+    {
+        file.resize(size);
+    }
+
+    /// Flush pending writes to disk.
+    void flush()
+    {
+        file.flush();
+    }
+    
     /// Close file document.
     void close()
     {
@@ -52,4 +76,5 @@ class FileDocument : IDocument
     
 private:
     OSFile file;
+    OFlags oflags;
 }

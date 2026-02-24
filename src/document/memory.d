@@ -15,7 +15,9 @@ class MemoryDocument : IDocument
     /// New empty document
     this() {}
     /// New document from existing data
-    this(const(ubyte)[] data) { buffer = data; }
+    this(ubyte[] data) { buffer = data; }
+    /// New document from existing data
+    this(const(ubyte)[] data) { buffer = data.dup; }
     
     /// Close document by clearning buffer.
     void close() { buffer = null; }
@@ -46,7 +48,7 @@ class MemoryDocument : IDocument
             return [];
         
         size_t p = cast(size_t)position;
-        if (p >= buffer.length)
+        if (p >= buffer.length) // Cast issue...
             return [];
         
         size_t e = p + buf.length;
@@ -57,9 +59,32 @@ class MemoryDocument : IDocument
         return buf[0..l] = buffer[p..e];
     }
     
+    enum bool writable = true;
+    
+    void writeAt(long position, ubyte[] buf)
+    {
+        if (buf is null || buf.length == 0)
+            return;
+        
+        size_t p = cast(size_t)position;
+        if (p >= buffer.length) // Cast issue...
+            throw new Exception("position >= buffer.length");
+        
+        size_t e = p + buf.length;
+        if (e > buffer.length)
+            e = buffer.length;
+        
+        size_t l = e - p;
+        buffer[p..e] = buf[0..l];
+    }
+    
+    void flush() {} // No-op
+    
 private:
     // TODO: Change to OutBuffer+toBytes() or Appender
-    const(ubyte)[] buffer;
+    //       Only when performance will be concerned
+    //       Even then, do a benchmark
+    ubyte[] buffer;
 }
 
 unittest
@@ -90,4 +115,17 @@ unittest
     assert(buf8[0..data.length] == data);
     
     assert(doc.readAt(1000, buf8) == []);
+}
+unittest
+{
+    ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7 ];
+    
+    scope MemoryDocument doc = new MemoryDocument(data);
+    
+    ubyte[1] buf1;
+    assert(doc.readAt(0, buf1) == [ 0 ]);
+    assert(doc.readAt(1, buf1) == [ 1 ]);
+    
+    doc.writeAt(0, [ 0xff ]);
+    assert(doc.readAt(0, buf1) == [ 0xff ]);
 }

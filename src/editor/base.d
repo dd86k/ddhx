@@ -7,6 +7,21 @@ module editor.base;
 
 import document.base : IDocument;
 
+/// A single dirty (non-source) region in the document.
+struct DirtyRegion
+{
+    long position;  /// Logical position in document.
+    ubyte[] data;   /// Slice into shared buffer, valid until the next popFront call.
+}
+
+/// Input range over dirty (modified) regions of an editor.
+interface IDirtyRange
+{
+    bool empty();
+    DirtyRegion front();
+    void popFront();
+}
+
 interface IDocumentEditor
 {
     /// Open document with this editor instance.
@@ -60,6 +75,12 @@ interface IDocumentEditor
     //       (a) this is not an exceptional issue and (b) not worth reporting on.
     /// Enable or disable coalescing of consecutive same-type operations.
     void coalescing(bool);
+
+    /// Returns an input range over dirty (non-source) regions.
+    /// When includeDisplaced is true, also yields source pieces whose
+    /// logical position differs from their file offset (i.e. shifted
+    /// by inserts/deletes).
+    IDirtyRange dirtyRegions(bool includeDisplaced = false);
 }
 
 // NOTE: These tests only hinder new backend development

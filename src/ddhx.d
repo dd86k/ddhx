@@ -11,9 +11,8 @@ module ddhx;
 import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 import document.base : IDocument;
-import document.file : FileDocument;
-import document.file;
-import editor.base : IDocumentEditor;
+import document.file : FileDocument, OFlags;
+import editor.base : IDirtyRange, IDocumentEditor;
 import formatting;
 import logger;
 import os.terminal;
@@ -101,6 +100,12 @@ struct Session
     /// 
     IDocumentEditor editor;
     
+    /// Original file
+    IDocument ogdoc;
+    
+    /// Target file path.
+    string target;
+    
     // NOTE: Maximum number of handles
     //
     //       The front-end uses FileDocument class to open files, which uses OSFile.
@@ -132,9 +137,6 @@ struct Session
     long position_cursor;
     /// Currently focused panel.
     PanelType panel;
-    
-    /// Target file.
-    string target;
 }
 
 private __gshared // globals have the ugly "g_" prefix to be told apart
@@ -921,6 +923,235 @@ unittest
     }
     remove(path);
 }
+
+// Try saving "in-place" (directly) to the file at path.
+// Opens its own read-write handle, writes dirty regions, and closes it.
+// When size is unchanged, writes only non-source (dirty) regions.
+// When size changed, also writes displaced source pieces and truncates/extends.
+void save_inplace(IDocumentEditor editor, string path)
+{
+    enum OFLAGS = OFlags.exists | OFlags.readWrite | OFlags.share;
+    scope FileDocument wdoc = new FileDocument(path, OFLAGS);
+    scope(exit) wdoc.close();
+
+    long docsize = editor.size();
+    long filesize = wdoc.size();
+    bool resized = docsize != filesize;
+
+    log("path='%s' strategy='%s' (editor=%d, file=%d)",
+        path,
+        resized ? "displaced+dirty" : "dirty-only",
+        docsize,
+        filesize);
+
+    if (resized)
+        wdoc.resize(docsize);
+
+    foreach (region; editor.dirtyRegions(resized))
+        wdoc.writeAt(region.position, region.data);
+
+    wdoc.flush();
+    editor.markSaved();
+}
+// TODO: Test with zero edits
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    static immutable string newdata = "plane";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.replace(7, newdata.ptr, newdata.length);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello, plane!");
+}
+// Test same size
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    static immutable string newdata = "plane";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.replace(7, newdata.ptr, newdata.length);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello, plane!");
+}
+// Test with displacements (smaller file)
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    static immutable string newdata = "dd!";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(7, 6);
+    editor.insert(7, newdata.ptr, newdata.length);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello, dd!");
+}
+// Test with displacements (bigger file)
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    static immutable string newdata = "planet Earth! What should we do today?";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(7, 6);
+    editor.insert(7, newdata.ptr, newdata.length);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello, planet Earth! What should we do today?");
+}
+// Test with regular file with data to zero-size
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(0, 13);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == []);
+}
+// Test with regular empty file with no data to file with data
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create empty document
+    static immutable string path = "temp";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists);
+    static immutable string data = "hello, world!";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.insert(0, data.ptr, data.length);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello, world!");
+}
+// TODO: Test with sparse edits (ie, start and end)
+// TODO: Test with multiple save sessions (edit + save multiple test)
+// TODO: Test with MemoryDocument
 
 // Move the cursor relative to its position within the file
 void moverel(Session *session, long pos)
@@ -2660,6 +2891,11 @@ void save(Session *session, string[] args)
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception("Cannot save, read-only");
     
+    // TODO: Media check
+    //       Some document types (ie, disk, process memory) cannot be saved to a file
+    //       And should not
+    //       Even if somehow we new memory mappings of a process... That's overkill
+    
     // No known path... Ask for one!
     if (session.target is null)
     {
@@ -2687,10 +2923,27 @@ void save(Session *session, string[] args)
     }
     
     // Force updating the status bar to indicate that we're currently saving.
-    // It might take a while with the current implementation.
+    // It might take a while depending on the strategy used.
     message("Saving...");
     update_status(session, terminalSize());
     
+    // TODO: try save_inplace, fallback to save_to_file
+    
+    // Strategy depends on the original document type:
+    // save_inplace (faster): when ogdoc is a FileDocument (file-backed)
+    // save_to_file (fallback): when ogdoc is null or a MemoryDocument
+    try
+    {
+        if (cast(FileDocument) session.ogdoc)
+            save_inplace(session.editor, session.target);
+        else goto Lfile;
+    }
+    catch (Exception ex)
+    {
+        
+    }
+    
+Lfile:
     save_to_file(session.editor, session.target);
     message("Saved");
 }
