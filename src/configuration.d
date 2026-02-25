@@ -51,8 +51,8 @@ struct RC
     /// If set, sets the cursor mirror.
     bool mirror_cursor; // could be paired with "mirror-color" later
     
-    /// Gray out zeros.
-    bool gray_zeros = true;
+    /// Highlight zero data values.
+    bool highlight_zeros = true;
     
     /// Enable coalescing
     bool coalescing = true;
@@ -68,7 +68,7 @@ private:
     bool header_set;
     bool status_set;
     bool mirror_cursor_set;
-    bool gray_zeros_set;
+    bool highlight_zeros_set;
     bool coalescing_set;
 }
 
@@ -226,9 +226,9 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_mirror_cursor
     },
     {
-        "gray-zeros", "If set, zero values are printed as gray",
-        "Boolean", `"off"`,
-        &configure_gray_zeros
+        "highlight-zeros", "If set, zero data values are colored",
+        "Boolean", `"on"`,
+        &configure_highlight_zeros
     },
     {
         "coalesce", "If set, edits are coalescing",
@@ -387,14 +387,14 @@ void configure_mirror_cursor(ref RC rc, string value, bool conf = false)
     rc.mirror_cursor_set = true;
 }
 
-void configure_gray_zeros(ref RC rc, string value, bool conf = false)
+void configure_highlight_zeros(ref RC rc, string value, bool conf = false)
 {
-    if (conf && rc.gray_zeros_set)
+    if (conf && rc.highlight_zeros_set)
         return;
     
     // Eventually could just set the color mapping directly
-    rc.gray_zeros = boolean(value);
-    rc.gray_zeros_set = true;
+    rc.highlight_zeros = boolean(value);
+    rc.highlight_zeros_set = true;
 }
 
 void configure_coalescing(ref RC rc, string value, bool conf = false)

@@ -1459,7 +1459,7 @@ void update_view(Session *session, TerminalSize termsize)
             int elemidx = (row * cols) + col;
             
             // Is element zero?
-            bool zero = session.rc.gray_zeros && dfmt.iszero();
+            bool zero = session.rc.highlight_zeros && dfmt.iszero();
             
             ElementState state = getElementState(
                 elemidx, viewpos, sel_start, sel_end, session.selection.status != 0,
@@ -1497,7 +1497,7 @@ void update_view(Session *session, TerminalSize termsize)
             int elementIndex = ((row * g_linesize) + idx) / data_spec.size_of;
             
             // Is element zero?
-            bool zero = session.rc.gray_zeros && ci < result.length ? result[ci] == 0 : false;
+            bool zero = session.rc.highlight_zeros && ci < result.length ? result[ci] == 0 : false;
             
             // Calculate element state
             ElementState state = getElementState(elementIndex, viewpos, sel_start, sel_end,
