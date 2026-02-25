@@ -42,10 +42,10 @@ Title font: Shaded Blocky (FIGlet)
 // FEATURES
 
   * Supports insert, overwrite, and delete operations
-  * Unlimited undo/redo
+  * Unlimited undo/redo, even with new buffers
   * Large file support: up to 8 EiB
   * Visual selection and range commands
-  * Multiple charset representations: ascii, mac, cp437, ebcdic
+  * Character sets: ascii, mac, cp437, ebcdic
   * Search data with a powerful pattern syntax
   * Skip identical data or repeating patterns by selection
   * Customizable with configuration file
@@ -77,11 +77,11 @@ Wishlist:
 ////////////////////////////////////////////////////////////////////////////////
 // Getting Started
 
+Create a new empty buffer:
+  $ ddhx
+
 Open a file:
   $ ddhx file.bin
-
-Open a new empty buffer:
-  $ ddhx
 
 Read from a pipe:
   $ curl -s https://example.com/file | ddhx
