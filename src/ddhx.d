@@ -1301,7 +1301,7 @@ struct ElementState
             return ColorScheme.mirror;
         
         if (isZero)
-            return ColorScheme.unimportant;
+            return ColorScheme.zero;
         
         return ColorScheme.normal;
     }
@@ -1318,7 +1318,7 @@ struct ElementState
             return ColorScheme.mirror;
         
         if (isZero)
-            return ColorScheme.unimportant;
+            return ColorScheme.zero;
         
         return ColorScheme.normal;
     }

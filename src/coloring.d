@@ -21,13 +21,13 @@ enum ColorScheme
     cursor,
     selection,
     mirror,
-    unimportant,    // ie, zero
+    zero,
     // The following are just future ideas
     //modified,   // edited data
     //address,    // layout: address/offset
     //constant,   // layout: known constant value
     //bookmark,
-    //search,     // search result
+    //search,     // search result (could otherwise be "highlighted" or just selection)
     //diff_added,     // 
     //diff_removed,   // 
     //diff_changed,   // 
@@ -42,12 +42,21 @@ ColorScheme getScheme(string name)
     case "cursor":      return ColorScheme.cursor;
     case "selection":   return ColorScheme.selection;
     case "mirror":      return ColorScheme.mirror;
-    case "unimportant": return ColorScheme.unimportant;
+    case "zero":        return ColorScheme.zero;
     default:
         import std.conv : text;
         throw new Exception(text("Unknown scheme: ", name));
     }
 }
+unittest
+{
+    assert(getScheme("normal")  == ColorScheme.normal);
+    assert(getScheme("zero")    == ColorScheme.zero);
+}
+
+//
+// Color mapping mechanics
+//
 
 enum
 {
@@ -161,53 +170,53 @@ unittest
 
 struct ColorMapper
 {
+    enum ColorMap DEFAULT_NORMAL    = ColorMap(0, TermColor.init, TermColor.init);
+    enum ColorMap DEFAULT_CURSOR    = ColorMap(COLORMAP_INVERTED, TermColor.init, TermColor.init);
+    enum ColorMap DEFAULT_SELECTION = ColorMap(COLORMAP_INVERTED, TermColor.init, TermColor.init);
+    enum ColorMap DEFAULT_MIRROR    = ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red);
+    enum ColorMap DEFAULT_ZERO      = ColorMap(COLORMAP_FOREGROUND, TermColor.gray, TermColor.init);
+    
     // Initial color specifications
+    private
     ColorMap[SCHEMES] maps = [
-        // normal
-        { 0,                    TermColor.init, TermColor.init },
-        // cursor
-        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
-        // selection
-        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
-        // mirror
-        { COLORMAP_BACKGROUND,  TermColor.init, TermColor.red },
-        // unimportant
-        { COLORMAP_FOREGROUND,  TermColor.gray, TermColor.init },
+        DEFAULT_NORMAL,
+        DEFAULT_CURSOR,
+        DEFAULT_SELECTION,
+        DEFAULT_MIRROR,
+        DEFAULT_ZERO,
     ];
     static assert(maps.length == SCHEMES);
+    // Defaults
+    private
+    static immutable ColorMap[SCHEMES] defaults = [
+        DEFAULT_NORMAL,
+        DEFAULT_CURSOR,
+        DEFAULT_SELECTION,
+        DEFAULT_MIRROR,
+        DEFAULT_ZERO,
+    ];
+    static assert(defaults.length == SCHEMES);
     
     ColorMap get(ColorScheme scheme)
     {
         size_t i = cast(size_t)scheme;
         version (D_NoBoundsChecks)
-            if (i < SCHEMES) throw new Exception("assert: i < SCHEMES");
+            assertion(i < SCHEMES, "i < SCHEMES");
         return maps[i];
     }
     void set(ColorScheme scheme, ColorMap map)
     {
         size_t i = cast(size_t)scheme;
         version (D_NoBoundsChecks)
-            if (i < SCHEMES) throw new Exception("assert: i < SCHEMES");
+            assertion(i < SCHEMES, "i < SCHEMES");
         maps[i] = map;
     }
     
-    static immutable ColorMap[SCHEMES] defaults = [
-        // normal
-        { 0,                    TermColor.init, TermColor.init },
-        // cursor
-        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
-        // selection
-        { COLORMAP_INVERTED,    TermColor.init, TermColor.init },
-        // mirror
-        { COLORMAP_BACKGROUND,  TermColor.init, TermColor.red },
-        // unimportant
-        { COLORMAP_FOREGROUND,  TermColor.gray, TermColor.init },
-    ];
     static ColorMap default_(ColorScheme scheme)
     {
         size_t i = cast(size_t)scheme;
         version (D_NoBoundsChecks)
-            if (i < SCHEMES) throw new Exception("assert: i < SCHEMES");
+            assertion(i < SCHEMES, "i < SCHEMES");
         return defaults[i];
     }
 }
