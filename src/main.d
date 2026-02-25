@@ -196,10 +196,6 @@ void main(string[] args)
             {
                 configure_charset(rc, val);
             },
-        "gray-zeros",   "Gray out zeros",
-            {
-                configure_gray_zeros(rc, "on");
-            },
         //
         // Misc
         //
