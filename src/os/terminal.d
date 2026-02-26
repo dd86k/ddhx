@@ -1123,14 +1123,25 @@ Lread:
         case 13:
             event.key = Key.Enter;
             return event;
-        case 8:     // ^H (ctrl+backspace)
-            event.key = Key.Backspace | Mod.ctrl;
+        case 8: // ^H (ctrl+backspace)
+            // HACK: FreeBSD (15) framebuffer sends \010 on just Backspace
+            //       Worse, it's \0177 with Ctrl+Backspace
+            version (FreeBSD)
+                event.key = Key.Backspace;
+            else
+                event.key = Key.Backspace | Mod.ctrl;
             return event;
-        case 9: // Tab without control key
+        case 9: // Hardware tab (no control key)
             // Shift+tab -> "\033[Z" (xterm)
             event.key = Key.Tab;
             return event;
         case 127:
+            // See HACK for case 8.
+            // OpenBSD (TERM=vt220) seems to only emit \0177 (127) and it's covered here
+            version (FreeBSD)
+                event.key = Key.Backspace | Mod.ctrl;
+            else
+                event.key = Key.Backspace;
             event.key = Key.Backspace;
             return event;
         case ESC: // \x1b / \033

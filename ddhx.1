@@ -665,9 +665,9 @@ It assumes UTF-8 for input.
 .PP
 The editor assumes these keys:
 .IP \(bu 2
-\fB^H\fP (\\010) for Ctrl+Backspace
+\fB^H\fP (0x8) for Ctrl+Backspace (0x7f for FreeBSD)
 .IP \(bu
-\fBDEL\fP (0x7f) for Backspace
+\fBDEL\fP (0x7f) for Backspace (0x8 for FreeBSD)
 .IP \(bu
 \fB\\033[3~\fP for Delete
 .PP
