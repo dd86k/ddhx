@@ -879,6 +879,10 @@ void save_to_file(IDocumentEditor editor, string target)
     log(`basedir="%s" basenam="%s" tmpname="%s" tmppath="%s"`,
         basedir, basenam, tmpname, tmppath);
     
+    // On failure, remove temporary file
+    import std.file : remove;
+    scope(failure) remove(tmppath);
+    
     // 2. Allocate buffer, read from editor, and write to temp file
     {
         enum BUFFER_SIZE = 16 * 1024;
@@ -992,11 +996,11 @@ void save_inplace(IDocumentEditor editor, string path)
         docsize,
         filesize);
 
-    if (resized)
-        wdoc.resize(docsize);
-
     foreach (region; editor.dirtyRegions(resized))
         wdoc.writeAt(region.position, region.data);
+
+    if (resized)
+        wdoc.resize(docsize);
 
     wdoc.flush();
     editor.markSaved();
@@ -3012,16 +3016,14 @@ void save(Session *session, string[] args)
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception("Cannot save, read-only");
     
-    // TODO: Media check
-    //       Some document types (ie, disk, process memory) cannot be saved to a file
-    //       And should not
-    //       Even if somehow we new memory mappings of a process... That's overkill
+    // To assign after successful save
+    string target = session.target;
     
     // No known path... Ask for one!
-    if (session.target is null)
+    if (target is null)
     {
         // Ask for a filename
-        string target = promptline("Name: ");
+        target = promptline("Name: ");
         if (target.length == 0)
         {
             throw new Exception("Canceled");
@@ -3039,8 +3041,6 @@ void save(Session *session, string[] args)
                 throw new Exception("Canceled");
             }
         }
-        
-        session.target = target;
     }
     
     // Force updating the status bar to indicate that we're currently saving.
@@ -3048,24 +3048,29 @@ void save(Session *session, string[] args)
     message("Saving...");
     update_status(session, terminalSize());
     
-    // TODO: try save_inplace, fallback to save_to_file
+    // TODO: Media check
+    //       Some document types (ie, disk, process memory) cannot be saved to a file
+    //       And should not
+    //       Even if somehow we new memory mappings of a process... That's overkill
     
-    // Strategy depends on the original document type:
-    // save_inplace (faster): when ogdoc is a FileDocument (file-backed)
-    // save_to_file (fallback): when ogdoc is null or a MemoryDocument
+    // If the original doc is file, try saving it in-place
     try
     {
-        if (cast(FileDocument) session.ogdoc)
-            save_inplace(session.editor, session.target);
-        else goto Lfile;
+        // It will fail if the target does not exist or
+        // fails a permission check (e.g., GVFS with O_RDWR)
+        save_inplace(session.editor, target);
+        session.target = target;
+        message("Saved");
+        return;
     }
     catch (Exception ex)
     {
-        
+        log("save_inplace: '%s'", ex.msg);
     }
     
-Lfile:
-    save_to_file(session.editor, session.target);
+    // Write document fully
+    save_to_file(session.editor, target);
+    session.target = target;
     message("Saved");
 }
 
