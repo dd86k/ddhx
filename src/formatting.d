@@ -22,6 +22,7 @@ enum WritingMode
     readonly,   /// Read-only restricts any edits to be performed.
     overwrite,  /// Overwrite replaces currently selected elements.
     insert,     /// Insert inserts new data in-between elements.
+    digit,      /// Digit edits individual digits/nibbles within elements.
 }
 /// Get label for this writing mode.
 /// Params: mode = WritingMode.
@@ -33,6 +34,7 @@ string writingModeToString(WritingMode mode)
     case WritingMode.readonly:  return "R/O";
     case WritingMode.overwrite: return "OVR";
     case WritingMode.insert:    return "INS";
+    case WritingMode.digit:     return "DIG";
     }
 }
 
@@ -579,14 +581,9 @@ class InputFormatter
         return d;
     }
     
-    bool add(char character)
+    // Validate character is valid for current DataType
+    bool validate(char character)
     {
-        return replace(character, d);
-    }
-    bool replace(char character, size_t idx)
-    {
-        if (idx >= spec.spacing) return false;
-        
         final switch (spec.type) {
         case DataType.x8, DataType.x16, DataType.x32:
             if (keydata_hex(character) < 0) return false;
@@ -598,6 +595,21 @@ class InputFormatter
             if (keydata_oct(character) < 0) return false;
             break;
         }
+        return true;
+    }
+    
+    // Add character to input buffer at current offset
+    bool add(char character)
+    {
+        return replace(character, d);
+    }
+    // Replace character to input buffer at this offset
+    bool replace(char character, size_t idx)
+    {
+        if (idx >= spec.spacing) return false;
+        
+        if (validate(character) == false)
+            return false;
         
         txtbuffer[idx] = character;
         d = idx + 1;
@@ -608,6 +620,27 @@ class InputFormatter
         return d >= spec.spacing;
     }
     
+    // Format a single element from raw bytes using the current spec
+    // Used for digit mode
+    string formatRaw(char[] buf, const(void)* raw, size_t len)
+    {
+        import core.stdc.string : memcpy;
+
+        final switch (spec.type) {
+        case DataType.x8, DataType.d8, DataType.o8:
+            ubyte v = *cast(ubyte*) raw;
+            return cast(string) sformat(buf, spec.fmtspec, spec.spacing, v);
+        case DataType.x16, DataType.d16, DataType.o16:
+            ushort v;
+            memcpy(&v, raw, len >= ushort.sizeof ? ushort.sizeof : len);
+            return cast(string) sformat(buf, spec.fmtspec, spec.spacing, v);
+        case DataType.x32, DataType.d32, DataType.o32:
+            uint v;
+            memcpy(&v, raw, len >= uint.sizeof ? uint.sizeof : len);
+            return cast(string) sformat(buf, spec.fmtspec, spec.spacing, v);
+        }
+    }
+
     // Format what's in the buffer
     string format()
     {

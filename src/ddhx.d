@@ -172,6 +172,9 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // TODO: Move to Session. Invalid as global
     /// Input system
     InputFormatter g_input;
+
+    /// Digit position within current element (0-based, left to right) for digit mode
+    int g_digitpos;
     
     /// Global clipboard buffer.
     ubyte *g_clipboard_ptr;
@@ -631,7 +634,51 @@ Lread:
             goto Lupdate;
         default:
         }
-        
+
+        if (session.rc.writemode == WritingMode.digit)
+        {
+            char typed = input.kbuffer[0];
+
+            // Digit mode: edit a single digit/nibble within the current element
+            DataSpec spec = selectDataSpec(session.rc.data_type);
+
+            // Validate the typed character for the data type
+            if (g_input.validate(typed) == false)
+                goto Lread; // invalid character for this data type
+
+            // Read the current element from the editor
+            Element elem;
+            ubyte[] raw = session.editor.view(session.position_cursor, elem.raw.ptr, spec.size_of);
+            if (raw.length < spec.size_of)
+                goto Lread; // not enough data
+
+            // Format current element value into thus buffer as text and replace digit
+            ElementText elbuf = void;
+            g_input.formatRaw(elbuf, raw.ptr, raw.length);
+            elbuf[g_digitpos] = typed;
+
+            // Parse the modified string back to bytes
+            if (elem.parse(session.rc.data_type, elbuf[0..spec.spacing]) == false)
+                goto Lread; // parse failed (e.g., overflow)
+
+            // Write it back
+            session.editor.replace(session.position_cursor, elem.raw.ptr, spec.size_of);
+
+            // Force any selection off
+            session.selection.status = 0;
+
+            // Advance digit position
+            try move_right(g_session, null);
+            catch (Exception ex)
+            {
+                log("%s", ex);
+                message(ex.msg);
+            }
+
+            g_status |= UVIEW;
+            goto Lupdate;
+        }
+
         // start new edit
         if (g_input.index == 0)
             g_editcurpos = session.position_cursor;
@@ -1481,7 +1528,26 @@ void update_view(Session *session, TerminalSize termsize)
             string data = state.isActiveEdit ? g_input.format : dfmt.textual(buf);
             assertion(data);
             dfmt.step();
-            chars += line.add(data, current);
+            
+            // In digit mode, split cursor element to highlight single digit
+            if (state.isCursor && session.rc.writemode == WritingMode.digit
+                && panel == PanelType.data && data.length >= data_spec.spacing)
+            {
+                int dp = g_digitpos;
+                int sp = data_spec.spacing;
+                // Before the cursor digit
+                if (dp > 0)
+                    chars += line.add(data[0..dp], state.isZero ? ColorScheme.zero : ColorScheme.normal);
+                // The cursor digit itself
+                chars += line.add(data[dp..dp+1], ColorScheme.cursor);
+                // After the cursor digit
+                if (dp + 1 < sp)
+                    chars += line.add(data[dp+1..sp], state.isZero ? ColorScheme.zero : ColorScheme.normal);
+            }
+            else // Otherwise cursor is whole element
+            {
+                chars += line.add(data, current);
+            }
         }
         
         // data-text spacers
@@ -1553,9 +1619,9 @@ void update_view(Session *session, TerminalSize termsize)
             terminalWriteChar(' ', cast(int)(termsize.columns - chars));
         }
 
-        // TODO: Need to include newline (\n) to help with text copy (ie, VTE)
-        //       Currently affects last line if I include it as-is
-        //       Should be row < erows
+        // NOTE: Tried fixing copying from VTE terminal for newlines...
+        //       Adding "\n" didn't work. ddhx <0.5 makes that work.
+        //       Def something with terminal config, adding OPOST + "\n" doesn't help
         terminalFlush();        // important for fbcon, no-op on Windows
     }
     
@@ -1893,6 +1959,20 @@ void move_left(Session *session, string[] args)
 {
     unselect(session);
     
+    if (session.rc.writemode == WritingMode.digit)
+    {
+        if (g_digitpos > 0)
+        {
+            g_digitpos--;
+            g_status |= USTATUS;
+            return;
+        }
+        if (session.position_cursor == 0)
+            return;
+        DataSpec spec = selectDataSpec(session.rc.data_type);
+        g_digitpos = spec.spacing - 1;
+    }
+
     if (session.position_cursor == 0)
         return;
     
@@ -1902,6 +1982,18 @@ void move_left(Session *session, string[] args)
 void move_right(Session *session, string[] args)
 {
     unselect(session);
+    
+    if (session.rc.writemode == WritingMode.digit)
+    {
+        DataSpec spec = selectDataSpec(session.rc.data_type);
+        if (g_digitpos < spec.spacing - 1)
+        {
+            g_digitpos++;
+            g_status |= USTATUS;
+            return;
+        }
+        g_digitpos = 0;
+    }
     
     moverel(session, +size_of(session.rc.data_type));
 }
@@ -1926,24 +2018,27 @@ void move_down(Session *session, string[] args)
 void move_pg_up(Session *session, string[] args)
 {
     unselect(session);
-    
+    g_digitpos = 0;
+
     if (session.position_cursor == 0)
         return;
-    
+
     moverel(session, -(g_rows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move forward a page
 void move_pg_down(Session *session, string[] args)
 {
     unselect(session);
-    
+    g_digitpos = 0;
+
     moverel(session, +(g_rows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move to start of line
 void move_ln_start(Session *session, string[] args) // move to start of line
 {
     unselect(session);
-    
+    g_digitpos = 0;
+
     int g = session.rc.columns * size_of(session.rc.data_type);
     moverel(session, -(session.position_cursor % g));
 }
@@ -1951,7 +2046,8 @@ void move_ln_start(Session *session, string[] args) // move to start of line
 void move_ln_end(Session *session, string[] args) // move to end of line
 {
     unselect(session);
-    
+    g_digitpos = 0;
+
     int g = (session.rc.columns * size_of(session.rc.data_type));
     moverel(session, +(g - (session.position_cursor % g)) - 1);
 }
@@ -1959,20 +2055,23 @@ void move_ln_end(Session *session, string[] args) // move to end of line
 void move_abs_start(Session *session, string[] args)
 {
     unselect(session);
-    
+    g_digitpos = 0;
+
     moveabs(session, 0);
 }
 // Move to absolute end of document
 void move_abs_end(Session *session, string[] args)
 {
     unselect(session);
-    
+    g_digitpos = 0;
+
     moveabs(session, session.editor.size());
 }
 
 // Move to different element backward
 void move_skip_backward(Session *session, string[] args)
 {
+    g_digitpos = 0;
     long curpos = session.position_cursor;
     
     // Nothing to really do... so avoid the necessary work
@@ -2031,6 +2130,7 @@ template KiB(int base)
 // Move to different element forward
 void move_skip_forward(Session *session, string[] args)
 {
+    g_digitpos = 0;
     long curpos  = session.position_cursor;
     long docsize = session.editor.size();
     
@@ -2401,16 +2501,24 @@ void change_writemode(Session *session, string[] args)
         case 'r':
             session.rc.writemode = WritingMode.readonly;
             break;
+        case 'd':
+            session.rc.writemode = WritingMode.digit;
+            break;
         default:
             throw new Exception(text("Unknown writemode:", args[0]));
         }
     }
     else
     {
-        session.rc.writemode =
-            session.rc.writemode == WritingMode.insert ?
-            WritingMode.overwrite : WritingMode.insert;
+        // Cycle: overwrite -> insert -> digit -> overwrite
+        final switch (session.rc.writemode) {
+        case WritingMode.overwrite: session.rc.writemode = WritingMode.insert; break;
+        case WritingMode.insert:    session.rc.writemode = WritingMode.digit; break;
+        case WritingMode.digit:     session.rc.writemode = WritingMode.overwrite; break;
+        case WritingMode.readonly:  break; // unreachable, checked above
+        }
     }
+    g_digitpos = 0;
     g_status |= USTATUS;
 }
 
@@ -2524,7 +2632,8 @@ void goto_(Session *session, string[] args)
     
     // Force selection off, we're navigating somewhere
     unselect(session);
-    
+    g_digitpos = 0;
+
     // Let's fucking go!
     if (absolute)
         moveabs(session, position);
@@ -2871,6 +2980,7 @@ void clip_paste(Session *session, string[] args)
         session.editor.insert(session.position_cursor, g_clipboard_ptr, g_clipboard_len);
         break;
     case WritingMode.overwrite:
+    case WritingMode.digit:
         session.editor.replace(session.position_cursor, g_clipboard_ptr, g_clipboard_len);
         break;
     case WritingMode.readonly:
