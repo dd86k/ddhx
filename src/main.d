@@ -308,6 +308,7 @@ void main(string[] args)
             doc.append(chk);
         }
         editor.open(doc);
+        session.ogdoc = doc;
         initmsg = MSG_NEWBUF;
         break;
     default: // target is set, to either: file, disk (todo), or PID (todo)

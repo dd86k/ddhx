@@ -19,7 +19,7 @@ class MemoryDocument : IDocument
     /// New document from existing data
     this(const(ubyte)[] data) { buffer = data.dup; }
     
-    /// Close document by clearning buffer.
+    /// Close document by delete the buffer (when able).
     void close() { buffer = null; }
     
     /// Append data to document.

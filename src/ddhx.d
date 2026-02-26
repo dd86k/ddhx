@@ -3016,6 +3016,12 @@ void save(Session *session, string[] args)
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception("Cannot save, read-only");
     
+    // TODO: Document type check
+    //       Some document types (ie, disk, process memory) cannot be saved to a file
+    //       If target set: Destination is meant to be a file
+    //       If FileDocument or MemoryDocument: See above
+    //       If ProcessDocument or FileDocument is disk: new inplace function needed
+    
     // To assign after successful save
     string target = session.target;
     
@@ -3048,29 +3054,39 @@ void save(Session *session, string[] args)
     message("Saving...");
     update_status(session, terminalSize());
     
-    // TODO: Media check
-    //       Some document types (ie, disk, process memory) cannot be saved to a file
-    //       And should not
-    //       Even if somehow we new memory mappings of a process... That's overkill
-    
     // If the original doc is file, try saving it in-place
     try
     {
         // It will fail if the target does not exist or
         // fails a permission check (e.g., GVFS with O_RDWR)
         save_inplace(session.editor, target);
-        session.target = target;
-        message("Saved");
-        return;
+        
+        goto Lpost;
     }
     catch (Exception ex)
     {
-        log("save_inplace: '%s'", ex.msg);
+        // Indicator that save_inplace failed, and we're now going to fallback
+        log("[NOTE] save_inplace: '%s'", ex.msg);
     }
     
     // Write document fully
     save_to_file(session.editor, target);
+    
+Lpost:
     session.target = target;
+    
+    // If opened as memory document, since file is written on disk,
+    // reopen as file document
+    import document.memory : MemoryDocument;
+    if (cast(MemoryDocument) session.ogdoc)
+    {
+        session.ogdoc.close();
+        import document.file : FileDocument, OFlags;
+        FileDocument doc = new FileDocument(target, OFlags.read | OFlags.exists | OFlags.share);
+        session.editor.open(doc);
+        session.ogdoc = doc;
+    }
+    
     message("Saved");
 }
 
@@ -3083,6 +3099,18 @@ void save_as(Session *session, string[] args)
     update_status(session, terminalSize());
     
     save_to_file(session.editor, name);
+    
+    // See note in save().
+    import document.memory : MemoryDocument;
+    if (cast(MemoryDocument) session.ogdoc)
+    {
+        session.ogdoc.close();
+        import document.file : FileDocument, OFlags;
+        FileDocument doc = new FileDocument(name, OFlags.read | OFlags.exists | OFlags.share);
+        session.editor.open(doc);
+        session.ogdoc = doc;
+    }
+    
     message("Saved");
     
     // Successful save, set as target
