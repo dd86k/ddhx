@@ -6,7 +6,7 @@
 module editor.dummy;
 
 import document.base : IDocument;
-import editor.base : IDocumentEditor, IDirtyRange;
+import editor.base : IDocumentEditor, IDirtyRange, PieceInfo;
 import platform : NotImplementedException;
 
 class DummyDocumentEditor : IDocumentEditor
@@ -99,6 +99,11 @@ class DummyDocumentEditor : IDocumentEditor
     }
 
     IDirtyRange dirtyRegions(bool includeDisplaced = false)
+    {
+        throw new NotImplementedException();
+    }
+
+    PieceInfo[] dirtyPieceInfos(bool includeDisplaced = false)
     {
         throw new NotImplementedException();
     }

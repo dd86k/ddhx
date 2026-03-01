@@ -13,7 +13,7 @@ import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 import document.base : IDocument;
 import document.file : FileDocument, OFlags;
-import editor.base : IDirtyRange, IDocumentEditor;
+import editor.base : IDirtyRange, IDocumentEditor, PieceInfo;
 import formatting;
 import logger;
 import os.terminal;
@@ -166,10 +166,10 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     /// Last search needle buffer (find commands use this).
     ubyte[] g_needle;
     
-    // TODO: Move to Session. Invalid as global
+    // TODO: Move edit cursor position and input to Session
+    //       Because both depend on (a) the document and (b) the data type displayed
     /// Position of cursor when edit started
     long g_editcurpos;
-    // TODO: Move to Session. Invalid as global
     /// Input system
     InputFormatter g_input;
 
@@ -976,10 +976,17 @@ unittest
     remove(path);
 }
 
+/// Returns true if half-open ranges [aStart, aStart+aSize) and [bStart, bStart+bSize) overlap.
+bool overlaps(long aStart, long aSize, long bStart, long bSize)
+{
+    return aStart < bStart + bSize && bStart < aStart + aSize;
+}
+
 // Try saving "in-place" (directly) to the file at path.
 // Opens its own read-write handle, writes dirty regions, and closes it.
 // When size is unchanged, writes only non-source (dirty) regions.
 // When size changed, also writes displaced source pieces and truncates/extends.
+// Can't save with MemoryDocument, caller responsibility.
 void save_inplace(IDocumentEditor editor, string path)
 {
     enum OFLAGS = OFlags.exists | OFlags.readWrite | OFlags.share;
@@ -996,16 +1003,152 @@ void save_inplace(IDocumentEditor editor, string path)
         docsize,
         filesize);
 
-    foreach (region; editor.dirtyRegions(resized))
-        wdoc.writeAt(region.position, region.data);
-
     if (resized)
-        wdoc.resize(docsize);
+    {
+        // When the document changed size, displaced source pieces read from
+        // the same file we're writing to.  Writing in the wrong order would
+        // corrupt data before it's read.  Use topological sorting to find a
+        // safe write order based on read/write dependencies.
+
+        if (docsize > filesize)
+            wdoc.resize(docsize); // extend first so we can write to the end
+
+        PieceInfo[] pieces = editor.dirtyPieceInfos(true);
+        size_t n = pieces.length;
+
+        // Build dependency graph: for each source piece S, if another
+        // piece P's write range overlaps S's read range, S must be
+        // written before P (edge S -> P).
+        int[][] adj; adj.length = n;   // adjacency list (before piece i)
+        int[] inDeg; inDeg.length = n; // in-degree list (before piece j)
+
+        foreach (i; 0 .. n)
+        {
+            if (pieces[i].sourceOffset < 0)
+                continue;
+            foreach (j; 0 .. n)
+            {
+                if (i != j && overlaps(pieces[j].logicalPos, pieces[j].size,
+                                       pieces[i].sourceOffset, pieces[i].size))
+                {
+                    adj[i] ~= cast(int) j;
+                    inDeg[j]++;
+                }
+            }
+        }
+
+        // Kahn's algorithm. Drain zero-in-degree nodes into order.
+        bool[] sorted; sorted.length = n;
+        int[] order;   order.reserve(n);
+        int[] queue;
+
+        // Function to drain the queue
+        void drain()
+        {
+            while (queue.length > 0)
+            {
+                int cur = queue[$ - 1];
+                queue = queue[0 .. $ - 1];
+                order ~= cur;
+                sorted[cur] = true;
+                foreach (next; adj[cur])
+                    if (--inDeg[next] == 0)
+                        queue ~= next;
+            }
+        }
+
+        foreach (i; 0 .. n)
+            if (inDeg[i] == 0)
+                queue ~= cast(int) i;
+        drain();
+
+        // Break cycles by buffering the smallest remaining source piece.
+        ubyte[] cycleData;
+        int cycleIdx = -1;
+        if (order.length < n)
+        {
+            foreach (i; 0 .. n)
+                if (!sorted[i] && pieces[i].sourceOffset >= 0)
+                    if (cycleIdx < 0 || pieces[i].size < pieces[cycleIdx].size)
+                        cycleIdx = cast(int) i;
+
+            if (cycleIdx >= 0)
+            {
+                cycleData.length = cast(size_t) pieces[cycleIdx].size;
+                editor.view(pieces[cycleIdx].logicalPos, cycleData);
+                sorted[cycleIdx] = true;
+                foreach (next; adj[cycleIdx])
+                    if (--inDeg[next] == 0)
+                        queue ~= next;
+                drain();
+            }
+            // Append any remaining unsorted pieces (non-source, no deps left).
+            foreach (i; 0 .. n)
+                if (!sorted[i] && i != cycleIdx)
+                    order ~= cast(int) i;
+        }
+
+        // Write pieces in topological order.
+        enum CHUNK = 16 * 1024;
+        ubyte[] buf;  buf.length = CHUNK;
+
+        foreach (idx; order)
+        {
+            long sz = pieces[idx].size;
+            long lp = pieces[idx].logicalPos;
+            for (long off = 0; off < sz; off += CHUNK)
+            {
+                size_t len = cast(size_t) min(sz - off, CHUNK);
+                wdoc.writeAt(lp + off, editor.view(lp + off, buf[0 .. len]));
+            }
+        }
+        if (cycleIdx >= 0)
+            wdoc.writeAt(pieces[cycleIdx].logicalPos, cycleData);
+
+        if (docsize < filesize)
+            wdoc.resize(docsize); // shrink after writing
+    }
+    else // Write dirty pieces as-is, document is the same size
+    {
+        foreach (region; editor.dirtyRegions(false))
+            wdoc.writeAt(region.position, region.data);
+    }
 
     wdoc.flush();
     editor.markSaved();
 }
-// TODO: Test with zero edits
+// Test with zero edits
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello, world!");
+}
+// Test with one edit of the same size
 unittest
 {
     import editor : spawnEditor;
@@ -1038,7 +1181,7 @@ unittest
 
     assert(read(path) == "hello, plane!");
 }
-// Test same size
+// Test with one edit that makes document larger
 unittest
 {
     import editor : spawnEditor;
@@ -1057,10 +1200,10 @@ unittest
 
     // open read-only, create editor and edit
     scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
-    static immutable string newdata = "plane";
+    static immutable string newdata = " and plane";
     scope IDocumentEditor editor = spawnEditor();
     editor.open(fdoc);
-    editor.replace(7, newdata.ptr, newdata.length);
+    editor.insert(12, newdata.ptr, newdata.length);
 
     // save, close
     save_inplace(editor, path);
@@ -1069,9 +1212,9 @@ unittest
     editor.close();
     fdoc.close();
 
-    assert(read(path) == "hello, plane!");
+    assert(read(path) == "hello, world and plane!");
 }
-// Test with displacements (smaller file)
+// Test with one edit that makes document smaller
 unittest
 {
     import editor : spawnEditor;
@@ -1104,40 +1247,6 @@ unittest
     fdoc.close();
 
     assert(read(path) == "hello, dd!");
-}
-// Test with displacements (bigger file)
-unittest
-{
-    import editor : spawnEditor;
-    import std.file : remove, read;
-
-    // create document with init data
-    static immutable string path = "temp";
-    static immutable string data = "hello, world!";
-    {
-        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
-        setup.writeAt(0, cast(ubyte[])data);
-        setup.flush();
-        setup.close();
-    }
-    scope(exit) remove(path);
-
-    // open read-only, create editor and edit
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
-    static immutable string newdata = "planet Earth! What should we do today?";
-    scope IDocumentEditor editor = spawnEditor();
-    editor.open(fdoc);
-    editor.remove(7, 6);
-    editor.insert(7, newdata.ptr, newdata.length);
-
-    // save, close
-    save_inplace(editor, path);
-    assert(editor.edited() == false);
-
-    editor.close();
-    fdoc.close();
-
-    assert(read(path) == "hello, planet Earth! What should we do today?");
 }
 // Test with regular file with data to zero-size
 unittest
@@ -1201,9 +1310,204 @@ unittest
 
     assert(read(path) == "hello, world!");
 }
-// TODO: Test with sparse edits (ie, start and end)
-// TODO: Test with multiple save sessions (edit + save multiple test)
-// TODO: Test with MemoryDocument
+// Test with sparse edits (ie, start and end)
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world! I am text.";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    static immutable string data0 = "apple";
+    static immutable string data1 = "ipad";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.replace( 7, data0.ptr, data0.length);
+    editor.replace(19, data1.ptr, data1.length);
+
+    // save, close
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello, apple! I am ipad.");
+}
+// Test with multiple sparse save sessions (edit + save multiple times)
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world! I am text.";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    static immutable string data0 = "apple";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.replace(7, data0.ptr, data0.length);
+    
+    // first edit and save
+    assert(editor.edited() == true);
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "hello, apple! I am text.");
+    
+    // second edit and save
+    static immutable string data1 = "ipad";
+    editor.replace(19, data1.ptr, data1.length);
+    assert(editor.edited() == true);
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "hello, apple! I am ipad.");
+
+    editor.close();
+    fdoc.close();
+}
+// Test: insert at position 0 — all original data shifts right
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    static immutable string prefix = ">> ";
+    editor.insert(0, prefix.ptr, prefix.length);
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == ">> hello, world!");
+}
+// Test: mixed delete + insert (doc grew) — piece shifts left while doc grew
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "ABCDEFGH";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(0, 3);               // delete "ABC" -> "DEFGH"
+    static immutable string ins = "XYZXYZ";
+    editor.insert(5, ins.ptr, ins.length); // insert at end -> "DEFGHXYZXYZ"
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "DEFGHXYZXYZ");
+}
+// Test: mixed delete + insert (doc shrank) — piece shifts right while doc shrank
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "ABCDEFGH";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(6, 2);               // delete "GH" -> "ABCDEF"
+    static immutable string ins = "X";
+    editor.insert(2, ins.ptr, ins.length); // insert "X" at 2 -> "ABXCDEF"
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "ABXCDEF");
+}
+// Test: append at end — insert beyond original content
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "hello";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    static immutable string suffix = "!";
+    editor.insert(5, suffix.ptr, suffix.length);
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "hello!");
+}
 
 // Move the cursor relative to its position within the file
 void moverel(Session *session, long pos)
@@ -1927,8 +2231,6 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
 // ANCHOR Commands
 //
 
-// TODO: args[0] could be prompt shortcut
-//       ie, "/" for forward search.
 // Run command
 void prompt_command(Session *session, string[] args)
 {
@@ -2648,8 +2950,7 @@ void goto_(Session *session, string[] args)
 // Report cursor position on screen
 void report_position(Session *session, string[] args)
 {
-    // TODO: Repurpose "report-position" to show ROW/COL *and* percent
-    //       Then remove after statusbar customization
+    // TODO: Remove or re-purpose command after statusbar customization
     
     long docsize = session.editor.size();
     Selection sel = selection(session);

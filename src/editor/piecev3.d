@@ -9,7 +9,7 @@ module editor.piecev3;
 import std.algorithm.comparison : min, max;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
-import editor.base : IDocumentEditor, IDirtyRange, DirtyRegion;
+import editor.base : IDocumentEditor, IDirtyRange, DirtyRegion, PieceInfo;
 import document.base : IDocument;
 import platform : assertion;
 import logger;
@@ -195,6 +195,28 @@ class PieceV3DocumentEditor : IDocumentEditor
     IDirtyRange dirtyRegions(bool includeDisplaced = false)
     {
         return new PieceV3DirtyRange(tree, basedoc, includeDisplaced);
+    }
+
+    /// Returns lightweight piece metadata for dirty/displaced pieces.
+    PieceInfo[] dirtyPieceInfos(bool includeDisplaced = false)
+    {
+        PieceInfo[] result;
+        foreach (idx; tree[])
+        {
+            bool dirty = idx.piece.source != Source.source;
+            if (!dirty && includeDisplaced)
+            {
+                long logicalPos = idx.cumulative - idx.piece.size;
+                dirty = logicalPos != idx.piece.position;
+            }
+            if (dirty)
+            {
+                long logicalPos = idx.cumulative - idx.piece.size;
+                long srcOff = (idx.piece.source == Source.source) ? idx.piece.position : -1;
+                result ~= PieceInfo(logicalPos, idx.piece.size, srcOff);
+            }
+        }
+        return result;
     }
 
     /// Open document.

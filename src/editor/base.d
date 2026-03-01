@@ -7,6 +7,14 @@ module editor.base;
 
 import document.base : IDocument;
 
+/// Lightweight piece descriptor for save ordering (no materialized data).
+struct PieceInfo
+{
+    long logicalPos;    /// Destination in the edited document (write target).
+    long size;          /// Piece size in bytes.
+    long sourceOffset;  /// Original file offset for source pieces; -1 otherwise.
+}
+
 /// A single dirty (non-source) region in the document.
 struct DirtyRegion
 {
@@ -81,6 +89,9 @@ interface IDocumentEditor
     /// logical position differs from their file offset (i.e. shifted
     /// by inserts/deletes).
     IDirtyRange dirtyRegions(bool includeDisplaced = false);
+
+    /// Returns lightweight piece metadata for dirty/displaced pieces.
+    PieceInfo[] dirtyPieceInfos(bool includeDisplaced = false);
 }
 
 // NOTE: These tests only hinder new backend development
