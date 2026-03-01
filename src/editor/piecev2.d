@@ -14,12 +14,6 @@ import document.base : IDocument;
 import platform : assertion;
 import logger;
 
-// TODO: CPU cache friendliness
-//       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
-//       Instead of an array of structures, having array of fields tend to help
-//       processor cache, in particular, architectures with cache lines of 64 Bytes.
-//       Not a current necessity, as no one is pushing the editor this limit *yet*.
-
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
 private

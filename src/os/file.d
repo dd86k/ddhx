@@ -116,10 +116,6 @@ struct OSFile
 {
     private OSHANDLE handle = INVALID_OSHANDLE;
 
-    // TODO: Share file.
-    //       By default, at least on Windows, files aren't shared. Enabling
-    //       sharing would allow refreshing view (manually) when a program
-    //       writes to file.
     /// Open new or existing file.
     /// Params:
     ///     path = File path.

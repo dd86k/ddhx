@@ -939,7 +939,8 @@ void save_to_file(IDocumentEditor editor, string target)
         try setAttributes(target, attr);
         catch (Exception ex)
         {
-            log("[WARNING] setAttributes failed: %s", ex);
+            // Log message only, don't need stack
+            log("[WARNING] setAttributes failed: %s", ex.msg);
         }
     }
     editor.markSaved();
