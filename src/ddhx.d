@@ -2352,9 +2352,11 @@ void move_ln_start(Session *session, string[] args) // move to start of line
 void move_ln_end(Session *session, string[] args) // move to end of line
 {
     unselect(session);
-    g_digitpos = 0;
+    
+    DataSpec spec = selectDataSpec(session.rc.data_type);
+    g_digitpos = spec.spacing - 1;
 
-    int g = (session.rc.columns * size_of(session.rc.data_type));
+    int g = (session.rc.columns * spec.size_of);
     moverel(session, +(g - (session.position_cursor % g)) - 1);
 }
 // Move to absolute start of document
