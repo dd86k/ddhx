@@ -163,8 +163,14 @@ struct OSFile
                 oflags |= O_WRONLY;
             else if (flags & OFlags.read)
                 oflags |= O_RDONLY;
+            // NOTE: GVFS does not like being given octal perms on open, even with O_RDONLY
+            //       And since it doesn't allow O_RDWR anyway, only give those on file creation
+            //       If neither O_CREAT nor O_TMPFILE is specified in flags, then mode is ignored
+            //       GVFS is potentially not ignoring it...? Oh well
             import std.conv : octal;
-            handle = .open(path.toStringz, oflags, octal!644); // rw-r--r--
+            handle = flags & OFlags.exists ?
+                .open(path.toStringz, oflags) :
+                .open(path.toStringz, oflags, octal!644); // rw-r--r--
             if (handle < 0)
                 throw new OSException("open");
         }
