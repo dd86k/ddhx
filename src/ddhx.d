@@ -2977,22 +2977,38 @@ void report_version(Session *session, string[] args)
     message( DDHX_VERSION );
 }
 
-// Given parameters, suggest a number of available terminal columns.
-int suggestcols(int tcols, int aspace, int dspace)
+// Given parameters, suggest a number of columns that can fit in terminal.
+// Layout: ADDRESS " " [" " DATA]×cols "  " [TEXT]×(cols×size_of)
+// Overhead: aspace + 3, per column: 1 + dspace + size_of
+int suggestcols(int tcols, int aspace, int dspace, int size_of)
 {
     if (tcols < 20)
         return 1;
-    int left = tcols - (aspace + 4); // address + spaces around data
-    return left / (2+dspace); // old flawed algo, temporary
+    int left = tcols - (aspace + 3); // address + spacers around data
+    return left / (1 + dspace + size_of);
 }
 unittest
 {
-    // TODO: Complete suggestcols
-    enum X8SPACING = 2; // temp constants
-    enum D8SPACING = 3;
-    assert(suggestcols(80, 11, X8SPACING) == 16); // 11 chars for address, x8 formatting
-    //assert(suggestcols(80, 11, D8SPACING) == 16); // 11 chars for address, d8 formatting
-    assert(suggestcols(0, 11, X8SPACING) == 1); // 11 chars for address, x8 formatting
+    // 80 cols terminal, 11 chars for address
+    // x8:  2 data chars, 1 byte  → (80-14)/4  = 16
+    // x16: 4 data chars, 2 bytes → (80-14)/7  = 9
+    // x32: 8 data chars, 4 bytes → (80-14)/13 = 5
+    // d8:  3 data chars, 1 byte  → (80-14)/5  = 13
+    // d16: 5 data chars, 2 bytes → (80-14)/8  = 8
+    // d32: 10 data chars, 4 bytes → (80-14)/15 = 4
+    // o8:  3 data chars, 1 byte  → (80-14)/5  = 13
+    // o16: 6 data chars, 2 bytes → (80-14)/9  = 7
+    // o32: 11 data chars, 4 bytes → (80-14)/16 = 4
+    assert(suggestcols(80, 11, 2, 1) == 16);  // x8
+    assert(suggestcols(80, 11, 4, 2) == 9);   // x16
+    assert(suggestcols(80, 11, 8, 4) == 5);   // x32
+    assert(suggestcols(80, 11, 3, 1) == 13);  // d8
+    assert(suggestcols(80, 11, 5, 2) == 8);   // d16
+    assert(suggestcols(80, 11, 10, 4) == 4);  // d32
+    assert(suggestcols(80, 11, 3, 1) == 13);  // o8
+    assert(suggestcols(80, 11, 6, 2) == 7);   // o16
+    assert(suggestcols(80, 11, 11, 4) == 4);  // o32
+    assert(suggestcols(0, 11, 2, 1) == 1);    // too small → 1
 }
 
 // Automatically size the number of columns that can fix on screen
@@ -3004,7 +3020,7 @@ void autosize(Session *session, string[] args)
     DataSpec spec = selectDataSpec(session.rc.data_type);
     TerminalSize tsize = terminalSize();
     
-    session.rc.columns = suggestcols(tsize.columns, adspacing, spec.spacing);
+    session.rc.columns = suggestcols(tsize.columns, adspacing, spec.spacing, spec.size_of);
 }
 
 // Export selected range to file
