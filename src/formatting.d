@@ -227,6 +227,37 @@ unittest
     }
 }
 
+// Size of a data type in bytes.
+//
+// Mostly used by view module.
+int size_of(DataType type)
+{
+    size_t i = cast(size_t)type;
+    version (D_NoBoundsChecks)
+    {
+        assertion(i < data_specs.length, "size_of: OOB");
+    }
+    return data_specs[i].size_of;
+}
+unittest
+{
+    assert(size_of(DataType.x8)  == ubyte.sizeof);
+    assert(size_of(DataType.x16) == ushort.sizeof);
+}
+
+// Spacing of a data type in characters.
+//
+// Cheap function used by view module.
+int spacing_of(DataType type)
+{
+    size_t i = cast(size_t)type;
+    version (D_NoBoundsChecks)
+    {
+        assertion(i < data_specs.length, "spacing_of: OOB");
+    }
+    return data_specs[i].spacing;
+}
+
 // Given the data type (hex, dec, oct) return the value
 // of the keychar to a digit/nibble.
 //
@@ -383,19 +414,6 @@ unittest
     // Octal
     assert(elem.parse(DataType.o32, "37777777777") == true);
     assert(elem.u32 == 0xffffffff);
-}
-
-// Size of a data type in bytes.
-//
-// Mostly used by view module.
-int size_of(DataType type)
-{
-    return selectDataSpec(type).size_of;
-}
-unittest
-{
-    assert(size_of(DataType.x8)  == ubyte.sizeof);
-    assert(size_of(DataType.x16) == ushort.sizeof);
 }
 
 /// Data specification for this data type.

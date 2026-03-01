@@ -2275,8 +2275,7 @@ void move_left(Session *session, string[] args)
         }
         if (session.position_cursor == 0)
             return;
-        DataSpec spec = selectDataSpec(session.rc.data_type);
-        g_digitpos = spec.spacing - 1;
+        g_digitpos = spacing_of(session.rc.data_type) - 1;
     }
 
     if (session.position_cursor == 0)
@@ -2291,8 +2290,7 @@ void move_right(Session *session, string[] args)
     
     if (session.rc.writemode == WritingMode.digit)
     {
-        DataSpec spec = selectDataSpec(session.rc.data_type);
-        if (g_digitpos < spec.spacing - 1)
+        if (g_digitpos < spacing_of(session.rc.data_type) - 1)
         {
             g_digitpos++;
             g_status |= USTATUS;
@@ -2371,7 +2369,8 @@ void move_abs_start(Session *session, string[] args)
 void move_abs_end(Session *session, string[] args)
 {
     unselect(session);
-    g_digitpos = 0;
+    
+    g_digitpos = spacing_of(session.rc.data_type) - 1;
 
     moveabs(session, session.editor.size());
 }
