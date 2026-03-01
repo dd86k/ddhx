@@ -149,6 +149,9 @@ Environment variables:
   - Version: Since 0.7
   - Default: "piecev2" (since 0.8)
   - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8), "piece" (>=0.7 <0.9)
+- DDHX_NO_INPLACE_SAVE
+  - If set to 1, does not use the newer "in-place" saving
+  - Version: Since 0.9
 
 ********************************************************************************
 *                                    NOTICE                                    *

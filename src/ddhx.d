@@ -3360,9 +3360,12 @@ void save(Session *session, string[] args)
     {
         // It will fail if the target does not exist or
         // fails a permission check (e.g., GVFS with O_RDWR)
-        save_inplace(session.editor, target);
+        import std.process : environment;
+        if (environment.get("DDHX_NO_INPLACE_SAVE") == "1")
+            goto Lfallback;
         
-        goto Lpost;
+        save_inplace(session.editor, target);
+        goto Ldone;
     }
     catch (Exception ex)
     {
@@ -3370,10 +3373,11 @@ void save(Session *session, string[] args)
         log("[NOTE] save_inplace: '%s'", ex.msg);
     }
     
-    // Write document fully
+    // Write document fully. If this one fails, it's caught
+Lfallback:
     save_to_file(session.editor, target);
     
-Lpost:
+Ldone:
     session.target = target;
     
     // If opened as memory document, since file is written on disk,
@@ -3399,6 +3403,7 @@ void save_as(Session *session, string[] args)
     message("Saving...");
     update_status(session, terminalSize());
     
+    // Always SAVE AS new file
     save_to_file(session.editor, name);
     
     // See note in save().
