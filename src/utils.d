@@ -5,6 +5,19 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module utils;
 
+/// Template to get binary size in mebibytes (base-1024)
+/// Params: base = Base unit.
+template MiB(int base)
+{
+    enum MiB = cast(long)base * 1024 * 1024;
+}
+/// Template to get binary size in kibibytes (base-1024)
+/// Params: base = Base unit.
+template KiB(int base)
+{
+    enum KiB = cast(long)base * 1024;
+}
+
 /// Split arguments while accounting for quotes.
 ///
 /// Uses the GC to append to the new array.

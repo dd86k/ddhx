@@ -25,7 +25,7 @@ import std.conv : text;
 import std.file : exists;
 import std.string; // imports format
 import transcoder;
-import utils : BufferedWriter;
+import utils;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
@@ -35,6 +35,13 @@ immutable string DDHX_COPYRIGHT = "Copyright (c) 2017-2026 dd86k <dd@dax.moe>";
 immutable string DDHX_VERSION   = "0.9.0"~DEBUG;
 /// Build information
 immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
+
+/// Chunk size to use when I/O is involved (reading, writing)
+private enum CHUNKSIZE      = KiB!128;
+/// Artificial needle size limit for find/find-back commands.
+private enum SEARCH_LIMIT   = KiB!128;
+/// Amount of data before warning for a copy for clipboard.
+private enum COPY_WORRY     = MiB!16;
 
 private enum // Internal editor status flags
 {
@@ -885,8 +892,7 @@ void save_to_file(IDocumentEditor editor, string target)
     
     // 2. Allocate buffer, read from editor, and write to temp file
     {
-        enum BUFFER_SIZE = 16 * 1024;
-        ubyte[] buffer = (cast(ubyte*)malloc(BUFFER_SIZE))[0..BUFFER_SIZE];
+        ubyte[] buffer = (cast(ubyte*)malloc(CHUNKSIZE))[0..CHUNKSIZE];
         if (buffer is null)
             throw new Exception("error: Out of memory");
         scope(exit) free(buffer.ptr);
@@ -896,7 +902,7 @@ void save_to_file(IDocumentEditor editor, string target)
         do
         {
             fileout.rawWrite( editor.view(position, buffer) );
-            position += BUFFER_SIZE;
+            position += CHUNKSIZE;
         }
         while (position < docsize);
         fileout.flush(); // On the safer side
@@ -1089,16 +1095,15 @@ void save_inplace(IDocumentEditor editor, string path)
         }
 
         // Write pieces in topological order.
-        enum CHUNK = 16 * 1024;
-        ubyte[] buf;  buf.length = CHUNK;
+        ubyte[] buf;  buf.length = CHUNKSIZE;
 
         foreach (idx; order)
         {
             long sz = pieces[idx].size;
             long lp = pieces[idx].logicalPos;
-            for (long off = 0; off < sz; off += CHUNK)
+            for (long off = 0; off < sz; off += CHUNKSIZE)
             {
-                size_t len = cast(size_t) min(sz - off, CHUNK);
+                size_t len = cast(size_t) min(sz - off, CHUNKSIZE);
                 wdoc.writeAt(lp + off, editor.view(lp + off, buf[0 .. len]));
             }
         }
@@ -2112,12 +2117,10 @@ enum {
     SEARCH_ALIGNED  = 8,
     // Wrap search.
     //SEARCH_WRAP     = 16,
+    
+    /// Search result not found.
+    SEARCH_RESULT_NOT_FOUND = -1,
 }
-
-/// Search buffer (haystack) size.
-enum SEARCH_SIZE = 16 * 1024;
-/// Search result not found.
-enum SEARCH_RESULT_NOT_FOUND = -1;
 
 /// Search for data.
 ///
@@ -2140,7 +2143,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
     assertion(needle, "Need needle");
     
     // Throwing on malloc failure is weird... but uses less memory than a search buffer
-    ubyte[] hay = (cast(ubyte*)malloc(SEARCH_SIZE))[0..SEARCH_SIZE];
+    ubyte[] hay = (cast(ubyte*)malloc(CHUNKSIZE))[0..CHUNKSIZE];
     if (hay is null)
         throw new Exception("error: Out of memory");
     scope(exit) free(hay.ptr);
@@ -2164,7 +2167,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
             if (cancelling())
                 throw new Exception("Cancelled");
             
-            base -= SEARCH_SIZE;
+            base -= CHUNKSIZE;
             if (base < 0)
                 base = 0;
             
@@ -2423,15 +2426,6 @@ void move_skip_backward(Session *session, string[] args)
         search(session, needle, sel.start - needle.length,
             SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED,
             (pos, total){ update_progress(session, pos, total); }));
-}
-
-template MiB(int base)
-{
-    enum MiB = cast(long)base * 1024 * 1024;
-}
-template KiB(int base)
-{
-    enum KiB = cast(long)base * 1024;
 }
 
 // Move to different element forward
@@ -2993,6 +2987,7 @@ int suggestcols(int tcols, int aspace, int dspace)
 }
 unittest
 {
+    // TODO: Complete suggestcols
     enum X8SPACING = 2; // temp constants
     enum D8SPACING = 3;
     assert(suggestcols(80, 11, X8SPACING) == 16); // 11 chars for address, x8 formatting
@@ -3033,8 +3028,7 @@ void export_range(Session *session, string[] args)
     File output = File(name, "w");
     
     // Re-using search alloc func because lazy
-    enum EXPORT_SIZE = 4096; // export buffer, tend to be smaller
-    ubyte[] buf = (cast(ubyte*)malloc(EXPORT_SIZE))[0..EXPORT_SIZE];
+    ubyte[] buf = (cast(ubyte*)malloc(CHUNKSIZE))[0..CHUNKSIZE];
     if (buf is null)
         throw new Exception("error: Out of memory");
     scope(exit) free(buf.ptr);
@@ -3045,11 +3039,11 @@ void export_range(Session *session, string[] args)
     while (sel.start < sel.end)
     {
         long left = sel.end - sel.start;
-        long want = min(left, EXPORT_SIZE);
+        long want = min(left, CHUNKSIZE);
         ubyte[] res = session.editor.view(sel.start, buf.ptr, cast(size_t)want);
         
         output.rawWrite(res);
-        sel.start += EXPORT_SIZE;
+        sel.start += CHUNKSIZE;
     }
     
     // Unfortunately to force the message through
@@ -3163,9 +3157,6 @@ void insert_file(Session *session, string[] args)
     session.editor.fileInsert(curpos, file);
     g_status |= UVIEW;
 }
-
-/// Amount of data before warning for a copy.
-enum COPY_WORRY = MiB!(16);
 
 // Copy data into clipboard buffer
 void clip_copy(Session *session, string[] args)
@@ -3486,9 +3477,6 @@ void color(Session *session, string[] args)
     setcolor(scheme,
         args[1] == "reset" ? ColorMapper.default_(scheme) : ColorMap.parse(args[1]));
 }
-
-/// Artificial needle size limit for find/find-back.
-enum SEARCH_LIMIT = KiB!128;
 
 //
 void find(Session *session, string[] args)
