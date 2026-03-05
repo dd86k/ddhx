@@ -56,13 +56,13 @@ Title font: Shaded Blocky (FIGlet)
 
 This list may change at any given time without notice.
 
-0.9: WIP
+0.9: Released!
 - [x] Color themes
 - [x] In-place saving (Fast Save Optimization)
 - [x] Piece Coalescing
 - [x] View: Other data types (d8, o8, d16, f32, etc.)
 
-0.10:
+0.10: WIP
 - [ ] Bookmarks / Annotations ("bookmark-{save|load}")
 - [ ] Layout system
 
@@ -147,7 +147,7 @@ Environment variables:
 - DDHX_BACKEND=BACKEND
   - Forces BACKEND to be selected.
   - Version: Since 0.7
-  - Default: "piecev2" (since 0.8)
+  - Default: "piecev3" (since 0.9)
   - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8), "piece" (>=0.7 <0.9)
 - DDHX_NO_INPLACE_SAVE
   - If set to 1, does not use the newer "in-place" saving
