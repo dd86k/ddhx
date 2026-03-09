@@ -702,7 +702,8 @@ Lread:
                 }
                 goto Lupdate;
             }
-            goto Lread;
+            else
+                goto Lread;
         }
 
         // start new edit
