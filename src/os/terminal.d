@@ -1023,6 +1023,7 @@ Lread:
             
             version (unittest)
             {
+                import std.stdio : stderr, writefln;
                 stderr.writefln(
                 "KeyEvent: AsciiChar=%d UnicodeChar=%d wVirtualKeyCode=%d dwControlKeyState=0x%x",
                 ir.KeyEvent.AsciiChar,
