@@ -1180,6 +1180,7 @@ Lread:
         _pending_len -= r;
         if (_pending_len > 0)
             memmove(_pending.ptr, &_pending[r], _pending_len);
+        event.pending = _pending_len > 0;
 
         version (unittest)
         {
@@ -1911,7 +1912,8 @@ struct TermInput
         ushort mouseY; /// Mouse row coord
     }
     } // union
-    int type; /// Terminal input event type
+    int type;    /// Terminal input event type
+    bool pending; /// More events queued in readahead buffer (POSIX)
 }
 
 /// Terminal size structure

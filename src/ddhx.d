@@ -631,6 +631,10 @@ Lread:
                 // Plus, likely a waste of space.
                 message(ex.msg);
             }
+            
+            // If we have additional pending, it's time to update the state again
+            if (input.pending) goto Lread;
+            
             goto Lupdate;
         }
         
