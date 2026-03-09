@@ -124,9 +124,6 @@ else version (Posix)
 
 private
 {
-    /// Terminal input buffer size
-    enum BLEN = 8;
-    
     // Bypass current definition because Phobos with GDC 10 (DMD 2.079) is incorrect
     extern (C)
     int sscanf(scope const char* s, scope const char* format, scope ...);
@@ -1077,7 +1074,7 @@ Lread:
         //       b bits[7:2] 4=Shift (bit 3), 8=Meta (bit 4), 16=Control (bit 5)
         
     Lread:
-        ssize_t r = read(STDIN_FILENO, event.kbuffer.ptr, BLEN);
+        ssize_t r = read(STDIN_FILENO, event.kbuffer.ptr, event.kbuffer.sizeof);
         // NOTE: EINTR (errno=4)
         //       Emitted when resizing or on ^C.
         if (r < 0)
@@ -1695,6 +1692,9 @@ enum Mod // More readable than templates: CTRL!(ALT!(SHIFT!('a')))
     alt   = 1 << 26,
 }
 
+private
+enum SPECIALKEY = 0x01_0000;
+
 /// Translated keycode.
 ///
 /// 31..24: Modifiers
@@ -1754,7 +1754,7 @@ enum Key // These are fine for now
     Z = 90,
     
     // Special keys
-    PageUp      = 0x01_0000,
+    PageUp      = SPECIALKEY,
     PageDown,
     End,
     Home,
