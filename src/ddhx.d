@@ -686,26 +686,6 @@ Lread:
             goto Lupdate;
         }
 
-        // REALLY check if key is printable
-        // This otherwise causes issues on say Linux where scroll emit arrow key events
-        // Those would be then translated into A/B characters
-        // NOTE: Using core.stdc.ctype.isprint causes segfault
-        if (input.key < 32 || input.key >= 127) // isprint(key) == 0
-        {
-            version (Posix)
-            {
-                // HACK: Emulate scrolling (xterm at the minimum)
-                switch (input.kbuffer[0]) {
-                case 'A': move_up(session, null); break;
-                case 'B': move_down(session, null); break;
-                default:
-                }
-                goto Lupdate;
-            }
-            else
-                goto Lread;
-        }
-
         // start new edit
         if (g_input.index == 0)
             g_editcurpos = session.position_cursor;

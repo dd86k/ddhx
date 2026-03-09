@@ -5,7 +5,9 @@ import os.terminal;
 
 @system unittest
 {
-    terminalInit(TermFeat.rawInput); // enables capturing ^C
+    // NOTE: altscreen to get more events!
+    //       Terminal emulators will send scrollwheel events
+    terminalInit(TermFeat.rawInput|TermFeat.altScreen); // enables capturing ^C
     scope(exit) terminalRestore();
     terminalResizeHandler(&onresize);
     
@@ -17,19 +19,30 @@ Lread:
     
     int basekey = input.key;
     
-    writef(
-    "TerminalInput: type=%s key=%s",
-    cast(InputType)input.type, cast(Key)(basekey & 0xff_ffff)
-    );
-    
-    if (input.key & Mod.ctrl)  write("+ctrl");
-    if (input.key & Mod.alt)   write("+alt");
-    if (input.key & Mod.shift) write("+shift");
-    
-    writeln;
-    
-    if (input.key == (Mod.ctrl|Key.C))
-        return;
+    switch (input.type) {
+    case InputType.keyDown:   
+        writef(
+        "[TerminalInput] key: type=%s key=%s",
+        cast(InputType)input.type, cast(Key)(basekey & 0xff_ffff)
+        );
+        
+        if (input.key & Mod.ctrl)  write("+ctrl");
+        if (input.key & Mod.alt)   write("+alt");
+        if (input.key & Mod.shift) write("+shift");
+        
+        writeln;
+        
+        if (input.key == (Mod.ctrl|Key.C))
+            return;
+        break;
+    case InputType.mouseDown:
+        writeln("[TerminalInput] mouseDown");
+        break;
+    case InputType.mouseUp:
+        writeln("[TerminalInput] mouseUp");
+        break;
+    default:
+    }
     
     goto Lread;
 }

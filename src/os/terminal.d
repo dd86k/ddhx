@@ -937,6 +937,65 @@ int terminalPeek()
 }
 alias terminalHasInput = terminalPeek; // alias
 
+version (Posix)
+{
+/// Determine the byte length of the first complete terminal input
+/// sequence in buf. Returns 1 for non-ESC bytes, and the full
+/// CSI/SS3/Alt sequence length for escape sequences.
+private
+size_t _seqlen(const(char)[] buf)
+{
+    if (buf.length == 0)
+        return 0;
+
+    if (buf[0] != 0x1b)
+        return 1; // regular byte/character (assuming utf-8)
+
+    if (buf.length == 1)
+        return 1; // standalone ESC (nothing followed in this read)
+
+    if (buf[1] == '[') // CSI: ESC [ ...
+    {
+        // Final byte of a CSI sequence is in 0x40..0x7E
+        for (size_t i = 2; i < buf.length; i++)
+        {
+            if (buf[i] >= 0x40 && buf[i] <= 0x7E)
+                return i + 1;
+        }
+        // No final byte found (truncated?), consume what we have
+        return buf.length;
+    }
+    else if (buf[1] == 'O') // SS3: ESC O X
+    {
+        return buf.length >= 3 ? 3 : buf.length;
+    }
+    else
+        return 2; // Alt+key: ESC <char>
+}
+unittest
+{
+    // Regular bytes
+    assert(_seqlen("a") == 1);
+    assert(_seqlen("ab") == 1);
+
+    // Standalone ESC
+    assert(_seqlen("\x1b") == 1);
+
+    // CSI sequences
+    assert(_seqlen("\x1b[A") == 3);         // arrow up
+    assert(_seqlen("\x1b[A\x1b[A") == 3);   // two arrows, first is 3
+    assert(_seqlen("\x1b[1;2A") == 6);       // shift+up
+    assert(_seqlen("\x1b[5~") == 4);         // page up
+    assert(_seqlen("\x1b[15~") == 5);        // F5
+
+    // SS3
+    assert(_seqlen("\x1bOP") == 3);     // F1 (app mode)
+
+    // Alt+key
+    assert(_seqlen("\x1bg") == 2);      // Alt+g
+}
+} // version (Posix)
+
 /// Read an input event. This function is blocking.
 /// Throws: (Windows) WindowsException on OS error.
 /// Returns: Terminal input.
@@ -964,8 +1023,8 @@ Lread:
             
             version (unittest)
             {
-                printf(
-                "KeyEvent: AsciiChar=%d UnicodeChar=%d wVirtualKeyCode=%d dwControlKeyState=0x%x\n",
+                stderr.writefln(
+                "KeyEvent: AsciiChar=%d UnicodeChar=%d wVirtualKeyCode=%d dwControlKeyState=0x%x",
                 ir.KeyEvent.AsciiChar,
                 ir.KeyEvent.UnicodeChar,
                 ir.KeyEvent.wVirtualKeyCode,
@@ -1035,24 +1094,48 @@ Lread:
                     event.key |= keycode;
             }
             return event;
-        /*case MOUSE_EVENT:
+        case MOUSE_EVENT:
+            version (unittest)
+            {
+                stdout.writefln(
+                "MouseEvent: X=%d Y=%d dwButtonState=%x dwControlKeyState=%x dwEventFlags=%x",
+                ir.MouseEvent.dwMousePosition.X, ir.MouseEvent.dwMousePosition.Y,
+                ir.MouseEvent.dwButtonState,
+                ir.MouseEvent.dwControlKeyState,
+                ir.MouseEvent.dwEventFlags
+                );
+            }
+            
             if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED)
             {
-                // Up=0x00780000 Down=0xFF880000
-                event.type = ir.MouseEvent.dwButtonState > 0xFF_0000 ?
-                    Mouse.ScrollDown : Mouse.ScrollUp;
-            }*/
+                // Up=0xFF880000 Down=0x00780000
+                // Because ddhx doesn't yet understand mouseUp/Down, translate
+                // to keyUp/Down
+                /*with (InputType)
+                    event.type = ir.MouseEvent.dwButtonState > 0x00780000 ? mouseUp : mouseDown;*/
+                event.type = InputType.keyDown;
+                event.key  = ir.MouseEvent.dwButtonState > 0x00780000 ? Key.UpArrow : Key.DownArrow;
+                return event;
+            }
+            
+            break;
         // NOTE: The console buffer is different than window resize
         //       It is misleading. Only updated after a new event enters input queue.
         case WINDOW_BUFFER_SIZE_EVENT:
             if (terminalOnResizeEvent)
                 terminalOnResizeEvent();
             goto Lread;
-        default: goto Lread;
+        default:
         }
+        goto Lread;
     }
     else version (Posix)
     {
+        // Readahead buffer for splitting concatenated escape sequences
+        // (e.g. scroll wheel: \033[B\033[B\033[B arrives as one read)
+        __gshared char[64] _pending;
+        __gshared size_t _pending_len;
+        
         // TODO: Mouse reporting in Posix terminals
         //       * X10 compatbility mode (mouse-down only)
         //       Enable: ESC [ ? 9 h
@@ -1074,43 +1157,47 @@ Lread:
         //       b bits[7:2] 4=Shift (bit 3), 8=Meta (bit 4), 16=Control (bit 5)
         
     Lread:
-        ssize_t r = read(STDIN_FILENO, event.kbuffer.ptr, event.kbuffer.sizeof);
-        // NOTE: EINTR (errno=4)
-        //       Emitted when resizing or on ^C.
-        if (r < 0)
-            goto Lread;
+        // Fill pending buffer from stdin if empty
+        if (_pending_len == 0)
+        {
+            ssize_t n = read(STDIN_FILENO, _pending.ptr, _pending.sizeof);
+            // NOTE: EINTR (errno=4)
+            //       Emitted when resizing or on ^C.
+            if (n <= 0)
+                goto Lread;
+            _pending_len = n;
+        }
+
+        // Extract exactly one sequence from the pending buffer
+        size_t r = _seqlen(_pending[0.._pending_len]);
         
+        // Copy data into local buffer, then consume
+        event.kbuffer[0..r] = _pending[0..r];
+        event.ksize = cast(int)r;
+        event.type  = InputType.keyDown; // Assuming for now
+        event.key   = 0; // clear as safety measure
+        import core.stdc.string : memmove;
+        _pending_len -= r;
+        if (_pending_len > 0)
+            memmove(_pending.ptr, &_pending[r], _pending_len);
+
         version (unittest)
         {
-            printf("stdin: ");
+            import std.stdio : stderr, write, writeln;
+            stderr.write("stdin: ");
             for (size_t i; i < r; ++i)
             {
-                if (i) printf(", ");
+                if (i) stderr.write(", ");
                 char c = event.kbuffer[i];
                 if (c < 32 || c > 126) // non-printable ascii
-                    printf("\\0%o", c);
+                    stderr.write("\\0%o", c);
                 else
-                    printf("'%c'", event.kbuffer[i]);
+                    stderr.write("'%c'", event.kbuffer[i]);
             }
-            cast(void)putchar('\n');
-        }
-        
-        event.ksize = cast(int)r;
-        event.type = InputType.keyDown; // Assuming for now
-        event.key  = 0; // clear as safety measure
-        
-        if (r == 0)
-        {
-            version (unittest) printf("stdin: empty\n");
-            goto Lread;
+            stderr.writeln(" (pending=%d)", cast(int)_pending_len);
         }
         
         enum ESC = 0x1b;
-        
-        struct KeyInfo {
-            string text;
-            int value;
-        }
         
         // https://espterm.github.io/docs/espterm-xterm.html
         switch (event.kbuffer[0]) {
@@ -1191,6 +1278,7 @@ Lread:
                 else
                     input = input[1..$];
                 break;
+            // \033, 'O', ...
             case 'O': // SS3/G3 character set (application mode)
                 // WARNING: Shift+Alt+O will lead here
                 input = input[1..$];
@@ -1200,6 +1288,7 @@ Lread:
                 return event;
             }
             
+            struct KeyInfo { string text; int value; } // Map sequence to translated key
             static immutable KeyInfo[] specials = [
                 // xterm
                 { "A",      Key.UpArrow },
@@ -1811,6 +1900,9 @@ struct TermInput
     {
         int key;            /// Keyboard input with possible Mod flags.
         int ksize;          /// Size of the filled input buffer
+        // NOTE: On POSIX, concatenated escape sequences (e.g. scroll wheel)
+        //       are split by a readahead buffer (_pending); each event
+        //       here holds exactly one sequence.
         char[8] kbuffer;    /// Input buffer for the character
     }
     struct
