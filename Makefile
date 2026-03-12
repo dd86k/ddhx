@@ -1,0 +1,107 @@
+# ddhx - Binary file editor
+
+DC ?= dmd
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+
+SRCS = $(wildcard src/*.d src/**/*.d)
+TEST_SRCS_INPUT = $(SRCS) tests/input.d
+TEST_SRCS_COLOR = $(SRCS) tests/color.d
+TEST_SRCS_SIZE = $(SRCS) tests/size.d
+BENCH_SRCS = $(SRCS) benchmark/src/main.d
+
+# Compiler-specific flag mapping
+# DMD flags are the baseline; LDC and GDC equivalents are mapped below.
+ifeq ($(DC),ldc2)
+	OFLAG = -of=
+	RELEASE_FLAGS = -O2 -release -boundscheck=off
+	DEBUG_FLAGS = -g -d-debug
+	DEBUGV_FLAGS = -g -d-debug -d-version=verbose --vgc --vtls
+	NATIVE_FLAGS = -O2 -release -boundscheck=off -mcpu=native
+	STATIC_FLAG = --static
+	UNITTEST_FLAG = -unittest
+	VERSION_FLAG = -d-version
+else ifeq ($(DC),gdc)
+	OFLAG = -o
+	RELEASE_FLAGS = -O2 -frelease -fbounds-check=off
+	DEBUG_FLAGS = -g -fdebug
+	DEBUGV_FLAGS = -g -fdebug -fversion=verbose
+	NATIVE_FLAGS = -O2 -frelease -fbounds-check=off -march=native
+	STATIC_FLAG = -Wl,-static -static -static-libgcc
+	UNITTEST_FLAG = -funittest
+	VERSION_FLAG = -fversion
+else
+	# DMD (default)
+	OFLAG = -of=
+	RELEASE_FLAGS = -O -release -boundscheck=off
+	DEBUG_FLAGS = -g -debug
+	DEBUGV_FLAGS = -g -debug -version=verbose -vgc -vtls
+	NATIVE_FLAGS = -O -release -boundscheck=off -mcpu=native
+	STATIC_FLAG = -L=-static
+	UNITTEST_FLAG = -unittest
+	VERSION_FLAG = -version
+endif
+
+# Default target
+all: release
+
+# Build targets
+ddhx: release
+
+release: $(SRCS)
+	$(DC) $(RELEASE_FLAGS) $(OFLAG)ddhx $(SRCS)
+
+debug: $(SRCS)
+	$(DC) $(DEBUG_FLAGS) $(OFLAG)ddhx $(SRCS)
+
+debugv: $(SRCS)
+	$(DC) $(DEBUGV_FLAGS) $(OFLAG)ddhx $(SRCS)
+
+native: $(SRCS)
+	$(DC) $(NATIVE_FLAGS) $(OFLAG)ddhx $(SRCS)
+
+# Static build targets
+debug-static: $(SRCS)
+	$(DC) $(DEBUG_FLAGS) $(VERSION_FLAG)=Static $(STATIC_FLAG) $(OFLAG)ddhx $(SRCS)
+
+release-static: $(SRCS)
+	$(DC) $(RELEASE_FLAGS) $(VERSION_FLAG)=Static $(STATIC_FLAG) $(OFLAG)ddhx $(SRCS)
+
+native-static: $(SRCS)
+	$(DC) $(NATIVE_FLAGS) $(VERSION_FLAG)=Static $(STATIC_FLAG) $(OFLAG)ddhx $(SRCS)
+
+# Benchmark
+benchmark: $(BENCH_SRCS)
+	$(DC) $(RELEASE_FLAGS) $(OFLAG)ddhx-benchmark $(BENCH_SRCS)
+
+# Tests
+test: test-input test-color test-size
+
+test-input: $(TEST_SRCS_INPUT)
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestInput $(OFLAG)ddhx-test $(TEST_SRCS_INPUT)
+	./ddhx-test
+
+test-color: $(TEST_SRCS_COLOR)
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestColor $(OFLAG)ddhx-test $(TEST_SRCS_COLOR)
+	./ddhx-test
+
+test-size: $(TEST_SRCS_SIZE)
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestSize $(OFLAG)ddhx-test $(TEST_SRCS_SIZE)
+	./ddhx-test
+
+# Install/uninstall
+install: release
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 755 ddhx $(DESTDIR)$(BINDIR)/ddhx
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/ddhx
+
+# Clean
+clean:
+	rm -f ddhx ddhx-benchmark ddhx-test
+
+.PHONY: all ddhx release debug debugv native \
+	debug-static release-static native-static \
+	benchmark test test-input test-color test-size \
+	install uninstall clean
