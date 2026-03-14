@@ -88,7 +88,8 @@ Read from a pipe:
 
 Navigate with arrow keys, Page Up/Down, and Home/End. Edit by typing hex
 digits (0-9, a-f). Undo with Ctrl+U, redo with Ctrl+R. Press Enter to
-open the command prompt. Quit with Ctrl+Q.
+open the command prompt. Select data using Shift and navigation keys. Quit
+with Ctrl+Q.
 
 For full documentation, see the manpage:
   $ man ddhx
@@ -150,7 +151,7 @@ Environment variables:
   - Default: "piecev3" (since 0.9)
   - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8), "piece" (>=0.7 <0.9)
 - DDHX_NO_INPLACE_SAVE
-  - If set to 1, does not use the newer "in-place" saving
+  - If set to 1, avoid the use of the newer "in-place" saving mechanic
   - Version: Since 0.9
 
 ********************************************************************************
@@ -159,7 +160,5 @@ Environment variables:
 
 This software is provided with NO WARRANTY as it is marked as EXPERIMENTAL.
 
-ALWAYS make backups of your files before editing them.
-
-This is a Work In Progress (WIP). Everything was rewritten from scratch
-in version 0.5 to have editing features. It will be buggy!
+Major progress has been made since version 0.5! It should be good enough for
+regular use.
