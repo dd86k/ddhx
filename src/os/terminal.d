@@ -1658,7 +1658,7 @@ void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, i
 // Flags to better define behavior versus relying on current_features.
 enum {
     /// Uses legacy readln method.
-    RL_READLN = 1,
+    RL_OLDREADLN = 1,
     /// Use history feature. Enables saving lines and using up/down arrows.
     RL_HISTORY = 2,
 }
@@ -1670,13 +1670,14 @@ private enum {
 ///     column = Original column position.
 ///     row    = Original row position.
 ///     flags  = Read flags.
+///     completions = Optional list of completion candidates for Tab.
 /// Returns: String without newline.
-string readline(int column, int row, int flags = 0)
+string readline(int column, int row, int flags = 0, const(string)[] completions = null)
 {
     // Cheap line-oriented if we're not using alternate screen buffer,
     // because there isn't any rendering worries. Legacy bit.
     // To be removed later.
-    if (flags & RL_READLN)
+    if (flags & RL_OLDREADLN)
     {
         import std.stdio : readln;
         import std.string : chomp;
@@ -1708,12 +1709,19 @@ string readline(int column, int row, int flags = 0)
     // History browsing state
     size_t hist_idx;       // 0 = current input, 1..N = history entries
     string hist_saved;  // saved current input when browsing history
+    // Tab completion state
+    size_t tab_match_idx;    // current match index (cycles)
+    char[] tab_prefix;       // prefix that was matched
+    bool tab_active;         // currently cycling through matches
 Lread: // Emulate line buffer
     rl_flags = flags;
     // NOTE: Only stdout (Phobos) is setup with _IONBF
     TermInput input = terminalRead();
     if (input.type != InputType.keyDown)
         goto Lread;
+    // Reset tab completion state on any non-Tab key
+    if (input.key != Key.Tab)
+        tab_active = false;
     switch (input.key) {
     // NOTE: Is ^C is something else in other locales?
     //       TermInput could be updated with a new event type
@@ -1843,8 +1851,66 @@ Lread: // Emulate line buffer
         rl_state.caret = i;
         rl_flags |= _RL_BUFCHANGED;
         break;
-    case Key.Tab: // TODO: Auto-complete
-        goto Lread;
+    case Key.Tab:
+        if (completions is null || completions.length == 0)
+            goto Lread;
+
+        if (!tab_active)
+        {
+            // Start new completion: use current line content as prefix
+            tab_prefix = line[];
+            tab_match_idx = 0;
+            tab_active = true;
+        }
+        else
+        {
+            // Cycle to next match
+            ++tab_match_idx;
+        }
+        
+        void apply_match(string c)
+        {
+            line.length = 0;
+            line.cells = 0;
+            line.insert(0, cast(char[])c);
+            rl_state.caret = line.length;
+            rl_state.base = 0;
+            rl_flags |= _RL_BUFCHANGED;
+        }
+        
+        import std.algorithm : startsWith;
+        
+        // Find matches
+        size_t matches_found;
+        foreach (c; completions)
+        {
+            if (tab_prefix.length == 0 || c.startsWith(tab_prefix))
+            {
+                if (matches_found == tab_match_idx)
+                {
+                    apply_match(c);
+                }
+                ++matches_found;
+            }
+        }
+
+        if (matches_found == 0)
+            goto Lread; // no matches
+
+        // Wrap around if past the end
+        if (tab_match_idx >= matches_found)
+        {
+            tab_match_idx = 0;
+            foreach (c; completions)
+            {
+                if (tab_prefix.length == 0 || c.startsWith(tab_prefix))
+                {
+                    apply_match(c);
+                    break;
+                }
+            }
+        }
+        break;
     // Ignore list
     case Key.PageDown, Key.PageUp, Key.Insert:
         goto Lread;

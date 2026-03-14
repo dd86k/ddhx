@@ -734,7 +734,7 @@ bool iscancel(int key)
 }
 
 // Invoke command prompt
-string promptline(string prompt)
+string promptline(string prompt, const(string)[] completions = null)
 {
     assert(prompt, "Prompt text missing");
     assert(prompt.length, "Prompt text required"); // disallow empty
@@ -754,7 +754,7 @@ string promptline(string prompt)
     scope(exit) terminalHideCursor();
     
     // Passing x,y to fix issues where obtaining cursor position is not possible
-    return readline(cast(int)prompt.length, tsize.rows - 1);
+    return readline(cast(int)prompt.length, tsize.rows - 1, RL_HISTORY, completions);
 }
 int promptkey(string text)
 {
@@ -2244,7 +2244,7 @@ void prompt_command(Session *session, string[] args)
 {
     import utils : arguments;
     
-    string line = promptline(">");
+    string line = promptline(">", g_commands.keys);
     if (line.length == 0)
         return;
     
