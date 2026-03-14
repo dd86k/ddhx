@@ -1532,10 +1532,77 @@ unittest
     assert(graphs("🥴")         == 1); // WOOZY, U+1F974
 }
 
-private enum {
-    _RL_BUFCHANGED = 1 << 16, /// Buffer content changed
+/// In-memory command history for readline.
+private
+struct ReadlineHistory
+{
+    enum MAXSIZE = 64;
+
+    /// Stored history entries (oldest first).
+    string[MAXSIZE] entries;
+    /// Number of entries currently stored.
+    size_t count;
+    /// Write position (ring index).
+    size_t pos;
+
+    /// Add a line to history.
+    void push(string line)
+    {
+        if (line.length == 0)
+            return;
+        // Don't add duplicates of the most recent entry
+        if (count > 0 && entries[(pos + MAXSIZE - 1) % MAXSIZE] == line)
+            return;
+        entries[pos] = line;
+        pos = (pos + 1) % MAXSIZE;
+        if (count < MAXSIZE)
+            ++count;
+    }
+
+    /// Get entry by index (0 = most recent, count-1 = oldest).
+    string get(size_t idx) const
+    {
+        if (idx >= count)
+            return null;
+        return entries[(pos + MAXSIZE - 1 - idx) % MAXSIZE];
+    }
 }
-private 
+unittest
+{
+    ReadlineHistory h;
+    assert(h.count == 0);
+
+    // Empty strings are not added
+    h.push("");
+    assert(h.count == 0);
+
+    // Basic push and get
+    h.push("first");
+    assert(h.count == 1);
+    assert(h.get(0) == "first");
+
+    h.push("second");
+    assert(h.count == 2);
+    assert(h.get(0) == "second"); // most recent
+    assert(h.get(1) == "first");
+
+    // Duplicate of most recent is skipped
+    h.push("second");
+    assert(h.count == 2);
+
+    // Out of bounds returns null
+    assert(h.get(100) is null);
+
+    // Ring buffer wraps
+    foreach (i; 0 .. ReadlineHistory.MAXSIZE)
+        h.push(cast(string)['a' + (i % 26)]);
+    assert(h.count == ReadlineHistory.MAXSIZE);
+}
+
+/// Readline history
+private __gshared ReadlineHistory rl_history;
+
+private
 struct ReadlineState
 {
     // NOTE: conhost (pre-Windows Terminal) does not handle '\r'
@@ -1595,6 +1662,9 @@ enum {
     /// Use history feature. Enables saving lines and using up/down arrows.
     RL_HISTORY = 2,
 }
+private enum {
+    _RL_BUFCHANGED = 1 << 16, /// Buffer content changed
+}
 /// Read a line.
 /// Params:
 ///     column = Original column position.
@@ -1620,23 +1690,24 @@ string readline(int column, int row, int flags = 0)
         return line;
     }
     
-    // TODO: History
-    //       Can be saved and selected from there.
-    
     // Prep work
     ReadlineState rl_state;
     rl_state.orig_col = column;
     rl_state.orig_row = row;
-    
+
     // HACK: Cheap way to clear line + setup cursor
     //       Removes responsability from caller
     // TODO: Make caller do this, caller knows state of display better
     terminalWriteChar(' ', terminalSize().columns-column-1);
     terminalMove(column, row);
     terminalFlush(); // Needed on fbcons
-    
+
     LineBuffer line;    /// Line buffer
     int rl_flags = void;
+
+    // History browsing state
+    size_t hist_idx;       // 0 = current input, 1..N = history entries
+    string hist_saved;  // saved current input when browsing history
 Lread: // Emulate line buffer
     rl_flags = flags;
     // NOTE: Only stdout (Phobos) is setup with _IONBF
@@ -1684,10 +1755,47 @@ Lread: // Emulate line buffer
         }
         rl_state.caret = i;
         break;
-    // TODO: Line History
     case Key.UpArrow:
+        if ((flags & RL_HISTORY) == 0)
+            goto Lread;
+        if (hist_idx >= rl_history.count)
+            goto Lread; // no more history
+        // Save current input when first entering history
+        if (hist_idx == 0)
+            hist_saved = line.toString();
+        ++hist_idx;
+        // Replace line buffer with history entry
+        line.length = 0;
+        line.cells = 0;
+        auto hentry = rl_history.get(hist_idx - 1);
+        line.insert(0, cast(char[])hentry);
+        rl_state.caret = line.length;
+        rl_state.base = 0;
+        rl_flags |= _RL_BUFCHANGED;
+        break;
     case Key.DownArrow:
-        goto Lread;
+        if ((flags & RL_HISTORY) == 0)
+            goto Lread;
+        if (hist_idx == 0)
+            goto Lread; // already at current input
+        --hist_idx;
+        line.length = 0;
+        line.cells = 0;
+        if (hist_idx == 0)
+        {
+            // Restore saved current input
+            if (hist_saved !is null && hist_saved.length > 0)
+                line.insert(0, cast(char[])hist_saved);
+        }
+        else
+        {
+            auto hentry = rl_history.get(hist_idx - 1);
+            line.insert(0, cast(char[])hentry);
+        }
+        rl_state.caret = line.length;
+        rl_state.base = 0;
+        rl_flags |= _RL_BUFCHANGED;
+        break;
     case Key.Home:
         rl_state.caret = 0;
         break;
@@ -1762,8 +1870,10 @@ Lread: // Emulate line buffer
     goto Lread;
     
 Lout:
-    // TODO: If RL_HISTORY, save into history
-    return line.toString();
+    string result = line.toString();
+    if (flags & RL_HISTORY)
+        rl_history.push(result);
+    return result;
 }
 
 /// Terminal input type.
