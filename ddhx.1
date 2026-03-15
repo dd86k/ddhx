@@ -1,7 +1,7 @@
 .\" ddhx - modal hex editor
 .\" Copyright (c) 2017-2026 dd86k <dd@dax.moe>
 .\" MIT License
-.TH DDHX 1 "2026-02-25" "ddhx 0.9" "User Commands"
+.TH DDHX 1 "2026-03-15" "ddhx 0.9.1" "User Commands"
 .
 .SH NAME
 ddhx \- modal TUI hex editor
@@ -153,7 +153,7 @@ or the
 command.
 .
 .SH WRITING MODES
-The editor supports three writing modes, shown in the status bar:
+The editor supports four writing modes, shown in the status bar:
 .TP
 .B R/O
 Read-only. No editing is permitted.
@@ -163,6 +163,9 @@ Overwrite. Typed data replaces existing bytes at the cursor. This is the default
 .TP
 .B INS
 Insert. Typed data is inserted before the cursor position.
+.TP
+.B DIG
+Digit. Overwrite a single digit (or nibble).
 .PP
 Press
 .B Insert
@@ -188,7 +191,8 @@ Ctrl+Left/Right	Skip identical elements
 Ctrl+G	Goto address
 .TE
 .PP
-Navigation should resemble most text editors.
+Navigation should resemble most text editors. If you wish to setup custom
+keybindings, see the CONFIGURATION section.
 .
 .SS Selection
 .TS
@@ -233,7 +237,7 @@ until a mismatch is found.
 .TS
 lb l.
 a\-f, 0\-9	Start inserting or replacing data at cursor
-Insert	Cycle writing mode (OVR, INS)
+Insert	Cycle writing mode (OVR, INS, DIG)
 Delete	Delete element at cursor
 Backspace	Delete element before cursor
 Ctrl+U	Undo
@@ -251,7 +255,9 @@ Edit single elements using the
 and
 .B 0\-9
 keys.
-The editor is element-oriented, so typing "ff" will insert or replace one element.
+For the overwrite and insert modes, the editor is element-oriented, so typing
+"ff" will insert or replace one element. In digit mode, editing a single digit
+will overwrite the element.
 .PP
 It is also possible to use a command over a selection, like
 .BR "replace x:00" ,
@@ -561,12 +567,12 @@ Comments start with
 .BR # .
 Lines take the form:
 .RS
-.IB setting " " value
+.IB setting " value [OPTIONS...]"
 .RE
 .PP
 Keybindings can also be set in the configuration file:
 .RS
-.BI "bind " "KEY COMMAND" " [" "PARAMS..." ]
+.IB bind " KEY COMMAND [PARAMS...]"
 .RE
 .
 .SS Configuration File Locations
@@ -584,6 +590,10 @@ Path specified with
 .TP
 4.
 .I /etc/ddhx/.ddhxrc
+.
+The 
+.I --help-config 
+option lists possible paths.
 .
 .SS Settings
 .TP
@@ -611,9 +621,9 @@ Number of elements per row. Default:
 Data display format. Default:
 .BR x8 .
 .TP
-.BR gray\-zeros " on | \fRoff\fP"
-Gray out zero values. Default:
-.BR off .
+.BR highlight\-zeros " on | \fRoff\fP"
+If enabled, highlight out zero values (defaults to gray). Default:
+.BR on .
 .TP
 .BR header " \fRon\fP | off"
 Show the header bar. Default:
@@ -687,9 +697,13 @@ binds Alt+E to extend the selection to the end of the line.
 Commands can still be executed from the command prompt.
 .
 .SH ENVIRONMENT
+.
+Environment variables are available for debugging purposes.
+.
 .TP
 .B DDHX_LOG
-If set, enables logging debugging information to the specified file path.
+When set with a file path, enable logging debugging information to the
+specified file path.
 Available since version 0.7.
 .TP
 .B DDHX_BACKEND
@@ -702,9 +716,11 @@ Available backends:
 .B piecev3
 (>=0.9),
 .B piecev2
-(>=0.8),
-.B piece
-(>=0.7, <0.9).
+(>=0.8).
+.TP
+.B DDHX_NO_INPLACE_SAVE
+When set to "1", avoid using the save in-place mechanic.
+Available since version 0.9.
 .
 .SH NOTES
 This software is provided with NO WARRANTY as it is marked as EXPERIMENTAL.
