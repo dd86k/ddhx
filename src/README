@@ -27,13 +27,12 @@ The folder structure is pretty straight-forward:
 
 Files:
 - configuration.d
-  Contains runtime configuration with functions to change, load and (soon) save
-  configurations.
+  Contains runtime configuration with functions to change, load and (maybe)
+  save configurations.
 - ddhx.d
   Main application, defines behaviour on what to do, like application commands.
-- doceditor.d
-  Legacy baggage. Has some enumeration definitions and formatting utilities.
-  This is where the document editor used to reside in versions prior to 0.5.
+- formatting.d
+  Element formatting, address formatting, line segmentation.
 - logger.d
   Stupidly simple logging interface.
 - main.d
@@ -79,7 +78,7 @@ Files:
 * DOCUMENT EDITOR
 ********************************************************************************
 
-To keep things simple, only the latest backend (backend/piecev2.d), will be
+To keep things simple, only the latest backend (backend/piecev3.d), will be
 explained here.
 
 All document editor backends interface IDocumentEditor (backend/base.d), and
@@ -87,7 +86,7 @@ are in charge of implementing editor features. Editors allow the editing of
 IDocument (document/base.d) instances using the 'IDocumentEditor.open(IDocument)'
 function.
 
-The piecev2 backend implements a Piece Table data structure using a Red-black
+The piecev3 backend implements a Piece Table data structure using a Red-black
 self-balancing tree. For undo operations, a command-based approach is used.
 
 A piece, simply put, contains the source material (document, buffer, etc.),
@@ -190,6 +189,19 @@ have proper a size and cumulative size following each other sequentially.
 When finished, a new command entry is added to the list of commands.
 
 *
+* COALESCING
+*
+
+Since the piecev3 backend, sequencial edits are coalesced as one edit
+(command). This makes undoing a series of multiple edits easier.
+
+If coalescing is enabled, and it is by default, new edits are checked
+against the coalesce state. If the edit can be coalesced, the last piece is
+updated with the new data.
+
+When opening or closing a document, the coalesce state is invalidated.
+
+*
 * COMMANDS
 *
 
@@ -238,3 +250,32 @@ Piece types:
             Contains the entire data to be applied in the view buffer.
 - pattern:  Special pieces for repeated data (e.g., filling with zeros).
             Pattern data is repeated as needed when filling the buffer.
+
+*
+* IN-PLACE SAVING
+*
+
+When the destination file allows to be opened as read-write, the save_inplace
+function is used.
+
+Environment variable DDHX_NO_INPLACE_SAVE=1 disables this feature.
+
+If the size of the document has not changed since the last edit, only dirty
+regions without a displacement are saved directly.
+
+If the size has changed, then it's a whole other story. Since the document size
+has changed, there is no telling which dirty regions may overlap. Writing in
+the wrong order would also corrupt data before it's read.
+
+In that case:
+0. If document is larger than the target file, extend file
+1. Build an array of dirty pieces with displacements.
+2. Build a dependency graph for each source piece S (source).
+   If another piece (P) write ranges overlaps S's read range,
+   S must be written before P.
+   Kahn's algorithm is used here.
+3. Write pieces in topological order (back to front).
+4. If document is smaller than the target file, shrink file
+
+This should work similarly to HexFiend (BSD-2-Clause), which also inspired
+this feature to be implemented. More like, Hex Friends.
