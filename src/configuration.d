@@ -196,7 +196,7 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
     },
     {
         "data", "Data representation format",
-        `"x8", "x16"`, `"x8"`,
+        `"x8", "x16", "x32", "d8", "d16", "d32", "o8", "o16", "o32"`, `"x8"`,
         &configure_data
     },
     {
