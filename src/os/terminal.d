@@ -119,6 +119,23 @@ else version (Posix)
         private extern (C) int ioctl(int fd, ulong request, ...);
     }
     
+    version (NetBSD)
+    {
+        private enum IOC_OUT = cast(c_long)0x40000000;
+        private enum IOCPARM_MASK = 0x1fff;
+        private enum IOCPARM_SHIFT = 16;
+        private enum IOCGROUP_SHIFT = 8;
+        // #define	_IOC(inout, group, num, len) \
+        //    ((inout) | (((len) & IOCPARM_MASK) << IOCPARM_SHIFT) | \
+        //    ((group) << IOCGROUP_SHIFT) | (num))
+        // #define	_IOR(g,n,t)	_IOC(IOC_OUT,	(g), (n), sizeof(t))
+        // #define	TIOCGWINSZ	_IOR('t', 104, struct winsize)	/* get window size */
+        // #define	TIOCGSIZE	TIOCGWINSZ
+        private enum TIOCGWINSZ =
+            IOC_OUT | ((winsize.sizeof & IOCPARM_MASK) << IOCPARM_SHIFT) |
+            ('t' << IOCGROUP_SHIFT) | 104;
+    }
+    
     private __gshared termios old_ios, new_ios;
 }
 
