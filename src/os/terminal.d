@@ -121,6 +121,7 @@ else version (Posix)
     
     version (NetBSD)
     {
+        import core.stdc.config : c_long;
         private enum IOC_OUT = cast(c_long)0x40000000;
         private enum IOCPARM_MASK = 0x1fff;
         private enum IOCPARM_SHIFT = 16;
