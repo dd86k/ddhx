@@ -1079,30 +1079,39 @@ void save_inplace(IDocumentEditor editor, string path)
         drain();
 
         // Break cycles by buffering the smallest remaining source piece.
-        ubyte[] cycleData;
-        int cycleIdx = -1;
-        if (order.length < n)
+        // Multiple independent cycles can exist (e.g. swapping two
+        // non-adjacent regions), so loop until all cycles are broken.
+        ubyte[][] cycleBuffers;
+        int[] cycleIndices;
+        while (order.length < n)
         {
+            int cycleIdx = -1;
             foreach (i; 0 .. n)
                 if (!sorted[i] && pieces[i].sourceOffset >= 0)
                     if (cycleIdx < 0 || pieces[i].size < pieces[cycleIdx].size)
                         cycleIdx = cast(int) i;
 
-            if (cycleIdx >= 0)
-            {
-                cycleData.length = cast(size_t) pieces[cycleIdx].size;
-                editor.view(pieces[cycleIdx].logicalPos, cycleData);
-                sorted[cycleIdx] = true;
-                foreach (next; adj[cycleIdx])
-                    if (--inDeg[next] == 0)
-                        queue ~= next;
-                drain();
-            }
-            // Append any remaining unsorted pieces (non-source, no deps left).
-            foreach (i; 0 .. n)
-                if (!sorted[i] && i != cycleIdx)
-                    order ~= cast(int) i;
+            // No source piece left in the remaining unsorted set —
+            // the rest are non-source (new data) with no file-read
+            // dependencies, safe to write in any order.
+            if (cycleIdx < 0) break;
+
+            ubyte[] cdata;
+            cdata.length = cast(size_t) pieces[cycleIdx].size;
+            editor.view(pieces[cycleIdx].logicalPos, cdata);
+            cycleBuffers ~= cdata;
+            cycleIndices ~= cycleIdx;
+
+            sorted[cycleIdx] = true;
+            foreach (next; adj[cycleIdx])
+                if (--inDeg[next] == 0)
+                    queue ~= next;
+            drain();
         }
+        // Remaining non-source pieces (no file-read dependencies).
+        foreach (i; 0 .. n)
+            if (!sorted[i])
+                order ~= cast(int) i;
 
         // Write pieces in topological order.
         ubyte[] buf;  buf.length = CONFIG_CHUNKSIZE;
@@ -1117,8 +1126,9 @@ void save_inplace(IDocumentEditor editor, string path)
                 wdoc.writeAt(lp + off, editor.view(lp + off, buf[0 .. len]));
             }
         }
-        if (cycleIdx >= 0)
-            wdoc.writeAt(pieces[cycleIdx].logicalPos, cycleData);
+        // Write buffered cycle pieces last.
+        foreach (ci; 0 .. cycleIndices.length)
+            wdoc.writeAt(pieces[cycleIndices[ci]].logicalPos, cycleBuffers[ci]);
 
         if (docsize < filesize)
             wdoc.resize(docsize); // shrink after writing
@@ -1522,6 +1532,45 @@ unittest
     fdoc.close();
 
     assert(read(path) == "hello!");
+}
+// Test: multiple inserts creating a chain of displaced source pieces.
+// Insert in the middle splits the source, then insert at 0 pushes both
+// halves right.  The topological sort must write the later source piece
+// first so the earlier one's read range isn't corrupted.
+unittest
+{
+    import editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "ABCDEF";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[]) data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+
+    // Split the source piece by inserting in the middle
+    static immutable string ins1 = "XX";
+    editor.insert(3, ins1.ptr, ins1.length); // "ABCXXDEF"
+
+    // Displace both source halves by inserting at position 0
+    static immutable string ins2 = "YY";
+    editor.insert(0, ins2.ptr, ins2.length); // "YYABCXXDEF"
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "YYABCXXDEF");
 }
 
 // Move the cursor relative to its position within the file
