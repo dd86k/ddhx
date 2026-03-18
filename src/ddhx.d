@@ -37,31 +37,33 @@ immutable string DDHX_VERSION   = "0.9.1"~DEBUG;
 immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 
 /// Chunk size to use when I/O is involved (reading, writing)
-private enum CHUNKSIZE      = KiB!128;
+private enum CONFIG_CHUNKSIZE      = KiB!128;
 /// Artificial needle size limit for find/find-back commands.
-private enum SEARCH_LIMIT   = KiB!128;
+private enum CONFIG_SEARCH_LIMIT   = KiB!128;
 /// Amount of data before warning for a copy for clipboard.
-private enum COPY_WORRY     = MiB!16;
+private enum CONFIG_COPY_WORRY     = MiB!16;
 
 private enum // Internal editor status flags
 {
-    // Read from editor, content changed
-    UREAD       = 1 << 1,
-    UVIEW       = UREAD,    // older alias for UREAD
-    // Update the header
+    /// Update the entire view panel (address/data/text)
+    UVIEW       = 1 << 1,
+    /// Update the header bar
     UHEADER     = 1 << 2,
-    // Update statusbar
+    /// Update the status bar
     USTATUS     = 1 << 3,
-    USTATUSBAR  = USTATUS,  // older alias for USTATUS
     
-    // Pending message
+    /// Pending message
     UMESSAGE    = 1 << 16,
-    // Editing in progress
+    /// Editing (of an element) in progress
     UEDITING    = 1 << 17,
     
-    //
+    /// Update header, view, and status
     UALL    = UHEADER | UVIEW | USTATUS,
-    UINIT   = UALL,         // older alias for UALL
+    
+    /// Selection is active and has a range going
+    SELECT_ACTIVE   = 1,
+    /// Mark started, so don't clear it
+    SELECT_ONGOING  = 1 << 1,
 }
 
 private enum PanelType
@@ -87,13 +89,6 @@ struct CurrentSelection
 {
     long anchor;    /// original position when started
     int status;     /// current status
-}
-
-private enum {
-    /// Selection is active and has a range going
-    SELECT_ACTIVE   = 1,
-    /// Mark started, so don't clear it
-    SELECT_ONGOING  = 2,
 }
 
 /// Editor session.
@@ -546,7 +541,7 @@ void start_session(Session *session, string initmsg)
     
     g_session = session;
     
-    g_status = UINIT;
+    g_status = UALL;
     g_messagebuf.length = 4096;
     
     g_input = new InputFormatter; // hack due to buffer escapes
@@ -582,7 +577,7 @@ void onresize() // NOTE: I/O is allowed here
     // Yes, on resize, conhost will show the console's cursor again
     version (Windows) terminalHideCursor();
     
-    g_status |= UINIT; // draw everything
+    g_status |= UALL; // draw everything
     update(g_session);
 }
 
@@ -896,7 +891,7 @@ void save_to_file(IDocumentEditor editor, string target)
     
     // 2. Allocate buffer, read from editor, and write to temp file
     {
-        ubyte[] buffer = (cast(ubyte*)malloc(CHUNKSIZE))[0..CHUNKSIZE];
+        ubyte[] buffer = (cast(ubyte*)malloc(CONFIG_CHUNKSIZE))[0..CONFIG_CHUNKSIZE];
         if (buffer is null)
             throw new Exception("error: Out of memory");
         scope(exit) free(buffer.ptr);
@@ -906,7 +901,7 @@ void save_to_file(IDocumentEditor editor, string target)
         do
         {
             fileout.rawWrite( editor.view(position, buffer) );
-            position += CHUNKSIZE;
+            position += CONFIG_CHUNKSIZE;
         }
         while (position < docsize);
         fileout.flush(); // On the safer side
@@ -1100,15 +1095,15 @@ void save_inplace(IDocumentEditor editor, string path)
         }
 
         // Write pieces in topological order.
-        ubyte[] buf;  buf.length = CHUNKSIZE;
+        ubyte[] buf;  buf.length = CONFIG_CHUNKSIZE;
 
         foreach (idx; order)
         {
             long sz = pieces[idx].size;
             long lp = pieces[idx].logicalPos;
-            for (long off = 0; off < sz; off += CHUNKSIZE)
+            for (long off = 0; off < sz; off += CONFIG_CHUNKSIZE)
             {
-                size_t len = cast(size_t) min(sz - off, CHUNKSIZE);
+                size_t len = cast(size_t) min(sz - off, CONFIG_CHUNKSIZE);
                 wdoc.writeAt(lp + off, editor.view(lp + off, buf[0 .. len]));
             }
         }
@@ -2148,7 +2143,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
     assertion(needle, "Need needle");
     
     // Throwing on malloc failure is weird... but uses less memory than a search buffer
-    ubyte[] hay = (cast(ubyte*)malloc(CHUNKSIZE))[0..CHUNKSIZE];
+    ubyte[] hay = (cast(ubyte*)malloc(CONFIG_CHUNKSIZE))[0..CONFIG_CHUNKSIZE];
     if (hay is null)
         throw new Exception("error: Out of memory");
     scope(exit) free(hay.ptr);
@@ -2172,7 +2167,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
             if (cancelling())
                 throw new Exception("Cancelled");
             
-            base -= CHUNKSIZE;
+            base -= CONFIG_CHUNKSIZE;
             if (base < 0)
                 base = 0;
             
@@ -3049,7 +3044,7 @@ void export_range(Session *session, string[] args)
     File output = File(name, "w");
     
     // Re-using search alloc func because lazy
-    ubyte[] buf = (cast(ubyte*)malloc(CHUNKSIZE))[0..CHUNKSIZE];
+    ubyte[] buf = (cast(ubyte*)malloc(CONFIG_CHUNKSIZE))[0..CONFIG_CHUNKSIZE];
     if (buf is null)
         throw new Exception("error: Out of memory");
     scope(exit) free(buf.ptr);
@@ -3060,11 +3055,11 @@ void export_range(Session *session, string[] args)
     while (sel.start < sel.end)
     {
         long left = sel.end - sel.start;
-        long want = min(left, CHUNKSIZE);
+        long want = min(left, CONFIG_CHUNKSIZE);
         ubyte[] res = session.editor.view(sel.start, buf.ptr, cast(size_t)want);
         
         output.rawWrite(res);
-        sel.start += CHUNKSIZE;
+        sel.start += CONFIG_CHUNKSIZE;
     }
     
     // Unfortunately to force the message through
@@ -3193,7 +3188,7 @@ void clip_copy(Session *session, string[] args)
         if (sel.length > MAXSIZE)
             throw new Exception("Clipboard cannot contain selection");
         
-        if (sel.length >= COPY_WORRY)
+        if (sel.length >= CONFIG_COPY_WORRY)
         {
             int k = promptkey("Copy >16 MiB into clipboard? [y/N] ");
             switch (k) {
@@ -3238,7 +3233,7 @@ void clip_cut(Session *session, string[] args)
         if (sel.length > MAXSIZE)
             throw new Exception("Clipboard cannot contain selection");
         
-        if (sel.length >= COPY_WORRY)
+        if (sel.length >= CONFIG_COPY_WORRY)
         {
             int k = promptkey("Copy >16 MiB into clipboard? [y/N] ");
             switch (k) {
@@ -3512,7 +3507,7 @@ void find(Session *session, string[] args)
     }
     else if (sel.length) // selection
     {
-        if (sel.length > SEARCH_LIMIT)
+        if (sel.length > CONFIG_SEARCH_LIMIT)
             throw new Exception("Selection too big");
         g_needle.length = cast(size_t)sel.length;
         g_needle = session.editor.view(sel.start, g_needle);
@@ -3557,7 +3552,7 @@ void find_back(Session *session, string[] args)
     }
     else if (sel.length) // selection
     {
-        if (sel.length > SEARCH_LIMIT)
+        if (sel.length > CONFIG_SEARCH_LIMIT)
             throw new Exception("Selection too big");
         g_needle.length = cast(size_t)sel.length;
         g_needle = session.editor.view(sel.start, g_needle);
