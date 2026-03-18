@@ -147,8 +147,10 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // Editor status, resetted every time update() is called
     int g_status;
     
-    // Number of effective rows in view, updated by update()
-    int g_rows;
+    // Terminal dimensions, updated by update()
+    int g_rows;     /// Terminal rows available
+    int g_cols;     /// Terminal columns available
+    int g_viewrows; /// Effective height for view panel
     
     // Number of bytes for a row, updated by update()
     int g_linesize;
@@ -405,9 +407,14 @@ void initdefaults()
             file.writeln("Platform\t: ", TARGET_PLATFORM);
             file.writeln();
             
+            file.writeln("Terminal");
+            TerminalSize termsize = terminalSize();
+            file.writeln("\t", termsize.columns, " columns");
+            file.writeln("\t", termsize.rows, " rows");
+            
+            file.writeln("GC");
             import core.memory : GC;
             GC.Stats stats = GC.stats();
-            file.writeln("GC");
             file.writeln("\t", stats.freeSize, " B Free");
             file.writeln("\t", stats.usedSize, " B Used");
             static if (__VERSION__ >= 2087)
@@ -429,6 +436,9 @@ void initdefaults()
             file.writeln("\tg_clipboard_len\t: ", g_clipboard_len);
             file.writeln("\tg_commands.length\t: ", g_commands.length);
             file.writeln("\tg_keys.length\t: ", g_keys.length);
+            file.writeln("\tg_rows\t: ", g_rows);
+            file.writeln("\tg_cols\t: ", g_cols);
+            file.writeln("\tg_viewrows\t: ", g_viewrows);
             
             file.writeln("Session");
             file.writeln("\tg_session.position_cursor\t: ", g_session.position_cursor);
@@ -1559,7 +1569,7 @@ void moveabs(Session *session, long pos)
     // Adjust view position if cursor outside of view
     import utils : align64down, align64up;
     int g = session.rc.columns * data_size; // group size
-    int count = g * g_rows;
+    int count = g * g_viewrows;
     if (pos < session.position_view) // cursor is behind view
     {
         session.position_view = align64down(pos, g);
@@ -1596,7 +1606,7 @@ void message(A...)(string fmt, A args)
 }
 
 // Render header bar on screen
-void update_header(Session *session, TerminalSize termsize)
+void update_header(Session *session)
 {
     terminalCursor(0, 0);
     
@@ -1632,7 +1642,7 @@ void update_header(Session *session, TerminalSize termsize)
     }
     
     // Fill rest of upper bar with spaces
-    int rem = termsize.columns - cast(int)buffwriter.length();
+    int rem = g_cols - cast(int)buffwriter.length();
     if (rem > 0)
         buffwriter.repeat(' ', rem);
     
@@ -1698,14 +1708,15 @@ ElementState getElementState(int elementIndex, int viewpos, int sl0, int sl1,
 }
 
 // Render view with data on screen
-void update_view(Session *session, TerminalSize termsize)
+void update_view(Session *session)
 {
+    int rows = g_viewrows;
+
     // What do you want me to do with so little space?
-    if (termsize.rows < 3)
+    if (rows < 1)
         return;
     
     int cols        = session.rc.columns;       /// elements per row
-    int rows        = g_rows;                   /// rows available
     int count       = rows * cols;              /// elements on screen
     long curpos     = session.position_cursor;  /// Cursor position
     long address    = session.position_view;    /// Base address
@@ -1813,7 +1824,7 @@ void update_view(Session *session, TerminalSize termsize)
         // Render data by element, so by column
         for (int col; col < cols; col++)
         {
-            if (chars > termsize.columns)
+            if (chars > g_cols)
                 break;
             
             int elemidx = (row * cols) + col;
@@ -1869,7 +1880,7 @@ void update_view(Session *session, TerminalSize termsize)
         // Render text by byte
         for (int idx; idx < g_linesize; idx++, ci++)
         {
-            if (chars > termsize.columns)
+            if (chars > g_cols)
                 break;
             
             // Convert byte offset to element index for state checking
@@ -1926,10 +1937,10 @@ void update_view(Session *session, TerminalSize termsize)
         }
 
         // Fill rest of term with spaces
-        if (chars < termsize.columns)
+        if (chars < g_cols)
         {
             terminalResetColor();   // fixes colors when in text column
-            terminalWriteChar(' ', cast(int)(termsize.columns - chars));
+            terminalWriteChar(' ', cast(int)(g_cols - chars));
         }
 
         // NOTE: Tried fixing copying from VTE terminal for newlines...
@@ -1940,7 +1951,7 @@ void update_view(Session *session, TerminalSize termsize)
     
     // NOTE: terminalWriteChar does buffering on its own
     //       Increased stack buffer size from 32 to 128 to help
-    int tcols = termsize.columns - 1;
+    int tcols = g_cols - 1;
     for (; row < rows; ++row)
     {
         terminalCursor(0, row + rowdisp);
@@ -1958,9 +1969,9 @@ void update_view(Session *session, TerminalSize termsize)
 }
 
 // Render status bar on screen
-void update_status(Session *session, TerminalSize termsize)
+void update_status(Session *session)
 {
-    terminalCursor(0, termsize.rows - 1);
+    terminalCursor(0, g_rows - 1);
     
     AddressFormatter address = void;
     ElementText buf0 = void;
@@ -1996,7 +2007,7 @@ void update_status(Session *session, TerminalSize termsize)
     
     // Attempt to fit the new message on screen
     int msglen = cast(int)msg.length;
-    int cols = termsize.columns; // "-1" was when I was worried about line wrapping
+    int cols = g_cols; // "cols-1" was when I was worried about line wrapping
     if (msglen >= cols) // message does not fit on screen
     {
         // TODO: Attempt to "scroll" message
@@ -2024,21 +2035,20 @@ void update(Session *session)
     //       It's pointless to micro-optimize rendering processes while everything is WIP
     TerminalSize termsize = terminalSize();
     
-    // Number of available rows
+    // Update terminal globals
     g_rows = termsize.rows;
-    
-    // Header enabled
-    if (session.rc.header) g_rows--;
-    // Status enabled
-    if (session.rc.status) g_rows--;
+    g_cols = termsize.columns;
+    g_viewrows = g_rows;
+    if (session.rc.header) g_viewrows--;
+    if (session.rc.status) g_viewrows--;
     
     if (session.rc.header)
-        update_header(session, termsize);
+        update_header(session);
     
-    update_view(session, termsize);
+    update_view(session);
     
     if (session.rc.status || g_status & UMESSAGE)
-        update_status(session, termsize);
+        update_status(session);
     
     g_status = 0;
 }
@@ -2049,8 +2059,7 @@ void update_progress(Session *session, long position, long total)
 {
     __gshared int lastx;
     
-    TerminalSize termsize = terminalSize();
-    int width = termsize.columns - 2;
+    int width = g_cols - 2;
     
     assert(position <= total, "position <= total");
     
@@ -2066,7 +2075,7 @@ void update_progress(Session *session, long position, long total)
     log("w=%d p=%d t=%d x=%d r=%d",
         width, position, total, x, rem);
     
-    terminalMove(0, termsize.rows - 1);
+    terminalMove(0, g_rows - 1);
     
     BufferedWriter!((void *data, size_t size) {
         terminalWrite(data, size);
@@ -2330,7 +2339,7 @@ void move_pg_up(Session *session, string[] args)
     if (session.position_cursor == 0)
         return;
 
-    moverel(session, -(g_rows * (session.rc.columns * size_of(session.rc.data_type))));
+    moverel(session, -(g_viewrows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move forward a page
 void move_pg_down(Session *session, string[] args)
@@ -2338,7 +2347,7 @@ void move_pg_down(Session *session, string[] args)
     unselect(session);
     g_digitpos = 0;
 
-    moverel(session, +(g_rows * (session.rc.columns * size_of(session.rc.data_type))));
+    moverel(session, +(g_viewrows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move to start of line
 void move_ln_start(Session *session, string[] args) // move to start of line
@@ -2486,7 +2495,7 @@ void view_up(Session *session, string[] args)
 // Move view down
 void view_down(Session *session, string[] args)
 {
-    int count = session.rc.columns * g_rows;
+    int count = session.rc.columns * g_viewrows;
     long max = session.editor.size() - count;
     if (session.position_view > max)
         return;
@@ -3361,7 +3370,7 @@ void save(Session *session, string[] args)
     // Force updating the status bar to indicate that we're currently saving.
     // It might take a while depending on the strategy used.
     message("Saving...");
-    update_status(session, terminalSize());
+    update_status(session);
     
     // If the original doc is file, try saving it in-place
     try
@@ -3409,7 +3418,7 @@ void save_as(Session *session, string[] args)
     string name = askstring(args, 0, "Save as: ");
     
     message("Saving...");
-    update_status(session, terminalSize());
+    update_status(session);
     
     // Always SAVE AS new file
     save_to_file(session.editor, name);
@@ -3521,7 +3530,7 @@ void find(Session *session, string[] args)
     unselect(session);
     
     message("Searching...");
-    update_status(session, terminalSize());
+    update_status(session);
     
     long p =
         search(session, g_needle, sel.start, 0,
@@ -3566,7 +3575,7 @@ void find_back(Session *session, string[] args)
     unselect(session);
     
     message("Searching...");
-    update_status(session, terminalSize());
+    update_status(session);
     
     long p =
         search(session, g_needle, sel.start, SEARCH_REVERSE,
@@ -3593,7 +3602,7 @@ void find_next(Session *session, string[] args)
     unselect(session);
     
     message("Searching...");
-    update_status(session, terminalSize());
+    update_status(session);
     
     long p =
         search(session, g_needle, session.position_cursor + g_needle.length, 0,
@@ -3620,7 +3629,7 @@ void find_prev(Session *session, string[] args)
     unselect(session);
     
     message("Searching...");
-    update_status(session, terminalSize());
+    update_status(session);
     
     long p =
         search(session, g_needle, session.position_cursor - 1, SEARCH_REVERSE,
