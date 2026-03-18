@@ -1816,10 +1816,7 @@ void update_view(Session *session)
         line.reset();
         
         // Add address + one spacer
-        line.normal(afmt.textual(buf, address, session.rc.address_spacing), " ");
-        
-        // expected amount of characters to be rendered on screen
-        size_t chars;
+        size_t chars = line.normal(afmt.textual(buf, address, session.rc.address_spacing), " ");
         
         // Render data by element, so by column
         for (int col; col < cols; col++)
@@ -1914,8 +1911,11 @@ void update_view(Session *session)
         // Render line segments on screen
         terminalCursor(0, row + rowdisp);
         ColorMap lastmap; // Need to track full color range...
+        size_t rendered; // chars printed
         foreach (ref segment; line.segments)
         {
+            if (rendered >= g_cols) break;
+
             ColorMap map = g_colors.get(segment.scheme);
 
             bool change = lastmap != map;
@@ -1931,16 +1931,27 @@ void update_view(Session *session)
             if (map.flags & COLORMAP_INVERTED && change)
                 terminalInvertColor();
 
-            terminalWrite(segment.data);
+            // Truncate segment if it would exceed terminal width
+            size_t avail = g_cols - rendered;
+            if (segment.data.length <= avail)
+            {
+                terminalWrite(segment.data);
+                rendered += segment.data.length;
+            }
+            else
+            {
+                terminalWrite(segment.data[0..avail]);
+                rendered += avail;
+            }
 
             lastmap = map;
         }
 
         // Fill rest of term with spaces
-        if (chars < g_cols)
+        if (rendered < g_cols)
         {
             terminalResetColor();   // fixes colors when in text column
-            terminalWriteChar(' ', cast(int)(g_cols - chars));
+            terminalWriteChar(' ', cast(int)(g_cols - rendered));
         }
 
         // NOTE: Tried fixing copying from VTE terminal for newlines...
