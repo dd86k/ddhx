@@ -38,12 +38,18 @@ class DummyDocumentEditor : IDocumentEditor
 
     ubyte[] view(long position, void* data, size_t size)
     {
-        return cast(ubyte[])_data;
+        return view(position, (cast(ubyte*)data)[0..size]);
     }
 
     ubyte[] view(long position, ubyte[] buffer)
     {
-        return cast(ubyte[])_data;
+        if (position < 0 || position >= _data.length)
+            return [];
+        size_t start = cast(size_t) position;
+        size_t avail = _data.length - start;
+        size_t len = buffer.length < avail ? buffer.length : avail;
+        buffer[0..len] = cast(ubyte[]) _data[start .. start + len];
+        return buffer[0..len];
     }
 
     bool edited()

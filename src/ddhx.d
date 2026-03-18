@@ -2212,7 +2212,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
     
     assertion(needle, "Need needle");
     
-    // Throwing on malloc failure is weird... but uses less memory than a search buffer
+    // Throwing on malloc failure is weird... but uses less memory than a search buffer would
     ubyte[] hay = (cast(ubyte*)malloc(CONFIG_CHUNKSIZE))[0..CONFIG_CHUNKSIZE];
     if (hay is null)
         throw new Exception("error: Out of memory");
@@ -2246,9 +2246,19 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
                 // somehow haystack is smaller than needle
                 return SEARCH_RESULT_NOT_FOUND;
             
-            for (size_t o = cast(size_t)(position - base); o > 0; o -= alignment, position -= alignment)
+            long o = position - base;
+            // Clamp so memcmp stays within haystack bounds.
+            long maxOff = cast(long)(haystack.length - needle.length);
+            if (o > maxOff)
             {
-                int r = memcmp(needle.ptr, haystack.ptr + o, needle.length);
+                position -= (o - maxOff);
+                o = maxOff;
+            }
+            // Use signed long for o to avoid size_t underflow when
+            // alignment > 1 and o < alignment.
+            for (; o > 0; o -= cast(long) alignment, position -= cast(long) alignment)
+            {
+                int r = memcmp(needle.ptr, haystack.ptr + cast(size_t) o, needle.length);
                 
                 // if memcmp==0 (exact) != diff=1 -> SKIP
                 // if memcmp!=0 (diff)  != diff=0 -> SKIP
@@ -2276,7 +2286,8 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
             if (haystack.length < needle.length)
                 return SEARCH_RESULT_NOT_FOUND;
             
-            for (size_t o; o < haystack.length; o += alignment, position += alignment)
+            // o + needle.length <= haystack.length to avoid memcmp overread
+            for (size_t o; o + needle.length <= haystack.length; o += alignment, position += alignment)
             {
                 int r = memcmp(needle.ptr, haystack.ptr + o, needle.length);
                 
@@ -2298,6 +2309,61 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
     debug log("search=%s", sw.peek());
     
     return flags & SEARCH_LASTPOS ? position : SEARCH_RESULT_NOT_FOUND;
+}
+// Forward search: memcmp must not read past haystack when needle.length > 1.
+// Old bound (o < haystack.length) let the last comparison overread.
+unittest
+{
+    import editor.dummy : DummyDocumentEditor;
+
+    // "AABBCC" — needle "CC" should be found at position 4.
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
+
+    ubyte[] needle = cast(ubyte[]) "CC";
+    long result = search(&session, needle, 0, SEARCH_ALIGNED, null);
+    assert(result == 4, "forward aligned: expected 4");
+}
+// Forward search: needle that does not exist must return not-found
+// without reading past the buffer.
+unittest
+{
+    import editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
+
+    ubyte[] needle = cast(ubyte[]) "ZZ";
+    long result = search(&session, needle, 0, SEARCH_ALIGNED, null);
+    assert(result == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
+}
+// Reverse search with alignment > 1: the loop must terminate without
+// size_t underflow when the offset is not a multiple of alignment.
+// 7-byte data makes maxOff=5 (odd), so with alignment=2 the loop
+// counter hits 1 then would underflow with unsigned arithmetic.
+unittest
+{
+    import editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
+
+    ubyte[] needle = cast(ubyte[]) "ZZ";
+    long result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED, null);
+    assert(result == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
+}
+// Reverse search: initial offset is clamped so memcmp stays in bounds,
+// and the match (not at offset 0) is still found.
+unittest
+{
+    import editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
+
+    ubyte[] needle = cast(ubyte[]) "CD";
+    long result = search(&session, needle, 5, SEARCH_REVERSE, null);
+    assert(result == 2, "reverse from end: expected 2");
 }
 
 //
