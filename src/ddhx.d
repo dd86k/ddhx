@@ -1600,7 +1600,8 @@ void moveabs(Session *session, long pos)
         pos = 0;
     // Fix when cursor is attempting to select non-existant data
     else if (session.selection.status && pos >= docsize)
-        pos = docsize - 1;
+        // Ternary fixes zero-length + selection overflow
+        pos = (docsize > 0) ? docsize - 1 : 0;
     // Fix when cursor is past playable area (doc size + EOF)
     else if (pos > docsize)
         pos = docsize;
