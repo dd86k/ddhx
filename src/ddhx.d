@@ -2187,6 +2187,9 @@ enum {
     SEARCH_ALIGNED  = 8,
     // Wrap search.
     //SEARCH_WRAP     = 16,
+    /// Unittests run in non-interactible environments, and for those,
+    /// this option avoids using term
+    SEARCH_DISALLOW_CANCEL = 32,
     
     /// Search result not found.
     SEARCH_RESULT_NOT_FOUND = -1,
@@ -2234,7 +2237,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
         long base = position;
         do
         {
-            if (cancelling())
+            if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
                 throw new Exception("Cancelled");
             
             base -= CONFIG_CHUNKSIZE;
@@ -2279,7 +2282,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
     {
         do
         {
-            if (cancelling())
+            if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
                 throw new Exception("Cancelled");
             
             ubyte[] haystack = session.editor.view(position, hay);
@@ -2321,7 +2324,7 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
     ubyte[] needle = cast(ubyte[]) "CC";
-    long result = search(&session, needle, 0, SEARCH_ALIGNED, null);
+    long result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result == 4, "forward aligned: expected 4");
 }
 // Forward search: needle that does not exist must return not-found
@@ -2334,7 +2337,7 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
 
     ubyte[] needle = cast(ubyte[]) "ZZ";
-    long result = search(&session, needle, 0, SEARCH_ALIGNED, null);
+    long result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
 }
 // Reverse search with alignment > 1: the loop must terminate without
@@ -2349,7 +2352,7 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
 
     ubyte[] needle = cast(ubyte[]) "ZZ";
-    long result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED, null);
+    long result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
 }
 // Reverse search: initial offset is clamped so memcmp stays in bounds,
@@ -2362,7 +2365,7 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
     ubyte[] needle = cast(ubyte[]) "CD";
-    long result = search(&session, needle, 5, SEARCH_REVERSE, null);
+    long result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_DISALLOW_CANCEL, null);
     assert(result == 2, "reverse from end: expected 2");
 }
 
