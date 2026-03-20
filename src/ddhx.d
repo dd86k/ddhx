@@ -2057,13 +2057,15 @@ void update_status(Session *session)
     else // Regular status bar
     {
         address.change(session.rc.address_type);
-        
-        msg = cast(string)sformat(g_messagebuf, "%c %s | %3s | %8s | %s",
+        ElementText buf2 = void;
+
+        msg = cast(string)sformat(g_messagebuf, "%c %s | %3s | %8s | %s / %s",
             session.editor.edited() ? '*' : ' ',
             writingModeToString(session.rc.writemode),
             dataTypeToString(session.rc.data_type),
             charsetID(session.rc.charset),
-            address.textual(buf0, session.position_cursor, 8));
+            address.textual(buf0, session.position_cursor, 8),
+            formatFileSize(buf2, session.editor.size()));
     }
     
     // Attempt to fit the new message on screen

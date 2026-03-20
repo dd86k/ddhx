@@ -759,3 +759,14 @@ unittest
     assert(input.format     == "225");
     assert(input.data       == [ 0x95 ]);
 }
+
+string formatFileSize(ref ElementText buf, long size) {
+    if (size < 1024)
+        return cast(string)sformat(buf, "%d B", size);
+    else if (size < 1024 * 1024)
+        return cast(string)sformat(buf, "%.1f KiB", cast(double)size / 1024.0);
+    else if (size < 1024L * 1024 * 1024)
+        return cast(string)sformat(buf, "%.1f MiB", cast(double)size / (1024.0 * 1024));
+    else
+        return cast(string)sformat(buf, "%.1f GiB", cast(double)size / (1024.0 * 1024 * 1024));
+}
