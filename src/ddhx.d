@@ -2057,7 +2057,7 @@ void update_status(Session *session)
     else // Regular status bar
     {
         address.change(session.rc.address_type);
-        
+
         msg = cast(string)sformat(g_messagebuf, "%c %s | %3s | %8s | %s",
             session.editor.edited() ? '*' : ' ',
             writingModeToString(session.rc.writemode),
@@ -2079,12 +2079,23 @@ void update_status(Session *session)
     }
     else // message fits on screen
     {
-        terminalWrite(msg.ptr, msglen);
-        
-        // Pad to end of screen with spaces
+        // Right-align file size if there is room
+        ElementText buf2 = void;
+        string sizestr = formatFileSize(buf2, session.editor.size());
+        int sizelen = cast(int)sizestr.length;
         int rem = cols - msglen;
-        if (rem > 0)
-            terminalWriteChar(' ', rem);
+        if (rem >= sizelen + 1) // enough room: left msg, spaces, size flush-right
+        {
+            terminalWrite(msg.ptr, msglen);
+            terminalWriteChar(' ', rem - sizelen);
+            terminalWrite(sizestr.ptr, sizelen);
+        }
+        else // not enough room: just pad with spaces as before
+        {
+            terminalWrite(msg.ptr, msglen);
+            if (rem > 0)
+                terminalWriteChar(' ', rem);
+        }
     }
 }
 
