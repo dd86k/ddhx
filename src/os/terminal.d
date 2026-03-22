@@ -1210,12 +1210,18 @@ Lread:
                 if (i) stderr.write(", ");
                 char c = event.kbuffer[i];
                 if (c < 32 || c > 126) // non-printable ascii
-                    stderr.write("\\0%o", c);
+                    stderr.writef("\\0%o", c);
                 else
-                    stderr.write("'%c'", event.kbuffer[i]);
+                    stderr.writef("'%c'", event.kbuffer[i]);
             }
-            stderr.writeln(" (pending=%d)", cast(int)_pending_len);
+            stderr.writefln(" (pending=%d)", cast(int)_pending_len);
         }
+        
+        // TODO: xterm modifyOtherKeys mode 1/2 ("\e[>4;1m" and "\e[>4;2m")
+        //       These two codes were introduced in VTE 0.78 (Ubuntu 24.04 is on 0.76)
+        //       Would allow to capture some odd keys like Ctrl+d9
+        //       Needs "\e[>0c" (query device attributes: DA1), example "61;7600;1"
+        //       (61: VT420-level conformance, 7600: VTE 0.76, 1: 132-col support)
         
         enum ESC = 0x1b;
         
@@ -1224,7 +1230,7 @@ Lread:
         case 0: // Ctrl+Space
             event.key = Key.Spacebar | Mod.ctrl;
             return event;
-        case 13:
+        case 13: // ^M
             event.key = Key.Enter;
             return event;
         case 8: // ^H (ctrl+backspace)
@@ -1239,7 +1245,7 @@ Lread:
             // Shift+tab -> "\033[Z" (xterm)
             event.key = Key.Tab;
             return event;
-        case 127:
+        case 127: // \0177
             // See HACK for case 8.
             // OpenBSD (TERM=vt220) seems to only emit \0177 (127) and it's covered here
             version (FreeBSD)
@@ -1248,7 +1254,7 @@ Lread:
                 event.key = Key.Backspace;
             event.key = Key.Backspace;
             return event;
-        case ESC: // \x1b / \033
+        case ESC: // \x1b, \033
             if (r <= 1) // ESC only
             {
                 event.key = Key.Escape;
