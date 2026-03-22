@@ -363,6 +363,15 @@ struct BufferedWriter(void function(void*,size_t) FLUSHER, size_t SIZE = 2048)
         put(cast(const(ubyte)[])str);
     }
     
+    /// Put a single character
+    void put(char c)
+    {
+        if (1 + index > SIZE)
+            flush();
+        buffer[index] = cast(ubyte)c;
+        index++;
+    }
+    
     void repeat(char c, size_t count)
     {
         if (count == 0) return;

@@ -20,6 +20,7 @@ import os.terminal;
 import patterns;
 import platform : assertion;
 import ranges;
+import statusformat;
 import std.algorithm.comparison : min, max;
 import std.conv : text;
 import std.file : exists;
@@ -2033,59 +2034,48 @@ void update_view(Session *session)
 void update_status(Session *session)
 {
     terminalCursor(0, g_rows - 1);
+
+    // Pending message: display verbatim, bypass format strings
+    if (g_status & UMESSAGE)
+    {
+        string msg = g_message;
+        int msglen = cast(int)msg.length;
+        int cols = g_cols;
+        if (msglen >= cols)
+        {
+            // TODO: scroll long message
+            terminalWrite(msg[0 .. min(cols, msg.length)]);
+        }
+        else
+        {
+            terminalWrite(msg.ptr, msglen);
+            int rem = cols - msglen;
+            if (rem > 0)
+                terminalWriteChar(' ', rem);
+        }
+        return;
+    }
     
-    AddressFormatter address = void;
-    ElementText buf0 = void;
-    ElementText buf1 = void;
+    // Format status bar using customizable format strings
+    BufferedWriter!((void *data, size_t size) {
+        terminalWrite(data, size);
+    }, 512) writer;
     
     Selection sel = selection(session);
-    string msg = void;
-    if (g_status & UMESSAGE) // Pending message
-    {
-        msg = g_message;
-    }
-    else if (sel.length) // Active selection
-    {
-        address.change(session.rc.address_type);
-        
-        msg = cast(string)sformat(g_messagebuf, "SEL: %s-%s (%d Bytes)",
-            address.textual(buf0, sel.start, 1),
-            address.textual(buf1, sel.end, 1),
-            sel.length
-        );
-    }
-    else // Regular status bar
-    {
-        address.change(session.rc.address_type);
-        
-        msg = cast(string)sformat(g_messagebuf, "%c %s | %3s | %8s | %s",
-            session.editor.edited() ? '*' : ' ',
-            writingModeToString(session.rc.writemode),
-            dataTypeToString(session.rc.data_type),
-            charsetID(session.rc.charset),
-            address.textual(buf0, session.position_cursor, 8));
-    }
+    const(char)[] fmt;
     
-    // Attempt to fit the new message on screen
-    int msglen = cast(int)msg.length;
-    int cols = g_cols; // "cols-1" was when I was worried about line wrapping
-    if (msglen >= cols) // message does not fit on screen
-    {
-        // TODO: Attempt to "scroll" message
-        //       Loop keypresses to continue?
-        //       Might include "+" at end of message to signal continuation
-        size_t e = min(cols, msg.length);
-        terminalWrite(msg[0..e]);
-    }
-    else // message fits on screen
-    {
-        terminalWrite(msg.ptr, msglen);
-        
-        // Pad to end of screen with spaces
-        int rem = cols - msglen;
-        if (rem > 0)
-            terminalWriteChar(' ', rem);
-    }
+    if (sel.length)
+        fmt = session.rc.status_fmt_selection;
+    else
+        fmt = session.rc.status_fmt_normal;
+    
+    int written = formatStatus(writer, fmt, session, sel, g_cols);
+    
+    // Pad remaining space
+    if (written < g_cols)
+        writer.repeat(' ', g_cols - written);
+    
+    writer.flush();
 }
 
 // Update all elements on screen depending on editor information
@@ -3085,23 +3075,11 @@ void goto_(Session *session, string[] args)
 // Report cursor position on screen
 void report_position(Session *session, string[] args)
 {
-    // TODO: Remove or re-purpose command after statusbar customization
-    
-    long docsize = session.editor.size();
     Selection sel = selection(session);
-    if (sel.length)
-    {
-        message("%d-%d B (%f%%-%f%%)",
-            sel.start, sel.end,
-            cast(float)sel.start / docsize * 100,
-            cast(float)sel.end   / docsize * 100);
-        return;
-    }
-    long curpos  = session.position_cursor;
-    message("%d / %d B (%f%%)",
-        curpos,
-        docsize,
-        cast(float)curpos / docsize * 100);
+    SliceWriter sw = SliceWriter(g_messagebuf); // uses message buffer
+    formatStatus(sw, session.rc.status_fmt_report, session, sel, g_cols);
+    g_message = cast(string)g_messagebuf[0 .. sw.pos];
+    g_status |= UMESSAGE | USTATUS;
 }
 
 // Report document name on screen (as a reminder)

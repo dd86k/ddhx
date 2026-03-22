@@ -56,7 +56,16 @@ struct RC
     
     /// Enable coalescing
     bool coalescing = true;
-    
+
+    /// Format string for the normal status bar.
+    string status_fmt_normal = "%e %m | %t | %c | %p";
+
+    /// Format string for the selection status bar.
+    string status_fmt_selection = "SEL: %V (%v Bytes)";
+
+    /// Format string for the report bar (report command).
+    string status_fmt_report = "%d / %s B";
+
 private:
     // Fixes when RC file has config and CLI already set a field.
     bool address_type_set;
@@ -70,6 +79,9 @@ private:
     bool mirror_cursor_set;
     bool highlight_zeros_set;
     bool coalescing_set;
+    bool status_fmt_normal_set;
+    bool status_fmt_selection_set;
+    bool status_fmt_report_set;
 }
 
 /// Return true/false given sting input.
@@ -234,6 +246,21 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         "coalesce", "If set, edits are coalescing",
         "Boolean", `"on"`,
         &configure_coalescing
+    },
+    {
+        "status-format", "Normal status bar format string",
+        "Format string", `"%e %m | %t | %c | %p"`,
+        &configure_status_fmt_normal
+    },
+    {
+        "status-report", "Report status bar format string",
+        "Format string", `"%d / %s B"`,
+        &configure_status_fmt_report
+    },
+    {
+        "status-selection", "Selection status bar format string",
+        "Format string", `"SEL: %V (%v Bytes)"`,
+        &configure_status_fmt_selection
     },
 ];
 unittest
@@ -404,4 +431,31 @@ void configure_coalescing(ref RC rc, string value, bool conf = false)
     
     rc.coalescing = boolean(value);
     rc.coalescing_set = true;
+}
+
+void configure_status_fmt_normal(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.status_fmt_normal_set)
+        return;
+
+    rc.status_fmt_normal = value;
+    rc.status_fmt_normal_set = true;
+}
+
+void configure_status_fmt_selection(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.status_fmt_selection_set)
+        return;
+
+    rc.status_fmt_selection = value;
+    rc.status_fmt_selection_set = true;
+}
+
+void configure_status_fmt_report(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.status_fmt_report_set)
+        return;
+
+    rc.status_fmt_report = value;
+    rc.status_fmt_report_set = true;
 }
