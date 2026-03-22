@@ -2188,7 +2188,8 @@ enum {
     // Wrap search.
     //SEARCH_WRAP     = 16,
     /// Unittests run in non-interactible environments, and for those,
-    /// this option avoids using term
+    /// this option avoids canceling, which requires an interactive terminal
+    /// (and terminalHasInput, which throws). Used in tests.
     SEARCH_DISALLOW_CANCEL = 32,
     
     /// Search result not found.
@@ -3584,11 +3585,22 @@ void set(Session *session, string[] args)
 // Bind key to action (command + parameters)
 void bind(Session *session, string[] args)
 {
-    int key = terminal_keybind( askstring(args, 0, "Key: ") );
-    // BUG: promptline returns as one string, so "goto +32" might happen
-    string command = askstring(args, 1, "Command: ");
+    import utils : arguments;
     
-    bindkey(key, command, args.length >= 2 ? args[2..$] : null);
+    int key = terminal_keybind( askstring(args, 0, "Key: ") );
+    string[] commands = arguments( askstring(args, 1, "Command: ") );
+    
+    // When prompted interactively, we might get "goto +32" as a single
+    // string. Split it so the command name and parameters are separated.
+    /*string[] params = args.length >= 2 ? args[2..$] : null;
+    if (params is null)
+    {
+        string[] argv = arguments(command);
+        if (argv.length > 0) command = argv[0];
+        if (argv.length > 1) params = argv[1..$];
+    }*/
+    
+    bindkey(key, commands[0], commands.length > 1 ? commands[1..$] : null);
     message("Key binded");
 }
 
