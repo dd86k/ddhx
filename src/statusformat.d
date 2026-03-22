@@ -137,6 +137,12 @@ private const(char)[] resolveSpecifier(Session, Selection)(const(char)[] fmt, re
         af.change(session.rc.address_type);
         return af.textual(abuf0, session.editor.size(), 1);
 
+    case 'q': // position in document as percent
+        long sz = session.editor.size();
+        if (sz == 0) return "0.000";
+        double q = cast(double)session.position_cursor / sz * 100;
+        return sformat(tmpbuf, "%0.3f", q);
+
     case 'd': // current address position in decimal
         AddressFormatter af = void;
         af.change(AddressType.dec);
@@ -498,4 +504,39 @@ unittest
 
     formatStatus(sw, "test%", &session, sel, 80);
     assert(sliceResult(sw) == "test%");
+}
+
+// Percent position in document
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(1000, false);
+    TestSelection sel;
+
+    // 0% - start of file
+    session.position_cursor = 0;
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%q", &session, sel, 80);
+    assert(sliceResult(sw) == "0.000");
+
+    // 50%
+    session.position_cursor = 500;
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%q", &session, sel, 80);
+    assert(sliceResult(sw) == "50.000");
+
+    // 100%
+    session.position_cursor = 1000;
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%q", &session, sel, 80);
+    assert(sliceResult(sw) == "100.000");
+
+    // Empty file
+    session.editor = TestEditor(0, false);
+    session.position_cursor = 0;
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%q", &session, sel, 80);
+    assert(sliceResult(sw) == "0.000");
 }

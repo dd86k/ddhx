@@ -64,7 +64,7 @@ struct RC
     string status_fmt_selection = "SEL: %V (%v Bytes)";
 
     /// Format string for the report bar (report command).
-    string status_fmt_report = "%d / %s B";
+    string status_fmt_report = "%d / %s B (%q%%)";
 
 private:
     // Fixes when RC file has config and CLI already set a field.
