@@ -331,8 +331,8 @@ immutable Command[] default_commands = [
     { "goto",                       "Navigate or jump to a specific position",
         Mod.ctrl|Key.G,             &goto_ },
     // Reports
-    { "report-position",            "Report position, document size, and % in bytes",
-        Mod.ctrl|Key.P,             &report_position },
+    { "report",                     "Report position, document size, and % in bytes",
+        Mod.ctrl|Key.P,             &report },
     { "report-name",                "Report document name on screen",
         0,                          &report_name },
     { "report-version",             "Report ddhx version on screen",
@@ -3072,8 +3072,8 @@ void goto_(Session *session, string[] args)
         moverel(session, position);
 }
 
-// Report cursor position on screen
-void report_position(Session *session, string[] args)
+// Report alternative status bar
+void report(Session *session, string[] args)
 {
     Selection sel = selection(session);
     SliceWriter sw = SliceWriter(g_messagebuf); // uses message buffer
