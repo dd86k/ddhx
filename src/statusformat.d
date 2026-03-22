@@ -205,3 +205,292 @@ unittest
     assert(humanSize(buf, 1572864) == "1.5M");
     assert(humanSize(buf, 1073741824) == "1.0G");
 }
+
+// Test helpers - lightweight stand-ins for Session/Selection to avoid
+// circular imports with ddhx module.
+version(unittest)
+{
+    private struct TestEditor
+    {
+        long _size;
+        bool _edited;
+        long size() { return _size; }
+        bool edited() { return _edited; }
+    }
+
+    private struct TestRC
+    {
+        AddressType address_type = AddressType.hex;
+        DataType data_type = DataType.x8;
+        CharacterSet charset = CharacterSet.ascii;
+        WritingMode writemode = WritingMode.overwrite;
+    }
+
+    private struct TestSession
+    {
+        TestRC rc;
+        TestEditor editor;
+        string target;
+        long position_cursor;
+    }
+
+    private struct TestSelection
+    {
+        long start, end, length;
+    }
+
+    private string sliceResult(ref SliceWriter sw)
+    {
+        return cast(string)sw.buf[0 .. sw.pos];
+    }
+}
+
+// Literal text passthrough
+unittest
+{
+    char[128] buf;
+    SliceWriter sw = SliceWriter(buf);
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    formatStatus(sw, "hello world", &session, sel, 80);
+    assert(sliceResult(sw) == "hello world");
+}
+
+// Percent escape
+unittest
+{
+    char[128] buf;
+    SliceWriter sw = SliceWriter(buf);
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    formatStatus(sw, "100%%", &session, sel, 80);
+    assert(sliceResult(sw) == "100%");
+}
+
+// Unknown specifier passes through
+unittest
+{
+    char[128] buf;
+    SliceWriter sw = SliceWriter(buf);
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    formatStatus(sw, "%z", &session, sel, 80);
+    assert(sliceResult(sw) == "%z");
+}
+
+// File info specifiers
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(1536, false);
+    session.target = "/home/user/test.bin";
+    TestSelection sel;
+
+    // %f - basename
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%f", &session, sel, 80);
+    assert(sliceResult(sw) == "test.bin");
+
+    // %F - full path
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%F", &session, sel, 80);
+    assert(sliceResult(sw) == "/home/user/test.bin");
+
+    // %s - size in bytes
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%s", &session, sel, 80);
+    assert(sliceResult(sw) == "1536");
+
+    // %S - human size
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%S", &session, sel, 80);
+    assert(sliceResult(sw) == "1.5K");
+}
+
+// %f/%F with no target
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(0, false);
+    TestSelection sel;
+
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%f", &session, sel, 80);
+    assert(sliceResult(sw) == "(new buffer)");
+
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%F", &session, sel, 80);
+    assert(sliceResult(sw) == "(new buffer)");
+}
+
+// Editor state specifiers
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    // %e - not edited
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%e", &session, sel, 80);
+    assert(sliceResult(sw) == " ");
+
+    // %e - edited
+    session.editor._edited = true;
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%e", &session, sel, 80);
+    assert(sliceResult(sw) == "*");
+
+    // %m - writing mode
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%m", &session, sel, 80);
+    assert(sliceResult(sw) == "OVR");
+
+    session.rc.writemode = WritingMode.readonly;
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%m", &session, sel, 80);
+    assert(sliceResult(sw) == "R/O");
+}
+
+// Cursor position specifiers
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(4096, false);
+    session.position_cursor = 255;
+    TestSelection sel;
+
+    // %p - current address mode (default hex)
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%p", &session, sel, 80);
+    assert(sliceResult(sw) == "ff");
+
+    // %d - decimal
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%d", &session, sel, 80);
+    assert(sliceResult(sw) == "255");
+
+    // %h - hex
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%h", &session, sel, 80);
+    assert(sliceResult(sw) == "ff");
+
+    // %o - octal
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%o", &session, sel, 80);
+    assert(sliceResult(sw) == "377");
+
+    // %p with decimal address mode
+    session.rc.address_type = AddressType.dec;
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%p", &session, sel, 80);
+    assert(sliceResult(sw) == "255");
+}
+
+// Charset and data type
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    // %c - charset
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%c", &session, sel, 80);
+    assert(sliceResult(sw) == "ascii");
+
+    // %t - data type
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%t", &session, sel, 80);
+    assert(sliceResult(sw) == "x8");
+}
+
+// Selection specifiers
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(4096, false);
+    TestSelection sel = TestSelection(16, 255, 240);
+
+    // %v - selection length
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%v", &session, sel, 80);
+    assert(sliceResult(sw) == "240");
+
+    // %V - selection range (hex by default)
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%V", &session, sel, 80);
+    assert(sliceResult(sw) == "10-ff");
+}
+
+// Default format strings replicate current behavior
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(65536, false);
+    session.position_cursor = 0;
+    TestSelection sel;
+
+    // Normal status bar default
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%e %m | %t | %c | %p", &session, sel, 80);
+    assert(sliceResult(sw) == "  OVR | x8 | ascii | 0");
+
+    // Selection default
+    sel = TestSelection(0, 255, 256);
+    sw = SliceWriter(buf);
+    formatStatus(sw, "SEL: %V (%v Bytes)", &session, sel, 80);
+    assert(sliceResult(sw) == "SEL: 0-ff (256 Bytes)");
+
+    // Report default
+    sw = SliceWriter(buf);
+    formatStatus(sw, "%d / %s B", &session, sel, 80);
+    assert(sliceResult(sw) == "0 / 65536 B");
+}
+
+// maxCols truncation
+unittest
+{
+    char[128] buf;
+    SliceWriter sw = SliceWriter(buf);
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    int written = formatStatus(sw, "hello world", &session, sel, 5);
+    assert(sliceResult(sw) == "hello");
+    assert(written == 5);
+}
+
+// Trailing percent
+unittest
+{
+    char[128] buf;
+    SliceWriter sw = SliceWriter(buf);
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    formatStatus(sw, "test%", &session, sel, 80);
+    assert(sliceResult(sw) == "test%");
+}
