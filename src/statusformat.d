@@ -132,6 +132,11 @@ private const(char)[] resolveSpecifier(Session, Selection)(const(char)[] fmt, re
         af.change(session.rc.address_type);
         return af.textual(abuf0, session.position_cursor, 1);
 
+    case 'P': // document size in current address
+        AddressFormatter af = void;
+        af.change(session.rc.address_type);
+        return af.textual(abuf0, session.editor.size(), 1);
+
     case 'd': // current address position in decimal
         AddressFormatter af = void;
         af.change(AddressType.dec);
