@@ -58,7 +58,7 @@ struct RC
     bool coalescing = true;
 
     /// Format string for the normal status bar.
-    string status_fmt_normal = "%e %m | %t | %c | %p";
+    string status_fmt_normal = "%e %m | %t | %c | %8p";
 
     /// Format string for the selection status bar.
     string status_fmt_selection = "SEL: %V (%v Bytes)";

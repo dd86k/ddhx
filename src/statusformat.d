@@ -75,15 +75,62 @@ int formatStatus(Writer, Session, Selection)(ref Writer writer, const(char)[] fm
             break;
         }
 
+        // Parse optional width: [-][0-9]+
+        bool leftAlign = false;
+        int width = 0;
+
+        if (i < fmt.length && fmt[i] == '-')
+        {
+            leftAlign = true;
+            i++;
+        }
+
+        while (i < fmt.length && fmt[i] >= '0' && fmt[i] <= '9')
+        {
+            width = width * 10 + (fmt[i] - '0');
+            i++;
+        }
+
+        if (i >= fmt.length)
+        {
+            // Trailing '%' with width but no specifier
+            writer.put('%');
+            col++;
+            break;
+        }
+
         const(char)[] result = resolveSpecifier(fmt, i, session, sel);
 
-        // Write result characters, respecting maxCols
+        // Pad and write result, respecting maxCols
+        int pad = (width > cast(int)result.length) ? width - cast(int)result.length : 0;
+
+        if (!leftAlign)
+        {
+            // Right-align: pad first
+            foreach (_; 0 .. pad)
+            {
+                if (col >= maxCols) break;
+                writer.put(' ');
+                col++;
+            }
+        }
+
         foreach (ch; result)
         {
-            if (col >= maxCols)
-                break;
+            if (col >= maxCols) break;
             writer.put(ch);
             col++;
+        }
+
+        if (leftAlign)
+        {
+            // Left-align: pad after
+            foreach (_; 0 .. pad)
+            {
+                if (col >= maxCols) break;
+                writer.put(' ');
+                col++;
+            }
         }
     }
 
@@ -539,4 +586,125 @@ unittest
     sw = SliceWriter(buf);
     formatStatus(sw, "%q", &session, sel, 80);
     assert(sliceResult(sw) == "0.000");
+}
+
+// Width specifier - right-align (default)
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(4096, false);
+    session.position_cursor = 255;
+    TestSelection sel;
+
+    // %10p - right-align hex position in 10 chars
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%10p", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "        ff");
+
+    // No padding when result is wider than width
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%1p", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "ff");
+
+    // Width 0 means no padding
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%0p", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "ff");
+}
+
+// Width specifier - left-align
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(4096, false);
+    session.position_cursor = 255;
+    TestSelection sel;
+
+    // %-10p - left-align hex position in 10 chars
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%-10p", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "ff        ");
+
+    // Left-align with exact width
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%-2p", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "ff");
+}
+
+// Width with various specifiers
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    // %5m - right-align mode
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%5m", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "  OVR");
+
+    // %-5m - left-align mode
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%-5m", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "OVR  ");
+
+    // %-10f - left-align filename
+    session.target = "test.bin";
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%-10f|", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "test.bin  |");
+}
+
+// Width respects maxCols truncation
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    // Right-aligned padding truncated by maxCols
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%10m", &session, sel, 5) == 5);
+    assert(sliceResult(sw) == "     ");
+
+    // Left-aligned content + padding truncated by maxCols
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%-10m", &session, sel, 5) == 5);
+    assert(sliceResult(sw) == "OVR  ");
+}
+
+// Trailing '%' with width but no specifier
+unittest
+{
+    char[128] buf;
+    SliceWriter sw = SliceWriter(buf);
+    TestSession session;
+    session.editor = TestEditor(100, false);
+    TestSelection sel;
+
+    assert(formatStatus(sw, "test%10", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "test%");
+}
+
+// Width combined in full format string
+unittest
+{
+    char[128] buf;
+    SliceWriter sw;
+    TestSession session;
+    session.editor = TestEditor(4096, false);
+    session.position_cursor = 255;
+    TestSelection sel;
+
+    sw = SliceWriter(buf);
+    assert(formatStatus(sw, "%-5m|%10p", &session, sel, 80) < 80);
+    assert(sliceResult(sw) == "OVR  |        ff");
 }
