@@ -1224,13 +1224,14 @@ Lread:
         //       (61: VT420-level conformance, 7600: VTE 0.76, 1: 132-col support)
         
         enum ESC = 0x1b;
+        enum RETURN = '\r';
         
         // https://espterm.github.io/docs/espterm-xterm.html
         switch (event.kbuffer[0]) {
         case 0: // Ctrl+Space
             event.key = Key.Spacebar | Mod.ctrl;
             return event;
-        case 13: // ^M
+        case RETURN: // ^M
             event.key = Key.Enter;
             return event;
         case 8: // ^H (ctrl+backspace)
@@ -1309,6 +1310,9 @@ Lread:
                 // WARNING: Shift+Alt+O will lead here
                 input = input[1..$];
                 break;
+            case RETURN:
+                event.key = Mod.alt | Key.Enter;
+                return event;
             default: // Alt+KEY
                 event.key = Mod.alt | (input[0] - 32);
                 return event;
@@ -1997,7 +2001,7 @@ enum Key // These are fine for now
     Undefined = 0,
     Backspace = 8,
     Tab = 9,
-    Enter = 13,
+    Enter = 13, // Acts the same as Return for consistency
     Escape = 27,
     
     // ASCII (32..127)
