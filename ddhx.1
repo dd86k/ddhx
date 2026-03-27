@@ -1,7 +1,7 @@
 .\" ddhx - modal hex editor
 .\" Copyright (c) 2017-2026 dd86k <dd@dax.moe>
 .\" MIT License
-.TH DDHX 1 "2026-03-15" "ddhx 0.9.1" "User Commands"
+.TH DDHX 1 "2026-03-27" "ddhx 0.9.2" "User Commands"
 .
 .SH NAME
 ddhx \- modal TUI hex editor
@@ -636,6 +636,23 @@ Show the cursor in both data and text columns. Default:
 .BR status " \fRon\fP | off"
 Show the status bar. Default:
 .BR on .
+.TP
+.BI status\-format " STRING"
+Format string for the status bar. See
+.SM
+.B STATUS BAR FORMAT
+for available specifiers. Default:
+.BR "\(dq%e %m | %t | %c | %p\(dq" .
+.TP
+.BI status\-selection " STRING"
+Format string for the status bar when a selection is active. Default:
+.BR "\(dqSEL: %V (%v Bytes)\(dq" .
+.TP
+.BI status\-report " STRING"
+Format string for the position report
+.RB ( Ctrl+P ).
+Default:
+.BR "\(dq%d / %s B (%q%%)\(dq" .
 .
 .TP
 .BR color " ELEMENT FOREGROUND:BACKGROUND"
@@ -656,6 +673,62 @@ bind j down
 bind k up
 bind l right
 bind : menu
+.fi
+.RE
+.
+.SH STATUS BAR FORMAT
+The
+.BR status\-format ,
+.BR status\-selection ,
+and
+.BR status\-report
+settings accept format strings with the following specifiers:
+.
+.SS File and Size
+.TS
+lb l.
+%f	Target file basename
+%F	Full target path
+%s	Document size in bytes (decimal)
+%S	Document size in human-readable format (B, K, M, G, T, P)
+.TE
+.
+.SS Position
+.TS
+lb l.
+%p	Cursor position in the current address format
+%P	Document size in the current address format
+%d	Cursor position in decimal
+%h	Cursor position in hexadecimal
+%o	Cursor position in octal
+%q	Cursor position as a percentage of document size
+.TE
+.
+.SS Selection
+.TS
+lb l.
+%v	Selection length in bytes
+%V	Selection range in the current address format
+.TE
+.
+.SS Editor State
+.TS
+lb l.
+%e	Edited indicator ("*" if modified, " " otherwise)
+%m	Writing mode (OVR, INS, DIG, R/O)
+%c	Character set (ascii, cp437, mac, ebcdic)
+%t	Data type (x8, x16, etc.)
+%%	Literal percent sign
+.TE
+.PP
+Unknown specifiers pass through literally.
+.PP
+Examples:
+.RS
+.nf
+status\-format "%e %m | %S | %p (%q%%)"
+status\-selection "SEL: %V (%v Bytes)"
+status\-report "%d / %s B (%q%%)"
 .fi
 .RE
 .
