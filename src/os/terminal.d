@@ -1041,8 +1041,8 @@ Lread:
             
             version (unittest)
             {
-                import std.stdio : stderr, writefln;
-                stderr.writefln(
+                import std.stdio : writefln;
+                writefln(
                 "KeyEvent: AsciiChar=%d UnicodeChar=%d wVirtualKeyCode=%d dwControlKeyState=0x%x",
                 ir.KeyEvent.AsciiChar,
                 ir.KeyEvent.UnicodeChar,
@@ -1203,18 +1203,18 @@ Lread:
 
         version (unittest)
         {
-            import std.stdio : stderr, write, writeln;
-            stderr.write("stdin: ");
+            import std.stdio : write, writeln;
+            write("stdin: ");
             for (size_t i; i < r; ++i)
             {
-                if (i) stderr.write(", ");
+                if (i) write(", ");
                 char c = event.kbuffer[i];
                 if (c < 32 || c > 126) // non-printable ascii
-                    stderr.writef("\\0%o", c);
+                    writef("\\0%o", c);
                 else
-                    stderr.writef("'%c'", event.kbuffer[i]);
+                    writef("'%c'", event.kbuffer[i]);
             }
-            stderr.writefln(" (pending=%d)", cast(int)_pending_len);
+            writefln(" (pending=%d)", cast(int)_pending_len);
         }
         
         // TODO: xterm modifyOtherKeys mode 1/2 ("\e[>4;1m" and "\e[>4;2m")
