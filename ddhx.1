@@ -642,7 +642,7 @@ Format string for the status bar. See
 .SM
 .B STATUS BAR FORMAT
 for available specifiers. Default:
-.BR "\(dq%e %m | %t | %c | %p\(dq" .
+.BR "\(dq%e %m | %t | %c | %8p\(dq" .
 .TP
 .BI status\-selection " STRING"
 Format string for the status bar when a selection is active. Default:
@@ -678,11 +678,30 @@ bind : menu
 .
 .SH STATUS BAR FORMAT
 The
-.BR status\-format ,
-.BR status\-selection ,
+.BR status\-format " (the normal status bar),"
+.BR status\-selection " (when selection is active),"
 and
-.BR status\-report
-settings accept format strings with the following specifiers:
+.BR status\-report " (for report command)"
+settings accept format strings with the following specifiers.
+.PP
+Specifiers may include an optional width and alignment between the
+.B %
+and the letter:
+.BI % WIDTH SPEC
+right-aligns the result, padding with spaces to
+.I WIDTH
+characters.
+.BI %\- WIDTH SPEC
+left-aligns instead.
+If the result is already wider than
+.IR WIDTH ,
+no padding is added.
+.PP
+Examples:
+.B %10p
+right-aligns the position in a 10-character field;
+.B %-20f
+left-aligns the filename in 20 characters.
 .
 .SS File and Size
 .TS
@@ -726,7 +745,7 @@ Unknown specifiers pass through literally.
 Examples:
 .RS
 .nf
-status\-format "%e %m | %S | %p (%q%%)"
+status\-format "%e %m | %S | %8p (%q%%)"
 status\-selection "SEL: %V (%v Bytes)"
 status\-report "%d / %s B (%q%%)"
 .fi
