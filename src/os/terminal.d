@@ -27,11 +27,6 @@ module os.terminal;
 
 private import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
 private import core.stdc.stdlib : system;
-version (unittest)
-{
-    private import core.stdc.stdio : printf;
-    private extern (C) int putchar(int);
-}
 
 version (Windows)
 {
@@ -1203,7 +1198,7 @@ Lread:
 
         version (unittest)
         {
-            import std.stdio : write, writeln;
+            import std.stdio : write, writef, writeln, writefln;
             write("stdin: ");
             for (size_t i; i < r; ++i)
             {
