@@ -1110,6 +1110,7 @@ Lread:
         case MOUSE_EVENT:
             version (unittest)
             {
+                import std.stdio : writefln;
                 writefln(
                 "MouseEvent: X=%d Y=%d dwButtonState=%x dwControlKeyState=%x dwEventFlags=%x",
                 ir.MouseEvent.dwMousePosition.X, ir.MouseEvent.dwMousePosition.Y,
