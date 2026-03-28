@@ -961,7 +961,12 @@ size_t _seqlen(const(char)[] buf)
         return 0;
 
     if (buf[0] != 0x1b)
-        return 1; // regular byte/character (assuming utf-8)
+    {
+        // Use graphemeStride to handle base char + combining marks as one unit
+        // (e.g. 'e' + U+0300 combining grave → 'è' as a single sequence)
+        import std.uni : graphemeStride;
+        return graphemeStride(buf, 0);
+    }
 
     if (buf.length == 1)
         return 1; // standalone ESC (nothing followed in this read)
@@ -1005,6 +1010,17 @@ unittest
 
     // Alt+key
     assert(_seqlen("\x1bg") == 2);      // Alt+g
+
+    // UTF-8 multi-byte sequences (precomposed)
+    assert(_seqlen("\xC3\xA9") == 2);       // é (U+00E9, 2-byte)
+    assert(_seqlen("\xC3\xA8") == 2);       // è (U+00E8, 2-byte)
+    assert(_seqlen("\xE2\x82\xAC") == 3);   // € (U+20AC, 3-byte)
+    assert(_seqlen("\xF0\x9F\xA5\xB4") == 4); // 🥴 (U+1F974, 4-byte)
+    // UTF-8 followed by more data — only first sequence
+    assert(_seqlen("\xC3\xA9abc") == 2);
+    // Decomposed: 'e' + U+0300 combining grave = 3 bytes as one grapheme
+    assert(_seqlen("e\xCC\x80") == 3);      // è (decomposed)
+    assert(_seqlen("e\xCC\x80abc") == 3);   // è + trailing data
 }
 } // version (Posix)
 
@@ -1376,11 +1392,12 @@ Lread:
         else if (c < 32) // ctrl key
             event.key = (c + 64) | Mod.ctrl;
         // vt220: alt+a (\0341) to alt+z (\0372)
-        else if (c >= 225 && c <= 250)
+        // Only when single byte — multi-byte UTF-8 lead bytes overlap this range
+        else if (r == 1 && c >= 225 && c <= 250)
             event.key = (c - 160) | Mod.alt;
         else
             event.key = c;
-            
+        
         return event;
     } // version (Posix)
 }
@@ -1408,7 +1425,7 @@ struct LineBuffer
         
         cells += w;
         
-        return w;
+        return chr.length;
     }
     
     // delete size in bytes (change to grapheme count later)
@@ -1514,6 +1531,16 @@ unittest
     assert(buf.length == 6);
     assert(buf.cells  == 6);
     assert(buf[]== "xhello");
+
+    // Multi-byte: insert returns byte count, not cell count
+    LineBuffer buf2;
+    assert(buf2.insert(0, cast(char[])"\xC3\xA9") == 2); // é: 2 bytes, 1 cell
+    assert(buf2.length == 2);
+    assert(buf2.cells  == 1);
+    assert(buf2.insert(2, cast(char[])"\xC3\xA8") == 2); // è: 2 bytes, 1 cell
+    assert(buf2.length == 4);
+    assert(buf2.cells  == 2);
+    assert(buf2[] == "\xC3\xA9\xC3\xA8");                 // éè
 }
 
 // Count number of visible printed characters (for a terminal) from a narrow
@@ -1731,25 +1758,32 @@ void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, i
     int width = tsize.columns;
     int avail = width - state.orig_col;
     
-    // Adjust view
-    if (state.caret < state.base)
-        state.base = state.caret;
-    else if (state.caret >= avail)
-        state.base = state.caret - avail;
+    // Cell width of text before caret (for screen positioning)
+    size_t caret_cells = graphs(buffer[0 .. min(state.caret, buffer.length)]);
     
-    // Valid, but is of Take!R type
-    /*import std.utf : byDchar;
-    import std.range : drop, take;
-    auto visible = buffer.byDchar.drop(state.base).take(avail);*/
+    // Adjust view (in cell units)
+    if (caret_cells < state.base)
+        state.base = caret_cells;
+    else if (caret_cells >= avail)
+        state.base = caret_cells - avail;
     
-    // Write buffer
-    size_t visible = min(avail, buffer.length);
-    int w = cast(int)terminalWrite(buffer[state.base .. state.base + visible]);
-    if (w < width) // fill
-        terminalWriteChar(' ', width - w - state.orig_col);
+    // Write buffer: find byte range for visible cells
+    // Skip `state.base` cells to find the start byte
+    size_t start_byte;
+    size_t skipped_cells;
+    while (start_byte < buffer.length && skipped_cells < state.base)
+    {
+        size_t stride = graphwalk(buffer, start_byte) - start_byte;
+        skipped_cells += graphs(buffer[start_byte .. start_byte + stride]);
+        start_byte += stride;
+    }
     
-    // Position caret on screen
-    int x = state.orig_col + cast(int)state.caret;
+    int w = cast(int)terminalWrite(buffer[start_byte .. buffer.length]);
+    if (w < avail) // fill
+        terminalWriteChar(' ', avail - w);
+    
+    // Position caret on screen (cell-based)
+    int x = state.orig_col + cast(int)(caret_cells - state.base);
     if (x >= width) // outside buffer
         x = width - 1;
     terminalMove(x, state.orig_row);
@@ -2026,9 +2060,9 @@ Lread: // Emulate line buffer
         if (input.key & (Mod.ctrl|Mod.alt))
             goto Lread;
         
-        // If size is 1 (ASCII) and is outside of ASCII range, skip
+        // Multi-byte UTF-8 is always insertable; for ASCII, check isprint
         import core.stdc.ctype : isprint;
-        if (!isprint(input.kbuffer[0]))
+        if (input.ksize == 1 && !isprint(input.kbuffer[0]))
             goto Lread;
         
         rl_state.caret +=
