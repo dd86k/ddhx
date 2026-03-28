@@ -464,11 +464,10 @@ TerminalSize terminalSize()
     else version (Posix)
     {
         // NOTE: So far, the ioctl worked on:
-        //       - Linux, VTE
-        //       - Linux, xterm
-        //       - Linux, framebuffer
-        //       - FreeBSD, framebuffer
-        //       - OpenBSD, framebuffer
+        //       - Linux: VTE, Konsole, framebuffer
+        //       - FreeBSD: framebuffer
+        //       - NetBSD: framebuffer
+        //       - OpenBSD: framebuffer
         winsize ws = void;
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0)
             throw new OSException("ioctl(STDOUT_FILENO, TIOCGWINSZ)");
@@ -482,7 +481,7 @@ TerminalSize terminalSize()
         // TODO: Consider ESC [ 18 t for fallback of environment.
         //       Reply: ESC [ 8 ; ROWS ; COLUMNS t
         //       Works on: Windows Terminal, VTE, xterm, NetBSD framebuffer
-        //       Doesn't: conhost, ConsoleZ, FreeBSD framebuffer (just eats output?)
+        //       Doesn't: conhost, ConsoleZ, FreeBSD framebuffer (not supported)
     } else static assert(0, "terminalSize: Not implemented");
     return size;
 }
@@ -1111,7 +1110,7 @@ Lread:
         case MOUSE_EVENT:
             version (unittest)
             {
-                stdout.writefln(
+                writefln(
                 "MouseEvent: X=%d Y=%d dwButtonState=%x dwControlKeyState=%x dwEventFlags=%x",
                 ir.MouseEvent.dwMousePosition.X, ir.MouseEvent.dwMousePosition.Y,
                 ir.MouseEvent.dwButtonState,
@@ -1555,6 +1554,85 @@ unittest
     assert(graphs("🥴")         == 1); // WOOZY, U+1F974
 }
 
+private
+size_t graphwalk(inout(char)[] s, size_t i, int backward = 0)
+{
+    if (backward)
+    {
+        if (i == 0 || s.length == 0)
+            return 0;
+        import std.uni : graphemeStride;
+        // Walk forward from start, tracking grapheme boundaries
+        size_t prev;
+        size_t pos;
+        while (pos < i && pos < s.length)
+        {
+            prev = pos;
+            pos += graphemeStride(s, pos);
+        }
+        return prev;
+    }
+    else
+    {
+        if (i >= s.length)
+            return s.length;
+        import std.uni : graphemeStride;
+        return i + graphemeStride(s, i);
+    }
+}
+unittest
+{
+    // ASCII
+    assert(graphwalk("hello", 0) == 1);
+    assert(graphwalk("hello", 4) == 5);
+    assert(graphwalk("hello", 5) == 5); // at end
+    assert(graphwalk("hello", 5, true) == 4);
+    assert(graphwalk("hello", 1, true) == 0);
+    assert(graphwalk("hello", 0, true) == 0); // at start
+
+    // Multi-byte: ä is 2 bytes (U+00E4)
+    assert(graphwalk("ä", 0) == 2);
+    assert(graphwalk("ä", 2, true) == 0);
+
+    // Mixed: "aä" is 3 bytes
+    assert(graphwalk("aä", 0) == 1);  // past 'a'
+    assert(graphwalk("aä", 1) == 3);  // past 'ä'
+    assert(graphwalk("aä", 3, true) == 1);     // back to 'ä'
+    assert(graphwalk("aä", 1, true) == 0);     // back to 'a'
+
+    // Emoji: 🥴 is 4 bytes (U+1F974)
+    assert(graphwalk("🥴", 0) == 4);
+    assert(graphwalk("🥴", 4, true) == 0);
+
+    // Null/empty
+    assert(graphwalk("", 0) == 0);
+    assert(graphwalk("", 0, true) == 0);
+    assert(graphwalk(null, 0) == 0);
+    assert(graphwalk(null, 0, true) == 0);
+}
+
+// Returns true if narrow byte character is space
+// Somehow, the C function was crashing this, so here's a simple extendable replacement
+private
+bool isuspace(char ch)
+{
+    // Only considering fewer characters because terminal handles some special
+    // keys that we don't need to handle here
+    switch (ch) {
+    case ' ', '\t':
+        return true;
+    default:
+        // Will need locale-specific white-space character
+        return false;
+    }
+}
+unittest
+{
+    assert(isuspace(' '));
+    assert(isuspace('\t'));
+    assert(isuspace('e') == false);
+}
+
 /// In-memory command history for readline.
 private
 struct ReadlineHistory
@@ -1755,21 +1833,21 @@ Lread: // Emulate line buffer
     case Key.LeftArrow:
         if (rl_state.caret == 0)
             goto Lread;
-        --rl_state.caret; // TODO: multibyte jump
+        rl_state.caret = graphwalk(line[], rl_state.caret, true);
         break;
     case Key.RightArrow:
         if (rl_state.caret >= line.length)
             goto Lread;
-        ++rl_state.caret; // TODO: multibyte jump
+        rl_state.caret = graphwalk(line[], rl_state.caret);
         break;
     case Mod.ctrl | Key.LeftArrow:
         if (rl_state.caret == 0)
             goto Lread;
         size_t i = rl_state.caret;
-        while (--i > 0)
+        while (i > 0)
         {
-            // TODO: Need "isspace(...)" multibyte function
-            if (line.buffer[i] == ' ')
+            i = graphwalk(line[], i, true);
+            if (isuspace(line.buffer[i]))
                 break;
         }
         rl_state.caret = i;
@@ -1778,10 +1856,10 @@ Lread: // Emulate line buffer
         if (rl_state.caret >= line.length)
             goto Lread;
         size_t i = rl_state.caret;
-        while (++i < line.length)
+        while (i < line.length)
         {
-            // TODO: Need "isspace(...)" multibyte function
-            if (line.buffer[i] == ' ')
+            i = graphwalk(line[], i);
+            if (i < line.length && isuspace(line.buffer[i]))
                 break;
         }
         rl_state.caret = i;
@@ -1836,18 +1914,18 @@ Lread: // Emulate line buffer
     case Key.Delete: // front delete character
         if (rl_state.caret >= line.length) // nothing to delete
             goto Lread;
-        
-        line.deleteAt(rl_state.caret, 1);
+        size_t next = graphwalk(line[], rl_state.caret);
+        line.deleteAt(rl_state.caret, next - rl_state.caret);
         rl_flags |= _RL_BUFCHANGED;
         break;
     case Mod.ctrl | Key.Delete: // front delete word
         if (rl_state.caret >= line.length) // nothing to delete
             goto Lread;
         size_t i = rl_state.caret;
-        while (++i < line.length)
+        while (i < line.length)
         {
-            // TODO: Need "isspace(...)" multibyte function
-            if (line.buffer[i] == ' ')
+            i = graphwalk(line[], i);
+            if (i < line.length && isuspace(line.buffer[i]))
                 break;
         }
         line.deleteAt(rl_state.caret, i - rl_state.caret);
@@ -1856,18 +1934,19 @@ Lread: // Emulate line buffer
     case Key.Backspace: // back delete character
         if (rl_state.caret == 0) // nothing to delete
             goto Lread;
-        
-        line.deleteAt(--rl_state.caret, 1);
+        size_t prev = graphwalk(line[], rl_state.caret, true);
+        line.deleteAt(prev, rl_state.caret - prev);
+        rl_state.caret = prev;
         rl_flags |= _RL_BUFCHANGED;
         break;
     case Mod.ctrl | Key.Backspace: // back delete word
         if (rl_state.caret == 0) // nothing to delete
             goto Lread;
         size_t i = rl_state.caret;
-        while (--i > 0)
+        while (i > 0)
         {
-            // TODO: Need "isspace(...)" multibyte function
-            if (line.buffer[i] == ' ')
+            i = graphwalk(line[], i, true);
+            if (isuspace(line.buffer[i]))
                 break;
         }
         line.deleteAt(i, rl_state.caret - i);
