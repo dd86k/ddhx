@@ -961,10 +961,10 @@ size_t _seqlen(const(char)[] buf)
     if (buf.length == 0)
         return 0;
 
-    if (buf[0] != 0x1b)
+    if (buf[0] != 0x1b) // not ESCAPE
     {
         // Use graphemeStride to handle base char + combining marks as one unit
-        // (e.g. 'e' + U+0300 combining grave → 'è' as a single sequence)
+        // (e.g. 'e' + U+0300 combining grave -> 'è' as a single sequence)
         import std.uni : graphemeStride;
         return graphemeStride(buf, 0);
     }
@@ -1042,8 +1042,6 @@ TermInput terminalRead()
 Lread:
         if (ReadConsoleInputW(hIn, &ir, 1, &num) == FALSE)
             throw new OSException("ReadConsoleInputW");
-        //if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
-            //throw new OSException("ReadConsoleInputA");
         if (num == 0)
             goto Lread;
         
@@ -1067,8 +1065,8 @@ Lread:
             const ushort keycode = ir.KeyEvent.wVirtualKeyCode;
             
             // Filter out single modifier key events
-            switch (keycode) {
-            case 16, 17, 18: goto Lread; // shift,ctrl,alt
+            switch (keycode) { // VK_MENU is alt here for menubar accelerator key
+            case VK_SHIFT, VK_CONTROL, VK_MENU: goto Lread;
             default:
             }
             
@@ -1097,6 +1095,7 @@ Lread:
                 null);              // lpUsedDefaultChar
             if (event.ksize == 0)
                 throw new OSException("WideCharToMultiByte");
+            // Unable to get ¶ (182) and § (167) (RAlt+O/P), that's fine for now
             
             // Special keys
             switch (keycode) {
@@ -1245,7 +1244,6 @@ Lread:
         //       Would allow to capture some odd keys like Ctrl+d9
         //       Needs "\e[>0c" (query device attributes: DA1), example "61;7600;1"
         //       (61: VT420-level conformance, 7600: VTE 0.76, 1: 132-col support)
-        
         enum ESC = 0x1b;
         enum RETURN = '\r';
         
