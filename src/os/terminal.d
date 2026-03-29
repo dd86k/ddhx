@@ -35,6 +35,7 @@ version (Windows)
     import core.sys.windows.windef; // HANDLE, USHORT, DWORD
     import core.sys.windows.winuser; // For Keycodes
     import std.windows.syserror : WindowsException;
+    import core.sys.windows.winnls : WideCharToMultiByte;
     private enum CP_UTF8 = 65_001;
     // CONSOLE_MODE_INPUT: Used for raw input (so setup and resuming)
     // ENABLE_PROCESSED_INPUT:
@@ -1039,8 +1040,10 @@ TermInput terminalRead()
         INPUT_RECORD ir = void;
         DWORD num = void;
 Lread:
-        if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
-            throw new OSException("ReadConsoleInputA");
+        if (ReadConsoleInputW(hIn, &ir, 1, &num) == FALSE)
+            throw new OSException("ReadConsoleInputW");
+        //if (ReadConsoleInputA(hIn, &ir, 1, &num) == 0)
+            //throw new OSException("ReadConsoleInputA");
         if (num == 0)
             goto Lread;
         
@@ -1082,9 +1085,18 @@ Lread:
             if (dwControlKeyState & SHIFT_PRESSED) event.key = Mod.shift;
             }
             
-            // TODO: ir.KeyEvent.UnicodeChar to multi-byte
-            event.kbuffer[0] = ir.KeyEvent.AsciiChar;
-            event.ksize      = 1;
+            // Unicode (UTF-16LE) to UTF-8 to match POSIX behaviour
+            event.ksize = WideCharToMultiByte(
+                CP_UTF8,            // CodePage
+                0,                  // dwFlags
+                &ir.KeyEvent.UnicodeChar,       // lpWideCharStr
+                1,                  // cchWideChar
+                event.kbuffer.ptr,  // lpMultiByteStr
+                cast(int)event.kbuffer.sizeof,  // cbMultiByte
+                null,               // lpDefaultChar
+                null);              // lpUsedDefaultChar
+            if (event.ksize == 0)
+                throw new OSException("WideCharToMultiByte");
             
             // Special keys
             switch (keycode) {
