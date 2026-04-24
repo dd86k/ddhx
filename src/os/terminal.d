@@ -25,8 +25,12 @@ module os.terminal;
 //       https://man7.org/linux/man-pages/man3/tcsetattr.3.html
 //       https://man7.org/linux/man-pages/man4/console_codes.4.html
 
-private import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
-private import core.stdc.stdlib : system;
+import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
+
+import core.stdc.stdlib : system;
+import core.stdc.string : memmove, memset;
+
+import os.error : OSException;
 
 version (Windows)
 {
@@ -34,7 +38,6 @@ version (Windows)
     import core.sys.windows.wincon;
     import core.sys.windows.windef; // HANDLE, USHORT, DWORD
     import core.sys.windows.winuser; // For Keycodes
-    import std.windows.syserror : WindowsException;
     import core.sys.windows.winnls : WideCharToMultiByte;
     private enum CP_UTF8 = 65_001;
     // CONSOLE_MODE_INPUT: Used for raw input (so setup and resuming)
@@ -50,7 +53,6 @@ version (Windows)
 else version (Posix)
 {
     import core.stdc.stdio : snprintf;
-    import core.stdc.errno;
     import core.sys.posix.sys.stat;
     import core.sys.posix.sys.ioctl;
     import core.sys.posix.unistd;
@@ -142,8 +144,6 @@ private
     extern (C)
     int sscanf(scope const char* s, scope const char* format, scope ...);
 }
-
-private import os.error : OSException;
 
 /// Flags for terminalInit.
 enum TermFeat {
@@ -504,8 +504,8 @@ void terminalMove(int x, int y)
     }
     else version (Posix) // 1-based, so 0,0 needs to be output as 1,1
     {
-        char[16] b = void;
-        int r = snprintf(b.ptr, 16, "\033[%d;%dH", ++y, ++x);
+        char[32] b = void;
+        int r = snprintf(b.ptr, b.length, "\033[%d;%dH", ++y, ++x);
         assert(r > 0);
         terminalWrite(b.ptr, r);
     }
@@ -561,11 +561,6 @@ TerminalPosition terminalTell()      // Keep this around, though
         if (i < 0)
             throw new OSException("read");
         buf[i] = 0;
-        
-        /*
-        import std.stdio : stderr, writef, writefln;
-        stderr.writefln("%(%02x,%)", buf[0..i]);
-        */
         
         // Parse
         if (i < 5 || buf[0] != '\033' || buf[1] != '[')
@@ -895,7 +890,6 @@ size_t terminalWrite(const(void) *data, size_t size)
 /// Returns: amount.
 size_t terminalWriteChar(int chr, int amount)
 {
-    import core.stdc.string : memset;
     enum B = 128;
     char[B] buf = void;
     memset(buf.ptr, chr, B); // fill buf with char
@@ -1017,7 +1011,7 @@ unittest
     assert(_seqlen("\xC3\xA8") == 2);       // è (U+00E8, 2-byte)
     assert(_seqlen("\xE2\x82\xAC") == 3);   // € (U+20AC, 3-byte)
     assert(_seqlen("\xF0\x9F\xA5\xB4") == 4); // 🥴 (U+1F974, 4-byte)
-    // UTF-8 followed by more data — only first sequence
+    // UTF-8 followed by more data, only first sequence
     assert(_seqlen("\xC3\xA9abc") == 2);
     // Decomposed: 'e' + U+0300 combining grave = 3 bytes as one grapheme
     assert(_seqlen("e\xCC\x80") == 3);      // è (decomposed)
@@ -1217,7 +1211,6 @@ Lread:
         event.ksize = cast(int)r;
         event.type  = InputType.keyDown; // Assuming for now
         event.key   = 0; // clear as safety measure
-        import core.stdc.string : memmove;
         _pending_len -= r;
         if (_pending_len > 0)
             memmove(_pending.ptr, &_pending[r], _pending_len);
@@ -1402,7 +1395,7 @@ Lread:
         else if (c < 32) // ctrl key
             event.key = (c + 64) | Mod.ctrl;
         // vt220: alt+a (\0341) to alt+z (\0372)
-        // Only when single byte — multi-byte UTF-8 lead bytes overlap this range
+        // Only when single byte, multi-byte UTF-8 lead bytes overlap this range
         else if (r == 1 && c >= 225 && c <= 250)
             event.key = (c - 160) | Mod.alt;
         else
@@ -1425,7 +1418,6 @@ struct LineBuffer
         // Shift existing content to the right to make space
         if (i < length)
         {
-            import core.stdc.string : memmove;
             memmove(&buffer[i + chr.length], &buffer[i], length - i);
         }
         
@@ -1455,7 +1447,6 @@ struct LineBuffer
         // Shift remaining content left
         if (i + delsize < length)
         {
-            import core.stdc.string : memmove;
             memmove(&buffer[i], &buffer[i + delsize], length - i - delsize);
         }
         
@@ -1466,7 +1457,7 @@ struct LineBuffer
         return a - cells;
     }
     
-    // private but this module can see this function anyway
+    // private but this module ddhx.can see this function anyway
     void ensureCapacity(size_t i, size_t insize) // incoming size
     {
         // Nothing to do
@@ -1558,14 +1549,15 @@ unittest
 private
 size_t graphs(inout(char)[] s)
 {
+    import std.uni : graphemeStride;
+
     if (s is null || s.length == 0)
         return 0;
-    
+
     size_t width;
     size_t i;
     while (i < s.length)
     {
-        import std.uni : graphemeStride;
         size_t stride = graphemeStride(s, i);
         dchar c = s[i];  // First char of grapheme
         
@@ -1595,11 +1587,12 @@ unittest
 private
 size_t graphwalk(inout(char)[] s, size_t i, int backward = 0)
 {
+    import std.uni : graphemeStride;
+
     if (backward)
     {
         if (i == 0 || s.length == 0)
             return 0;
-        import std.uni : graphemeStride;
         // Walk forward from start, tracking grapheme boundaries
         size_t prev;
         size_t pos;
@@ -1614,7 +1607,6 @@ size_t graphwalk(inout(char)[] s, size_t i, int backward = 0)
     {
         if (i >= s.length)
             return s.length;
-        import std.uni : graphemeStride;
         return i + graphemeStride(s, i);
     }
 }

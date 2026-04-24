@@ -3,11 +3,11 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor;
+module ddhx.editor;
 
-public import editor.base : IDocumentEditor;
-import editor.piecev2 : PieceV2DocumentEditor;
-import editor.piecev3 : PieceV3DocumentEditor;
+public import ddhx.editor.base : IDocumentEditor;
+import ddhx.editor.piecev2 : PieceV2DocumentEditor;
+import ddhx.editor.piecev3 : PieceV3DocumentEditor;
 
 // Convenience function used in main.d and benchmarks.
 /// Select and initiate new document editor instance.
@@ -19,10 +19,10 @@ import editor.piecev3 : PieceV3DocumentEditor;
 IDocumentEditor spawnEditor(string name = null)
 {
     import std.conv : text;
-    switch (name) { // NOTE: null chooses default backend
+    switch (name) {
     case "piecev2":
         return new PieceV2DocumentEditor();
-    case "piecev3", null:
+    case "piecev3", null: // NOTE: null chooses default backend
         return new PieceV3DocumentEditor();
     default:
         throw new Exception(text("Backend does not exist: ", name));

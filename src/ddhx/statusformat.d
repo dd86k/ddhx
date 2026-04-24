@@ -7,12 +7,13 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module statusformat;
+module ddhx.statusformat;
 
-import formatting;
 import std.format : sformat;
 import std.path : baseName;
-import transcoder : CharacterSet, charsetID;
+
+import ddhx.formatting;
+import ddhx.transcoder : CharacterSet, charsetID;
 
 /// Buffer-backed writer for formatting into a char[] slice, it's "write-and-forget".
 /// This is used by report_position to format into g_messagebuf, it's "write-and-retain".

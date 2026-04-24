@@ -17,8 +17,13 @@ __test__*__
 *.lib
 *.a
 *.bzip2
-.fuse_*
 docs/
+
+# Project
+.ddhxrc
+*.log
+*.patch
+ddhx_dump.txt
 
 # flamegraph
 perf.data
@@ -27,16 +32,9 @@ flame.svg
 
 # Other editors
 *.swp
-
-# Project
-.ddhxrc
-*.log
-*.patch
-ddhx_dump.txt
+.vscode/
+.fuse_*
 
 # Personal
 perso/
 examples/
-
-# Assistants
-.claude/

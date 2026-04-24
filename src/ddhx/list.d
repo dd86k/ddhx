@@ -3,7 +3,7 @@
 /// Authors: dd86k <dd@dax.moe>
 /// Copyright: © dd86k <dd@dax.moe>
 /// License: BSD-3-Clause-Clear
-module list;
+module ddhx.list;
 
 // Imported from Alicedbg.
 // Replaced Alicedbg errors with Exceptions, foreach interfaces, and some other stuff.

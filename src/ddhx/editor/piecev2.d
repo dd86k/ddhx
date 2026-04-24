@@ -4,15 +4,16 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor.piecev2;
+module ddhx.editor.piecev2;
 
 import std.algorithm.comparison : min, max;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
-import editor.base : IDocumentEditor, IDirtyRange, DirtyRegion, PieceInfo;
-import document.base : IDocument;
-import platform : assertion;
-import logger;
+
+import ddhx.editor.base : IDocumentEditor, IDirtyRange, DirtyRegion, PieceInfo;
+import ddhx.document.base : IDocument;
+import ddhx.platform : assertion;
+import ddhx.logger;
 
 // Other interesting sources:
 // - temp: Temporary file if an edit is too large to fit in memory (past a threshold)
@@ -1146,7 +1147,7 @@ unittest
 /// Insert with document
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0002");
     
@@ -1201,7 +1202,7 @@ unittest
 /// Replace with document
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0003");
     
@@ -1222,7 +1223,7 @@ unittest
 /// Remove with document
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0004");
     
@@ -1242,7 +1243,7 @@ unittest
 /// Offset view
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4  5  6   7   8   9
@@ -1288,7 +1289,7 @@ unittest
 /// Mix replace, insert, and deletions
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0006");
     
@@ -1388,7 +1389,7 @@ unittest
 /// Delete multiple pieces
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0007");
     
@@ -1430,7 +1431,7 @@ unittest
 // Delete+Overwrite
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0008");
     
@@ -1457,7 +1458,7 @@ unittest
 // Patterns
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0009");
     
@@ -1529,7 +1530,7 @@ unittest
 // Files
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0010");
     
@@ -1545,7 +1546,7 @@ unittest
     
     import std.file : remove, write, tempDir, readText;
     import std.path : buildPath;
-    import document.file : FileDocument;
+    import ddhx.document.file : FileDocument;
     
     ubyte[64] buffer;
     
@@ -1589,7 +1590,7 @@ unittest
 // Add data on empty doc, undo, and insert pattern
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0011");
     
@@ -1610,7 +1611,7 @@ unittest
 // Add enormous pattern of 10 GiB and edit into it
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0012");
     
@@ -1655,7 +1656,7 @@ unittest
 /// Close-open test
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0013");
 
@@ -1677,6 +1678,6 @@ unittest
 /// Common tests
 unittest
 {
-    import editor.base : editorTests;
+    import ddhx.editor.base : editorTests;
     editorTests!PieceV2DocumentEditor();
 }

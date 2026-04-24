@@ -4,15 +4,20 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor.piecev3;
+module ddhx.editor.piecev3;
+
+import core.stdc.string : memcpy, memset;
 
 import std.algorithm.comparison : min, max;
 import std.container.array : Array;
 import std.container.rbtree : RedBlackTree;
-import editor.base : IDocumentEditor, IDirtyRange, DirtyRegion, PieceInfo;
-import document.base : IDocument;
-import platform : assertion;
-import logger;
+
+import os.mem : syspagesize;
+
+import ddhx.editor.base : IDocumentEditor, IDirtyRange, DirtyRegion, PieceInfo;
+import ddhx.document.base : IDocument;
+import ddhx.platform : assertion;
+import ddhx.logger;
 
 // TODO: CPU cache friendliness
 //       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
@@ -182,7 +187,6 @@ class PieceV3DocumentEditor : IDocumentEditor
     /// New document editor with a new empty buffer.
     this()
     {
-        import os.mem : syspagesize;
         pagesize = syspagesize();
         tree = new Tree();
     }
@@ -313,13 +317,11 @@ class PieceV3DocumentEditor : IDocumentEditor
                 basedoc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]);
                 break;
             case Source.buffer:
-                import core.stdc.string : memcpy;
                 memcpy(buffer.ptr + bi, 
                     index.piece.buffer.data + index.piece.buffer.skip + piece_offset,
                     to_read);
                 break;
             case Source.pattern:
-                import core.stdc.string : memcpy, memset;
                 if (index.piece.pattern.ogsize == 1) // One byte pattern
                 {
                     log("PATTERN SINGLE read=%d", to_read);
@@ -1076,7 +1078,6 @@ private:
             add_buffer.length += pagesize;
         }
         
-        import core.stdc.string : memcpy;
         void *ptr = add_buffer.ptr + add_size;
         memcpy(ptr, data, len);
         
@@ -1183,8 +1184,6 @@ private:
 
     void materializeChunk()
     {
-        import core.stdc.string : memcpy, memset;
-
         long remaining = _currentPieceSize - _pieceOffset;
         size_t chunkSize = cast(size_t)(remaining < BUFFER_SIZE ? remaining : BUFFER_SIZE);
         _currentChunkSize = chunkSize;
@@ -1286,7 +1285,7 @@ unittest
 /// Insert with document
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0002");
     
@@ -1341,7 +1340,7 @@ unittest
 /// Replace with document
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0003");
     
@@ -1362,7 +1361,7 @@ unittest
 /// Remove with document
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0004");
     
@@ -1382,7 +1381,7 @@ unittest
 /// Offset view
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     static immutable ubyte[] data = [
     //  0   1   2   3   4  5  6   7   8   9
@@ -1428,7 +1427,7 @@ unittest
 /// Mix replace, insert, and deletions
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0006");
     
@@ -1528,7 +1527,7 @@ unittest
 /// Delete multiple pieces
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0007");
     
@@ -1570,7 +1569,7 @@ unittest
 // Delete+Overwrite
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0008");
     
@@ -1597,7 +1596,7 @@ unittest
 // Patterns
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0009");
     
@@ -1669,7 +1668,7 @@ unittest
 // Files
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0010");
     
@@ -1685,7 +1684,7 @@ unittest
     
     import std.file : remove, write, tempDir, readText;
     import std.path : buildPath;
-    import document.file : FileDocument;
+    import ddhx.document.file : FileDocument;
     
     ubyte[64] buffer;
     
@@ -1729,7 +1728,7 @@ unittest
 // Add data on empty doc, undo, and insert pattern
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0011");
     
@@ -1750,7 +1749,7 @@ unittest
 // Add enormous pattern of 10 GiB and edit into it
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     log("TEST-0012");
     
@@ -1795,14 +1794,14 @@ unittest
 /// Common tests
 unittest
 {
-    import editor.base : editorTests;
+    import ddhx.editor.base : editorTests;
     editorTests!PieceV3DocumentEditor();
 }
 
 /// Coalescing: consecutive forward inserts
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0013");
 
@@ -1832,7 +1831,7 @@ unittest
 /// Coalescing: consecutive forward replaces
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0014");
 
@@ -1862,7 +1861,7 @@ unittest
 /// Coalescing: forward delete
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0015");
 
@@ -1889,7 +1888,7 @@ unittest
 /// Coalescing: backward delete
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0016");
 
@@ -1916,7 +1915,7 @@ unittest
 /// Coalescing: non-adjacent breaks coalescing
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0017");
 
@@ -1945,7 +1944,7 @@ unittest
 /// Coalescing: type change breaks coalescing
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0018");
 
@@ -1976,7 +1975,7 @@ unittest
 /// Coalescing: undo/redo breaks coalescing
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0019");
 
@@ -2007,7 +2006,7 @@ unittest
 /// Coalescing: save point prevents coalescing
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0020");
 
@@ -2041,7 +2040,7 @@ unittest
 /// Coalescing: multi-step coalesce (typing "hello" char-by-char)
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0021");
 
@@ -2072,7 +2071,7 @@ unittest
 /// Close-open test
 unittest
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
 
     log("TEST-0022");
 
@@ -2094,8 +2093,8 @@ unittest
 /// dirtyRegions: replace produces correct dirty regions  
 unittest
 {
-    import document.memory : MemoryDocument;
-    import editor.base : IDirtyRange, DirtyRegion;
+    import ddhx.document.memory : MemoryDocument;
+    import ddhx.editor.base : IDirtyRange, DirtyRegion;
 
     log("TEST-0023");
 
@@ -2119,8 +2118,8 @@ unittest
 /// Test empty document
 unittest
 {
-    import document.memory : MemoryDocument;
-    import editor.base : IDirtyRange, DirtyRegion;
+    import ddhx.document.memory : MemoryDocument;
+    import ddhx.editor.base : IDirtyRange, DirtyRegion;
 
     log("TEST-0024");
 

@@ -3,8 +3,9 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module document;
+module ddhx.document;
 
-public import document.base,
-	document.file,
-	document.memory;
+public import
+	ddhx.document.base,
+	ddhx.document.file,
+	ddhx.document.memory;

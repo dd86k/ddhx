@@ -3,11 +3,11 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor.dummy;
+module ddhx.editor.dummy;
 
-import document.base : IDocument;
-import editor.base : IDocumentEditor, IDirtyRange, PieceInfo;
-import platform : NotImplementedException;
+import ddhx.document.base : IDocument;
+import ddhx.editor.base : IDocumentEditor, IDirtyRange, PieceInfo;
+import ddhx.platform : NotImplementedException;
 
 class DummyDocumentEditor : IDocumentEditor
 {

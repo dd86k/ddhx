@@ -3,12 +3,15 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module coloring;
+module ddhx.coloring;
 
 import std.traits : EnumMembers;
-import list;
+import std.conv : text;
+
+import ddhx.list;
+import ddhx.platform : assertion;
+
 import os.terminal : TermColor;
-import platform : assertion;
 
 /* Remember, we only have 8 usable colors in a 16-color space (fg == bg -> bad).
    And only 6 (excluding "bright" variants) of them can be used for a purpose,
@@ -44,7 +47,6 @@ ColorScheme getScheme(string name)
     case "mirror":      return ColorScheme.mirror;
     case "zero":        return ColorScheme.zero;
     default:
-        import std.conv : text;
         throw new Exception(text("Unknown scheme: ", name));
     }
 }
@@ -142,7 +144,6 @@ struct ColorMap
         case "brightyellow":color = TermColor.brightyellow; break;
         case "white":       color = TermColor.white; break;
         default:
-            import std.conv : text;
             throw new Exception(text("Unknown color: ", term));
         }
         // No magic here

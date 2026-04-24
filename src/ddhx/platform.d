@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module platform;
+module ddhx.platform;
 
 /// Soft assertion exception class.
 ///

@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module document.base;
+module ddhx.document.base;
 
 /// Base document interface.
 interface IDocument

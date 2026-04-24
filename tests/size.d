@@ -1,4 +1,4 @@
-module tests.size;
+module ddhx.tests.size;
 
 import std.stdio;
 import os.terminal;

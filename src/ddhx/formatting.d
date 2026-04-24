@@ -3,11 +3,18 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module formatting;
+module ddhx.formatting;
 
-import platform : assertion;
+import core.stdc.string : memcpy;
+
+import std.conv : to; // lazy, but convenient
 import std.format;
-import transcoder : CharacterSet;
+import std.path;
+import std.string : strip;
+import std.traits : EnumMembers;
+
+import ddhx.platform : assertion;
+import ddhx.transcoder : CharacterSet;
 
 // This alias exists because more recent compilers complain about local
 // static buffers being escape despite that's exactly what I want...
@@ -170,8 +177,6 @@ enum DataType
     o16,    /// 16-bit unsigned octal
     o32,    /// 32-bit unsigned octal
 }
-import std.traits : EnumMembers;
-import std.path;
 /// Data type count.
 enum TYPES = EnumMembers!DataType.length;
 
@@ -347,9 +352,6 @@ union Element
     
     bool parse(DataType type, inout(char)[] input)
     {
-        import std.conv : to; // lazy, but convenient
-        import std.string : strip;
-
         DataSpec spec = selectDataSpec(type);
 
         if (input.length == 0)
@@ -478,8 +480,6 @@ struct DataFormatter
         if (i >= size)
             return cast(string)sformat(buf, "%*s", spec.spacing, "");
         
-        import core.stdc.string : memcpy;
-        
         final switch (spec.type) {
         case DataType.x8:
         case DataType.d8:
@@ -508,8 +508,6 @@ struct DataFormatter
     {
         if (i >= size)
             return false;
-        
-        import core.stdc.string : memcpy;
         
         // lazy lol
         final switch (spec.type) {
@@ -642,8 +640,6 @@ class InputFormatter
     // Used for digit mode
     string formatRaw(char[] buf, const(void)* raw, size_t len)
     {
-        import core.stdc.string : memcpy;
-
         final switch (spec.type) {
         case DataType.x8, DataType.d8, DataType.o8:
             ubyte v = *cast(ubyte*) raw;

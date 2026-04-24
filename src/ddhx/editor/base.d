@@ -3,9 +3,9 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module editor.base;
+module ddhx.editor.base;
 
-import document.base : IDocument;
+import ddhx.document.base : IDocument;
 
 /// Lightweight piece descriptor for save ordering (no materialized data).
 struct PieceInfo
@@ -101,7 +101,7 @@ version (unittest)
 
 void editorTests(T : IDocumentEditor)()
 {
-    import document.memory : MemoryDocument;
+    import ddhx.document.memory : MemoryDocument;
     
     // HACK: getSymbolsByUDA(mixin(__MODULE__), TestDoc) didn't work out
     
@@ -194,7 +194,6 @@ void test_undo_redo(T : IDocumentEditor)()
     assert(e.undo() == 1); // "tsss" -> "tess"
     assert(e.view(0, buffer) == "tess");
     assert(e.undo() == 3); // "tess" -> "test"
-    import logger : log;
     assert(e.view(0, buffer) == "test");
     assert(e.undo() == 0);
     assert(e.view(0, buffer) == []);

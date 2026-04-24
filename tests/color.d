@@ -1,4 +1,4 @@
-module tests.color;
+module ddhx.tests.color;
 
 import std.stdio;
 import os.terminal;

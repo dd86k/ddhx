@@ -3,18 +3,22 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module configuration;
+module ddhx.configuration;
 
-// Module is named configuration to avoid confusion with std.getopt.config and
+// module ddhx.is named configuration to avoid confusion with std.getopt.config and
 // "rc" local variable names.
 
-import coloring;
-import ddhx  : bindkey, setcolor;
-import formatting;
-import os.terminal : terminal_keybind;
 import std.conv : text, to;
-import transcoder : CharacterSet, selectCharacterSet;
-import utils : arguments;
+
+import ddhx.coloring;
+import ddhx.formatting;
+import ddhx.transcoder : CharacterSet, selectCharacterSet;
+import ddhx.utils : arguments;
+
+import os.terminal : terminal_keybind;
+
+// TODO: Avoid depending on view module
+import view : bindkey, setcolor, initdefaults, binded;
 
 /// Special value for RC.columns to autoresize.
 enum COLUMNS_AUTO = 0;
@@ -159,7 +163,6 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
 }
 unittest
 {
-    import ddhx : initdefaults, binded;
     import os.terminal : terminal_keybind;
     
     initdefaults(); // bindkey depends on g_commands (command names)

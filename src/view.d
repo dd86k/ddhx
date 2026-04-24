@@ -6,27 +6,32 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx;
+module view;
 
-import coloring;
-import configuration;
 import core.stdc.stdlib : malloc, realloc, free, exit;
-import document.base : IDocument;
-import document.file : FileDocument, OFlags;
-import editor.base : IDirtyRange, IDocumentEditor, PieceInfo;
-import formatting;
-import logger;
-import os.terminal;
-import patterns;
-import platform : assertion;
-import ranges;
-import statusformat;
+
 import std.algorithm.comparison : min, max;
-import std.conv : text;
+import std.conv : text, to;
 import std.file : exists;
 import std.string; // imports format
-import transcoder;
-import utils;
+import std.traits : EnumMembers;
+
+import os.terminal;
+
+import ddhx.coloring;
+import ddhx.configuration;
+import ddhx.document.base : IDocument;
+import ddhx.document.file : FileDocument, OFlags;
+import ddhx.document.memory : MemoryDocument;
+import ddhx.editor.base : IDirtyRange, IDocumentEditor, PieceInfo;
+import ddhx.formatting;
+import ddhx.logger;
+import ddhx.patterns;
+import ddhx.platform;       // For assertion, MAXSIZE
+import ddhx.ranges;
+import ddhx.statusformat;
+import ddhx.transcoder;
+import ddhx.utils;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
@@ -397,7 +402,7 @@ void initdefaults()
             
             import std.stdio : File;
             import std.datetime : Clock;
-            import platform : TARGET_ENV, TARGET_OS, TARGET_PLATFORM;
+            import ddhx.platform : TARGET_ENV, TARGET_OS, TARGET_PLATFORM;
             File file; // Old LDC opAssign bug might resurface, idk
             file.open(target, "w");
             file.writeln("ddhx debug dump");
@@ -413,8 +418,8 @@ void initdefaults()
             file.writeln("\t", termsize.columns, " columns");
             file.writeln("\t", termsize.rows, " rows");
             
-            file.writeln("GC");
             import core.memory : GC;
+            file.writeln("GC");
             GC.Stats stats = GC.stats();
             file.writeln("\t", stats.freeSize, " B Free");
             file.writeln("\t", stats.usedSize, " B Used");
@@ -467,7 +472,7 @@ void initdefaults()
             
             // TODO: Dump open documents information
             
-            import editor.piecev2 : PieceV2DocumentEditor;
+            import ddhx.editor.piecev2 : PieceV2DocumentEditor;
             file.writeln("Editor");
             file.writeln("\tClass\t: ", session.editor); // prints type!
             file.writeln("\tSize\t: ", session.editor.size());
@@ -875,9 +880,8 @@ void save_to_file(IDocumentEditor editor, string target)
     assertion(target.length > 0, "target is EMPTY");
     
     import std.stdio : File;
-    import std.conv  : text;
     import std.path : baseName, dirName, buildPath;
-    import std.file : rename, exists, getAttributes, setAttributes;
+    import std.file : rename, exists, getAttributes, setAttributes, remove;
     import os.file : availableDiskSpace;
     
     long docsize = editor.size();
@@ -897,7 +901,6 @@ void save_to_file(IDocumentEditor editor, string target)
         basedir, basenam, tmpname, tmppath);
     
     // On failure, remove temporary file
-    import std.file : remove;
     scope(failure) remove(tmppath);
     
     // 2. Allocate buffer, read from editor, and write to temp file
@@ -962,7 +965,7 @@ void save_to_file(IDocumentEditor editor, string target)
 }
 unittest
 {
-    import editor.dummy : DummyDocumentEditor;
+    import ddhx.editor.dummy : DummyDocumentEditor;
     import std.file : remove, readText, exists;
     
     static immutable path = "tmp_save_test";
@@ -1092,7 +1095,7 @@ void save_inplace(IDocumentEditor editor, string path)
                     if (cycleIdx < 0 || pieces[i].size < pieces[cycleIdx].size)
                         cycleIdx = cast(int) i;
 
-            // No source piece left in the remaining unsorted set —
+            // No source piece left in the remaining unsorted set,
             // the rest are non-source (new data) with no file-read
             // dependencies, safe to write in any order.
             if (cycleIdx < 0) break;
@@ -1146,7 +1149,7 @@ void save_inplace(IDocumentEditor editor, string path)
 // Test with zero edits
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create document with init data
@@ -1177,7 +1180,7 @@ unittest
 // Test with one edit of the same size
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create document with init data
@@ -1210,7 +1213,7 @@ unittest
 // Test with one edit that makes document larger
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create document with init data
@@ -1243,7 +1246,7 @@ unittest
 // Test with one edit that makes document smaller
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create document with init data
@@ -1277,7 +1280,7 @@ unittest
 // Test with regular file with data to zero-size
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create document with init data
@@ -1309,7 +1312,7 @@ unittest
 // Test with regular empty file with no data to file with data
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create empty document
@@ -1339,7 +1342,7 @@ unittest
 // Test with sparse edits (ie, start and end)
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create document with init data
@@ -1374,7 +1377,7 @@ unittest
 // Test with multiple sparse save sessions (edit + save multiple times)
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     // create document with init data
@@ -1412,10 +1415,10 @@ unittest
     editor.close();
     fdoc.close();
 }
-// Test: insert at position 0 — all original data shifts right
+// Test: insert at position 0, all original data shifts right
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     static immutable string path = "temp";
@@ -1442,10 +1445,10 @@ unittest
 
     assert(read(path) == ">> hello, world!");
 }
-// Test: mixed delete + insert (doc grew) — piece shifts left while doc grew
+// Test: mixed delete + insert (doc grew), piece shifts left while doc grew
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     static immutable string path = "temp";
@@ -1473,10 +1476,10 @@ unittest
 
     assert(read(path) == "DEFGHXYZXYZ");
 }
-// Test: mixed delete + insert (doc shrank) — piece shifts right while doc shrank
+// Test: mixed delete + insert (doc shrank), piece shifts right while doc shrank
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     static immutable string path = "temp";
@@ -1504,10 +1507,10 @@ unittest
 
     assert(read(path) == "ABXCDEF");
 }
-// Test: append at end — insert beyond original content
+// Test: append at end and insert beyond original content
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     static immutable string path = "temp";
@@ -1540,7 +1543,7 @@ unittest
 // first so the earlier one's read range isn't corrupted.
 unittest
 {
-    import editor : spawnEditor;
+    import ddhx.editor : spawnEditor;
     import std.file : remove, read;
 
     static immutable string path = "temp";
@@ -1618,7 +1621,6 @@ void moveabs(Session *session, long pos)
         return;
     
     // Adjust view position if cursor outside of view
-    import utils : align64down, align64up;
     int g = session.rc.columns * data_size; // group size
     int count = g * g_viewrows;
     if (pos < session.position_view) // cursor is behind view
@@ -2308,9 +2310,9 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
 // Old bound (o < haystack.length) let the last comparison overread.
 unittest
 {
-    import editor.dummy : DummyDocumentEditor;
+    import ddhx.editor.dummy : DummyDocumentEditor;
 
-    // "AABBCC" — needle "CC" should be found at position 4.
+    // "AABBCC" - needle "CC" should be found at position 4.
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
@@ -2322,7 +2324,7 @@ unittest
 // without reading past the buffer.
 unittest
 {
-    import editor.dummy : DummyDocumentEditor;
+    import ddhx.editor.dummy : DummyDocumentEditor;
 
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
@@ -2337,7 +2339,7 @@ unittest
 // counter hits 1 then would underflow with unsigned arithmetic.
 unittest
 {
-    import editor.dummy : DummyDocumentEditor;
+    import ddhx.editor.dummy : DummyDocumentEditor;
 
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
@@ -2350,7 +2352,7 @@ unittest
 // and the match (not at offset 0) is still found.
 unittest
 {
-    import editor.dummy : DummyDocumentEditor;
+    import ddhx.editor.dummy : DummyDocumentEditor;
 
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
@@ -2367,8 +2369,6 @@ unittest
 // Run command
 void prompt_command(Session *session, string[] args)
 {
-    import utils : arguments;
-    
     string line = promptline(">", g_commands.keys);
     if (line.length == 0)
         return;
@@ -2726,7 +2726,7 @@ unittest
 {
     Session session;
     
-    import editor.dummy : DummyDocumentEditor;
+    import ddhx.editor.dummy : DummyDocumentEditor;
     session.editor = new DummyDocumentEditor(); // needed for length
     
     // Not selected
@@ -2998,8 +2998,6 @@ void redo(Session *session, string[] args)
 // Go to position in document
 void goto_(Session *session, string[] args)
 {
-    import utils : scan;
-    
     long position = void;
     bool absolute = void;
     
@@ -3043,9 +3041,6 @@ void goto_(Session *session, string[] args)
             absolute = false;
             break;
         case '%':
-            import std.conv : to;
-            import utils : llpercentdivf;
-            
             if (off.length <= 1) // just '%'
                 throw new Exception("Need percentage number");
             
@@ -3302,7 +3297,6 @@ void clip_copy(Session *session, string[] args)
     if (sel.length)
     {
         // Address space range check (notably on 32-bit systems)
-        import platform : MAXSIZE;
         if (sel.length > MAXSIZE)
             throw new Exception("Clipboard cannot contain selection");
         
@@ -3347,7 +3341,6 @@ void clip_cut(Session *session, string[] args)
     if (sel.length)
     {
         // Address space range check (notably on 32-bit systems)
-        import platform : MAXSIZE;
         if (sel.length > MAXSIZE)
             throw new Exception("Clipboard cannot contain selection");
         
@@ -3484,12 +3477,13 @@ void save(Session *session, string[] args)
     // If the original doc is file, try saving it in-place
     try
     {
-        // It will fail if the target does not exist or
-        // fails a permission check (e.g., GVFS with O_RDWR)
+        // Fallback environment variable
         import std.process : environment;
         if (environment.get("DDHX_NO_INPLACE_SAVE") == "1")
             goto Lfallback;
         
+        // It will fail if the target does not exist or
+        // fails a permission check (e.g., GVFS with O_RDWR)
         save_inplace(session.editor, target);
         goto Ldone;
     }
@@ -3499,7 +3493,7 @@ void save(Session *session, string[] args)
         log("[NOTE] save_inplace: '%s'", ex.msg);
     }
     
-    // Write document fully. If this one fails, it's caught
+    // Write document fully. If this one fails, it's caught by ddhx
 Lfallback:
     save_to_file(session.editor, target);
     
@@ -3508,11 +3502,9 @@ Ldone:
     
     // If opened as memory document, since file is written on disk,
     // reopen as file document
-    import document.memory : MemoryDocument;
     if (cast(MemoryDocument) session.ogdoc)
     {
         session.ogdoc.close();
-        import document.file : FileDocument, OFlags;
         FileDocument doc = new FileDocument(target, OFlags.read | OFlags.exists | OFlags.share);
         session.editor.open(doc);
         session.ogdoc = doc;
@@ -3533,11 +3525,9 @@ void save_as(Session *session, string[] args)
     save_to_file(session.editor, name);
     
     // See note in save().
-    import document.memory : MemoryDocument;
     if (cast(MemoryDocument) session.ogdoc)
     {
         session.ogdoc.close();
-        import document.file : FileDocument, OFlags;
         FileDocument doc = new FileDocument(name, OFlags.read | OFlags.exists | OFlags.share);
         session.editor.open(doc);
         session.ogdoc = doc;
@@ -3563,8 +3553,6 @@ void set(Session *session, string[] args)
 // Bind key to action (command + parameters)
 void bind(Session *session, string[] args)
 {
-    import utils : arguments;
-    
     int key = terminal_keybind( askstring(args, 0, "Key: ") );
     string[] commands = arguments( askstring(args, 1, "Command: ") );
     
@@ -3606,7 +3594,6 @@ void color(Session *session, string[] args)
     
     if (args[0] == "reset") // reset all
     {
-        import std.traits : EnumMembers;
         foreach (scheme; EnumMembers!(ColorScheme))
         {
             setcolor(scheme, ColorMapper.default_(scheme));

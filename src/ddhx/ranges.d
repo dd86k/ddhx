@@ -3,9 +3,9 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ranges;
+module ddhx.ranges;
 
-import utils : scan;
+import ddhx.utils : scan;
 
 /// Special values
 enum RangeSentinel {

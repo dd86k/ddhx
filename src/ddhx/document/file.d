@@ -3,16 +3,16 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module document.file;
+module ddhx.document.file;
 
-import document.base;
+import ddhx.document.base;
 import os.file;
 public import os.file : OFlags;
 
 /// File document.
 class FileDocument : IDocument
 {
-    enum DEFAULT_FLAGS = OFlags.read | OFlags.exists;
+    private enum DEFAULT_FLAGS = OFlags.read | OFlags.exists;
     
     /// New file document from path.
     this(string path, bool readonly = true) // legacy ctor

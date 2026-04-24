@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module utils;
+module ddhx.utils;
 
 /// Template to get binary size in mebibytes (base-1024)
 /// Params: base = Base unit.
@@ -136,8 +136,7 @@ string[] arguments(const(char)[] buffer)
 long scan(scope string input)
 {
     // std.format.read, std.conv.to, and std.conv.parse makes this harder
-    // than it should be...
-    // If we need ulong, use strtoull
+    // than it should be... If we need ulong, use strtoull
     
     import core.stdc.stdlib : strtoll;
     import core.stdc.errno : errno;
@@ -178,7 +177,7 @@ long scan(scope string input)
 /// Throws: Exception or ConvException on error.
 ulong parsebin(scope string input)
 {
-    import platform : assertion;
+    import ddhx.platform : assertion;
     import std.conv : to;
     
     assertion(input, "input is NULL");

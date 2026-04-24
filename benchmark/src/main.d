@@ -1,4 +1,4 @@
-module benchmark.src.main;
+module ddhx.benchmark.src.main;
 
 import core.memory : GC;
 import std.getopt;

@@ -10,15 +10,18 @@ module main;
 //       not have unittests, since DUB will actively omit this
 //       module (and package modules) when running 'dub test'.
 
-import std.stdio, std.getopt;
 import std.process : environment;
+import std.stdio, std.getopt;
+
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
-import configuration;
-import ddhx;
-import formatting : WritingMode;
-import logger;
-import editor;
-import document.file : FileDocument;
+
+import ddhx.configuration;
+import ddhx.document.file : FileDocument;
+import ddhx.editor;
+import ddhx.formatting : WritingMode;
+import ddhx.logger;
+
+import view;
 
 private:
 
@@ -55,7 +58,7 @@ void printpage(string opt)
         writeln(SECRET);
         break;
     case "version":
-        import platform : TARGET_TRIPLE;
+        import ddhx.platform : TARGET_TRIPLE;
         import os.mem : syspagesize;
         import std.conv : text;
         printfield("ddhx",      DDHX_VERSION);
@@ -96,7 +99,6 @@ void printpage(string opt)
         break;
     case "help-config":
         import std.path : buildPath;
-        import std.file : exists;
         import os.path : findConfig, getHomeFolder, getUserConfigFolder, getSystemFolder;
         
         enum SPACING0 = -10;
@@ -248,8 +250,8 @@ void main(string[] args)
     
     if (string logpath = environment.get("DDHX_LOG"))
     {
-        logStart(logpath);
         import std.process : thisProcessID;
+        logStart(logpath);
         log("PID=%d", thisProcessID());
     }
     
@@ -299,7 +301,7 @@ void main(string[] args)
         initmsg = MSG_NEWBUF;
         break;
     case "-": // In-memory buffer from stdin
-        import document.memory : MemoryDocument;
+        import ddhx.document.memory : MemoryDocument;
         target = null; // unset target (no name)
         MemoryDocument doc = new MemoryDocument();
         foreach (const(ubyte)[] chk; stdin.byChunk(4096))
@@ -312,8 +314,8 @@ void main(string[] args)
         break;
     default: // target is set, to either: file, disk (todo), or PID (todo)
         import std.path : baseName;
-        import document.base : IDocument;
-        import document.file : OFlags;
+        import ddhx.document.base : IDocument;
+        import ddhx.document.file : OFlags;
 
         try
         {

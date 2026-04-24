@@ -4,10 +4,13 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module patterns; // plural not to mess with pattern function
+module ddhx.patterns; // plural not to mess with pattern function
 
-import transcoder : CharacterSet;
 import std.conv : text;
+import std.format : unformatValue, singleSpec;
+import std.string : startsWith;
+
+import ddhx.transcoder : CharacterSet;
 
 /// Pattern prefix type.
 enum PatternType
@@ -24,8 +27,6 @@ enum PatternType
 private
 PatternType patternpfx(ref string input)
 {
-    import std.string : startsWith;
-    
     // Prefixes
     static immutable string pfxHex0 = `x:`, pfxHex1 = `0x`;
     static immutable string pfxStr0 = `s:`, pfxStr1 = `"`;
@@ -100,7 +101,7 @@ unittest
 private
 ubyte[] slice64(ulong *x)
 {
-    import core.bitop : bsr, bsf;
+    import core.bitop : bsr;
     
     assert(x);
     
@@ -138,7 +139,6 @@ unittest
 /// Returns: Byte array.
 ubyte[] pattern(CharacterSet charset, string[] args...)
 {
-    import std.format : unformatValue, singleSpec;
     ubyte[] needle;
     PatternType last;
     foreach (string arg; args)

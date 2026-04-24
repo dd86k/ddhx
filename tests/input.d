@@ -1,4 +1,4 @@
-module tests.input;
+module ddhx.tests.input;
 
 import std.stdio;
 import os.terminal;
