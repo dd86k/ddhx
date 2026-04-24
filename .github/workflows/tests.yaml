@@ -31,7 +31,7 @@ jobs:
           - { os: ubuntu-24.04, dc: ldc }
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Setup D compiler
       uses: dlang-community/setup-dlang@v2
       with:
@@ -44,7 +44,7 @@ jobs:
       run: dub -- --ver
     # Upload artifact
     - name: Upload build
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ddhx-${{ matrix.os }}-${{ matrix.dc }}
         path: ddhx*
