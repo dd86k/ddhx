@@ -27,37 +27,35 @@ enum PatternType
 private
 PatternType patternpfx(ref string input)
 {
-    // Prefixes
-    static immutable string pfxHex0 = `x:`, pfxHex1 = `0x`;
-    static immutable string pfxStr0 = `s:`, pfxStr1 = `"`;
-    static immutable string pfxDec0 = `d:`;
-    static immutable string pfxOct0 = `o:`;
-    if (startsWith(input, pfxHex0) || startsWith(input, pfxHex1))
+    if (input is null || input.length == 0)
+        return PatternType.unknown;
+
+    // TODO: "xl:"/"xb:" prefixes to force Little or Big Endianness
+    // Regular prefixes, in order of importance
+    // 1. test prefix
+    // 2. if prefix match, trim input by its length
+    struct Prefix { string str; PatternType type; }
+    static immutable Prefix[] prefixes = [
+        { "x:", PatternType.hex },
+        { "0x", PatternType.hex },
+        { "d:", PatternType.dec },
+        { "o:", PatternType.oct },
+        { "s:", PatternType.string_ },
+    ];
+    foreach (prefix; prefixes)
     {
-        input = input[pfxHex1.length..$];
-        return PatternType.hex;
+        if (startsWith(input, prefix.str))
+        {
+            input = input[prefix.str.length..$];
+            return prefix.type;
+        }
     }
-    else if (startsWith(input, pfxStr0))
+    
+    // String quotes
+    if (input.length >= 2 && input[0] == '"' && input[$-1] == '"')
     {
-        input = input[pfxStr0.length..$];
+        input = input[1..$-1];
         return PatternType.string_;
-    }
-    else if (startsWith(input, pfxStr1))
-    {
-        if (input.length < 2 || input[$-1] != '"')
-            return PatternType.unknown;
-        input = input[pfxStr1.length..$-1];
-        return PatternType.string_;
-    }
-    else if (startsWith(input, pfxDec0))
-    {
-        input = input[pfxDec0.length..$];
-        return PatternType.dec;
-    }
-    else if (startsWith(input, pfxOct0))
-    {
-        input = input[pfxOct0.length..$];
-        return PatternType.oct;
     }
     
     return PatternType.unknown;
@@ -76,6 +74,10 @@ unittest
     assert(patternpfx(p0) == PatternType.hex);
     assert(p0 == "ff");
     
+    p0 = `d:255`;
+    assert(patternpfx(p0) == PatternType.dec);
+    assert(p0 == "255");
+    
     p0 = `o:377`;
     assert(patternpfx(p0) == PatternType.oct);
     assert(p0 == "377");
@@ -91,7 +93,8 @@ unittest
     p0 = `""`;
     assert(patternpfx(p0) == PatternType.string_);
     assert(p0 == "");
-    p0 = `"a`;
+    
+    p0 = `"a`; // missing end quote
     assert(patternpfx(p0) == PatternType.unknown);
     p0 = `"`;
     assert(patternpfx(p0) == PatternType.unknown);
