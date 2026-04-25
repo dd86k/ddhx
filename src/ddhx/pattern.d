@@ -7,7 +7,6 @@
 module ddhx.patterns; // plural not to mess with pattern function
 
 import std.conv : text;
-import std.format : unformatValue, singleSpec;
 import std.string : startsWith;
 
 import ddhx.transcoder : CharacterSet;
@@ -21,14 +20,17 @@ enum PatternType
     oct,
     string_,
 }
+private struct Prefix { string str; PatternType type; }
 /// Detect pattern prefix.
 /// Params: input = String input. Sliced from prefix.
 /// Returns: Pattern type, unknown if it can't be detected.
 private
-PatternType patternpfx(ref string input)
+Prefix patternpfx(string input)
 {
+    Prefix pfx;
+    
     if (input is null || input.length == 0)
-        return PatternType.unknown;
+        return pfx;
 
     // TODO: "xle:"/"xbe:" prefixes to force Little or Big Endianness
     //       Or could be some form of modifier because otherwise that's
@@ -44,7 +46,6 @@ PatternType patternpfx(ref string input)
     // Regular prefixes, in order of importance
     // 1. test prefix
     // 2. if prefix match, trim input by its length
-    struct Prefix { string str; PatternType type; }
     static immutable Prefix[] prefixes = [
         { "x:", PatternType.hex },
         { "0x", PatternType.hex },
@@ -56,58 +57,46 @@ PatternType patternpfx(ref string input)
     {
         if (startsWith(input, prefix.str))
         {
-            input = input[prefix.str.length..$];
-            return prefix.type;
+            pfx.str  = input[prefix.str.length..$];
+            pfx.type = prefix.type;
+            return pfx;
         }
     }
     
     // String quotes
-    if (input.length >= 2 && input[0] == '"' && input[$-1] == '"')
+    if (input.length > 2 && input[0] == '"' && input[$-1] == '"')
     {
-        input = input[1..$-1];
-        return PatternType.string_;
+        pfx.str  = input[1..$-1];
+        pfx.type = PatternType.string_;
+        return pfx;
     }
     
-    return PatternType.unknown;
+    // Unknown, give as-is, maybe previous was correct
+    pfx.str = input;
+    
+    return pfx;
 }
 unittest
 {
-    string p0 = "0x00";
-    assert(patternpfx(p0) == PatternType.hex);
-    assert(p0 == "00");
+    assert(patternpfx("0x00") == Prefix("00", PatternType.hex));
+    assert(patternpfx("x:00") == Prefix("00", PatternType.hex));
+    assert(patternpfx("x:ff") == Prefix("ff", PatternType.hex));
+    assert(patternpfx("d:255") == Prefix("255", PatternType.dec));
+    assert(patternpfx("o:377") == Prefix("377", PatternType.oct));
+    assert(patternpfx("s:hello") == Prefix("hello", PatternType.string_));
+    assert(patternpfx(`"hello"`) == Prefix("hello", PatternType.string_));
     
-    p0 = `x:00`;
-    assert(patternpfx(p0) == PatternType.hex);
-    assert(p0 == "00");
+    // Missing end quotes
+    assert(patternpfx(`"a`) == Prefix(`"a`, PatternType.unknown));
+    assert(patternpfx(`"`)  == Prefix(`"`, PatternType.unknown));
     
-    p0 = `x:ff`;
-    assert(patternpfx(p0) == PatternType.hex);
-    assert(p0 == "ff");
+    // Empty or null
+    assert(patternpfx("")   == Prefix("", PatternType.unknown));
+    assert(patternpfx(null) == Prefix(null, PatternType.unknown));
+    assert(patternpfx(`""`) == Prefix(`""`, PatternType.unknown));
     
-    p0 = `d:255`;
-    assert(patternpfx(p0) == PatternType.dec);
-    assert(p0 == "255");
-    
-    p0 = `o:377`;
-    assert(patternpfx(p0) == PatternType.oct);
-    assert(p0 == "377");
-    
-    p0 = `s:hello`;
-    assert(patternpfx(p0) == PatternType.string_);
-    assert(p0 == "hello");
-    
-    p0 = `"hello"`;
-    assert(patternpfx(p0) == PatternType.string_);
-    assert(p0 == "hello");
-    
-    p0 = `""`;
-    assert(patternpfx(p0) == PatternType.string_);
-    assert(p0 == "");
-    
-    p0 = `"a`; // missing end quote
-    assert(patternpfx(p0) == PatternType.unknown);
-    p0 = `"`;
-    assert(patternpfx(p0) == PatternType.unknown);
+    // Invalid prefixes
+    assert(patternpfx("INVALID:") == Prefix("INVALID:", PatternType.unknown));
 }
 
 // Slice up a 64-bit integer natively
@@ -158,53 +147,75 @@ struct Pattern
 /// Returns: Byte array.
 ubyte[] pattern(CharacterSet charset, string[] args...)
 {
+    import std.conv : parse;
     Pattern pat;
     PatternType last;
     foreach (string arg; args)
     {
-        PatternType current = patternpfx(arg);
+        Prefix pfx = patternpfx(arg);
         
-        // Throwing here makes the behaviour consistent and ensures there is at
-        // least one or more characters
-        if (arg.length == 0)
+        // Throwing (after slicing) here makes the behaviour consistent and
+        // ensures there is at least one or more characters
+        if (pfx.str.length == 0)
             throw new Exception("Missing data for pattern");
         
     Lretry:
-        final switch (current) {
+        final switch (pfx.type) {
         case PatternType.hex:
+            // BUG: https://github.com/dlang/phobos/commit/088e55a56a4fd06067165f9a9d9eaf2173a93f73
+            static if (__VERSION__ < 2090)
+            {
+                import ddhx.platform : assertion;
+                assertion(
+                    (pfx.str[0] >= '0' && pfx.str[0] <= '9') ||
+                    (pfx.str[0] >= 'a' && pfx.str[0] <= 'f') ||
+                    (pfx.str[0] >= 'A' && pfx.str[0] <= 'F'),
+                    text("Not a hex number", pfx.str));
+            }
             // NOTE: %x does not support negative numbers
-            static immutable auto xspec = singleSpec("%x");
-            ulong b = unformatValue!ulong(arg, xspec);
+            ulong b = parse!ulong(pfx.str, 16);
             pat ~= slice64(&b);
             break;
         case PatternType.dec:
+            static if (__VERSION__ < 2090)
+            {
+                import ddhx.platform : assertion;
+                assertion(
+                    (pfx.str[0] >= '0' && pfx.str[0] <= '9'),
+                    text("Not a hex number", pfx.str));
+            }
             // NOTE: We don't yet support negative numbers
             //       Sadly that would require a very messy hack
-            static immutable auto uspec = singleSpec("%u");
-            ulong b = unformatValue!ulong(arg, uspec);
+            ulong b = parse!ulong(pfx.str, 10);
             pat ~= slice64(&b);
             break;
         case PatternType.oct:
+            static if (__VERSION__ < 2090)
+            {
+                import ddhx.platform : assertion;
+                assertion(
+                    (pfx.str[0] >= '0' && pfx.str[0] <= '7'),
+                    text("Not a hex number", pfx.str));
+            }
             // NOTE: %o does not support negative numbers
-            static immutable auto ospec = singleSpec("%o");
-            ulong b = unformatValue!ulong(arg, ospec);
+            ulong b = parse!ulong(pfx.str, 8);
             pat ~= slice64(&b);
             break;
         case PatternType.string_:
             // TODO: Transcode
-            pat ~= arg;
+            pat ~= pfx.str;
             break;
         case PatternType.unknown:
             // If last pattern is correct ("x:00"), retry with that pattern,
             // since this pattern could just be "00" for example.
             if (last)
             {
-                current = last;
+                pfx.type = last;
                 goto Lretry;
             }
             throw new Exception(text("Unknown pattern prefix: ", arg));
         }
-        last = current;
+        last = pfx.type;
     }
     return pat;
 }
@@ -238,15 +249,20 @@ unittest
     // Invalid tests that need to throw
     void test_throw(string[] input)
     {
-        try { cast(void)pattern(CharacterSet.ascii, input); } catch (Exception) { return; }
+        ubyte[] r;
+        try { r = pattern(CharacterSet.ascii, input); } catch (Exception) { return; }
         
         import std.stdio : stderr, writeln;
-        stderr.writeln("Failed to throw with: ", input);
+        stderr.writeln("Failed to throw with: ", input, " it produced: ", r);
         assert(false, "test_throw test failed");
     }
     string[][] invalids = [
-        // Empty
-        [""], ["x:"], ["o:"], ["d:"], ["s:"], ["0x"], ["\""], ["00"],
+        // Missing prefix
+        [""], ["00"], ["00", "0x00"],
+        // Empty data
+        ["x:"], ["o:"], ["d:"], ["s:"], ["0x"], ["\""],
+        // Too long
+        ["0x010101010101010101"], // 64+8 bits
         // Unknown prefixes
         ["INVALID:ff"], ["INVALID:"],
         // Tests last known good prefix
