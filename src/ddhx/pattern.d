@@ -30,7 +30,17 @@ PatternType patternpfx(ref string input)
     if (input is null || input.length == 0)
         return PatternType.unknown;
 
-    // TODO: "xl:"/"xb:" prefixes to force Little or Big Endianness
+    // TODO: "xle:"/"xbe:" prefixes to force Little or Big Endianness
+    //       Or could be some form of modifier because otherwise that's
+    //       potentially adding one million types.
+    // TODO: "re:" for Regular Expressions
+    // TODO: Scalar types (or just length delimiter)
+    //       Decimal: "u8:","u16:","u32:","u64:","f32:","f64:"
+    //       Hex    : "x8:","x16:","x32:","x64:"
+    //       Octal  : "o8:","o16:","o32:","o64:"
+    // TODO: Exotic types: "f24:", "f48:"
+    //       These will require reading a few file specs and see if they are
+    //       exact in value interpretation.
     // Regular prefixes, in order of importance
     // 1. test prefix
     // 2. if prefix match, trim input by its length
@@ -111,10 +121,11 @@ ubyte[] slice64(ulong *x)
     if (*x == 0) return [ 0 ];
     
     int i = (bsr(*x) / 8) + 1; // highest bit and round up to nearest byte
+    
     version(LittleEndian)
-        return (cast(ubyte*)x)[0..i]; // little: ok order
-    else // BigEndian
-        return (cast(ubyte*)x)[ulong.sizeof - i..ulong.sizeof]; // big: skip leading zeros
+        return (cast(ubyte*)x)[0..i];
+    else // On big endian, we skip leading zeros
+        return (cast(ubyte*)x)[ulong.sizeof - i..ulong.sizeof];
 }
 unittest
 {
@@ -134,54 +145,68 @@ unittest
         assert(slice64(&a) == [ 0x11, 0x22 ]);
 }
 
+struct Pattern
+{
+    ubyte[] data;
+    alias data this;
+}
 /// Transform a pattern into an array of bytes, useful as a needle.
-/// Exceptions: Unknown prefix, empty values, etc.
+/// Throws: FormatException or Exception for unknown prefix, empty values, etc.
 /// Params:
 ///     charset = Current character set if string patterns used.
 ///     args... = Array of arguments (e.g., "x:00","00").
 /// Returns: Byte array.
 ubyte[] pattern(CharacterSet charset, string[] args...)
 {
-    ubyte[] needle;
+    Pattern pat;
     PatternType last;
     foreach (string arg; args)
     {
-        string orig = arg;
-        PatternType next = patternpfx(arg);
+        PatternType current = patternpfx(arg);
+        
+        // Throwing here makes the behaviour consistent and ensures there is at
+        // least one or more characters
+        if (arg.length == 0)
+            throw new Exception("Missing data for pattern");
+        
     Lretry:
-        final switch (next) {
+        final switch (current) {
         case PatternType.hex:
+            // NOTE: %x does not support negative numbers
             static immutable auto xspec = singleSpec("%x");
             ulong b = unformatValue!ulong(arg, xspec);
-            needle ~= slice64(cast(ulong*)&b);
+            pat ~= slice64(&b);
             break;
         case PatternType.dec:
-            static immutable auto dspec = singleSpec("%u");
-            long b = unformatValue!long(arg, dspec);
-            needle ~= slice64(cast(ulong*)&b);
+            // NOTE: We don't yet support negative numbers
+            //       Sadly that would require a very messy hack
+            static immutable auto uspec = singleSpec("%u");
+            ulong b = unformatValue!ulong(arg, uspec);
+            pat ~= slice64(&b);
             break;
         case PatternType.oct:
+            // NOTE: %o does not support negative numbers
             static immutable auto ospec = singleSpec("%o");
-            long b = unformatValue!long(arg, ospec);
-            needle ~= slice64(cast(ulong*)&b);
+            ulong b = unformatValue!ulong(arg, ospec);
+            pat ~= slice64(&b);
             break;
         case PatternType.string_:
-            if (arg.length == 0)
-                throw new Exception("String is empty");
             // TODO: Transcode
-            needle ~= arg;
+            pat ~= arg;
             break;
         case PatternType.unknown:
+            // If last pattern is correct ("x:00"), retry with that pattern,
+            // since this pattern could just be "00" for example.
             if (last)
             {
-                next = last;
+                current = last;
                 goto Lretry;
             }
-            throw new Exception(text("Unknown pattern prefix: ", orig));
+            throw new Exception(text("Unknown pattern prefix: ", arg));
         }
-        last = next;
+        last = current;
     }
-    return needle;
+    return pat;
 }
 unittest
 {
@@ -195,22 +220,40 @@ unittest
     assert(pattern(CharacterSet.ascii, "x:0","0","s:test") == "\0\0test");
     
     // Alias prefixes
+    assert(pattern(CharacterSet.ascii, "0x0")             == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "0x00")            == [ 0 ]);
     assert(pattern(CharacterSet.ascii, "0xff")            == [ 0xff ]);
-    assert(pattern(CharacterSet.ascii, `"no"`)            == [ 'n', 'o' ]);
+    assert(pattern(CharacterSet.ascii, `"yes"`)           == "yes");
     
     // Non-string multibyte patterns
     assert(pattern(CharacterSet.ascii, "0x01")            == [ 1 ]);
     assert(pattern(CharacterSet.ascii, "0x0101")          == [ 1, 1 ]);
     assert(pattern(CharacterSet.ascii, "0x010101")        == [ 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x01010101")      == [ 1, 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x0101010101")    == [ 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x01010101")      == [ 1, 1, 1, 1 ]); // 32bit
+    assert(pattern(CharacterSet.ascii, "0x0101010101")      == [ 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x010101010101")    == [ 1, 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x01010101010101")  == [ 1, 1, 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x0101010101010101")== [ 1, 1, 1, 1, 1, 1, 1, 1 ]);
     
-    // Invalid and needs to throw
-    try { cast(void)pattern(CharacterSet.ascii, "");   assert(false); } catch (Exception) {}
-    try { cast(void)pattern(CharacterSet.ascii, "x:"); assert(false); } catch (Exception) {}
-    try { cast(void)pattern(CharacterSet.ascii, "o:"); assert(false); } catch (Exception) {}
-    try { cast(void)pattern(CharacterSet.ascii, "d:"); assert(false); } catch (Exception) {}
-    try { cast(void)pattern(CharacterSet.ascii, "s:"); assert(false); } catch (Exception) {}
-    try { cast(void)pattern(CharacterSet.ascii, "0x"); assert(false); } catch (Exception) {}
-    try { cast(void)pattern(CharacterSet.ascii, "\""); assert(false); } catch (Exception) {}
+    // Invalid tests that need to throw
+    void test_throw(string[] input)
+    {
+        try { cast(void)pattern(CharacterSet.ascii, input); } catch (Exception) { return; }
+        
+        import std.stdio : stderr, writeln;
+        stderr.writeln("Failed to throw with: ", input);
+        assert(false, "test_throw test failed");
+    }
+    string[][] invalids = [
+        // Empty
+        [""], ["x:"], ["o:"], ["d:"], ["s:"], ["0x"], ["\""], ["00"],
+        // Unknown prefixes
+        ["INVALID:ff"], ["INVALID:"],
+        // Tests last known good prefix
+        ["x:00", "INVALID:ff"],
+        // Negative numbers not yet supported....... sorry
+        ["d:-1"], ["x:-1"], ["o:-1"],
+    ];
+    foreach (inv; invalids)
+        test_throw(inv);
 }
