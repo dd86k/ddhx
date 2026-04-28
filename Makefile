@@ -4,7 +4,7 @@ DC ?= dmd
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 
-SRCS = $(wildcard src/*.d src/**/*.d)
+SRCS = $(wildcard src/*.d src/**/*.d src/ddhx/**/*.d)
 TEST_SRCS_INPUT = $(SRCS) tests/input.d
 TEST_SRCS_COLOR = $(SRCS) tests/color.d
 TEST_SRCS_SIZE = $(SRCS) tests/size.d
