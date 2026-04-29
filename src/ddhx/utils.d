@@ -135,35 +135,60 @@ string[] arguments(const(char)[] buffer)
 /// Throws: Exception when errno != 0.
 long scan(scope string input)
 {
-    // std.format.read, std.conv.to, and std.conv.parse makes this harder
-    // than it should be... If we need ulong, use strtoull
+    import std.conv : parse;
+    import std.string : indexOf, strip, startsWith;
     
-    import core.stdc.stdlib : strtoll;
-    import core.stdc.errno : errno;
-    import core.stdc.string : strerror;
-    import std.string : toStringz, fromStringz;
+    // Imitate stroll a little by ignoring whitespace
+    input = strip(input);
+    if (input.length == 0)
+        throw new Exception("Empty scan");
     
-    errno = 0;
-    long i = strtoll(toStringz(input), null, 0);
-    if (errno)
-        throw new Exception(cast(string)fromStringz(strerror(errno)));
-    
-    return i;
+    // Hex: stroll supports "0X" but don't see the appeal yet
+    if (startsWith(input, "0x"))
+    {
+        input = input[2..$]; // parse(ref Source source, uint radix)
+        return parse!long(input, 16);
+    }
+    // Binary: C23 supports "0b" and "0B" for binary numbers
+    else if (startsWith(input, "0b"))
+    {
+        input = input[2..$];
+        return parse!long(input, 2);
+    }
+    // Octal
+    else if (input.length > 2 && input[0] == '0')
+    {
+        input = input[1..$];
+        return parse!long(input, 8);
+    }
+    // NOTE: Decimal is the only base where negative sign is allowed
+    else
+    {
+        return parse!long(input, 10);
+    }
 }
 @system unittest
 {
     import std.conv : octal;
     
-    assert(scan("0") == 0);
     // decimal
-    assert(scan("1") == 1);
-    assert(scan("2") == 2);
-    assert(scan("10") == 10);
+    assert(scan("0")   == 0);
+    assert(scan("1")   == 1);
+    assert(scan("2")   == 2);
+    assert(scan("10")  == 10);
+    assert(scan("-10") == -10);
     // hex
+    assert(scan("0x0")  == 0);
     assert(scan("0x1")  == 0x1);
     assert(scan("0x2")  == 0x2);
     assert(scan("0x10") == 0x10);
+    // binary
+    assert(scan("0b0")  == 0);
+    assert(scan("0b1")  == 0b1);
+    assert(scan("0b10") == 0b10);
+    assert(scan("0b11") == 0b11);
     // octal
+    assert(scan("00")  == 0);
     assert(scan("01")  == octal!"1");
     assert(scan("02")  == octal!"2");
     assert(scan("010") == octal!"10");
