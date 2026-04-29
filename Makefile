@@ -75,19 +75,21 @@ benchmark: $(BENCH_SRCS)
 	$(DC) $(RELEASE_FLAGS) $(OFLAG)ddhx-benchmark $(BENCH_SRCS)
 
 # Tests
-test: test-input test-color test-size
+test: $(SRCS)
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(OFLAG)ddhx-test-library $(SRCS)
+	./ddhx-test-library
 
 test-input: $(TEST_SRCS_INPUT)
-	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestInput $(OFLAG)ddhx-test $(TEST_SRCS_INPUT)
-	./ddhx-test
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestInput $(OFLAG)ddhx-test-library $(TEST_SRCS_INPUT)
+	./ddhx-test-library
 
 test-color: $(TEST_SRCS_COLOR)
-	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestColor $(OFLAG)ddhx-test $(TEST_SRCS_COLOR)
-	./ddhx-test
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestColor $(OFLAG)ddhx-test-library $(TEST_SRCS_COLOR)
+	./ddhx-test-library
 
 test-size: $(TEST_SRCS_SIZE)
-	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestSize $(OFLAG)ddhx-test $(TEST_SRCS_SIZE)
-	./ddhx-test
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestSize $(OFLAG)ddhx-test-library $(TEST_SRCS_SIZE)
+	./ddhx-test-library
 
 # Install/uninstall
 install: release
