@@ -99,39 +99,65 @@ unittest
     assert(patternpfx("INVALID:") == Prefix("INVALID:", PatternType.unknown));
 }
 
-// Slice up a 64-bit integer natively
+// Slice up any integer pointer as a byte array.
+// The array will be sized depending on the number of populated bits.
+// For example, 0x01 will be [ 0x01 ], 0x0101 being [ 0x01, 0x01 ].
 private
-ubyte[] slice64(ulong *x)
+ubyte[] sliceup(T)(T x)
 {
+    // std.conv.bitCast might be interesting, but shrug
     import core.bitop : bsr;
     
     assert(x);
     
     if (*x == 0) return [ 0 ];
     
-    int i = (bsr(*x) / 8) + 1; // highest bit and round up to nearest byte
+    enum S = cast(int) T.sizeof;
+    
+    int i = (bsr(*x) / S) + 1; // highest bit and round up to nearest byte
     
     version(LittleEndian)
         return (cast(ubyte*)x)[0..i];
     else // On big endian, we skip leading zeros
-        return (cast(ubyte*)x)[ulong.sizeof - i..ulong.sizeof];
+        return (cast(ubyte*)x)[T.sizeof - i..T.sizeof];
 }
 unittest
 {
     ulong a;
-    assert(slice64(&a) == [ 0 ]);
+    assert(sliceup(&a) == [ 0 ]);
     a = 1;
-    assert(slice64(&a) == [ 1 ]);
+    assert(sliceup(&a) == [ 1 ]);
     a = 0xff;
-    assert(slice64(&a) == [ 0xff ]);
+    assert(sliceup(&a) == [ 0xff ]);
     a = 0xffff;
-    assert(slice64(&a) == [ 0xff, 0xff ]);
+    assert(sliceup(&a) == [ 0xff, 0xff ]);
+    a = 0xffff_ff;
+    assert(sliceup(&a) == [ 0xff, 0xff, 0xff ]);
+    a = 0xffff_ffff;
+    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff ]);
+    a = 0xffff_ffff_ff;
+    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    a = 0xffff_ffff_ffff;
+    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    a = 0xffff_ffff_ffff_ff;
+    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    a = 0xffff_ffff_ffff_ffff;
+    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
     
     a = 0x1122;
     version (LittleEndian)
-        assert(slice64(&a) == [ 0x22, 0x11 ]);
+        assert(sliceup(&a) == [ 0x22, 0x11 ]);
     else
-        assert(slice64(&a) == [ 0x11, 0x22 ]);
+        assert(sliceup(&a) == [ 0x11, 0x22 ]);
+    
+    ubyte b = 0xaa;
+    assert(sliceup(&b) == [ 0xaa ]);
+    
+    ushort c = 0xaaaa;
+    assert(sliceup(&c) == [ 0xaa, 0xaa ]);
+    
+    uint d = 0xaaaa_aaaa;
+    assert(sliceup(&d) == [ 0xaa, 0xaa, 0xaa, 0xaa ]);
 }
 
 struct Pattern
@@ -174,7 +200,7 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
             }
             // NOTE: %x does not support negative numbers
             ulong b = parse!ulong(pfx.str, 16);
-            pat ~= slice64(&b);
+            pat ~= sliceup(&b);
             break;
         case PatternType.dec:
             static if (__VERSION__ < 2090)
@@ -185,9 +211,9 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
                     text("Not a hex number", pfx.str));
             }
             // NOTE: We don't yet support negative numbers
-            //       Sadly that would require a very messy hack
+            //       But, it is accepted with long as a template parameter
             ulong b = parse!ulong(pfx.str, 10);
-            pat ~= slice64(&b);
+            pat ~= sliceup(&b);
             break;
         case PatternType.oct:
             static if (__VERSION__ < 2090)
@@ -199,7 +225,7 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
             }
             // NOTE: %o does not support negative numbers
             ulong b = parse!ulong(pfx.str, 8);
-            pat ~= slice64(&b);
+            pat ~= sliceup(&b);
             break;
         case PatternType.string_:
             // TODO: Transcode
