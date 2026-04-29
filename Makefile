@@ -1,4 +1,4 @@
-# ddhx - Binary file editor
+# Makefile alternative to DUB for ddhx
 
 DC ?= dmd
 PREFIX ?= /usr/local
@@ -100,7 +100,7 @@ uninstall:
 
 # Clean
 clean:
-	rm -f ddhx ddhx-benchmark ddhx-test
+	rm -f ddhx ddhx.o libddhx.a ddhx-benchmark ddhx-test-library ddhx-test-library.o
 
 .PHONY: all ddhx release debug debugv native \
 	debug-static release-static native-static \

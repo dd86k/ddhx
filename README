@@ -128,7 +128,14 @@ Compile a debug build:
 Compile a release build using a specified compiler:
   $ dub build -b release --compiler=ldc2
 
+// Makefile
+
 If DUB is unavailable, a Makefile is also available.
+
+Default target is 'release', meaning an optimized release will be created.
+
+Other targets include 'debug', 'debugv', 'native', 'debug-static',
+'release-static', and 'native-static'.
 
 ////////////////////////////////////////////////////////////////////////////////
 // Debugging
@@ -142,6 +149,8 @@ Run unit tests with log traces to stderr:
 Run a specific system integration test:
   $ dub test -b TYPE
   TYPE: input (terminal input), color (terminal colors), size (terminal size)
+
+The Makefile also accepts 'test', 'test-input', 'test-size', and 'test-size'.
 
 Environment variables:
 - DDHX_LOG=PATH
