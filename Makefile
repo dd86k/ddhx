@@ -12,7 +12,7 @@ BENCH_SRCS = $(SRCS) benchmark/src/main.d
 
 # Compiler-specific flag mapping
 # DMD flags are the baseline; LDC and GDC equivalents are mapped below.
-ifeq ($(DC),ldc2)
+ifeq ($(DC),ldc2) # LLVM D Compiler
 	OFLAG = -of=
 	RELEASE_FLAGS = -O2 -release -boundscheck=off
 	DEBUG_FLAGS = -g -d-debug
@@ -21,17 +21,7 @@ ifeq ($(DC),ldc2)
 	STATIC_FLAG = --static
 	UNITTEST_FLAG = -unittest
 	VERSION_FLAG = -d-version
-else ifeq ($(DC),gdc)
-	OFLAG = -o
-	RELEASE_FLAGS = -O2 -frelease -fbounds-check=off
-	DEBUG_FLAGS = -g -fdebug
-	DEBUGV_FLAGS = -g -fdebug -fversion=verbose
-	NATIVE_FLAGS = -O2 -frelease -fbounds-check=off -march=native
-	STATIC_FLAG = -Wl,-static -static -static-libgcc
-	UNITTEST_FLAG = -funittest
-	VERSION_FLAG = -fversion
-else
-	# DMD (default)
+else ifeq ($(DC),dmd) # DigitalMars D compiler
 	OFLAG = -of=
 	RELEASE_FLAGS = -O -release -boundscheck=off
 	DEBUG_FLAGS = -g -debug
@@ -40,6 +30,15 @@ else
 	STATIC_FLAG = -L=-static
 	UNITTEST_FLAG = -unittest
 	VERSION_FLAG = -version
+else # GNU D Compiler (allows gdc-* invocation)
+	OFLAG = -o
+	RELEASE_FLAGS = -O2 -frelease -fbounds-check=off
+	DEBUG_FLAGS = -g -fdebug
+	DEBUGV_FLAGS = -g -fdebug -fversion=verbose
+	NATIVE_FLAGS = -O2 -frelease -fbounds-check=off -march=native
+	STATIC_FLAG = -Wl,-static -static -static-libgcc
+	UNITTEST_FLAG = -funittest
+	VERSION_FLAG = -fversion
 endif
 
 # Default target
