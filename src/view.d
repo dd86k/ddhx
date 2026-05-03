@@ -173,8 +173,8 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // Message slice result.
     string g_message;
     
-    /// Last search needle buffer (find commands use this).
-    ubyte[] g_needle;
+    /// Last search needle buffer (find-related commands use this).
+    Pattern g_needle;
     
     // TODO: Move edit cursor position and input to Session
     //       Because both depend on (a) the document and (b) the data type displayed
@@ -435,7 +435,7 @@ void initdefaults()
             file.writeln("Globals");
             file.writeln("\tg_messagebuf.length\t: ", g_messagebuf.length);
             file.writeln("\tg_message.length\t: ", g_message.length);
-            file.writeln("\tg_needle.length\t: ", g_needle.length);
+            file.writeln("\tg_needle.length\t: ", g_needle.data.length);
             file.writeln("\tg_editcurpos\t: ", g_editcurpos);
             file.writeln("\tg_input.index\t: ", g_input.index);
             file.writeln("\tg_clipboard_ptr\t: ", g_clipboard_ptr);
@@ -2202,10 +2202,8 @@ enum {
 ///     position = Starting position.
 ///     flags = Operation flags.
 /// Returns: Position or SEARCH_RESULT_NOT_FOUND. SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND.
-long search(Session *session, ubyte[] needle, long position, int flags, void delegate(long, long) progress)
+long search(Session *session, Pattern needle, long position, int flags, void delegate(long, long) progress)
 {
-    import core.stdc.string : memcmp;
-    
     assertion(needle, "Need needle");
     
     // Throwing on malloc failure is weird... but uses less memory than a search buffer would
@@ -2217,7 +2215,7 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
     log("position=%d flags=%#x needle=[%(%#x,%)]", position, flags, needle);
     
     int diff = flags & SEARCH_DIFF;
-    size_t alignment = flags & SEARCH_ALIGNED ? needle.length : 1;
+    size_t alignment = flags & SEARCH_ALIGNED ? needle.data.length : 1;
     
     long docsize = session.editor.size();
     
@@ -2243,8 +2241,9 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
                 return SEARCH_RESULT_NOT_FOUND;
             
             long o = position - base;
-            // Clamp so memcmp stays within haystack bounds.
-            long maxOff = cast(long)(haystack.length - needle.length);
+            // Clamp starting offset so matchPattern cannot read past haystack.
+            size_t matchLen = (needle.flags & PATTERN_HAS_GLOB) ? 0 : needle.data.length;
+            long maxOff = cast(long)(haystack.length - matchLen);
             if (o > maxOff)
             {
                 position -= (o - maxOff);
@@ -2254,13 +2253,9 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
             // alignment > 1 and o < alignment.
             for (; o > 0; o -= cast(long) alignment, position -= cast(long) alignment)
             {
-                int r = memcmp(needle.ptr, haystack.ptr + cast(size_t) o, needle.length);
-                
-                // if memcmp==0 (exact) != diff=1 -> SKIP
-                // if memcmp!=0 (diff)  != diff=0 -> SKIP
-                if ((diff == 0 && r != 0) || (diff && r == 0))
+                bool matched = matchPattern(haystack, needle, cast(size_t) o, 0);
+                if ((diff == 0 && !matched) || (diff && matched))
                     continue;
-                
                 return position;
             }
             
@@ -2282,16 +2277,14 @@ long search(Session *session, ubyte[] needle, long position, int flags, void del
             if (haystack.length < needle.length)
                 return SEARCH_RESULT_NOT_FOUND;
             
-            // o + needle.length <= haystack.length to avoid memcmp overread
-            for (size_t o; o + needle.length <= haystack.length; o += alignment, position += alignment)
+            size_t bound = (needle.flags & PATTERN_HAS_GLOB)
+                ? haystack.length
+                : haystack.length - needle.data.length;
+            for (size_t o; o <= bound; o += alignment, position += alignment)
             {
-                int r = memcmp(needle.ptr, haystack.ptr + o, needle.length);
-                
-                // if memcmp==0 (exact) != diff=1 -> SKIP
-                // if memcmp!=0 (diff)  != diff=0 -> SKIP
-                if ((diff == 0 && r != 0) || (diff && r == 0))
+                bool matched = matchPattern(haystack, needle, o, 0);
+                if ((diff == 0 && !matched) || (diff && matched))
                     continue;
-                
                 return position;
             }
             
@@ -2316,7 +2309,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
-    ubyte[] needle = cast(ubyte[]) "CC";
+    Pattern needle = pattern(CharacterSet.ascii, "s:CC");
     long result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result == 4, "forward aligned: expected 4");
 }
@@ -2329,7 +2322,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
 
-    ubyte[] needle = cast(ubyte[]) "ZZ";
+    Pattern needle = pattern(CharacterSet.ascii, "s:ZZ");
     long result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
 }
@@ -2344,7 +2337,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
 
-    ubyte[] needle = cast(ubyte[]) "ZZ";
+    Pattern needle = pattern(CharacterSet.ascii, "s:ZZ");
     long result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
 }
@@ -2357,7 +2350,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    ubyte[] needle = cast(ubyte[]) "CD";
+    Pattern needle = pattern(CharacterSet.ascii, "s:CD");
     long result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_DISALLOW_CANCEL, null);
     assert(result == 2, "reverse from end: expected 2");
 }
@@ -2552,8 +2545,9 @@ void move_skip_backward(Session *session, string[] args)
     // Move even if nothing found, since it is the intent.
     // In a text editor, if Ctrl+Left is hit (imagine a long line of same
     // characters) the cursor still moves to the start of the document.
+    Pattern pneedle = Pattern.fromBytes(needle);
     moveabs(session,
-        search(session, needle, sel.start - needle.length,
+        search(session, pneedle, sel.start - needle.length,
             SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED,
             (pos, total){ update_progress(session, pos, total); }));
 }
@@ -2595,8 +2589,9 @@ void move_skip_forward(Session *session, string[] args)
     
     session.selection.status = 0;
     
+    Pattern pneedle = Pattern.fromBytes(needle);
     moveabs(session,
-        search(session, needle, sel.start + needle.length,
+        search(session, pneedle, sel.start + needle.length,
             SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED,
             (pos, total){ update_progress(session, pos, total); }));
 }
@@ -3195,12 +3190,13 @@ void replace_(Session *session, string[] args)
             message("Missing pattern");
             return;
         }
-        ubyte[] p = pattern(session.rc.charset, args);
-        session.editor.patternReplace(sel.start, sel.length, p.ptr, p.length);
+        Pattern p = pattern(session.rc.charset, args);
+        ubyte[] pb = p.toBytes();
+        session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
         return;
     }
-    
+
     if (args.length < 1)
     {
         message("Missing range");
@@ -3211,10 +3207,11 @@ void replace_(Session *session, string[] args)
         message("Missing pattern");
         return;
     }
-    
+
     Range r = askrange(args, 0, "Range: ");
-    ubyte[] p = pattern(session.rc.charset, args[1..$]);
-    session.editor.patternReplace(r.start, rangelen(r), p.ptr, p.length);
+    Pattern p = pattern(session.rc.charset, args[1..$]);
+    ubyte[] pb = p.toBytes();
+    session.editor.patternReplace(r.start, rangelen(r), pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 }
 
@@ -3232,12 +3229,13 @@ void insert_(Session *session, string[] args)
             message("Need pattern");
             return;
         }
-        ubyte[] p = pattern(session.rc.charset, args);
-        session.editor.patternInsert(sel.start, sel.length, p.ptr, p.length);
+        Pattern p = pattern(session.rc.charset, args);
+        ubyte[] pb = p.toBytes();
+        session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
         return;
     }
-    
+
     if (args.length < 1)
     {
         message("Missing range");
@@ -3248,10 +3246,11 @@ void insert_(Session *session, string[] args)
         message("Missing pattern");
         return;
     }
-    
+
     Range r = askrange(args, 0, "Range: ");
-    ubyte[] p = pattern(session.rc.charset, args[1..$]);
-    session.editor.patternInsert(r.start, rangelen(r), p.ptr, p.length);
+    Pattern p = pattern(session.rc.charset, args[1..$]);
+    ubyte[] pb = p.toBytes();
+    session.editor.patternInsert(r.start, rangelen(r), pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 }
 
@@ -3619,17 +3618,17 @@ void find(Session *session, string[] args)
     if (args && args.length > 0)
     {
         g_needle = pattern(session.rc.charset, args);
-        sel.start = session.position_cursor + g_needle.length;
+        sel.start = session.position_cursor + g_needle.data.length;
     }
     else if (sel.length) // selection
     {
         if (sel.length > CONFIG_SEARCH_LIMIT)
             throw new Exception("Selection too big");
-        g_needle.length = cast(size_t)sel.length;
-        g_needle = session.editor.view(sel.start, g_needle);
-        if (g_needle.length < sel.length)
+        ubyte[] buf = new ubyte[cast(size_t)sel.length];
+        buf = session.editor.view(sel.start, buf);
+        if (buf.length < sel.length)
             return; // Nothing to do
-        sel.start += g_needle.length;
+        sel.start += buf.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
@@ -3664,17 +3663,17 @@ void find_back(Session *session, string[] args)
     if (args && args.length > 0)
     {
         g_needle = pattern(session.rc.charset, args);
-        sel.start = session.position_cursor - g_needle.length;
+        sel.start = session.position_cursor - g_needle.data.length;
     }
     else if (sel.length) // selection
     {
         if (sel.length > CONFIG_SEARCH_LIMIT)
             throw new Exception("Selection too big");
-        g_needle.length = cast(size_t)sel.length;
-        g_needle = session.editor.view(sel.start, g_needle);
-        if (g_needle.length < sel.length)
+        ubyte[] buf = new ubyte[cast(size_t)sel.length];
+        buf = session.editor.view(sel.start, buf);
+        if (buf.length < sel.length)
             return; // Nothing to do, couldn't read all of needle
-        sel.start -= g_needle.length;
+        sel.start -= buf.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
@@ -3703,7 +3702,7 @@ void find_back(Session *session, string[] args)
 // 
 void find_next(Session *session, string[] args)
 {
-    if (g_needle is null)
+    if (g_needle.data is null)
         return;
     
     unselect(session);
@@ -3712,7 +3711,7 @@ void find_next(Session *session, string[] args)
     update_status(session);
     
     long p =
-        search(session, g_needle, session.position_cursor + g_needle.length, 0,
+        search(session, g_needle, session.position_cursor + g_needle.data.length, 0,
         (pos, total){ update_progress(session, pos, total); });
     if (p < 0)
     {
@@ -3730,7 +3729,7 @@ void find_next(Session *session, string[] args)
 // 
 void find_prev(Session *session, string[] args)
 {
-    if (g_needle is null)
+    if (g_needle.data is null)
         return;
     
     unselect(session);

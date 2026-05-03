@@ -160,10 +160,35 @@ unittest
     assert(sliceup(&d) == [ 0xaa, 0xaa, 0xaa, 0xaa ]);
 }
 
+enum
+{
+    PATTERN_HAS_GLOB  = 1,   /// pattern contains ? or * wildcards
+    // Globbing values
+    PATTERN_GLOB_ONE  = 256, /// ushort sentinel for '?' (match exactly one byte)
+    PATTERN_GLOB_MANY = 257, /// ushort sentinel for '*' (match zero or more bytes)
+}
 struct Pattern
 {
-    ubyte[] data;
+    ushort[] data; /// full pattern; values 0-255 are literal bytes, >=256 being special
+    int flags;
     alias data this;
+    /// Generate a flat ubyte[] from data on demand. Valid only when there is not globbing.
+    ubyte[] toBytes() const
+    {
+        ubyte[] result = new ubyte[data.length];
+        foreach (i, v; data) result[i] = cast(ubyte) v;
+        return result;
+    }
+    // static func avoids ctor fuckery and lvalue requirement
+    // this function is mostly used for search()
+    /// Generate new pattern exclusively out from raw data. Never implies globbing.
+    static Pattern fromBytes(const(ubyte)[] newdata)
+    {
+        Pattern pat;
+        pat.data = new ushort[newdata.length];
+        foreach (i, v; newdata) pat.data[i] = v;
+        return pat;
+    }
 }
 /// Transform a pattern into an array of bytes, useful as a needle.
 /// Throws: FormatException or Exception for unknown prefix, empty values, etc.
@@ -171,13 +196,19 @@ struct Pattern
 ///     charset = Current character set if string patterns used.
 ///     args... = Array of arguments (e.g., "x:00","00").
 /// Returns: Byte array.
-ubyte[] pattern(CharacterSet charset, string[] args...)
+Pattern pattern(CharacterSet charset, string[] args...)
 {
     import std.conv : parse;
     Pattern pat;
     PatternType last;
     foreach (string arg; args)
     {
+        switch (arg) {
+        case "?": pat.data ~= PATTERN_GLOB_ONE;  pat.flags |= PATTERN_HAS_GLOB; continue;
+        case "*": pat.data ~= PATTERN_GLOB_MANY; pat.flags |= PATTERN_HAS_GLOB; continue;
+        default:
+        }
+
         Prefix pfx = patternpfx(arg);
         
         // Throwing (after slicing) here makes the behaviour consistent and
@@ -200,7 +231,7 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
             }
             // NOTE: %x does not support negative numbers
             ulong b = parse!ulong(pfx.str, 16);
-            pat ~= sliceup(&b);
+            foreach (v; sliceup(&b)) pat.data ~= v;
             break;
         case PatternType.dec:
             static if (__VERSION__ < 2090)
@@ -213,7 +244,7 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
             // NOTE: We don't yet support negative numbers
             //       But, it is accepted with long as a template parameter
             ulong b = parse!ulong(pfx.str, 10);
-            pat ~= sliceup(&b);
+            foreach (v; sliceup(&b)) pat.data ~= v;
             break;
         case PatternType.oct:
             static if (__VERSION__ < 2090)
@@ -225,11 +256,11 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
             }
             // NOTE: %o does not support negative numbers
             ulong b = parse!ulong(pfx.str, 8);
-            pat ~= sliceup(&b);
+            foreach (v; sliceup(&b)) pat.data ~= v;
             break;
         case PatternType.string_:
             // TODO: Transcode
-            pat ~= pfx.str;
+            foreach (v; pfx.str) pat.data ~= v;
             break;
         case PatternType.unknown:
             // If last pattern is correct ("x:00"), retry with that pattern,
@@ -248,38 +279,38 @@ ubyte[] pattern(CharacterSet charset, string[] args...)
 unittest
 {
     // Official prefixes
-    assert(pattern(CharacterSet.ascii, "x:00")          == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "d:255")         == [ 0xff ]);
-    assert(pattern(CharacterSet.ascii, "o:377")         == [ 0xff ]);
-    assert(pattern(CharacterSet.ascii, "x:00","00")     == [ 0, 0 ]);
-    assert(pattern(CharacterSet.ascii, "s:test")        == "test");
-    assert(pattern(CharacterSet.ascii, "x:0","s:test")  == "\0test");
-    assert(pattern(CharacterSet.ascii, "x:0","0","s:test") == "\0\0test");
+    assert(pattern(CharacterSet.ascii, "x:00").data          == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "d:255").data         == [ 0xff ]);
+    assert(pattern(CharacterSet.ascii, "o:377").data         == [ 0xff ]);
+    assert(pattern(CharacterSet.ascii, "x:00","00").data     == [ 0, 0 ]);
+    assert(pattern(CharacterSet.ascii, "s:test").data        == [ 't', 'e', 's', 't' ]);
+    assert(pattern(CharacterSet.ascii, "x:0","s:test").data  == [ 0, 't', 'e', 's', 't' ]);
+    assert(pattern(CharacterSet.ascii, "x:0","0","s:test").data == [ 0, 0, 't', 'e', 's', 't' ]);
     
     // Alias prefixes
-    assert(pattern(CharacterSet.ascii, "0x0")             == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "0x00")            == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "0xff")            == [ 0xff ]);
-    assert(pattern(CharacterSet.ascii, `"yes"`)           == "yes");
+    assert(pattern(CharacterSet.ascii, "0x0").data             == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "0x00").data            == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "0xff").data            == [ 0xff ]);
+    assert(pattern(CharacterSet.ascii, `"yes"`).data           == [ 'y', 'e', 's' ]);
     
     // Non-string multibyte patterns
-    assert(pattern(CharacterSet.ascii, "0x01")            == [ 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x0101")          == [ 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x010101")        == [ 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x01010101")      == [ 1, 1, 1, 1 ]); // 32bit
-    assert(pattern(CharacterSet.ascii, "0x0101010101")      == [ 1, 1, 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x010101010101")    == [ 1, 1, 1, 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x01010101010101")  == [ 1, 1, 1, 1, 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x0101010101010101")== [ 1, 1, 1, 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x01").data            == [ 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x0101").data          == [ 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x010101").data        == [ 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x01010101").data      == [ 1, 1, 1, 1 ]); // 32bit
+    assert(pattern(CharacterSet.ascii, "0x0101010101").data      == [ 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x010101010101").data    == [ 1, 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x01010101010101").data  == [ 1, 1, 1, 1, 1, 1, 1 ]);
+    assert(pattern(CharacterSet.ascii, "0x0101010101010101").data== [ 1, 1, 1, 1, 1, 1, 1, 1 ]);
     
     // Invalid tests that need to throw
     void test_throw(string[] input)
     {
-        ubyte[] r;
+        Pattern r;
         try { r = pattern(CharacterSet.ascii, input); } catch (Exception) { return; }
         
         import std.stdio : stderr, writeln;
-        stderr.writeln("Failed to throw with: ", input, " it produced: ", r);
+        stderr.writeln("Failed to throw with: ", input, " it produced: ", r.data);
         assert(false, "test_throw test failed");
     }
     string[][] invalids = [
@@ -298,4 +329,97 @@ unittest
     ];
     foreach (inv; invalids)
         test_throw(inv);
+    
+    // Globbers
+    assert(pattern(CharacterSet.ascii, "?")                 == [ PATTERN_GLOB_ONE ]);
+    assert(pattern(CharacterSet.ascii, "*")                 == [ PATTERN_GLOB_MANY ]);
+    assert(pattern(CharacterSet.ascii, "x:00", "?", "x:FF") == [ 0, PATTERN_GLOB_ONE,  0xff ]);
+    assert(pattern(CharacterSet.ascii, "x:00", "*", "x:FF") == [ 0, PATTERN_GLOB_MANY, 0xff ]);
+}
+
+/// Match a pattern against haystack starting at hPos/nPos.
+///
+/// It does not scan. That is what the search() function is for, in view.
+/// Params:
+///     haystack = Data buffer.
+///     needle   = Compiled pattern (may contain ? and * wildcards).
+///     hPos     = Starting offset in haystack.
+///     nPos     = Starting offset in needle (normally 0).
+/// Returns: true if the pattern matches at hPos.
+bool matchPattern(ubyte[] haystack, Pattern needle, size_t hPos, size_t nPos)
+{
+    if ((needle.flags & PATTERN_HAS_GLOB) == 0)
+    {
+        size_t nl = needle.data.length;
+        if (hPos + nl > haystack.length) return false;
+        foreach (i, nc; needle.data)
+            if (haystack[hPos + i] != cast(ubyte) nc) return false;
+        return true;
+    }
+
+    // Iterative two-pointer glob match: O(n)
+    size_t h = hPos, n = nPos;
+    size_t starN = size_t.max, starH;
+
+    while (h < haystack.length)
+    {
+        if (n < needle.data.length)
+        {
+            ushort nc = needle.data[n];
+            if (nc < PATTERN_GLOB_ONE && haystack[h] == cast(ubyte) nc) { h++; n++; continue; }
+            switch (nc) {
+            case PATTERN_GLOB_ONE: h++; n++; continue;
+            case PATTERN_GLOB_MANY: starN = n++; starH = h; continue;
+            default:
+            }
+        }
+        else // pattern exhausted, so prefix matches. haystack tail is irrelevant
+            return true;
+        if (starN != size_t.max) // backtrack to *
+        {
+            n = starN + 1;
+            h = ++starH;
+            continue;
+        }
+        return false;
+    }
+    // trailing *s match empty
+    while (n < needle.data.length && needle.data[n] == PATTERN_GLOB_MANY) n++;
+    return n == needle.data.length;
+}
+unittest
+{
+    ubyte[] hay = cast(ubyte[]) "ABCDEF";
+
+    Pattern p = pattern(CharacterSet.ascii, "s:ABC");
+    assert(matchPattern(hay, p, 0, 0));
+    assert(matchPattern(hay, p, 1, 0) == false);
+    assert(matchPattern(hay, p, 4, 0) == false); // not enough room
+
+    // ? matches exactly one byte
+    p = pattern(CharacterSet.ascii, "?", "s:BC");
+    assert(matchPattern(hay, p, 0, 0)); // A matches ?
+    assert(matchPattern(hay, p, 2, 0) == false); // CD != BC
+
+    // * matches zero or more
+    p = pattern(CharacterSet.ascii, "*", "s:EF");
+    assert(matchPattern(hay, p, 0, 0)); // * eats ABCD
+    assert(matchPattern(hay, p, 4, 0)); // * matches empty
+    assert(matchPattern(hay, p, 5, 0) == false); // only F left
+
+    // Literal on both sides of *
+    p = pattern(CharacterSet.ascii, "s:A", "*", "s:F");
+    assert(matchPattern(hay, p, 0, 0));
+    assert(matchPattern(hay, p, 1, 0) == false);
+
+    // Multiple stars must not exponentially backtrack
+    p = pattern(CharacterSet.ascii, "*", "?", "*", "s:F");
+    assert(matchPattern(hay, p, 0, 0));
+    assert(matchPattern(hay, p, 6, 0) == false); // past end
+    
+    // Fixed-position match: matchPattern tests AT hPos, not starting from hPos
+    p = pattern(CharacterSet.ascii, "s:D", "?", "F");
+    assert(matchPattern(hay, p, 3, 0));           // "DEF": D=D, E=?, F=F
+    assert(matchPattern(hay, p, 0, 0) == false);  // 'A' != 'D'
+    assert(matchPattern(hay, p, 4, 0) == false);  // not enough room
 }
