@@ -45,7 +45,7 @@ immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 /// Chunk size to use when I/O is involved (reading, writing)
 private enum CONFIG_CHUNKSIZE      = KiB!128;
 /// Artificial needle size limit for find/find-back commands.
-private enum CONFIG_SEARCH_LIMIT   = KiB!128;
+private enum CONFIG_NEEDLE_LIMIT   = KiB!128;
 /// Amount of data before warning for a copy for clipboard.
 private enum CONFIG_COPY_WORRY     = MiB!16;
 
@@ -3622,7 +3622,7 @@ void find(Session *session, string[] args)
     }
     else if (sel.length) // selection
     {
-        if (sel.length > CONFIG_SEARCH_LIMIT)
+        if (sel.length > CONFIG_NEEDLE_LIMIT)
             throw new Exception("Selection too big");
         ubyte[] buf = new ubyte[cast(size_t)sel.length];
         buf = session.editor.view(sel.start, buf);
@@ -3667,7 +3667,7 @@ void find_back(Session *session, string[] args)
     }
     else if (sel.length) // selection
     {
-        if (sel.length > CONFIG_SEARCH_LIMIT)
+        if (sel.length > CONFIG_NEEDLE_LIMIT)
             throw new Exception("Selection too big");
         ubyte[] buf = new ubyte[cast(size_t)sel.length];
         buf = session.editor.view(sel.start, buf);

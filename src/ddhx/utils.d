@@ -18,6 +18,8 @@ template KiB(int base)
     enum KiB = cast(long)base * 1024;
 }
 
+// TODO: See splitting/quote behavior in other shells and try to imitiate those
+//       Potentially looking at the minimum CMD and Bash
 /// Split arguments while accounting for quotes.
 ///
 /// Uses the GC to append to the new array.
@@ -91,7 +93,6 @@ string[] arguments(const(char)[] buffer)
     
     return results;
 }
-
 @system unittest
 {
     assert(arguments("") == []);
@@ -127,6 +128,15 @@ string[] arguments(const(char)[] buffer)
     // Nested/mixed quotes
     assert(arguments(`a "b 'c' d" e`) == [ "a", `b 'c' d`, "e" ]);
     assert(arguments(`a 'b "c" d' e`) == [ "a", `b "c" d`, "e" ]);
+    
+    // space confusion, will need to figure out proper syntax later
+    // TODO: Maybe rethink quotes
+    //       (a) Double-quotes shouldn't be stripped
+    //       (b) Make double-double quotes do this behaviour
+    assert(arguments(`find s:WARNING: %s`)   == [ "find", `s:WARNING:`, `%s` ]);
+    assert(arguments(`find s:"WARNING: %s"`) == [ "find", `s:WARNING: %s` ]);
+    assert(arguments(`find "WARNING: %s"`)   == [ "find", `WARNING: %s` ]);
+    assert(arguments(`find \"WARNING: %s\"`) == [ "find", `"WARNING:`, `%s"` ]);
 }
 
 /// Parse string as hexadecimal, decimal, or octal.
