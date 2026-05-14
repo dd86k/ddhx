@@ -3615,7 +3615,7 @@ void find(Session *session, string[] args)
     Selection sel = selection(session);
     
     // If arguments: Take those before selection
-    if (args && args.length > 0)
+    if (args.length > 0)
     {
         g_needle = pattern(session.rc.charset, args);
         sel.start = session.position_cursor + g_needle.data.length;
@@ -3625,10 +3625,10 @@ void find(Session *session, string[] args)
         if (sel.length > CONFIG_NEEDLE_LIMIT)
             throw new Exception("Selection too big");
         ubyte[] buf = new ubyte[cast(size_t)sel.length];
-        buf = session.editor.view(sel.start, buf);
-        if (buf.length < sel.length)
+        g_needle = Pattern.fromBytes( session.editor.view(sel.start, buf) );
+        if (g_needle.length < sel.length)
             return; // Nothing to do
-        sel.start += buf.length;
+        sel.start += g_needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
@@ -3660,7 +3660,7 @@ void find_back(Session *session, string[] args)
     Selection sel = selection(session);
     
     // If arguments: Take those before selection
-    if (args && args.length > 0)
+    if (args.length > 0)
     {
         g_needle = pattern(session.rc.charset, args);
         sel.start = session.position_cursor - g_needle.data.length;
@@ -3670,10 +3670,10 @@ void find_back(Session *session, string[] args)
         if (sel.length > CONFIG_NEEDLE_LIMIT)
             throw new Exception("Selection too big");
         ubyte[] buf = new ubyte[cast(size_t)sel.length];
-        buf = session.editor.view(sel.start, buf);
-        if (buf.length < sel.length)
+        g_needle = Pattern.fromBytes( session.editor.view(sel.start, buf) );
+        if (g_needle.length < sel.length)
             return; // Nothing to do, couldn't read all of needle
-        sel.start -= buf.length;
+        sel.start -= g_needle.length;
     }
     else // TODO: Ask using arg() + arguments()
         throw new Exception("Need find info");
