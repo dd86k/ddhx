@@ -43,6 +43,7 @@ Prefix patternpfx(string input)
     // TODO: Exotic types: "f24:", "f48:"
     //       These will require reading a few file specs and see if they are
     //       exact in value interpretation.
+    // TODO: Evaluate "0b" prefix
     // Regular prefixes, in order of importance
     // 1. test prefix
     // 2. if prefix match, trim input by its length
@@ -51,6 +52,7 @@ Prefix patternpfx(string input)
         { "0x", PatternType.hex },
         { "d:", PatternType.dec },
         { "o:", PatternType.oct },
+        { "0o", PatternType.oct },
         { "s:", PatternType.string_ },
     ];
     foreach (prefix; prefixes)
@@ -79,6 +81,7 @@ Prefix patternpfx(string input)
 unittest
 {
     assert(patternpfx("0x00") == Prefix("00", PatternType.hex));
+    assert(patternpfx("0o00") == Prefix("00", PatternType.oct));
     assert(patternpfx("x:00") == Prefix("00", PatternType.hex));
     assert(patternpfx("x:ff") == Prefix("ff", PatternType.hex));
     assert(patternpfx("d:255") == Prefix("255", PatternType.dec));
@@ -290,6 +293,8 @@ unittest
     // Alias prefixes
     assert(pattern(CharacterSet.ascii, "0x0").data             == [ 0 ]);
     assert(pattern(CharacterSet.ascii, "0x00").data            == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "0o0").data             == [ 0 ]);
+    assert(pattern(CharacterSet.ascii, "0o00").data            == [ 0 ]);
     assert(pattern(CharacterSet.ascii, "0xff").data            == [ 0xff ]);
     assert(pattern(CharacterSet.ascii, `"yes"`).data           == [ 'y', 'e', 's' ]);
     
