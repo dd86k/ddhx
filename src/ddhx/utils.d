@@ -213,7 +213,7 @@ long scan(scope string input)
 ulong parsebin(scope string input)
 {
     import ddhx.platform : assertion;
-    import std.conv : to;
+    import std.conv : parse;
     
     assertion(input, "input is NULL");
     assertion(input.length, "input is EMPTY");
@@ -238,7 +238,7 @@ ulong parsebin(scope string input)
         }
     }
     
-    return to!ulong(input) * mult;
+    return parse!ulong(input) * mult;
 }
 @system unittest
 {
@@ -270,6 +270,20 @@ ulong parsebin(scope string input)
     try
     {
         parsebin(""); // @suppress(dscanner.unused_result)
+        assert(false); // Needs to throw
+    }
+    catch (Exception) {}
+    
+    try
+    {
+        parsebin("-"); // @suppress(dscanner.unused_result)
+        assert(false); // Needs to throw
+    }
+    catch (Exception) {}
+    
+    try
+    {
+        parsebin("-1"); // @suppress(dscanner.unused_result)
         assert(false); // Needs to throw
     }
     catch (Exception) {}
