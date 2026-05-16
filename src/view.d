@@ -608,9 +608,9 @@ Lupdate:
 Lread:
     TermInput input = terminalRead();
     switch (input.type) {
-    case InputType.keyDown:
-        if (input.key == (Mod.ctrl | Key.C))
-        {
+    case InputType.signal:
+        switch (input.signal) {
+        case TerminalSignal.interrupted:
             // Quit without saving
             if (ctrlc)
             {
@@ -622,8 +622,10 @@ Lread:
             ctrlc = true;
             message("Again to quit");
             goto Lupdate;
+        default:
         }
-        
+        break;
+    case InputType.keyDown:
         ctrlc = false;
         
         // Key mapped to command
@@ -738,10 +740,11 @@ Lread:
     goto Lupdate;
 }
 
-// Returns true if key is Key.Escape or Mod.ctrl+Key.C
-bool iscancel(int key)
+bool iscancelling(ref TermInput input)
 {
-    return key == (Mod.ctrl|Key.C) || key == Key.Escape;
+    return
+        (input.type == InputType.keyDown && input.key == Key.Escape) ||
+        (input.type == InputType.signal  && input.signal == TerminalSignal.interrupted);
 }
 
 // Invoke command prompt
@@ -794,7 +797,7 @@ Lread:
     TermInput input = terminalRead();
     if (input.type != InputType.keyDown)
         goto Lread;
-    if (iscancel(input.key))
+    if (iscancelling(input))
         throw new Exception("Cancelled");
     
     return input.key;
@@ -2154,10 +2157,7 @@ int cancelling()
     for (int i; i < num; i++)
     {
         TermInput r = terminalRead();
-        if (r.type != InputType.keyDown)
-            continue;
-        
-        if (iscancel(r.key))
+        if (iscancelling(r))
             return 1;
     }
     
@@ -3098,15 +3098,15 @@ int suggestcols(int tcols, int aspace, int dspace, int size_of)
 unittest
 {
     // 80 cols terminal, 11 chars for address
-    // x8:  2 data chars, 1 byte  → (80-14)/4  = 16
-    // x16: 4 data chars, 2 bytes → (80-14)/7  = 9
-    // x32: 8 data chars, 4 bytes → (80-14)/13 = 5
-    // d8:  3 data chars, 1 byte  → (80-14)/5  = 13
-    // d16: 5 data chars, 2 bytes → (80-14)/8  = 8
-    // d32: 10 data chars, 4 bytes → (80-14)/15 = 4
-    // o8:  3 data chars, 1 byte  → (80-14)/5  = 13
-    // o16: 6 data chars, 2 bytes → (80-14)/9  = 7
-    // o32: 11 data chars, 4 bytes → (80-14)/16 = 4
+    // x8:  2 data chars, 1 byte   -> (80-14)/4  = 16
+    // x16: 4 data chars, 2 bytes  -> (80-14)/7  = 9
+    // x32: 8 data chars, 4 bytes  -> (80-14)/13 = 5
+    // d8:  3 data chars, 1 byte   -> (80-14)/5  = 13
+    // d16: 5 data chars, 2 bytes  -> (80-14)/8  = 8
+    // d32: 10 data chars, 4 bytes -> (80-14)/15 = 4
+    // o8:  3 data chars, 1 byte   -> (80-14)/5  = 13
+    // o16: 6 data chars, 2 bytes  -> (80-14)/9  = 7
+    // o32: 11 data chars, 4 bytes -> (80-14)/16 = 4
     assert(suggestcols(80, 11, 2, 1) == 16);  // x8
     assert(suggestcols(80, 11, 4, 2) == 9);   // x16
     assert(suggestcols(80, 11, 8, 4) == 5);   // x32
@@ -3116,7 +3116,7 @@ unittest
     assert(suggestcols(80, 11, 3, 1) == 13);  // o8
     assert(suggestcols(80, 11, 6, 2) == 7);   // o16
     assert(suggestcols(80, 11, 11, 4) == 4);  // o32
-    assert(suggestcols(0, 11, 2, 1) == 1);    // too small → 1
+    assert(suggestcols(0, 11, 2, 1) == 1);    // too small: 1
 }
 
 // Automatically size the number of columns that can fix on screen

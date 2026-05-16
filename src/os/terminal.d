@@ -49,6 +49,8 @@ version (Windows)
     private __gshared DWORD oldCP;   // Old CodePage
     private __gshared WORD  oldAttr; // Old console attributes
     private __gshared DWORD oldMode; // Old console mode
+    
+    private enum VINTR = 3; // Verified in ConsoleZ, CMD, and Windows Terminal
 }
 else version (Posix)
 {
@@ -136,6 +138,7 @@ else version (Posix)
     }
     
     private __gshared termios old_ios, new_ios;
+    private __gshared int vintr, vquit;
 }
 
 private
@@ -319,6 +322,9 @@ void terminalInit(int features = 0)
             //new_ios.c_cc[VTIME] = 0;
             if (tcsetattr(STDIN_FILENO, TCSANOW, &new_ios) < 0)
                 throw new OSException("tcsetattr(STDIN_FILENO)");
+            
+            vintr = new_ios.c_cc[VINTR];
+            vquit = new_ios.c_cc[VQUIT];
         }
         
         // Use alternative screen buffer
@@ -1056,6 +1062,17 @@ Lread:
                 );
             }
             
+            // Special pseudo signal generation.
+            // Ctrl+Break is always treated as a signal and we're not capturing,
+            // let it kill us.
+            switch (ir.KeyEvent.AsciiChar) {
+            case VINTR:
+                event.type = InputType.signal;
+                event.signal = TerminalSignal.interrupted;
+                return event;
+            default:
+            }
+            
             const ushort keycode = ir.KeyEvent.wVirtualKeyCode;
             
             // Filter out single modifier key events
@@ -1230,6 +1247,19 @@ Lread:
                     writef("'%c'", event.kbuffer[i]);
             }
             writefln(" (pending=%d)", cast(int)_pending_len);
+        }
+        
+        if (event.kbuffer[0] == vintr)
+        {
+            event.type = InputType.signal;
+            event.signal = TerminalSignal.interrupted;
+            return event;
+        }
+        if (event.kbuffer[0] == vquit)
+        {
+            event.type = InputType.signal;
+            event.signal = TerminalSignal.quit;
+            return event;
         }
         
         // TODO: xterm modifyOtherKeys mode 1/2 ("\e[>4;1m" and "\e[>4;2m")
@@ -1845,28 +1875,32 @@ string readline(int column, int row, int flags = 0, const(string)[] completions 
     int rl_flags = void;
 
     // History browsing state
-    size_t hist_idx;       // 0 = current input, 1..N = history entries
-    string hist_saved;  // saved current input when browsing history
+    size_t hist_idx;        // 0 = current input, 1..N = history entries
+    string hist_saved;      // saved current input when browsing history
     // Tab completion state
-    size_t tab_match_idx;    // current match index (cycles)
-    char[] tab_prefix;       // prefix that was matched
-    bool tab_active;         // currently cycling through matches
+    size_t tab_match_idx;   // current match index (cycles)
+    char[] tab_prefix;      // prefix that was matched
+    bool tab_active;        // currently cycling through matches
 Lread: // Emulate line buffer
     rl_flags = flags;
-    // NOTE: Only stdout (Phobos) is setup with _IONBF
+    
+    // NOTE: Only stdout (Phobos) is setup with _IONBF in terminalInit
     TermInput input = terminalRead();
+    
+    // No need to shout (throw exception), it's not some exceptional error
+    if (input.type == InputType.signal && input.signal == TerminalSignal.interrupted)
+        return null;
+    
+    // Not interested in mouse or key ups
     if (input.type != InputType.keyDown)
         goto Lread;
+
     // Reset tab completion state on any non-Tab key
-    if (input.key != Key.Tab)
-        tab_active = false;
+    tab_active = input.key == Key.Tab;
+
     switch (input.key) {
-    // NOTE: Is ^C is something else in other locales?
-    //       TermInput could be updated with a new event type
-    case Mod.ctrl | Key.C, Key.Escape: // \033 (ESC)
-        throw new Exception("Cancelled");
-    case Key.Enter:
-        goto Lout;
+    case Key.Enter:  goto Lout;
+    case Key.Escape: return null; // caller is already aware of length==0 cases
     case Key.LeftArrow:
         if (rl_state.caret == 0)
             goto Lread;
@@ -2088,6 +2122,7 @@ enum InputType
     keyUp,
     mouseDown,
     mouseUp,
+    signal,
 }
 
 /// Key modifier
@@ -2209,6 +2244,14 @@ enum Key // These are fine for now
 }
 static assert(Key.__specialmax < 0x01_00_0000);
 
+enum TerminalSignal
+{
+    /// Emulates SIGINT (typically ^C)
+    interrupted,
+    /// Emulates SIGQUIT (typically ^\)
+    quit,
+}
+
 /// Terminal input structure
 struct TermInput
 {
@@ -2227,8 +2270,9 @@ struct TermInput
         ushort mouseX; /// Mouse column coord
         ushort mouseY; /// Mouse row coord
     }
+    TerminalSignal signal; /// Emulated signal value using TerminalSignal
     } // union
-    int type;    /// Terminal input event type
+    InputType type;    /// Terminal input event type
     bool pending; /// More events queued in readahead buffer (POSIX)
 }
 
