@@ -137,6 +137,17 @@ else version (Posix)
             ('t' << IOCGROUP_SHIFT) | 104;
     }
     
+    version (OpenBSD)
+    {
+        // sys/sys/iccom.h
+        private enum uint IOC_OUT       = 0x40000000;
+        private enum uint IOCPARM_MASK  = 0x1fff;
+        private enum uint _IOC(uint inout_, uint group, uint num, uint len) =
+            inout_ | ((len & IOCPARM_MASK) << 16) | (group << 8) | num;
+        // sys/sys/ttycom.h
+        private enum uint TIOCGWINSZ = _IOC!(IOC_OUT, 't', 104, winsize.sizeof);
+    }
+    
     private __gshared termios old_ios, new_ios;
     private __gshared int vintr, vquit;
 }
