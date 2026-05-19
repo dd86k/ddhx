@@ -1,45 +1,29 @@
 # Makefile alternative to DUB for ddhx
+#
+# Portable across GNU make and BSD makes (FreeBSD/NetBSD/OpenBSD).
+# Uses `!=` for shell assignment (supported by BSD makes and GNU make >=4.0)
+# instead of GNU-only `ifeq`/`endif` conditionals and `$(wildcard ...)`.
 
 DC ?= dmd
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 
-SRCS = $(wildcard src/*.d src/**/*.d src/ddhx/**/*.d)
+SRCS != find src -name '*.d'
 TEST_SRCS_INPUT = $(SRCS) tests/input.d
 TEST_SRCS_COLOR = $(SRCS) tests/color.d
-TEST_SRCS_SIZE = $(SRCS) tests/size.d
+TEST_SRCS_SIZE  = $(SRCS) tests/size.d
 BENCH_SRCS = $(SRCS) benchmark/src/main.d
 
-# Compiler-specific flag mapping
-# DMD flags are the baseline; LDC and GDC equivalents are mapped below.
-ifeq ($(DC),ldc2) # LLVM D Compiler
-	OFLAG = -of=
-	RELEASE_FLAGS = -O2 -release -boundscheck=off
-	DEBUG_FLAGS = -g -d-debug
-	DEBUGV_FLAGS = -g -d-debug -d-version=verbose --vgc --vtls
-	NATIVE_FLAGS = -O2 -release -boundscheck=off -mcpu=native
-	STATIC_FLAG = --static
-	UNITTEST_FLAG = -unittest
-	VERSION_FLAG = -d-version
-else ifeq ($(DC),dmd) # DigitalMars D compiler
-	OFLAG = -of=
-	RELEASE_FLAGS = -O -release -boundscheck=off
-	DEBUG_FLAGS = -g -debug
-	DEBUGV_FLAGS = -g -debug -version=verbose -vgc -vtls
-	NATIVE_FLAGS = -O -release -boundscheck=off -mcpu=native
-	STATIC_FLAG = -L=-static
-	UNITTEST_FLAG = -unittest
-	VERSION_FLAG = -version
-else # GNU D Compiler (allows gdc-* invocation)
-	OFLAG = -o
-	RELEASE_FLAGS = -O2 -frelease -fbounds-check=off
-	DEBUG_FLAGS = -g -fdebug
-	DEBUGV_FLAGS = -g -fdebug -fversion=verbose
-	NATIVE_FLAGS = -O2 -frelease -fbounds-check=off -march=native
-	STATIC_FLAG = -Wl,-static -static -static-libgcc
-	UNITTEST_FLAG = -funittest
-	VERSION_FLAG = -fversion
-endif
+# Compiler-specific flag mapping. DMD flags are the baseline; LDC and GDC
+# equivalents are selected by matching $(DC) against the compiler binary name.
+OFLAG         != case "$(DC)" in gdc*|*-gdc|*-gdc-*) echo "-o" ;; *) echo "-of=" ;; esac
+RELEASE_FLAGS != case "$(DC)" in ldc2) echo "-O2 -release -boundscheck=off" ;; dmd) echo "-O -release -boundscheck=off" ;; *) echo "-O2 -frelease -fbounds-check=off" ;; esac
+DEBUG_FLAGS   != case "$(DC)" in ldc2) echo "-g -d-debug" ;; dmd) echo "-g -debug" ;; *) echo "-g -fdebug" ;; esac
+DEBUGV_FLAGS  != case "$(DC)" in ldc2) echo "-g -d-debug -d-version=verbose --vgc --vtls" ;; dmd) echo "-g -debug -version=verbose -vgc -vtls" ;; *) echo "-g -fdebug -fversion=verbose" ;; esac
+NATIVE_FLAGS  != case "$(DC)" in ldc2) echo "-O2 -release -boundscheck=off -mcpu=native" ;; dmd) echo "-O -release -boundscheck=off -mcpu=native" ;; *) echo "-O2 -frelease -fbounds-check=off -march=native" ;; esac
+STATIC_FLAG   != case "$(DC)" in ldc2) echo "--static" ;; dmd) echo "-L=-static" ;; *) echo "-Wl,-static -static -static-libgcc" ;; esac
+UNITTEST_FLAG != case "$(DC)" in gdc*|*-gdc|*-gdc-*) echo "-funittest" ;; *) echo "-unittest" ;; esac
+VERSION_FLAG  != case "$(DC)" in ldc2) echo "-d-version" ;; dmd) echo "-version" ;; *) echo "-fversion" ;; esac
 
 # Default target
 all: release
