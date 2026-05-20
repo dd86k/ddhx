@@ -3191,6 +3191,8 @@ void replace_(Session *session, string[] args)
             return;
         }
         Pattern p = pattern(session.rc.charset, args);
+        if (p.flags & PATTERN_HAS_GLOB)
+            throw new Exception("Can't replace with globbing");
         ubyte[] pb = p.toBytes();
         session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
@@ -3210,6 +3212,8 @@ void replace_(Session *session, string[] args)
 
     Range r = askrange(args, 0, "Range: ");
     Pattern p = pattern(session.rc.charset, args[1..$]);
+    if (p.flags & PATTERN_HAS_GLOB)
+        throw new Exception("Can't replace with globbing");
     ubyte[] pb = p.toBytes();
     session.editor.patternReplace(r.start, rangelen(r), pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
@@ -3230,6 +3234,8 @@ void insert_(Session *session, string[] args)
             return;
         }
         Pattern p = pattern(session.rc.charset, args);
+        if (p.flags & PATTERN_HAS_GLOB)
+            throw new Exception("Can't insert with globbing");
         ubyte[] pb = p.toBytes();
         session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
@@ -3249,6 +3255,8 @@ void insert_(Session *session, string[] args)
 
     Range r = askrange(args, 0, "Range: ");
     Pattern p = pattern(session.rc.charset, args[1..$]);
+    if (p.flags & PATTERN_HAS_GLOB)
+        throw new Exception("Can't insert with globbing");
     ubyte[] pb = p.toBytes();
     session.editor.patternInsert(r.start, rangelen(r), pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
