@@ -16,14 +16,16 @@ BENCH_SRCS = $(SRCS) benchmark/src/main.d
 
 # Compiler-specific flag mapping. DMD flags are the baseline; LDC and GDC
 # equivalents are selected by matching $(DC) against the compiler binary name.
-OFLAG         != case "$(DC)" in gdc*|*-gdc|*-gdc-*) echo "-o" ;; *) echo "-of=" ;; esac
-RELEASE_FLAGS != case "$(DC)" in ldc2) echo "-O2 -release -boundscheck=off" ;; dmd) echo "-O -release -boundscheck=off" ;; *) echo "-O2 -frelease -fbounds-check=off" ;; esac
-DEBUG_FLAGS   != case "$(DC)" in ldc2) echo "-g -d-debug" ;; dmd) echo "-g -debug" ;; *) echo "-g -fdebug" ;; esac
-DEBUGV_FLAGS  != case "$(DC)" in ldc2) echo "-g -d-debug -d-version=verbose --vgc --vtls" ;; dmd) echo "-g -debug -version=verbose -vgc -vtls" ;; *) echo "-g -fdebug -fversion=verbose" ;; esac
-NATIVE_FLAGS  != case "$(DC)" in ldc2) echo "-O2 -release -boundscheck=off -mcpu=native" ;; dmd) echo "-O -release -boundscheck=off -mcpu=native" ;; *) echo "-O2 -frelease -fbounds-check=off -march=native" ;; esac
-STATIC_FLAG   != case "$(DC)" in ldc2) echo "--static" ;; dmd) echo "-L=-static" ;; *) echo "-Wl,-static -static -static-libgcc" ;; esac
-UNITTEST_FLAG != case "$(DC)" in gdc*|*-gdc|*-gdc-*) echo "-funittest" ;; *) echo "-unittest" ;; esac
-VERSION_FLAG  != case "$(DC)" in ldc2) echo "-d-version" ;; dmd) echo "-version" ;; *) echo "-fversion" ;; esac
+# Strip any directory prefix so absolute paths (e.g. /usr/pkg/gcc15/bin/gdc) match.
+DC_NAME       != basename "$(DC)"
+OFLAG         != case "$(DC_NAME)" in gdc*|*-gdc|*-gdc-*) echo "-o" ;; *) echo "-of=" ;; esac
+RELEASE_FLAGS != case "$(DC_NAME)" in ldc2) echo "-O2 -release -boundscheck=off" ;; dmd) echo "-O -release -boundscheck=off" ;; *) echo "-O2 -frelease -fbounds-check=off" ;; esac
+DEBUG_FLAGS   != case "$(DC_NAME)" in ldc2) echo "-g -d-debug" ;; dmd) echo "-g -debug" ;; *) echo "-g -fdebug" ;; esac
+DEBUGV_FLAGS  != case "$(DC_NAME)" in ldc2) echo "-g -d-debug -d-version=verbose --vgc --vtls" ;; dmd) echo "-g -debug -version=verbose -vgc -vtls" ;; *) echo "-g -fdebug -fversion=verbose" ;; esac
+NATIVE_FLAGS  != case "$(DC_NAME)" in ldc2) echo "-O2 -release -boundscheck=off -mcpu=native" ;; dmd) echo "-O -release -boundscheck=off -mcpu=native" ;; *) echo "-O2 -frelease -fbounds-check=off -march=native" ;; esac
+STATIC_FLAG   != case "$(DC_NAME)" in ldc2) echo "--static" ;; dmd) echo "-L=-static" ;; *) echo "-Wl,-static -static -static-libgcc" ;; esac
+UNITTEST_FLAG != case "$(DC_NAME)" in gdc*|*-gdc|*-gdc-*) echo "-funittest" ;; *) echo "-unittest" ;; esac
+VERSION_FLAG  != case "$(DC_NAME)" in ldc2) echo "-d-version" ;; dmd) echo "-version" ;; *) echo "-fversion" ;; esac
 
 # Default target
 all: release
