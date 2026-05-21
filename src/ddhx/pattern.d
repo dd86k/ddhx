@@ -40,6 +40,7 @@ Prefix patternpfx(string input)
     //       Decimal: "u8:","u16:","u32:","u64:","f32:","f64:"
     //       Hex    : "x8:","x16:","x32:","x64:"
     //       Octal  : "o8:","o16:","o32:","o64:"
+    // TODO: String types: "ascii:", etc. Avoids implicit transcoding surprise
     // TODO: Exotic types: "f24:", "f48:"
     //       These will require reading a few file specs and see if they are
     //       exact in value interpretation.
@@ -245,7 +246,7 @@ Pattern pattern(CharacterSet charset, string[] args...)
                     text("Not a hex number", pfx.str));
             }
             // NOTE: We don't yet support negative numbers
-            //       But, it is accepted with long as a template parameter
+            //       But, parse!long does
             ulong b = parse!ulong(pfx.str, 10);
             foreach (v; sliceup(&b)) pat.data ~= v;
             break;
@@ -262,7 +263,7 @@ Pattern pattern(CharacterSet charset, string[] args...)
             foreach (v; sliceup(&b)) pat.data ~= v;
             break;
         case PatternType.string_:
-            // TODO: Transcode
+            // TODO: Possibly replace string pattern type for encoding-specific ones
             foreach (v; pfx.str) pat.data ~= v;
             break;
         case PatternType.unknown:

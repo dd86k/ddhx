@@ -81,9 +81,7 @@ class MemoryDocument : IDocument
     void flush() {} // No-op
     
 private:
-    // TODO: Change to OutBuffer+toBytes() or Appender
-    //       Only when performance will be concerned
-    //       Even then, do a benchmark
+    // If performance throttled, consider OutBuffer (with toBytes) or Appender
     ubyte[] buffer;
 }
 

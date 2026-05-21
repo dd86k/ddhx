@@ -168,7 +168,8 @@ void main(string[] args)
         "autoresize",   "Automatically resize columns on dimension change",
             ()
             {
-                // NOTE: Not a deprecated switch I guess
+                // TODO: Deprecate for 0.10
+                //       Odd for this to be a switch. Use RC
                 rc.columns = COLUMNS_AUTO;
             },
         "c|columns",    "Set columns per row (default: 16)",

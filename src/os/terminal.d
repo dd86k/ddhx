@@ -10,20 +10,15 @@ module os.terminal;
 //       "xterm", "xterm-color", "xterm-256color", "tmux-256color",
 //       "linux", "vt100", "vt220", "wsvt25" (netbsd10), "screen", etc.
 //       Or $COLORTERM ("truecolor", etc.)
-// TODO: Consider supporting Kitty progressive key inputs
-//       Format: \033[CODE;MODIFIERS;EVENTu
-//       Example: \033[97;1;3u ('a' released/keyUp)
-//       Query: \033[?u (returns support level)
-//       Enable: \033[>1u
 
 // NOTE: VT detection on Windows
 //       Windows Terminal sets the ENABLE_VIRTUAL_TERMINAL_PROCESSING for the
 //       output buffer by default. conhost and others don't, which is a good
 //       universal way of detecting VT sequence support.
-// NOTE: Useful links for escape codes
-//       https://man7.org/linux/man-pages/man0/termios.h.0p.html
-//       https://man7.org/linux/man-pages/man3/tcsetattr.3.html
-//       https://man7.org/linux/man-pages/man4/console_codes.4.html
+// Useful links for escape codes
+// https://man7.org/linux/man-pages/man0/termios.h.0p.html
+// https://man7.org/linux/man-pages/man3/tcsetattr.3.html
+// https://man7.org/linux/man-pages/man4/console_codes.4.html
 
 import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
 
@@ -204,8 +199,6 @@ void terminalInit(int features = 0)
 {
     current_features = features;
     
-    // TODO: Consider removing std.stdio handle hacks
-    
     version (Windows)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi = void;
@@ -342,8 +335,7 @@ void terminalInit(int features = 0)
         if (features & TermFeat.altScreen)
         {
             // change to alternative screen buffer
-            stdout.write("\033[?1049h");
-            stdout.flush;
+            terminalWrite("\033[?1049h");
         }
     } // version (Posix)
     
@@ -384,6 +376,9 @@ void terminalRestore()
 //
 // Resize event
 //
+
+// We COULD put resize event as a signal in terminalRead, but either
+// mechanics are fine.
 
 private __gshared void function() terminalOnResizeEvent;
 
@@ -475,31 +470,28 @@ TerminalSize terminalSize()
         size.rows    = c.srWindow.Bottom - c.srWindow.Top + 1;
         size.columns = c.srWindow.Right - c.srWindow.Left + 1;
         
-        // TODO: Consider support for ESC[18t (Windows) for terminal size
-        // NOTE: Windows Terminal supports ESC[18t
-        //       conhost/OpenConsole and ConsoleZ do not.
+        // Windows Terminal supports ESC[18t, but conhost/OpenConsole and ConsoleZ do not.
+        // Only use if GetConsoleScreenBufferInfo disappears
     }
     else version (Posix)
     {
-        // NOTE: So far, the ioctl worked on:
-        //       - Linux: VTE, Konsole, framebuffer
-        //       - FreeBSD: framebuffer
-        //       - NetBSD: framebuffer
-        //       - OpenBSD: framebuffer
+        // So far, the ioctl worked on pretty much everything:
+        // - Linux: VTE, Konsole, framebuffer
+        // - FreeBSD: framebuffer
+        // - NetBSD: framebuffer
+        // - OpenBSD: framebuffer
         winsize ws = void;
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0)
             throw new OSException("ioctl(STDOUT_FILENO, TIOCGWINSZ)");
         size.rows    = ws.ws_row;
         size.columns = ws.ws_col;
         
-        // NOTE: LINES and COLUMNS variables mostly depends on shells.
-        //       SUPPORTED: Bash, ksh(ksh93), zsh, fish
-        //       UNSUPPORTED: sh, csh, dash, cmd, PowerShell
+        // LINES and COLUMNS variables mostly depends on shell. Typically useless
+        // SUPPORTED: Bash, ksh(ksh93), zsh, fish
+        // UNSUPPORTED: sh, csh, dash, cmd, PowerShell
         
-        // TODO: Consider ESC [ 18 t for fallback of environment.
-        //       Reply: ESC [ 8 ; ROWS ; COLUMNS t
-        //       Works on: Windows Terminal, VTE, xterm, NetBSD framebuffer
-        //       Doesn't: conhost, ConsoleZ, FreeBSD framebuffer (not supported)
+        // ESC [ 8 ; ROWS ; COLUMNS t
+        // Does not work with FreeBSD (teken) (useless)
     } else static assert(0, "terminalSize: Not implemented");
     return size;
 }
@@ -1777,7 +1769,7 @@ private __gshared ReadlineHistory rl_history;
 private
 struct ReadlineState
 {
-    // NOTE: conhost (pre-Windows Terminal) does not handle '\r'
+    // conhost (pre-Windows Terminal) does not handle '\r' to clear line
     /// Original column position.
     int orig_col;
     /// Original row position.
@@ -1793,7 +1785,7 @@ void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, i
 {
     import std.algorithm : min, max;
     
-    // NOTE: Could also be an imposed max size (like for a text field)
+    // Could also be an imposed max size (like for a text field)
     TerminalSize tsize = terminalSize();
     
     terminalMove(state.orig_col, state.orig_row);
@@ -1877,7 +1869,6 @@ string readline(int column, int row, int flags = 0, const(string)[] completions 
 
     // HACK: Cheap way to clear line + setup cursor
     //       Removes responsability from caller
-    // TODO: Make caller do this, caller knows state of display better
     terminalWriteChar(' ', terminalSize().columns-column-1);
     terminalMove(column, row);
     terminalFlush(); // Needed on fbcons
@@ -1895,7 +1886,6 @@ string readline(int column, int row, int flags = 0, const(string)[] completions 
 Lread: // Emulate line buffer
     rl_flags = flags;
     
-    // NOTE: Only stdout (Phobos) is setup with _IONBF in terminalInit
     TermInput input = terminalRead();
     
     // No need to shout (throw exception), it's not some exceptional error
@@ -2271,9 +2261,9 @@ struct TermInput
     {
         int key;            /// Keyboard input with possible Mod flags.
         int ksize;          /// Size of the filled input buffer
-        // NOTE: On POSIX, concatenated escape sequences (e.g. scroll wheel)
-        //       are split by a readahead buffer (_pending); each event
-        //       here holds exactly one sequence.
+        // On POSIX, concatenated escape sequences (e.g. scroll wheel)
+        // are split by a readahead buffer (_pending); each event
+        // here holds exactly one sequence.
         char[8] kbuffer;    /// Input buffer for the character
     }
     struct

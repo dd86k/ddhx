@@ -711,7 +711,7 @@ private:
     Piece trimPiece(Piece piece, long skip, long keep)
     {
         // NOTE: piece struct is NOT ref and new instance is returned
-        // NOTE: skip/keep are calculated from caller, because the piece is recreated for snapshot
+        // skip/keep are calculated from caller, because the piece is recreated for snapshot
         piece.position += skip;
         piece.size = keep;
         final switch (piece.source) { // Adjust piece offsets before re-inerting
@@ -845,7 +845,7 @@ private:
         long previous_cumulative;
         long total_size; // cumulative size of *pieces*, to be compared to snapshot size
         size_t piece_count;
-        // NOTE: 'enforce' msg is lazy evaluated, so feel free to use text(...)
+        // 'enforce' msg is lazy evaluated, so feel free to use text(...)
         foreach (indexed; tree)
         {
             // Cumulative needs to be monotonically increasing, although

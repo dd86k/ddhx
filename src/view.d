@@ -146,6 +146,11 @@ struct Session
     long position_cursor;
     /// Currently focused panel.
     PanelType panel;
+    
+    /// Cursor position when edit started
+    long editpos;
+    /// Input system
+    InputFormatter input;
 }
 
 private __gshared // globals have the ugly "g_" prefix to be told apart
@@ -175,13 +180,6 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     
     /// Last search needle buffer (find-related commands use this).
     Pattern g_needle;
-    
-    // TODO: Move edit cursor position and input to Session
-    //       Because both depend on (a) the document and (b) the data type displayed
-    /// Position of cursor when edit started
-    long g_editcurpos;
-    /// Input system
-    InputFormatter g_input;
 
     /// Digit position within current element (0-based, left to right) for digit mode
     int g_digitpos;
@@ -218,15 +216,18 @@ struct Command
 // - "bookmark-remove RANGE": Remove all bookmarks touched by RANGE
 // - "bookmark-next": Next bookmark
 // - "bookmark-prev": Previous bookmark
-// NOTE: Command names
-//       Because navigation keys are the most essential, they get short names.
-//       For example, mpv uses LEFT and RIGHT to bind to "seek -10" and "seek 10".
-//       Here, both "bind ctrl+9 right" and "bind ctrl+9 goto +1" are both valid.
-//       I probably would have preferred to go with "do-thing" syntax, but
-//       I somehow decided to go with "thing-do". Oh well.
-// NOTE: Command designs
-//       - Names: If commonly used (ie, navigation), command is one word
-//       - Selection: command parameters are prioritized over selections
+
+// Command names
+// Because navigation keys are the most essential, they get short names.
+// For example, mpv uses LEFT and RIGHT to bind to "seek -10" and "seek 10".
+// Here, both "bind ctrl+9 right" and "bind ctrl+9 goto +1" are both valid.
+// I probably would have preferred to go with "do-thing" syntax, but
+// I somehow decided to go with "thing-do". Oh well.
+
+// Command designs
+// - Names: If commonly used (ie, navigation), command is one word
+// - Selection: command parameters are prioritized over selections
+
 /// List of default commands and shortcuts
 immutable Command[] default_commands = [
     // Navigation
@@ -365,7 +366,7 @@ immutable Command[] default_commands = [
     { "quit",                       "Quit program",
         Mod.ctrl|Key.Q,             &quit },
 ];
-// NOTE: There used to be a test that checked for dupes but it caused issues elsewhere.
+// There used to be a test that checked for dupes but it caused issues elsewhere.
 
 /// Initiate default keys and commands.
 void initdefaults()
@@ -436,8 +437,6 @@ void initdefaults()
             file.writeln("\tg_messagebuf.length\t: ", g_messagebuf.length);
             file.writeln("\tg_message.length\t: ", g_message.length);
             file.writeln("\tg_needle.length\t: ", g_needle.data.length);
-            file.writeln("\tg_editcurpos\t: ", g_editcurpos);
-            file.writeln("\tg_input.index\t: ", g_input.index);
             file.writeln("\tg_clipboard_ptr\t: ", g_clipboard_ptr);
             file.writeln("\tg_clipboard_len\t: ", g_clipboard_len);
             file.writeln("\tg_commands.length\t: ", g_commands.length);
@@ -452,6 +451,8 @@ void initdefaults()
             file.writeln("\tg_session.target\t: ", g_session.target);
             file.writeln("\tg_session.selection.anchor\t: ", g_session.selection.anchor);
             file.writeln("\tg_session.selection.status\t: ", g_session.selection.status);
+            file.writeln("\tg_session.editpos\t: ", g_session.editpos);
+            file.writeln("\tg_session.input.index\t: ", g_session.input.index);
             
             file.writeln("Selection");
             Selection sel = selection(g_session);
@@ -470,20 +471,12 @@ void initdefaults()
             file.writeln("\tg_session.rc.mirror_cursor\t: ", g_session.rc.mirror_cursor);
             file.writeln("\tg_session.rc.writemode\t: ", g_session.rc.writemode);
             
-            // TODO: Dump open documents information
-            
             import ddhx.editor.piecev2 : PieceV2DocumentEditor;
             file.writeln("Editor");
             file.writeln("\tClass\t: ", session.editor); // prints type!
             file.writeln("\tSize\t: ", session.editor.size());
             file.writeln("\tEdited\t: ", session.editor.edited());
-            /*
-            if (PieceV2DocumentEditor piecev2 = cast(PieceV2DocumentEditor)session.editor)
-            {
-                // TODO: Make PieceV2DocumentEditor internals visible
-                //       Piece table (pos+size), command history, buffer size, etc.
-            }
-            */
+            // TODO: Dump document and editor information
             
             file.flush();
             file.close();
@@ -560,7 +553,7 @@ void start_session(Session *session, string initmsg)
     g_status = UALL;
     g_messagebuf.length = 4096;
     
-    g_input = new InputFormatter; // hack due to buffer escapes
+    session.input = new InputFormatter; // hack due to buffer escapes
     
     sync_settings();
     
@@ -573,19 +566,17 @@ void start_session(Session *session, string initmsg)
 
 private:
 
-// Sync RC options to various front-end components
+// Sync RC options to various front-end components, notably when a setting changes
 void sync_settings()
 {
     // Editor options
     g_session.editor.coalescing = g_session.rc.coalescing;
     // Input system
-    g_input.change(g_session.rc.data_type);
+    g_session.input.change(g_session.rc.data_type);
 }
 
-void onresize() // NOTE: I/O is allowed here
+void onresize() // I/O is allowed here
 {
-    // TODO: Consider rendering something like "SMALL" if screen too small
-    
     // If autoresize configuration is enabled, automatically set column count
     if (g_session.rc.columns == COLUMNS_AUTO)
         autosize(g_session, null);
@@ -667,7 +658,7 @@ Lread:
             DataSpec spec = selectDataSpec(session.rc.data_type);
 
             // Validate the typed character for the data type
-            if (g_input.validate(typed) == false)
+            if (g_session.input.validate(typed) == false)
                 goto Lread; // invalid character for this data type
 
             // Read the current element from the editor
@@ -678,7 +669,7 @@ Lread:
 
             // Format current element value into thus buffer as text and replace digit
             ElementText elbuf = void;
-            g_input.formatRaw(elbuf, raw.ptr, raw.length);
+            g_session.input.formatRaw(elbuf, raw.ptr, raw.length);
             elbuf[g_digitpos] = typed;
 
             // Parse the modified string back to bytes
@@ -704,18 +695,18 @@ Lread:
         }
 
         // start new edit
-        if (g_input.index == 0)
-            g_editcurpos = session.position_cursor;
+        if (g_session.input.index == 0)
+            g_session.editpos = session.position_cursor;
         
         // Prefer kbuffer to key because key gets translated (e.g., 'f' -> 'F')
-        if (g_input.add(input.kbuffer[0]) == false)
+        if (g_session.input.add(input.kbuffer[0]) == false)
             goto Lread; // don't even bother updating the screen
         
         // We have a valid key and mode, so disrupt selection
         session.selection.status = 0;
         
         // if full, move cursor
-        if (g_input.full())
+        if (g_session.input.full())
         {
             // Forcing to move cursor forces the edit to be applied,
             // since cursor position when starting an edit is saved.
@@ -875,10 +866,8 @@ void save_to_file(IDocumentEditor editor, string target)
 {
     log("target='%s'", target);
     
-    // NOTE: Caller is responsible to populate target path.
-    //       Using assert will stop the program completely,
-    //       which would not appear in logs (if enabled).
-    //       This also allows the error message to be seen.
+    // Caller is responsible to populate target path.
+    // Use assertion (as soft assert) to avoid stopping program.
     assertion(target != null,    "target is NULL");
     assertion(target.length > 0, "target is EMPTY");
     
@@ -927,22 +916,22 @@ void save_to_file(IDocumentEditor editor, string target)
     }
     
     // 3. Copy attributes of target
-    // NOTE: Times
-    //       POSIX only has concepts of access and modify times.
-    //       Both are irrelevant for saving. And sadly, since there are no
-    //       concepts of birth date handling (assumed read-only), then I
-    //       won't rip my hair trying to get and set it to target.
-    //       Windows... There are no std.file.setTimesWin. Don't know why.
+    // Times
+    // POSIX only has concepts of access and modify times.
+    // Both are irrelevant for saving. And sadly, since there are no
+    // concepts of birth date handling (assumed read-only), then I
+    // won't rip my hair trying to get and set it to target.
+    // Windows... There are no std.file.setTimesWin. Don't know why.
     bool target_exists = exists(target);
     uint attr = void;
     if (target_exists)
         attr = getAttributes(target);
     
     // 4. Replace target
-    // NOTE: std.file.rename
-    //       Windows: Uses MoveFileExW with MOVEFILE_REPLACE_EXISTING.
-    //                Remember, TxF (transactional stuff) is deprecated!
-    //       POSIX: Confirmed a to be an atomic operation, using rename(3).
+    // std.file.rename
+    // Windows: Uses MoveFileExW with MOVEFILE_REPLACE_EXISTING.
+    //          Remember, TxF (transactional stuff) is deprecated!
+    // POSIX: Confirmed a to be an atomic operation, using rename(3).
     rename(tmppath, target);
     
     // 5. Apply attributes to target
@@ -950,8 +939,8 @@ void save_to_file(IDocumentEditor editor, string target)
     //    POSIX: Permissions
     if (target_exists)
     {
-        // NOTE: GVFS might refuse to set attributes, a minor defect.
-        //       A good test is using chmod.1, it will spit out an error.
+        // GVFS might refuse to set attributes, a minor defect.
+        // A good test is using chmod.1, it will spit out an error.
         try setAttributes(target, attr);
         catch (Exception ex)
         {
@@ -1590,14 +1579,14 @@ void moverel(Session *session, long pos)
 void moveabs(Session *session, long pos)
 {
     // If the cursor position changed while editing... Just save the edit.
-    if (g_input.index && g_editcurpos != pos)
+    if (session.input.index() && session.editpos != pos)
     {
-        ubyte[] data = g_input.data;
+        ubyte[] data = session.input.data;
         if (session.rc.writemode == WritingMode.overwrite)
-            session.editor.replace(g_editcurpos, data.ptr, data.length);
+            session.editor.replace(session.editpos, data.ptr, data.length);
         else
-            session.editor.insert(g_editcurpos, data.ptr, data.length);
-        g_input.reset(); // needed so new input isn't confused
+            session.editor.insert(session.editpos, data.ptr, data.length);
+        session.input.reset(); // needed so new input isn't confused
         g_status |= UVIEW; // new data
     }
     
@@ -1616,7 +1605,7 @@ void moveabs(Session *session, long pos)
     int data_size = size_of(session.rc.data_type);
     
     // Adjust cursor position to base depending on data size
-    // NOTE: Can throw SIGFPE if data_size is wrong (zero?)
+    // Can throw SIGFPE if data_size is wrong (zero?)
     pos -= pos % data_size;
     
     // No need to update if it's at the same place
@@ -1801,18 +1790,20 @@ void update_view(Session *session)
         g_status |= UVIEW;
     }
     
-    // Read data
-    // NOTE: To avoid unecessary I/O, call .view() when:
-    //       - base position changed (when base pos changes, set UVIEW)
-    //       - read size changed (resize event, set UVIEW flag)
-    //       - new edit (set UVIEW when inserting/replacing/deleting)
-    //       - undo or redo (set UVIEW)
-    //       Basically, just rely on UVIEW flag.
-    // NOTE: scope array allocations does nothing.
-    //       This is a non-issue since the conservative GC will keep the
-    //       allocation alive and simply resize it (either pool or realloc).
-    // NOTE: new expression clears memory (memset).
-    //       Unwanted, so avoid it to avoid wasting cpu time.
+    // Read data into view buffer
+    
+    // To avoid unecessary I/O, call .view() when:
+    // - base position changed (when base pos changes, set UVIEW)
+    // - read size changed (resize event, set UVIEW flag)
+    // - new edit (set UVIEW when inserting/replacing/deleting)
+    // - undo or redo (set UVIEW)
+    // Basically, just rely on UVIEW flag.
+    
+    // scope array allocations does nothing.
+    // This is a non-issue since the conservative GC will keep the
+    // allocation alive and simply resize it (either pool or realloc).
+    
+    // new expression clears memory (memset), wasting cpu time.
     if (g_status & UVIEW)
     {
         debug if (logging) sw.start(); // For IDocumentEditor.view()
@@ -1836,7 +1827,7 @@ void update_view(Session *session)
     else if (readlen % cols) erows++;
     
     // Selection stuff (relative to view)
-    // NOTE: Watch out for element-oriented views, selection is byte-wise
+    // Watch out for element-oriented views, selection is byte-wise
     Selection sel   = selection(session);
     int sel_start   = cast(int)(sel.start - address) / data_spec.size_of;
     int sel_end     = cast(int)(sel.end   - address) / data_spec.size_of;
@@ -1887,7 +1878,7 @@ void update_view(Session *session)
             
             ElementState state = getElementState(
                 elemidx, viewpos, sel_start, sel_end, session.selection.status != 0,
-                readlen, g_input.index, zero);
+                readlen, session.input.index, zero);
             
             ColorScheme current = state.dataScheme(panel, session.rc.mirror_cursor);
             
@@ -1902,7 +1893,7 @@ void update_view(Session *session)
             prev_selected = state.isSelected;
             
             // Add data text
-            string data = state.isActiveEdit ? g_input.format : dfmt.textual(buf);
+            string data = state.isActiveEdit ? session.input.format : dfmt.textual(buf);
             assertion(data);
             dfmt.step();
             
@@ -1944,7 +1935,7 @@ void update_view(Session *session)
             
             // Calculate element state
             ElementState state = getElementState(elementIndex, viewpos, sel_start, sel_end,
-                                                session.selection.status != 0, readlen, g_input.index, zero);
+                                                session.selection.status != 0, readlen, session.input.index, zero);
             
             // Get color scheme for this element in text panel
             ColorScheme scheme = state.textScheme(panel, session.rc.mirror_cursor);
@@ -2010,14 +2001,14 @@ void update_view(Session *session)
             terminalWriteChar(' ', cast(int)(g_cols - rendered));
         }
 
-        // NOTE: Tried fixing copying from VTE terminal for newlines...
-        //       Adding "\n" didn't work. ddhx <0.5 makes that work.
-        //       Def something with terminal config, adding OPOST + "\n" doesn't help
+        // Tried fixing copying from VTE terminal for newlines...
+        // Adding "\n" didn't work. ddhx <0.5 makes that work.
+        // Def something with terminal config, adding OPOST + "\n" doesn't help
         terminalFlush();        // important for fbcon, no-op on Windows
     }
     
-    // NOTE: terminalWriteChar does buffering on its own
-    //       Increased stack buffer size from 32 to 128 to help
+    // terminalWriteChar does buffering on its own (stack buffer)
+    // Increased stack buffer size from 32 to 128 to help
     int tcols = g_cols - 1;
     for (; row < rows; ++row)
     {
@@ -2049,6 +2040,7 @@ void update_status(Session *session)
         if (msglen >= cols)
         {
             // TODO: scroll long message
+            //       that might require forwarding key events...
             terminalWrite(msg[0 .. min(cols, msg.length)]);
         }
         else
@@ -2066,20 +2058,16 @@ void update_status(Session *session)
         terminalWrite(data, size);
     }, 512) writer;
     
+    // With a selection: Select user's (or default) status bar format
     Selection sel = selection(session);
-    const(char)[] fmt;
+    const(char)[] fmt = sel.length ?
+        session.rc.status_fmt_selection :
+        session.rc.status_fmt_normal;
     
-    if (sel.length)
-        fmt = session.rc.status_fmt_selection;
-    else
-        fmt = session.rc.status_fmt_normal;
-    
+    // Format, write, pad, flush
     int written = formatStatus(writer, fmt, session, sel, g_cols);
-    
-    // Pad remaining space
     if (written < g_cols)
         writer.repeat(' ', g_cols - written);
-    
     writer.flush();
 }
 
@@ -2087,8 +2075,8 @@ void update_status(Session *session)
 // status global indicates what needs to be updated
 void update(Session *session)
 {
-    // NOTE: Right now, everything is updated unconditionally
-    //       It's pointless to micro-optimize rendering processes while everything is WIP
+    // Right now, everything is updated unconditionally
+    // It's pointless to micro-optimize rendering processes while everything is WIP
     TerminalSize termsize = terminalSize();
     
     // Update terminal globals
@@ -2261,7 +2249,7 @@ long search(Session *session, Pattern needle, long position, int flags, void del
             
             // 1. After that loop to avoid flickerin between status-progress
             // 2. In reverse mode, it's towards zero, so base decrements
-            // NOTE: If we wanted a reverse progress bar, just pass base, but would be confusing
+            //    If we wanted a reverse progress bar, just pass base, but would be confusing
             if (progress) progress(docsize - base, docsize);
         }
         while (base > 0);
@@ -2705,7 +2693,7 @@ Selection selection(Session *session)
     
     int g = size_of(session.rc.data_type);
     
-    // NOTE: Adjustment in moveabs right now fucks a little with sel.end
+    // Adjustment in moveabs right now fucks a little with sel.end
     sel.start = min(session.selection.anchor, session.position_cursor);
     sel.end   = max(session.selection.anchor, session.position_cursor);
     
@@ -2958,8 +2946,8 @@ void refresh(Session *session, string[] args)
 // Change active panel
 void change_panel(Session *session, string[] args)
 {
-    // TODO: First parameter should be a panel
-    //       Default to just cycle
+    // First parameter could be panel name, still cycling to default
+    // But honestly this is fine for now
     
     session.panel++;
     if (session.panel >= PanelType.max + 1)
@@ -3199,6 +3187,12 @@ void replace_(Session *session, string[] args)
         return;
     }
 
+    // TODO: Fix insert/replace usage for 0.10
+    //       1. Create replace-range command that takes range
+    //          Wanted to do "replace s:example" and failed...
+    //       2. Without any arguments and if g_needle is set: Replace at current pos
+    //          Compliments future find-replace/find-insert
+    //       3. To help with 2., dedicate a new default shortcut
     if (args.length < 1)
     {
         message("Missing range");
@@ -3400,8 +3394,8 @@ void clip_paste(Session *session, string[] args)
         // Force selection OFF even with an active marking
         session.selection.status = 0;
         
-        // NOTE: Editor isn't smart enough for positions after document
-        //       So force the new position to be minimum value
+        // Editor isn't smart enough for positions after document
+        // So force the new position to be minimum value
         session.position_cursor = sel.start;
     }
     
@@ -3465,8 +3459,8 @@ void save(Session *session, string[] args)
         // Check if target exists to ask for overwrite
         if (exists(target))
         {
-            // NOTE: Don't explicitly check if directory exists.
-            //       The filesystem will report the error anyway.
+            // Don't explicitly check if directory exists.
+            // The filesystem will report the error anyway.
             switch (promptkey("Overwrite? [y/N] ")) {
             case 'y', 'Y': // Continue
                 break;
@@ -3638,8 +3632,8 @@ void find(Session *session, string[] args)
             return; // Nothing to do
         sel.start += g_needle.length;
     }
-    else // TODO: Ask using arg() + arguments()
-        throw new Exception("Need find info");
+    else
+        throw new Exception("Need search");
     
     unselect(session);
     
@@ -3683,8 +3677,8 @@ void find_back(Session *session, string[] args)
             return; // Nothing to do, couldn't read all of needle
         sel.start -= g_needle.length;
     }
-    else // TODO: Ask using arg() + arguments()
-        throw new Exception("Need find info");
+    else
+        throw new Exception("Need search");
     
     unselect(session);
     

@@ -461,7 +461,6 @@ unittest
 /// Helper structure that walks over a buffer and formats every element.
 struct DataFormatter
 {
-    // NOTE: Endianness setting could be here, too
     /// Make a new instance with data and byte length
     this(DataType dtype, const(void) *data, size_t len)
     {

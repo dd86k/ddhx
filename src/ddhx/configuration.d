@@ -17,7 +17,6 @@ import ddhx.utils : arguments;
 
 import os.terminal : terminal_keybind;
 
-// TODO: Avoid depending on view module
 import view : bindkey, setcolor, initdefaults, binded;
 
 /// Special value for RC.columns to autoresize.
