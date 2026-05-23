@@ -17,6 +17,9 @@ import os.terminal;
 Lread:
     TermInput input = terminalRead();
     
+    if (input.type == InputType.signal && input.signal == TerminalSignal.interrupted)
+        return;
+    
     int basekey = input.key;
     
     switch (input.type) {
