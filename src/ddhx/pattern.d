@@ -346,21 +346,30 @@ unittest
 /// Match a pattern against haystack starting at hPos/nPos.
 ///
 /// It does not scan. That is what the search() function is for, in view.
+///
+/// Glob semantics are MINIMAL-MATCH: `*` consumes as few bytes as possible
+/// (by backtracking one byte at a time when the rest of the pattern fails).
+/// The returned length therefore reflects the shortest span at hPos that
+/// satisfies the pattern. Switching to greedy semantics later would change
+/// the meaning of the returned length and break callers (e.g. selection
+/// sizing in find commands), so any such change must be deliberate.
+///
 /// Params:
 ///     haystack = Data buffer.
 ///     needle   = Compiled pattern (may contain ? and * wildcards).
 ///     hPos     = Starting offset in haystack.
 ///     nPos     = Starting offset in needle (normally 0).
-/// Returns: true if the pattern matches at hPos.
-bool matchPattern(ubyte[] haystack, Pattern needle, size_t hPos, size_t nPos)
+/// Returns: Number of haystack bytes consumed on match, or -1 on no match.
+ptrdiff_t matchPattern(ubyte[] haystack, Pattern needle, size_t hPos, size_t nPos)
 {
     if ((needle.flags & PATTERN_HAS_GLOB) == 0)
     {
         size_t nl = needle.data.length;
-        if (hPos + nl > haystack.length) return false;
+        if (hPos + nl > haystack.length) return -1;
+        // Calling .toBytes() would be wasteful for *every* matchPattern invocation
         foreach (i, nc; needle.data)
-            if (haystack[hPos + i] != cast(ubyte) nc) return false;
-        return true;
+            if (haystack[hPos + i] != cast(ubyte) nc) return -1;
+        return cast(ptrdiff_t) nl;
     }
 
     // Iterative two-pointer glob match: O(n)
@@ -380,52 +389,52 @@ bool matchPattern(ubyte[] haystack, Pattern needle, size_t hPos, size_t nPos)
             }
         }
         else // pattern exhausted, so prefix matches. haystack tail is irrelevant
-            return true;
+            return cast(ptrdiff_t)(h - hPos);
         if (starN != size_t.max) // backtrack to *
         {
             n = starN + 1;
             h = ++starH;
             continue;
         }
-        return false;
+        return -1;
     }
     // trailing *s match empty
     while (n < needle.data.length && needle.data[n] == PATTERN_GLOB_MANY) n++;
-    return n == needle.data.length;
+    return n == needle.data.length ? cast(ptrdiff_t)(h - hPos) : -1;
 }
 unittest
 {
     ubyte[] hay = cast(ubyte[]) "ABCDEF";
 
     Pattern p = pattern(CharacterSet.ascii, "s:ABC");
-    assert(matchPattern(hay, p, 0, 0));
-    assert(matchPattern(hay, p, 1, 0) == false);
-    assert(matchPattern(hay, p, 4, 0) == false); // not enough room
+    assert(matchPattern(hay, p, 0, 0) == 3);
+    assert(matchPattern(hay, p, 1, 0) == -1);
+    assert(matchPattern(hay, p, 4, 0) == -1); // not enough room
 
     // ? matches exactly one byte
     p = pattern(CharacterSet.ascii, "?", "s:BC");
-    assert(matchPattern(hay, p, 0, 0)); // A matches ?
-    assert(matchPattern(hay, p, 2, 0) == false); // CD != BC
+    assert(matchPattern(hay, p, 0, 0) == 3); // A matches ?
+    assert(matchPattern(hay, p, 2, 0) == -1); // CD != BC
 
-    // * matches zero or more
+    // * matches zero or more (minimal-match)
     p = pattern(CharacterSet.ascii, "*", "s:EF");
-    assert(matchPattern(hay, p, 0, 0)); // * eats ABCD
-    assert(matchPattern(hay, p, 4, 0)); // * matches empty
-    assert(matchPattern(hay, p, 5, 0) == false); // only F left
+    assert(matchPattern(hay, p, 0, 0) == 6); // * eats ABCD, then EF
+    assert(matchPattern(hay, p, 4, 0) == 2); // * matches empty, then EF
+    assert(matchPattern(hay, p, 5, 0) == -1); // only F left
 
-    // Literal on both sides of *
+    // Literal on both sides of *: span is the full A..F
     p = pattern(CharacterSet.ascii, "s:A", "*", "s:F");
-    assert(matchPattern(hay, p, 0, 0));
-    assert(matchPattern(hay, p, 1, 0) == false);
+    assert(matchPattern(hay, p, 0, 0) == 6);
+    assert(matchPattern(hay, p, 1, 0) == -1);
 
     // Multiple stars must not exponentially backtrack
     p = pattern(CharacterSet.ascii, "*", "?", "*", "s:F");
-    assert(matchPattern(hay, p, 0, 0));
-    assert(matchPattern(hay, p, 6, 0) == false); // past end
-    
+    assert(matchPattern(hay, p, 0, 0) == 6);
+    assert(matchPattern(hay, p, 6, 0) == -1); // past end
+
     // Fixed-position match: matchPattern tests AT hPos, not starting from hPos
     p = pattern(CharacterSet.ascii, "s:D", "?", "F");
-    assert(matchPattern(hay, p, 3, 0));           // "DEF": D=D, E=?, F=F
-    assert(matchPattern(hay, p, 0, 0) == false);  // 'A' != 'D'
-    assert(matchPattern(hay, p, 4, 0) == false);  // not enough room
+    assert(matchPattern(hay, p, 3, 0) == 3);    // "DEF": D=D, E=?, F=F
+    assert(matchPattern(hay, p, 0, 0) == -1);   // 'A' != 'D'
+    assert(matchPattern(hay, p, 4, 0) == -1);   // not enough room
 }

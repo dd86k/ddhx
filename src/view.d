@@ -2182,6 +2182,16 @@ enum {
     SEARCH_RESULT_NOT_FOUND = -1,
 }
 
+/// Result of a search: position of the match (or SEARCH_RESULT_NOT_FOUND)
+/// and the length of haystack bytes the match consumed. The length is only
+/// non-trivial when the pattern contains `*` - for fixed-width patterns
+/// (including `?`), len == needle.data.length.
+struct SearchResult
+{
+    long pos;
+    long len;
+}
+
 /// Search for data.
 ///
 /// This function does not rely on the cursor position nor does it change it,
@@ -2195,8 +2205,10 @@ enum {
 ///     needle = Data to compare against.
 ///     position = Starting position.
 ///     flags = Operation flags.
-/// Returns: Position or SEARCH_RESULT_NOT_FOUND. SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND.
-long search(Session *session, Pattern needle, long position, int flags, void delegate(long, long) progress)
+/// Returns: SearchResult with pos=SEARCH_RESULT_NOT_FOUND on no match.
+///          SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND. On no-match
+///          (including LASTPOS), len is 0.
+SearchResult search(Session *session, Pattern needle, long position, int flags, void delegate(long, long) progress)
 {
     assertion(needle, "Need needle");
     
@@ -2232,12 +2244,12 @@ long search(Session *session, Pattern needle, long position, int flags, void del
             ubyte[] haystack = session.editor.view(base, hay);
             if (haystack.length < needle.length)
                 // somehow haystack is smaller than needle
-                return SEARCH_RESULT_NOT_FOUND;
-            
+                return SearchResult(SEARCH_RESULT_NOT_FOUND, 0);
+
             long o = position - base;
             // Clamp starting offset so matchPattern cannot read past haystack.
-            size_t matchLen = (needle.flags & PATTERN_HAS_GLOB) ? 0 : needle.data.length;
-            long maxOff = cast(long)(haystack.length - matchLen);
+            size_t clampLen = (needle.flags & PATTERN_HAS_GLOB) ? 0 : needle.data.length;
+            long maxOff = cast(long)(haystack.length - clampLen);
             if (o > maxOff)
             {
                 position -= (o - maxOff);
@@ -2247,10 +2259,11 @@ long search(Session *session, Pattern needle, long position, int flags, void del
             // alignment > 1 and o < alignment.
             for (; o > 0; o -= cast(long) alignment, position -= cast(long) alignment)
             {
-                bool matched = matchPattern(haystack, needle, cast(size_t) o, 0);
+                ptrdiff_t mlen = matchPattern(haystack, needle, cast(size_t) o, 0);
+                bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
-                return position;
+                return SearchResult(position, matched ? cast(long) mlen : cast(long) needle.data.length);
             }
             
             // 1. After that loop to avoid flickerin between status-progress
@@ -2269,17 +2282,18 @@ long search(Session *session, Pattern needle, long position, int flags, void del
             
             ubyte[] haystack = session.editor.view(position, hay);
             if (haystack.length < needle.length)
-                return SEARCH_RESULT_NOT_FOUND;
-            
+                return SearchResult(SEARCH_RESULT_NOT_FOUND, 0);
+
             size_t bound = (needle.flags & PATTERN_HAS_GLOB)
                 ? haystack.length
                 : haystack.length - needle.data.length;
             for (size_t o; o <= bound; o += alignment, position += alignment)
             {
-                bool matched = matchPattern(haystack, needle, o, 0);
+                ptrdiff_t mlen = matchPattern(haystack, needle, o, 0);
+                bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
-                return position;
+                return SearchResult(position, matched ? cast(long) mlen : cast(long) needle.data.length);
             }
             
             // Same as other remark for this
@@ -2293,7 +2307,7 @@ long search(Session *session, Pattern needle, long position, int flags, void del
     debug sw.stop();
     debug log("search=%s", sw.peek());
     
-    return flags & SEARCH_LASTPOS ? position : SEARCH_RESULT_NOT_FOUND;
+    return SearchResult(flags & SEARCH_LASTPOS ? position : SEARCH_RESULT_NOT_FOUND, 0);
 }
 // Forward search: memcmp must not read past haystack when needle.length > 1.
 // Old bound (o < haystack.length) let the last comparison overread.
@@ -2306,8 +2320,9 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
     Pattern needle = pattern(CharacterSet.ascii, "s:CC");
-    long result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
-    assert(result == 4, "forward aligned: expected 4");
+    SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
+    assert(result.pos == 4, "forward aligned: expected 4");
+    assert(result.len == 2, "forward aligned: len should equal needle length");
 }
 // Forward search: needle that does not exist must return not-found
 // without reading past the buffer.
@@ -2319,8 +2334,8 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
 
     Pattern needle = pattern(CharacterSet.ascii, "s:ZZ");
-    long result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
-    assert(result == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
+    SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
+    assert(result.pos == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
 }
 // Reverse search with alignment > 1: the loop must terminate without
 // size_t underflow when the offset is not a multiple of alignment.
@@ -2334,8 +2349,8 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
 
     Pattern needle = pattern(CharacterSet.ascii, "s:ZZ");
-    long result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
-    assert(result == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
+    SearchResult result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
+    assert(result.pos == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
 }
 // Reverse search: initial offset is clamped so memcmp stays in bounds,
 // and the match (not at offset 0) is still found.
@@ -2347,8 +2362,9 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
     Pattern needle = pattern(CharacterSet.ascii, "s:CD");
-    long result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_DISALLOW_CANCEL, null);
-    assert(result == 2, "reverse from end: expected 2");
+    SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_DISALLOW_CANCEL, null);
+    assert(result.pos == 2, "reverse from end: expected 2");
+    assert(result.len == 2);
 }
 
 //
@@ -2545,7 +2561,7 @@ void move_skip_backward(Session *session, string[] args)
     moveabs(session,
         search(session, pneedle, sel.start - needle.length,
             SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED,
-            (pos, total){ update_progress(session, pos, total); }));
+            (pos, total){ update_progress(session, pos, total); }).pos);
 }
 
 // Move to different element forward
@@ -2589,7 +2605,7 @@ void move_skip_forward(Session *session, string[] args)
     moveabs(session,
         search(session, pneedle, sel.start + needle.length,
             SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED,
-            (pos, total){ update_progress(session, pos, total); }));
+            (pos, total){ update_progress(session, pos, total); }).pos);
 }
 
 // Move view up
@@ -2683,7 +2699,7 @@ struct Selection
     long start, end, length;
 }
 
-// Force a selection
+// Force a new selection (name to avoid conflicting with select(Session*,string[]))
 void neselect(Session *session, long start, long end)
 {
     session.selection.status = SELECT_ACTIVE;
@@ -3727,20 +3743,20 @@ void find(Session *session, string[] args)
     message("Searching...");
     update_status(session);
     
-    long p =
+    SearchResult r =
         search(session, g_needle, sel.start, 0,
         (pos, total){ update_progress(session, pos, total); });
-    if (p < 0)
+    if (r.pos < 0)
     {
         message("Not found");
         return;
     }
-    
-    neselect(session, p, p + g_needle.data.length - 1);
-    
+
+    neselect(session, r.pos, r.pos + r.len - 1);
+
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, p, 1));
+    message("Found at %s", addr.textual(buf, r.pos, 1));
 }
 
 //
@@ -3772,74 +3788,86 @@ void find_back(Session *session, string[] args)
     message("Searching...");
     update_status(session);
     
-    long p =
+    SearchResult r =
         search(session, g_needle, sel.start, SEARCH_REVERSE,
         (pos, total){ update_progress(session, pos, total); });
-    if (p < 0)
+    if (r.pos < 0)
     {
         message("Not found");
         return;
     }
-    
-    neselect(session, p, p + g_needle.data.length - 1);
-    
+
+    neselect(session, r.pos, r.pos + r.len - 1);
+
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, p, 1));
+    message("Found at %s", addr.textual(buf, r.pos, 1));
 }
 
-// 
+//
 void find_next(Session *session, string[] args)
 {
     if (g_needle.data is null)
         return;
-    
+
+    // Step from past the end of the active selection so we don't re-find
+    // the current match (neselect lands cursor at end-of-match, which would
+    // otherwise misalign this skip for needles longer than one byte).
+    Selection sel = selection(session);
+    long start = sel.length ? sel.end + 1 : session.position_cursor + g_needle.data.length;
+
     unselect(session);
-    
+
     message("Searching...");
     update_status(session);
-    
-    long p =
-        search(session, g_needle, session.position_cursor + g_needle.data.length, 0,
+
+    SearchResult r =
+        search(session, g_needle, start, 0,
         (pos, total){ update_progress(session, pos, total); });
-    if (p < 0)
+    if (r.pos < 0)
     {
         message("Not found");
         return;
     }
-    
-    moveabs(session, p);
-    
+
+    neselect(session, r.pos, r.pos + r.len - 1);
+
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, p, 1));
+    message("Found at %s", addr.textual(buf, r.pos, 1));
 }
 
-// 
+//
 void find_prev(Session *session, string[] args)
 {
     if (g_needle.data is null)
         return;
-    
+
+    // Step from just before the start of the active selection. Using
+    // position_cursor - 1 would re-find the current match because cursor
+    // sits at end-of-match after neselect.
+    Selection sel = selection(session);
+    long start = sel.length ? sel.start - 1 : session.position_cursor - 1;
+
     unselect(session);
-    
+
     message("Searching...");
     update_status(session);
-    
-    long p =
-        search(session, g_needle, session.position_cursor - 1, SEARCH_REVERSE,
+
+    SearchResult r =
+        search(session, g_needle, start, SEARCH_REVERSE,
         (pos, total){ update_progress(session, pos, total); });
-    if (p < 0)
+    if (r.pos < 0)
     {
         message("Not found");
         return;
     }
-    
-    neselect(session, p, p + g_needle.data.length - 1);
-    
+
+    neselect(session, r.pos, r.pos + r.len - 1);
+
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, p, 1));
+    message("Found at %s", addr.textual(buf, r.pos, 1));
 }
 
 // Quit app
