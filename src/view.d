@@ -179,8 +179,10 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     // Message slice result.
     string g_message;
     
-    /// Last search needle buffer (find-related commands use this).
+    /// Last search needle buffer (find commands use this).
     Pattern g_needle;
+    /// Last replacement buffer (find-replace uses this).
+    Pattern g_replacement;
 
     /// Digit position within current element (0-based, left to right) for digit mode
     int g_digitpos;
@@ -318,8 +320,10 @@ immutable Command[] default_commands = [
     { "insert-file",                "Insert data using a file",
         0,                          &insert_file },
     // Find and Data manipulation
-    /*{ "find-replace",             "Find and replace data"
-        Mod.ctrl|Key.R,             &find-replace-all },*/
+    { "find-replace",               "Find next occurrence and replace it",
+        Mod.ctrl|Key.R,             &find_replace },
+    { "find-replace-all",           "Find and replace all occurrences",
+        0,                          &find_replace_all },
     // Copy-Paste
     { "copy",                       "Copy data into buffer",
         Mod.alt|Key.C,              &clip_copy },
@@ -340,7 +344,7 @@ immutable Command[] default_commands = [
     { "undo",                       "Undo last edit",
         Mod.ctrl|Key.U,             &undo },
     { "redo",                       "Redo previous change",
-        Mod.ctrl|Key.R,             &redo },
+        Mod.ctrl|Key.Y,             &redo },
     // Position
     { "goto",                       "Navigate or jump to a specific position",
         Mod.ctrl|Key.G,             &goto_ },
@@ -3869,6 +3873,131 @@ void find_prev(Session *session, string[] args)
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
     message("Found at %s", addr.textual(buf, r.pos, 1));
+}
+
+// Split find-replace args around the "--" separator into needle and
+// replacement pattern argument lists.
+void splitReplaceArgs(string[] args, out string[] needleArgs, out string[] replArgs)
+{
+    size_t sep = size_t.max;
+    foreach (i, a; args)
+    {
+        if (a == "--") { sep = i; break; }
+    }
+    if (sep == size_t.max)
+        throw new Exception("Need needle and replacement, separated by --");
+    needleArgs = args[0..sep];
+    replArgs = args[sep+1..$];
+    if (needleArgs.length == 0)
+        throw new Exception("Missing needle");
+    if (replArgs.length == 0)
+        throw new Exception("Missing replacement");
+}
+
+//
+void find_replace(Session *session, string[] args)
+{
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+
+    // Allows find-replace to be repeated (typically via ^R)
+    if (args.length)
+    {
+        string[] needleArgs, replArgs;
+        splitReplaceArgs(args, needleArgs, replArgs);
+
+        g_needle = pattern(session.rc.charset, needleArgs);
+        if (g_needle.length == 0)
+            throw new Exception("Empty needle");
+
+        g_replacement = pattern(session.rc.charset, replArgs);
+        if (g_replacement.flags & PATTERN_HAS_GLOB)
+            throw new Exception("Can't replace with globbing");
+    }
+    else if (g_needle.data is null || g_replacement.data is null)
+        throw new Exception("No previous find-replace to repeat");
+
+    Selection sel = selection(session);
+    long start = sel.length ? sel.end + 1 : session.position_cursor;
+
+    unselect(session);
+
+    message("Searching...");
+    update_status(session);
+
+    SearchResult r =
+        search(session, g_needle, start, 0,
+        (pos, total){ update_progress(session, pos, total); });
+    if (r.pos < 0)
+    {
+        message("Not found");
+        return;
+    }
+
+    ubyte[] pb = g_replacement.toBytes();
+    session.editor.patternReplace(r.pos, r.len, pb.ptr, pb.length);
+    g_status |= UVIEW | UHEADER | USTATUS;
+
+    neselect(session, r.pos, r.pos + pb.length - 1);
+
+    ElementText buf = void;
+    AddressFormatter addr = AddressFormatter(session.rc.address_type);
+    message("Replaced at %s", addr.textual(buf, r.pos, 1));
+}
+
+//
+void find_replace_all(Session *session, string[] args)
+{
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+
+    if (args.length)
+    {
+        string[] needleArgs, replArgs;
+        splitReplaceArgs(args, needleArgs, replArgs);
+
+        g_needle = pattern(session.rc.charset, needleArgs);
+        if (g_needle.length == 0)
+            throw new Exception("Empty needle");
+
+        g_replacement = pattern(session.rc.charset, replArgs);
+        if (g_replacement.flags & PATTERN_HAS_GLOB)
+            throw new Exception("Can't replace with globbing");
+    }
+    else if (g_needle.data is null || g_replacement.data is null)
+        throw new Exception("No previous find-replace to repeat");
+
+    ubyte[] pb = g_replacement.toBytes();
+
+    Selection sel = selection(session);
+    long start = sel.length ? sel.start : session.position_cursor;
+
+    unselect(session);
+
+    message("Searching...");
+    update_status(session);
+
+    long count;
+    for (;;)
+    {
+        // search already checks for cancellation
+        SearchResult r =
+            search(session, g_needle, start, 0,
+            (pos, total){ update_progress(session, pos, total); });
+        if (r.pos < 0)
+            break;
+
+        session.editor.patternReplace(r.pos, r.len, pb.ptr, pb.length);
+        start = r.pos + pb.length;
+        count++;
+    }
+
+    g_status |= UVIEW | UHEADER | USTATUS;
+
+    if (count == 0)
+        message("Not found");
+    else
+        message("Replaced %d occurrence(s)", count);
 }
 
 // Quit app
