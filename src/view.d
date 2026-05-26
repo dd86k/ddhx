@@ -2283,7 +2283,9 @@ long search(Session *session, Pattern needle, long position, int flags, void del
             }
             
             // Same as other remark for this
-            if (progress) progress(position, docsize);
+            // Clamp: with PATTERN_HAS_GLOB, bound==haystack.length lets
+            // position overshoot docsize near EOF.
+            if (progress) progress(position > docsize ? docsize : position, docsize);
         }
         while (position < docsize);
     }
