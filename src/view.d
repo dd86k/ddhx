@@ -68,7 +68,7 @@ private enum // Internal editor status flags
     
     /// Selection is active and has a range going
     SELECT_ACTIVE   = 1,
-    /// Mark started, so don't clear it
+    /// Mark started, so don't clear it (a hack for "mark"/"unmark" commands)
     SELECT_ONGOING  = 1 << 1,
 }
 
@@ -2109,9 +2109,9 @@ void update_progress(Session *session, long position, long total)
 {
     __gshared int lastx;
     
-    int width = g_cols - 2;
-    
     assert(position <= total, "position <= total");
+    
+    int width = g_cols - 2;
     
     int x = cast(int)(width * (cast(double)position / total));
     // Same position, avoid unnecessary I/O
@@ -2679,6 +2679,14 @@ void delete_back(Session *session, string[] args)
 struct Selection
 {
     long start, end, length;
+}
+
+// Force a selection
+void neselect(Session *session, long start, long end)
+{
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = start;
+    session.position_cursor  = end;
 }
 
 // Force unselection
@@ -3690,13 +3698,13 @@ void find(Session *session, string[] args)
 {
     Selection sel = selection(session);
     
-    // If arguments: Take those before selection
+    // With arguments: Prioritize before selection
     if (args.length > 0)
     {
         g_needle = pattern(session.rc.charset, args);
         sel.start = session.position_cursor + g_needle.data.length;
     }
-    else if (sel.length) // selection
+    else if (sel.length) // search by selection
     {
         if (sel.length > CONFIG_NEEDLE_LIMIT)
             throw new Exception("Selection too big");
@@ -3708,6 +3716,9 @@ void find(Session *session, string[] args)
     }
     else
         throw new Exception("Need search");
+    
+    if (g_needle.length == 0)
+        return;
     
     unselect(session);
     
@@ -3723,7 +3734,7 @@ void find(Session *session, string[] args)
         return;
     }
     
-    moveabs(session, p);
+    neselect(session, p, p + g_needle.data.length - 1);
     
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
@@ -3768,7 +3779,7 @@ void find_back(Session *session, string[] args)
         return;
     }
     
-    moveabs(session, p);
+    neselect(session, p, p + g_needle.data.length - 1);
     
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
@@ -3822,7 +3833,7 @@ void find_prev(Session *session, string[] args)
         return;
     }
     
-    moveabs(session, p);
+    neselect(session, p, p + g_needle.data.length - 1);
     
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
