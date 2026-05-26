@@ -308,10 +308,17 @@ immutable Command[] default_commands = [
         0,                          &replace_ }, // avoid Phobos conflict
     { "insert",                     "Insert data using a pattern",
         0,                          &insert_ }, // avoid Phobos conflict
+    { "replace-range",              "Replace data using a range and pattern",
+        0,                          &replace_range },
+    { "insert-range",               "Insert data using a range and pattern",
+        0,                          &insert_range },
     { "replace-file",               "Replace data using a file",
         0,                          &replace_file },
     { "insert-file",                "Insert data using a file",
         0,                          &insert_file },
+    // Find and Data manipulation
+    /*{ "find-replace",             "Find and replace data"
+        Mod.ctrl|Key.R,             &find-replace-all },*/
     // Copy-Paste
     { "copy",                       "Copy data into buffer",
         Mod.alt|Key.C,              &clip_copy },
@@ -797,8 +804,7 @@ Lread:
 // Command requires argument
 string askstring(string[] args, size_t idx, string prefix)
 {
-    string s = args is null || args.length <= idx ?
-        promptline(prefix) : args[idx];
+    string s = args is null || args.length <= idx ? promptline(prefix) : args[idx];
     
     // Empty string? Cancel! Can't do anything with that.
     // Bonus: Besides, throwing an exception is easier to manage than
@@ -2618,7 +2624,7 @@ void delete_front(Session *session, string[] args)
     if (args.length > 0)
     {
         Range r = askrange(args, 0, "Range: ");
-        session.editor.remove(r.start, rangelen(r));
+        session.editor.remove(r.start, r.length);
         g_status |= UVIEW;
         return;
     }
@@ -3187,12 +3193,80 @@ void replace_(Session *session, string[] args)
         return;
     }
 
-    // TODO: Fix insert/replace usage for 0.10
-    //       1. Create replace-range command that takes range
-    //          Wanted to do "replace s:example" and failed...
-    //       2. Without any arguments and if g_needle is set: Replace at current pos
-    //          Compliments future find-replace/find-insert
-    //       3. To help with 2., dedicate a new default shortcut
+    if (args.length < 1)
+    {
+        message("Missing pattern");
+        return;
+    }
+
+    Pattern p = pattern(session.rc.charset, args);
+    if (p.flags & PATTERN_HAS_GLOB)
+        throw new Exception("Can't replace with globbing");
+    ubyte[] pb = p.toBytes();
+    session.editor.patternReplace(session.position_cursor, pb.length, pb.ptr, pb.length);
+    g_status |= UVIEW | UHEADER | USTATUS;
+}
+
+// Insert data using pattern
+void insert_(Session *session, string[] args)
+{
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+    
+    Selection sel = selection(session);
+    if (sel.length)
+    {
+        if (args.length < 1)
+        {
+            message("Need pattern");
+            return;
+        }
+        Pattern p = pattern(session.rc.charset, args);
+        if (p.flags & PATTERN_HAS_GLOB)
+            throw new Exception("Can't insert with globbing");
+        ubyte[] pb = p.toBytes();
+        session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
+        g_status |= UVIEW | UHEADER | USTATUS;
+        return;
+    }
+
+    if (args.length < 1)
+    {
+        message("Missing pattern");
+        return;
+    }
+
+    Pattern p = pattern(session.rc.charset, args);
+    if (p.flags & PATTERN_HAS_GLOB)
+        throw new Exception("Can't insert with globbing");
+    ubyte[] pb = p.toBytes();
+    session.editor.patternInsert(session.position_cursor, pb.length, pb.ptr, pb.length);
+    g_status |= UVIEW | UHEADER | USTATUS;
+}
+
+// Replace data using pattern
+void replace_range(Session *session, string[] args)
+{
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception("Cannot edit, read-only");
+    
+    Selection sel = selection(session);
+    if (sel.length)
+    {
+        if (args.length < 1)
+        {
+            message("Missing pattern");
+            return;
+        }
+        Pattern p = pattern(session.rc.charset, args);
+        if (p.flags & PATTERN_HAS_GLOB)
+            throw new Exception("Can't replace with globbing");
+        ubyte[] pb = p.toBytes();
+        session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
+        g_status |= UVIEW | UHEADER | USTATUS;
+        return;
+    }
+
     if (args.length < 1)
     {
         message("Missing range");
@@ -3209,12 +3283,12 @@ void replace_(Session *session, string[] args)
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception("Can't replace with globbing");
     ubyte[] pb = p.toBytes();
-    session.editor.patternReplace(r.start, rangelen(r), pb.ptr, pb.length);
+    session.editor.patternReplace(r.start, r.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 }
 
 // Insert data using pattern
-void insert_(Session *session, string[] args)
+void insert_range(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception("Cannot edit, read-only");
@@ -3252,7 +3326,7 @@ void insert_(Session *session, string[] args)
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception("Can't insert with globbing");
     ubyte[] pb = p.toBytes();
-    session.editor.patternInsert(r.start, rangelen(r), pb.ptr, pb.length);
+    session.editor.patternInsert(r.start, r.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 }
 

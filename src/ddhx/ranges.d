@@ -22,6 +22,11 @@ struct Range
     long start;     /// Start.
     long end;       /// End or length if RANGE_RELATIVE is set.
     int flags;      /// Flags.
+    
+    long length()
+    {
+        return end - start + 1;
+    }
 }
 /// Parse a range expression.
 ///
