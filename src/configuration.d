@@ -3,19 +3,17 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.configuration;
-
-// module ddhx.is named configuration to avoid confusion with std.getopt.config and
-// "rc" local variable names.
+module configuration; // "config" would conflict with std.getopt.config
 
 import std.conv : text, to;
 
-import ddhx.coloring;
 import ddhx.formatting;
 import ddhx.transcoder : CharacterSet, selectCharacterSet;
-import ddhx.utils : arguments;
 
 import os.terminal : terminal_keybind;
+
+import colors;
+import utils : arguments;
 
 import view : bindkey, setcolor, initdefaults, binded;
 

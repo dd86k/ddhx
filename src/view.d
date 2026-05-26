@@ -18,20 +18,21 @@ import std.traits : EnumMembers;
 
 import os.terminal;
 
-import ddhx.coloring;
-import ddhx.configuration;
 import ddhx.document.base : IDocument;
 import ddhx.document.file : FileDocument, OFlags;
 import ddhx.document.memory : MemoryDocument;
 import ddhx.editor.base : IDirtyRange, IDocumentEditor, PieceInfo;
 import ddhx.formatting;
 import ddhx.logger;
-import ddhx.patterns;
 import ddhx.platform;       // For assertion, MAXSIZE
-import ddhx.ranges;
-import ddhx.statusformat;
 import ddhx.transcoder;
-import ddhx.utils;
+
+import colors;
+import configuration;
+import patterns;
+import ranges;
+import status;
+import utils;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 

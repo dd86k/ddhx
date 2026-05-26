@@ -3,7 +3,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.utils;
+module utils;
 
 /// Template to get binary size in mebibytes (base-1024)
 /// Params: base = Base unit.

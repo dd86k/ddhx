@@ -7,7 +7,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.statusformat;
+module status;
 
 import std.format : sformat;
 import std.path : baseName;

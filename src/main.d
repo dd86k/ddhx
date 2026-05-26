@@ -15,11 +15,12 @@ import std.stdio, std.getopt;
 
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
 
-import ddhx.configuration;
 import ddhx.document.file : FileDocument;
 import ddhx.editor;
 import ddhx.formatting : WritingMode;
 import ddhx.logger;
+
+import configuration;
 
 import view;
 

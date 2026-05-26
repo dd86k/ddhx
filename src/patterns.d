@@ -4,7 +4,7 @@
 /// Copyright: dd86k <dd@dax.moe>
 /// License: MIT
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
-module ddhx.patterns; // plural not to mess with pattern function
+module patterns; // plural not to mess with pattern function
 
 import std.conv : text;
 import std.string : startsWith;
