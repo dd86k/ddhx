@@ -1982,10 +1982,10 @@ void update_view(Session *session)
                 terminalResetColor(); // fixes runaway color with invert (cursor) on POSIX
 
             // Apply attribute(s)
-            if (map.flags & COLORMAP_FOREGROUND && change)
-                terminalForeground(map.fg);
-            if (map.flags & COLORMAP_BACKGROUND && change)
-                terminalBackground(map.bg);
+            if (map.foreground.isNull == false && change)
+                terminalForeground(map.foreground.get);
+            if (map.background.isNull == false && change)
+                terminalBackground(map.background.get);
             if (map.flags & COLORMAP_INVERTED && change)
                 terminalInvertColor();
 

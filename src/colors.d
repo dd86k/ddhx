@@ -60,18 +60,16 @@ unittest
 // Color mapping mechanics
 //
 
+import std.typecons : Nullable, nullable;
 enum
 {
     COLORMAP_INVERTED    = 1,    /// 
-    COLORMAP_FOREGROUND  = 2,    /// 
-    COLORMAP_BACKGROUND  = 4,    ///
 }
-// ColorPair[ColorScheme] mapping;
 struct ColorMap
 {
     int flags;
-    TermColor fg;
-    TermColor bg;
+    Nullable!TermColor foreground;
+    Nullable!TermColor background;
     
     static ColorMap parse(string colorstr)
     {
@@ -96,14 +94,20 @@ struct ColorMap
         // ":red"       -> bg=red
         // "red:"       -> fg=red
         // "red"        -> fg=red
-        if (colorstr is null || colorstr.length == 0)
+        if (colorstr.length == 0)
             throw new Exception("Color cannot be empty");
         
         ColorMap map;
-        string fg = void;
-        string bg = void;
+        
+        if (colorstr == "invert")
+        {
+            map.flags = COLORMAP_INVERTED;
+            return map;
+        }
         
         ptrdiff_t i = indexOf(colorstr, ':');
+        string fg = void;
+        string bg = void;
         if (i >= 0) // foreground + background
         {
             fg = colorstr[0..i];
@@ -114,68 +118,59 @@ struct ColorMap
             fg = colorstr;
             bg = null;
         }
-        
-        ColorMap.mapterm(map, fg, COLORMAP_FOREGROUND);
-        ColorMap.mapterm(map, bg, COLORMAP_BACKGROUND);
+        map.foreground = ColorMap.mapterm(fg);
+        map.background = ColorMap.mapterm(bg);
         
         return map;
     }
-    private static void mapterm(ref ColorMap map, string term, int pre)
+    private static Nullable!TermColor mapterm(string term)
     {
-        // Final switch asserts...
-        TermColor color = void;
-        switch (term) {
-        case "", "default": return; // leave .init default
-        case "invert": map.flags |= COLORMAP_INVERTED; return;
-        case "black":   color = TermColor.black; break;
-        case "blue":    color = TermColor.blue; break;
-        case "green":   color = TermColor.green; break;
-        case "aqua":    color = TermColor.aqua; break;
-        case "red":     color = TermColor.red; break;
-        case "purple":  color = TermColor.purple; break;
-        case "yellow":  color = TermColor.yellow; break;
-        case "gray":    color = TermColor.gray; break;
-        case "lightgray":   color = TermColor.lightgray; break;
-        case "brightblue":  color = TermColor.brightblue; break;
-        case "brightgreen": color = TermColor.brightgreen; break;
-        case "brightaqua":  color = TermColor.brightaqua; break;
-        case "brightred":   color = TermColor.brightred; break;
-        case "brightpurple":color = TermColor.brightpurple; break;
-        case "brightyellow":color = TermColor.brightyellow; break;
-        case "white":       color = TermColor.white; break;
+        switch (term) { // final switch ASSERTS, not a good flow
+        // call null and "" are duplicates?!
+        case "", "default": return Nullable!TermColor.init;
+        case "black":       return Nullable!TermColor(TermColor.black);
+        case "blue":        return Nullable!TermColor(TermColor.blue);
+        case "green":       return Nullable!TermColor(TermColor.green);
+        case "aqua":        return Nullable!TermColor(TermColor.aqua);
+        case "red":         return Nullable!TermColor(TermColor.red);
+        case "purple":      return Nullable!TermColor(TermColor.purple);
+        case "yellow":      return Nullable!TermColor(TermColor.yellow);
+        case "gray":        return Nullable!TermColor(TermColor.gray);
+        case "lightgray":   return Nullable!TermColor(TermColor.lightgray);
+        case "brightblue":  return Nullable!TermColor(TermColor.brightblue);
+        case "brightgreen": return Nullable!TermColor(TermColor.brightgreen);
+        case "brightaqua":  return Nullable!TermColor(TermColor.brightaqua);
+        case "brightred":   return Nullable!TermColor(TermColor.brightred);
+        case "brightpurple":return Nullable!TermColor(TermColor.brightpurple);
+        case "brightyellow":return Nullable!TermColor(TermColor.brightyellow);
+        case "white":       return Nullable!TermColor(TermColor.white);
         default:
             throw new Exception(text("Unknown color: ", term));
         }
-        // No magic here
-        map.flags |= pre;
-        if (pre & COLORMAP_FOREGROUND)
-            map.fg = color;
-        else
-            map.bg = color;
     }
 }
 unittest
 {
-    assert(ColorMap.parse("default:default") == ColorMap(0, TermColor.init, TermColor.init));
-    assert(ColorMap.parse("default")        == ColorMap(0, TermColor.init, TermColor.init));
-    assert(ColorMap.parse("invert")         == ColorMap(COLORMAP_INVERTED, TermColor.init, TermColor.init));
+    assert(ColorMap.parse("default:default")== ColorMap());
+    assert(ColorMap.parse("default")        == ColorMap());
+    assert(ColorMap.parse("invert")         == ColorMap(COLORMAP_INVERTED));
     
-    assert(ColorMap.parse("red:default")    == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
-    assert(ColorMap.parse("red:")           == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
-    assert(ColorMap.parse("red")            == ColorMap(COLORMAP_FOREGROUND, TermColor.red, TermColor.init));
-    assert(ColorMap.parse("purple")         == ColorMap(COLORMAP_FOREGROUND, TermColor.purple, TermColor.init));
+    assert(ColorMap.parse("red:default")    == ColorMap(0, Nullable!TermColor(TermColor.red)));
+    assert(ColorMap.parse("red:")           == ColorMap(0, Nullable!TermColor(TermColor.red), Nullable!TermColor.init));
+    assert(ColorMap.parse("red")            == ColorMap(0, Nullable!TermColor(TermColor.red)));
+    assert(ColorMap.parse("purple")         == ColorMap(0, Nullable!TermColor(TermColor.purple)));
     
-    assert(ColorMap.parse("default:red")    == ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red));
-    assert(ColorMap.parse(":red")           == ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red));
+    assert(ColorMap.parse("default:red")    == ColorMap(0, Nullable!TermColor.init, Nullable!TermColor(TermColor.red)));
+    assert(ColorMap.parse(":red")           == ColorMap(0, Nullable!TermColor.init, Nullable!TermColor(TermColor.red)));
 }
 
 struct ColorMapper
 {
-    enum ColorMap DEFAULT_NORMAL    = ColorMap(0, TermColor.init, TermColor.init);
-    enum ColorMap DEFAULT_CURSOR    = ColorMap(COLORMAP_INVERTED, TermColor.init, TermColor.init);
-    enum ColorMap DEFAULT_SELECTION = ColorMap(COLORMAP_INVERTED, TermColor.init, TermColor.init);
-    enum ColorMap DEFAULT_MIRROR    = ColorMap(COLORMAP_BACKGROUND, TermColor.init, TermColor.red);
-    enum ColorMap DEFAULT_ZERO      = ColorMap(COLORMAP_FOREGROUND, TermColor.gray, TermColor.init);
+    enum ColorMap DEFAULT_NORMAL    = ColorMap(0);
+    enum ColorMap DEFAULT_CURSOR    = ColorMap(COLORMAP_INVERTED);
+    enum ColorMap DEFAULT_SELECTION = ColorMap(COLORMAP_INVERTED);
+    enum ColorMap DEFAULT_MIRROR    = ColorMap(0, Nullable!TermColor.init, Nullable!TermColor(TermColor.red));
+    enum ColorMap DEFAULT_ZERO      = ColorMap(0, Nullable!TermColor(TermColor.gray));
     
     // Initial color specifications
     private
