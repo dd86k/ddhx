@@ -222,11 +222,14 @@ struct Command
 //           256 bits -> 32 Bytes -> 64 hex characters
 
 // Command names
+//
 // Because navigation keys are the most essential, they get short names.
 // For example, mpv uses LEFT and RIGHT to bind to "seek -10" and "seek 10".
-// Here, both "bind ctrl+9 right" and "bind ctrl+9 goto +1" are both valid.
-// I probably would have preferred to go with "do-thing" syntax, but
-// I somehow decided to go with "thing-do". Oh well.
+// Thus, we use "left" and "right" to bind to left-arrow and right-arrow.
+//
+// Additionally, both "bind ctrl+9 right" and "bind ctrl+9 goto +1" are valid assignation.
+//
+// For the rest, prefer "thing-do" (e.g., bookmark-set).
 
 // Command designs
 // - Names: If commonly used (ie, navigation), command is one word

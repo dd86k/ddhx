@@ -1897,7 +1897,8 @@ Lread: // Emulate line buffer
         goto Lread;
 
     // Reset tab completion state on any non-Tab key
-    tab_active = input.key == Key.Tab;
+    if (input.key != Key.Tab)
+        tab_active = false;
 
     switch (input.key) {
     case Key.Enter:  goto Lout;
@@ -2032,7 +2033,7 @@ Lread: // Emulate line buffer
         if (!tab_active)
         {
             // Start new completion: use current line content as prefix
-            tab_prefix = line[];
+            tab_prefix = line[].dup;
             tab_match_idx = 0;
             tab_active = true;
         }
