@@ -34,7 +34,6 @@ import patterns;
 import ranges;
 import status;
 import utils;
-import core.int128;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
