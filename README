@@ -63,16 +63,16 @@ This list may change at any given time without notice.
 - [x] View: Other data types (d8, o8, d16, f32, etc.)
 
 0.10: WIP
-- [ ] Bookmarks / Annotations ("bookmark-{save|load}")
-- [ ] Layout system
+- [ ] Diff view (vs. opened document)
+- [x] Bookmark system
+- [x] Data inspector panel
 
 Wishlist:
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
-- [ ] Diff view (vs. opened document)
 - [ ] Document: Disk
 - [ ] Document: Process memory
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
-- [ ] Inspect data panel (replaces text panel when toggled)
+- [ ] Layout system
 
 ////////////////////////////////////////////////////////////////////////////////
 // Getting Started
