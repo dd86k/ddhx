@@ -165,6 +165,10 @@ unittest
 // Data handling
 //
 
+// NOTE: Splitting Base and Format means higher combo count
+//       N bases * M formats while only defining N + M.
+//       Also, makes certain operations cleaner (ie, fetching n bytes).
+
 /// Underlying interpretation of the raw bytes (size + signedness/float).
 enum BaseType : ubyte
 {
@@ -203,6 +207,8 @@ private immutable static int[3][3] spacing_table = [
 ];
 
 /// Size in bytes of a base type.
+/// Params: base = BaseType base.
+/// Returns: Size of a base type in Bytes.
 int size_of(BaseType base)
 {
     size_t i = cast(size_t)base;
@@ -212,6 +218,10 @@ int size_of(BaseType base)
 }
 
 /// Maximum display width in characters for the (base, format) pair.
+/// Params:
+///     base = BaseType base.
+///     format = Formatting.
+/// Returns: Size of a base type in characters.
 int spacing_of(BaseType base, Format format)
 {
     size_t b = cast(size_t)base, f = cast(size_t)format;
@@ -227,6 +237,10 @@ int spacing_of(BaseType base, Format format)
 ///
 /// Currently all integer bases accept all integer formats, so every pair is
 /// valid. Float and char formats will narrow this when those land.
+/// Params:
+///     base = BaseType base.
+///     format = Formatting.
+/// Returns: True if it is a valid pair.
 bool valid(BaseType base, Format format)
 {
     return true;
@@ -234,33 +248,14 @@ bool valid(BaseType base, Format format)
 
 /// Data representation: a (base, format) pair.
 ///
-/// Named manifest constants (x8, d16, o32, ...) match the legacy DataType
-/// enum members so callers using `DataType.x8` keep compiling.
+/// Construct with `DataType(BaseType.u8, Format.hex)` or parse a legacy
+/// shorthand string ("x8", "d16", ...) via `selectDataType`.
 struct DataType
 {
     BaseType base;
     Format format;
-
-    /// 8-bit hexadecimal (e.g., 0xff -> ff)
-    enum DataType x8  = DataType(BaseType.u8,  Format.hex);
-    /// 16-bit hexadecimal
-    enum DataType x16 = DataType(BaseType.u16, Format.hex);
-    /// 32-bit hexadecimal
-    enum DataType x32 = DataType(BaseType.u32, Format.hex);
-    /// 8-bit unsigned decimal (0xff -> 255)
-    enum DataType d8  = DataType(BaseType.u8,  Format.dec);
-    /// 16-bit unsigned decimal
-    enum DataType d16 = DataType(BaseType.u16, Format.dec);
-    /// 32-bit unsigned decimal
-    enum DataType d32 = DataType(BaseType.u32, Format.dec);
-    /// 8-bit unsigned octal (0xff -> 377)
-    enum DataType o8  = DataType(BaseType.u8,  Format.oct);
-    /// 16-bit unsigned octal
-    enum DataType o16 = DataType(BaseType.u16, Format.oct);
-    /// 32-bit unsigned octal
-    enum DataType o32 = DataType(BaseType.u32, Format.oct);
 }
-/// Data type count (legacy preset count).
+/// Count of named legacy shorthand combos (x8..o32).
 enum TYPES = type_pairs.length;
 
 // Legacy DataType -> (BaseType, Format) mapping. Order matches DataType.
@@ -276,11 +271,11 @@ private immutable static TypePair[] type_pairs = [
     { BaseType.u16, Format.oct }, // o16
     { BaseType.u32, Format.oct }, // o32
 ];
-// Stringified legacy DataType names, indexed alongside type_pairs.
+// Shorthand names per legacy combo, indexed alongside type_pairs.
 private immutable static string[] type_names = [
-    DataType.x8.stringof,  DataType.x16.stringof, DataType.x32.stringof,
-    DataType.d8.stringof,  DataType.d16.stringof, DataType.d32.stringof,
-    DataType.o8.stringof,  DataType.o16.stringof, DataType.o32.stringof,
+    "x8", "x16", "x32",
+    "d8", "d16", "d32",
+    "o8", "o16", "o32",
 ];
 // Connects data types to definitions, composed at compile time from the
 // (base, format) pair table above.
@@ -315,35 +310,27 @@ unittest
 {
     // Lock the (BaseType, Format) tables against the composed data_specs
     // entries so future edits cannot silently drift sizes or widths.
-    static struct Pair { DataType d; BaseType b; Format f; }
-    immutable Pair[] pairs = [
-        { DataType.x8,  BaseType.u8,  Format.hex },
-        { DataType.x16, BaseType.u16, Format.hex },
-        { DataType.x32, BaseType.u32, Format.hex },
-        { DataType.d8,  BaseType.u8,  Format.dec },
-        { DataType.d16, BaseType.u16, Format.dec },
-        { DataType.d32, BaseType.u32, Format.dec },
-        { DataType.o8,  BaseType.u8,  Format.oct },
-        { DataType.o16, BaseType.u16, Format.oct },
-        { DataType.o32, BaseType.u32, Format.oct },
-    ];
-    foreach (ref p; pairs)
+    foreach (ref p; type_pairs)
     {
-        DataSpec legacy = selectDataSpec(p.d);
-        assert(size_of(p.b)             == legacy.size_of);
-        assert(spacing_of(p.b, p.f)     == legacy.spacing);
-        assert(format_chars[p.f]        == legacy.fmtspec[$ - 1]);
-        assert(valid(p.b, p.f));
+        DataSpec spec = selectDataSpec(DataType(p.base, p.format));
+        assert(size_of(p.base)              == spec.size_of);
+        assert(spacing_of(p.base, p.format) == spec.spacing);
+        assert(format_chars[p.format]       == spec.fmtspec[$ - 1]);
+        assert(valid(p.base, p.format));
     }
 }
 
-// string alias -> data type enum
+// string alias -> data type bundle. Only known shorthands are accepted, so
+// the returned pair is always `valid()` by construction.
 DataType selectDataType(string type)
 {
     foreach (ref spec; data_specs)
     {
         if (spec.name == type)
+        {
+            assert(valid(spec.type.base, spec.type.format));
             return spec.type;
+        }
     }
     throw new Exception("Unknown data type");
 }
@@ -370,8 +357,8 @@ int size_of(DataType type)
 }
 unittest
 {
-    assert(size_of(DataType.x8)  == ubyte.sizeof);
-    assert(size_of(DataType.x16) == ushort.sizeof);
+    assert(size_of(DataType(BaseType.u8, Format.hex))  == ubyte.sizeof);
+    assert(size_of(DataType(BaseType.u16, Format.hex)) == ushort.sizeof);
 }
 
 // Spacing of a data type in characters.
@@ -502,38 +489,38 @@ unittest
     Element elem;
     
     // Hexadecimal
-    assert(elem.parse(DataType.x8, "0") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.hex), "0") == true);
     assert(elem.u8 == 0);
-    assert(elem.parse(DataType.x8, "1") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.hex), "1") == true);
     assert(elem.u8 == 1);
-    assert(elem.parse(DataType.x8, "01") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.hex), "01") == true);
     assert(elem.u8 == 1);
-    assert(elem.parse(DataType.x8, " 1") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.hex), " 1") == true);
     assert(elem.u8 == 1);
-    assert(elem.parse(DataType.x8, "10") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.hex), "10") == true);
     assert(elem.u8 == 0x10);
 
-    assert(elem.parse(DataType.x16, "0") == true);
+    assert(elem.parse(DataType(BaseType.u16, Format.hex), "0") == true);
     assert(elem.u16 == 0);
-    assert(elem.parse(DataType.x16, "0101") == true);
+    assert(elem.parse(DataType(BaseType.u16, Format.hex), "0101") == true);
     assert(elem.u16 == 0x0101);
-    assert(elem.parse(DataType.x16, " 101") == true);
+    assert(elem.parse(DataType(BaseType.u16, Format.hex), " 101") == true);
     assert(elem.u16 == 0x0101);
-    assert(elem.parse(DataType.x16, "1010") == true);
+    assert(elem.parse(DataType(BaseType.u16, Format.hex), "1010") == true);
     assert(elem.u16 == 0x1010);
 
     // Decimal
-    assert(elem.parse(DataType.d8, "0") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.dec), "0") == true);
     assert(elem.u8 == 0);
-    assert(elem.parse(DataType.d8, "025") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.dec), "025") == true);
     assert(elem.u8 == 25);
-    assert(elem.parse(DataType.d8, " 25") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.dec), " 25") == true);
     assert(elem.u8 == 25);
-    assert(elem.parse(DataType.d8, "255") == true);
+    assert(elem.parse(DataType(BaseType.u8, Format.dec), "255") == true);
     assert(elem.u8 == 255);
     
     // Octal
-    assert(elem.parse(DataType.o32, "37777777777") == true);
+    assert(elem.parse(DataType(BaseType.u32, Format.oct), "37777777777") == true);
     assert(elem.u32 == 0xffffffff);
 }
 
@@ -560,6 +547,7 @@ struct DataSpec
 ///
 /// `type` is populated when the pair matches one of the named DataType
 /// presets, otherwise left at its `.init` value.
+/// Returns: Data specification from base and format.
 DataSpec makeSpec(BaseType base, Format format)
 {
     assert(valid(base, format), "makeSpec: invalid (base, format) pair");
@@ -596,7 +584,7 @@ string dataTypeToString(DataType type) // Only used in statusbar code
 }
 unittest
 {
-    assert(dataTypeToString(DataType.x8) == "x8");
+    assert(dataTypeToString(DataType(BaseType.u8, Format.hex)) == "x8");
 }
 
 // TODO: Make DataWalker that modifies Element instances
@@ -677,7 +665,7 @@ unittest
     
     // Test x8
     immutable ubyte[] data = [ 0x00, 0x01, 0xa0, 0xff ];
-    formatter = DataFormatter(DataType.x8, data.ptr, data.length);
+    formatter = DataFormatter(DataType(BaseType.u8, Format.hex), data.ptr, data.length);
     assert(formatter.textual(buf) == "00"); assert( formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "01"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "a0"); assert(!formatter.iszero()); formatter.step();
@@ -686,20 +674,20 @@ unittest
     
     // Test x16
     immutable ushort[] data16 = [ 0x0101, 0xf0f0 ];
-    formatter = DataFormatter(DataType.x16, data16.ptr, data16.length * ushort.sizeof);
+    formatter = DataFormatter(DataType(BaseType.u16, Format.hex), data16.ptr, data16.length * ushort.sizeof);
     assert(formatter.textual(buf) == "0101"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "f0f0"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "    ");
     
     // Test partial data formatting
     immutable ubyte[] data16p = [ 0xab, 0xab, 0xab ];
-    formatter = DataFormatter(DataType.x16, data16p.ptr, data16p.length);
+    formatter = DataFormatter(DataType(BaseType.u16, Format.hex), data16p.ptr, data16p.length);
     assert(formatter.textual(buf) == "abab"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "00ab"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "    ");
     
     // Test decimal
-    formatter = DataFormatter(DataType.d8, data.ptr, data.length);
+    formatter = DataFormatter(DataType(BaseType.u8, Format.dec), data.ptr, data.length);
     assert(formatter.textual(buf) == "000"); assert( formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "001"); assert(!formatter.iszero()); formatter.step();
     assert(formatter.textual(buf) == "160"); assert(!formatter.iszero()); formatter.step();
@@ -820,7 +808,7 @@ unittest
 {
     scope InputFormatter input = new InputFormatter; // HACK
     
-    input.change(DataType.x8);
+    input.change(DataType(BaseType.u8, Format.hex));
     
     assert(input.data       == [ 0 ]);
     
@@ -836,7 +824,7 @@ unittest
     assert(input.data()     == [ 0x12 ]);
     assert(input.add('3')   == false);
     
-    input.change(DataType.x16);
+    input.change(DataType(BaseType.u16, Format.hex));
     
     assert(input.data       == [ 0, 0 ]);
     assert(input.full()     == false);
@@ -863,7 +851,7 @@ unittest
     assert(input.add('5')   == false);
     assert(input.full()     == true);
     
-    input.change(DataType.d8);
+    input.change(DataType(BaseType.u8, Format.dec));
     
     assert(input.add('f')   == false);
     assert(input.add('2')   == true);
@@ -874,7 +862,7 @@ unittest
     assert(input.format     == "225");
     assert(input.data       == [ 0xe1 ]);
     
-    input.change(DataType.o8);
+    input.change(DataType(BaseType.u8, Format.oct));
     
     assert(input.add('f')   == false);
     assert(input.add('9')   == false);

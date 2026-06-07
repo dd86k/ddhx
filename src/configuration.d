@@ -27,7 +27,7 @@ struct RC
     AddressType address_type = AddressType.hex;
     
     /// Data formatting (x8, etc.)
-    DataType data_type  = DataType.x8;
+    DataType data_type  = DataType(BaseType.u8, Format.hex);
     
     /// Character set used for transcoding.
     CharacterSet charset = CharacterSet.ascii;

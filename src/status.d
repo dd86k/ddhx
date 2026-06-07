@@ -280,7 +280,7 @@ version(unittest)
     private struct TestRC
     {
         AddressType address_type = AddressType.hex;
-        DataType data_type = DataType.x8;
+        DataType data_type = DataType(BaseType.u8, Format.hex);
         CharacterSet charset = CharacterSet.ascii;
         WritingMode writemode = WritingMode.overwrite;
     }

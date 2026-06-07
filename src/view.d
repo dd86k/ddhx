@@ -2809,7 +2809,7 @@ unittest
     session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 4;
     session.position_cursor  = 2;
-    session.rc.data_type     = DataType.x8;
+    session.rc.data_type     = DataType(BaseType.u8, Format.hex);
     
     sel = selection(&session);
     assert(sel.length == 3);
@@ -2830,7 +2830,7 @@ unittest
     session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 0;
     session.position_cursor  = 2;
-    session.rc.data_type     = DataType.x16;
+    session.rc.data_type     = DataType(BaseType.u16, Format.hex);
     sel = selection(&session);
     assert(sel.length == 2);
     assert(sel.start  == 0);
@@ -2839,7 +2839,7 @@ unittest
     session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 4;
     session.position_cursor  = 2;
-    session.rc.data_type     = DataType.x16;
+    session.rc.data_type     = DataType(BaseType.u16, Format.hex);
     sel = selection(&session);
     assert(sel.length == 4);
     assert(sel.start  == 2);
