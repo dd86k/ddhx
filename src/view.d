@@ -24,6 +24,7 @@ import ddhx.document.file : FileDocument, OFlags;
 import ddhx.document.memory : MemoryDocument;
 import ddhx.editor.base : IDirtyRange, IDocumentEditor, PieceInfo;
 import ddhx.formatting;
+import ddhx.inspector;
 import ddhx.logger;
 import ddhx.platform;       // For assertion, MAXSIZE
 import ddhx.transcoder;
@@ -78,7 +79,9 @@ private enum PanelType
 {
     data,
     text,
-    //inspector,
+    inspector, // Read-only view; visibility is RC.inspector. Reserved as a
+               // focus target for future actions (e.g. scroll within panel,
+               // jump cursor to a typed value).
 }
 
 private alias command_func = void function(Session*, string[]);
@@ -310,6 +313,10 @@ immutable Command[] default_commands = [
     // Mode, panel...
     { "change-panel",               "Switch data panel",
         Key.Tab,                    &change_panel },
+    { "toggle-inspector",           "Show or hide the data inspector panel",
+        Mod.alt|Key.I,              &toggle_inspector },
+    { "toggle-endian",              "Toggle inspector endian (little/big)",
+        Mod.alt|Key.E,              &toggle_endian },
     { "change-mode",                "Change writing mode (between overwrite and insert)",
         Key.Insert,                 &change_writemode },
     // Find
@@ -2149,15 +2156,72 @@ void update(Session *session)
     if (session.rc.header) g_viewrows--;
     if (session.rc.status) g_viewrows--;
     
+    // Reserve rows for the inspector if visible and there is room.
+    // Need at least one row left for the data view.
+    int ins_h;
+    if (session.rc.inspector && g_viewrows > inspectorHeight() + 1)
+    {
+        ins_h = inspectorHeight();
+        g_viewrows -= ins_h;
+    }
+
     if (session.rc.header)
         update_header(session);
     
     update_view(session);
     
+    if (ins_h)
+        update_inspector(session, ins_h);
+    
     if (session.rc.status || g_status & UMESSAGE)
         update_status(session);
     
     g_status = 0;
+}
+
+// Render the inspector below the data view, terminal-wide.
+// Reserved height is `height` rows: one separator line + one row per type.
+void update_inspector(Session *session, int height)
+{
+    int rowdisp = session.rc.header ? 1 : 0;
+    int top = rowdisp + g_viewrows;
+
+    // Separator line across the terminal width.
+    terminalCursor(0, top);
+    terminalWriteChar('-', g_cols);
+
+    // Read up to 8 bytes from the cursor for interpretation.
+    ubyte[8] buffer = void;
+    ubyte[] bytes = session.editor.view(session.position_cursor, buffer);
+
+    import std.system : Endian;
+    Endian endian = session.rc.endian;
+    string endian_label = endian == Endian.littleEndian ? "LE" : "BE";
+
+    char[64] valbuf = void;
+    char[128] linebuf = void;
+    foreach (i, ref row; inspector_rows)
+    {
+        terminalCursor(0, top + 1 + cast(int)i);
+        string val = formatInspector(valbuf, row.type, bytes, endian);
+        // Single-byte rows ignore endian, show a blank marker for clarity.
+        string mark = byteSize(row.type) > 1 ? endian_label : "  ";
+        const(char)[] line = sformat(linebuf, "  %s %s  %s", row.label, mark, val);
+        int written = cast(int)line.length;
+        if (written > g_cols)
+        {
+            terminalWrite(line[0 .. g_cols]);
+            written = g_cols;
+        }
+        else
+        {
+            terminalWrite(line);
+        }
+        if (written < g_cols)
+            terminalWriteChar(' ', g_cols - written);
+    }
+
+    terminalFlush();
 }
 
 // Special function to update progress
@@ -3212,10 +3276,32 @@ void change_panel(Session *session, string[] args)
 {
     // First parameter could be panel name, still cycling to default
     // But honestly this is fine for now
-    
-    session.panel++;
-    if (session.panel >= PanelType.max + 1)
-        session.panel = PanelType.init;
+
+    // Skip inspector in cycle if it's not currently visible.
+    do
+    {
+        session.panel++;
+        if (session.panel >= PanelType.max + 1)
+            session.panel = PanelType.init;
+    } while (session.panel == PanelType.inspector && session.rc.inspector == false);
+}
+
+void toggle_inspector(Session *session, string[] args)
+{
+    session.rc.inspector = session.rc.inspector == false;
+    // Leave inspector focus if we just hid it.
+    if (session.rc.inspector == false && session.panel == PanelType.inspector)
+        session.panel = PanelType.data;
+    g_status |= UVIEW;
+}
+
+void toggle_endian(Session *session, string[] args)
+{
+    import std.system : Endian;
+    session.rc.endian = session.rc.endian == Endian.littleEndian
+        ? Endian.bigEndian
+        : Endian.littleEndian;
+    g_status |= UVIEW;
 }
 
 // 

@@ -6,6 +6,7 @@
 module configuration; // "config" would conflict with std.getopt.config
 
 import std.conv : text, to;
+import std.system : Endian;
 
 import ddhx.formatting;
 import ddhx.transcoder : CharacterSet, selectCharacterSet;
@@ -58,6 +59,12 @@ struct RC
     /// Enable coalescing
     bool coalescing = true;
 
+    /// Show the inspector panel below the data view.
+    bool inspector;
+
+    /// Endian used by the inspector for multi-byte interpretations.
+    Endian endian = Endian.littleEndian;
+
     /// Format string for the normal status bar.
     string status_fmt_normal = "%e %m | %t | %c | %8p";
 
@@ -80,6 +87,8 @@ private:
     bool mirror_cursor_set;
     bool highlight_zeros_set;
     bool coalescing_set;
+    bool inspector_set;
+    bool endian_set;
     bool status_fmt_normal_set;
     bool status_fmt_selection_set;
     bool status_fmt_report_set;
@@ -246,6 +255,16 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         "coalesce", "If set, edits are coalescing",
         "Boolean", `"on"`,
         &configure_coalescing
+    },
+    {
+        "inspector", "If set, show the data inspector panel below the view",
+        "Boolean", `"off"`,
+        &configure_inspector
+    },
+    {
+        "endian", "Endian used by the inspector for multi-byte values",
+        `"little" or "big" (aliases: "le", "be")`, `"little"`,
+        &configure_endian
     },
     {
         "status-format", "Normal status bar format string",
@@ -428,9 +447,31 @@ void configure_coalescing(ref RC rc, string value, bool conf = false)
 {
     if (conf && rc.coalescing_set)
         return;
-    
+
     rc.coalescing = boolean(value);
     rc.coalescing_set = true;
+}
+
+void configure_inspector(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.inspector_set)
+        return;
+
+    rc.inspector = boolean(value);
+    rc.inspector_set = true;
+}
+
+void configure_endian(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.endian_set)
+        return;
+
+    switch (value) {
+    case "little", "le": rc.endian = Endian.littleEndian; break;
+    case "big",    "be": rc.endian = Endian.bigEndian;    break;
+    default: throw new Exception(text("Unknown endian: ", value));
+    }
+    rc.endian_set = true;
 }
 
 void configure_status_fmt_normal(ref RC rc, string value, bool conf = false)
