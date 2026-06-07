@@ -11,6 +11,7 @@ module view;
 import core.stdc.stdlib : malloc, realloc, free, exit;
 
 import std.algorithm.comparison : min, max;
+import std.array : insertInPlace;
 import std.conv : text, to;
 import std.file : exists;
 import std.string; // imports format
@@ -33,6 +34,7 @@ import patterns;
 import ranges;
 import status;
 import utils;
+import core.int128;
 
 private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 
@@ -140,6 +142,10 @@ struct Session
     
     /// Active selection
     CurrentSelection selection;
+
+    /// Bookmarks, sorted by address (ascending). Inserted/removed by
+    /// the "bookmark-set" / "bookmark-unset" commands.
+    Bookmark[] bookmarks;
     
     /// Logical position at the start of the view.
     long position_view;
@@ -215,10 +221,6 @@ struct Command
 // - "hash": Hash selection with result in status
 //           Mostly checksums and digests under 256 bits.
 //           256 bits -> 32 Bytes -> 64 hex characters
-// - "bookmark-add RANGE": Add bookmark
-// - "bookmark-remove RANGE": Remove all bookmarks touched by RANGE
-// - "bookmark-next": Next bookmark
-// - "bookmark-prev": Previous bookmark
 
 // Command names
 // Because navigation keys are the most essential, they get short names.
@@ -292,6 +294,17 @@ immutable Command[] default_commands = [
         0,                          &mark },
     { "unmark",                     "End selection",
         0,                          &unmark },
+    // Bookmarks
+    { "bookmark-set",               "Add a bookmark over a range, selection, or cursor",
+        0,                          &bookmark_set },
+    { "bookmark-unset",             "Remove bookmarks overlapping a range, selection, or cursor",
+        0,                          &bookmark_unset },
+    { "bookmark-toggle",            "Set a bookmark, or unset any that overlap the target range",
+        Key.M,                      &bookmark_toggle },
+    { "bookmark-next",              "Jump to the next bookmark",
+        ']',                        &bookmark_next },
+    { "bookmark-prev",              "Jump to the previous bookmark",
+        '[',                        &bookmark_prev },
     // Mode, panel...
     { "change-panel",               "Switch data panel",
         Key.Tab,                    &change_panel },
@@ -1714,44 +1727,51 @@ struct ElementState
     bool hasData;
     bool isActiveEdit;
     bool isZero;
-    
+    bool isBookmarked;
+
     ColorScheme dataScheme(PanelType panel, bool mirror)
     {
         if (isCursor && panel == PanelType.data)
             return ColorScheme.cursor;
-        
+
         if (isSelected && (panel == PanelType.data || mirror))
             return ColorScheme.selection;
-        
+
         if (isCursor && mirror && panel != PanelType.data)
             return ColorScheme.mirror;
-        
+
+        if (isBookmarked)
+            return ColorScheme.bookmark;
+
         if (isZero)
             return ColorScheme.zero;
-        
+
         return ColorScheme.normal;
     }
-    
+
     ColorScheme textScheme(PanelType panel, bool mirror)
     {
         if (isCursor && panel == PanelType.text)
             return ColorScheme.cursor;
-        
+
         if (isSelected && (panel == PanelType.text || mirror))
             return ColorScheme.selection;
-        
+
         if (isCursor && mirror && panel != PanelType.text)
             return ColorScheme.mirror;
-        
+
+        if (isBookmarked)
+            return ColorScheme.bookmark;
+
         if (isZero)
             return ColorScheme.zero;
-        
+
         return ColorScheme.normal;
     }
 }
-ElementState getElementState(int elementIndex, int viewpos, int sl0, int sl1, 
+ElementState getElementState(int elementIndex, int viewpos, int sl0, int sl1,
                              bool selectionActive, int readlen, size_t inputIndex,
-                             bool zero)
+                             bool zero, bool bookmarked)
 {
     bool isCursor = elementIndex == viewpos;
     return ElementState(
@@ -1759,8 +1779,23 @@ ElementState getElementState(int elementIndex, int viewpos, int sl0, int sl1,
         isCursor,
         elementIndex < readlen,
         inputIndex && isCursor,
-        zero
+        zero,
+        bookmarked,
     );
+}
+
+// True if any bookmark in `bookmarks` overlaps up to byteStart+byteLen
+bool element_bookmarked(const(Bookmark)[] bookmarks, long byteStart, int byteLen)
+{
+    long byteEnd = byteStart + byteLen;
+    foreach (ref const(Bookmark) b; bookmarks)
+    {
+        if (b.address >= byteEnd) // sorted: rest is past us
+            return false;
+        if (b.address + b.length > byteStart)
+            return true;
+    }
+    return false;
 }
 
 // Render view with data on screen
@@ -1868,6 +1903,7 @@ void update_view(Session *session)
     Line line = Line(128); // init with 128 segments
     ElementText buf = void;
     bool prev_selected;
+    bool prev_bookmarked;
     size_t ci; // character index because lazy
     for (; row < erows; ++row, address += g_linesize)
     {
@@ -1886,22 +1922,32 @@ void update_view(Session *session)
             
             // Is element zero?
             bool zero = session.rc.highlight_zeros && dfmt.iszero();
-            
+            // Absolute byte range covered by this element
+            long elem_addr = address + col * data_spec.size_of;
+            // Within bookmark range
+            bool bookmarked = element_bookmarked(session.bookmarks, elem_addr, data_spec.size_of);
+
             ElementState state = getElementState(
                 elemidx, viewpos, sel_start, sel_end, session.selection.status != 0,
-                readlen, session.input.index, zero);
+                readlen, session.input.index, zero, bookmarked);
             
             ColorScheme current = state.dataScheme(panel, session.rc.mirror_cursor);
             
-            // Add spacer (before element) with scheme continuous to previous one
-            ColorScheme spacerscheme =
-                col &&                      // avoid first spacer being styled
-                state.isSelected &&         // current element selected
-                prev_selected &&            // previous element selected
-                panel == PanelType.data ?   // focused on data panel
-                ColorScheme.selection : ColorScheme.normal;
+            // Add spacer (before element) with scheme continuous to previous one.
+            // Selection wins over bookmark when both apply.
+            ColorScheme spacerscheme = ColorScheme.normal;
+            if (col)
+            {
+                bool sel_run = state.isSelected && prev_selected &&
+                    panel == PanelType.data;
+                if (sel_run)
+                    spacerscheme = ColorScheme.selection;
+                else if (state.isBookmarked && prev_bookmarked)
+                    spacerscheme = ColorScheme.bookmark;
+            }
             chars += line.add(" ", spacerscheme);
             prev_selected = state.isSelected;
+            prev_bookmarked = state.isBookmarked;
             
             // Add data text
             string data = state.isActiveEdit ? session.input.format : dfmt.textual(buf);
@@ -1943,10 +1989,14 @@ void update_view(Session *session)
             
             // Is element zero?
             bool zero = session.rc.highlight_zeros && ci < result.length ? result[ci] == 0 : false;
-            
+
+            // Absolute byte address for this text byte
+            long byte_addr = address + idx;
+            bool bookmarked = element_bookmarked(session.bookmarks, byte_addr, 1);
+
             // Calculate element state
             ElementState state = getElementState(elementIndex, viewpos, sel_start, sel_end,
-                                                session.selection.status != 0, readlen, session.input.index, zero);
+                                                session.selection.status != 0, readlen, session.input.index, zero, bookmarked);
             
             // Get color scheme for this element in text panel
             ColorScheme scheme = state.textScheme(panel, session.rc.mirror_cursor);
@@ -2926,6 +2976,181 @@ void mark(Session *session, string[] args)
 void unmark(Session *session, string[] args)
 {
     session.selection.status &= ~SELECT_ONGOING;
+}
+
+//
+// Bookmarks
+//
+// Bookmarks are stored byte-precise (address + length), but the data panel
+// paints them at element granularity: when any byte of an element intersects
+// a bookmark, the whole element is colored. The text panel iterates per byte
+// and shows the precise extent. Sub-element painting in the data panel would
+// only be clean for hex types (fixed chars per byte); decimal/octal/signed
+// formats have no fixed byte<->character mapping.
+
+/// A single bookmarked region in the document.
+struct Bookmark
+{
+    long address;   /// Start address (inclusive)
+    long length;    /// Length in bytes (>= 1)
+}
+
+// Get a bookmark by range, assumed from the session:
+// First args, then selection, and finally just at the cursor position
+Bookmark bookmark_range(Session *session, string[] args)
+{
+    if (args.length > 0)
+    {
+        Range r = askrange(args, 0, "Range: ");
+        return Bookmark(r.start, r.length);
+    }
+
+    Selection sel = selection(session);
+    if (sel.length)
+        return Bookmark(sel.start, sel.length);
+
+    // Bookmark an element entirely, looks weird otherwise
+    return Bookmark(session.position_cursor, size_of(session.rc.data_type));
+}
+
+// Sorted insert by address. Skip exact duplicates (same address+length).
+void bookmark_insert(Session *session, Bookmark b)
+{
+    // Could have used sorter but this is by address, *this* is the sorter
+    size_t i;
+    while (i < session.bookmarks.length && session.bookmarks[i].address < b.address)
+        ++i;
+
+    // Skip exact duplicate at the insertion site
+    if (i < session.bookmarks.length &&
+        session.bookmarks[i].address == b.address &&
+        session.bookmarks[i].length  == b.length)
+        return;
+
+    session.bookmarks.insertInPlace(i, b);
+}
+
+// Add a bookmark covering args/selection/cursor.
+void bookmark_set(Session *session, string[] args)
+{
+    Bookmark bk = bookmark_range(session, args);
+    if (bk.length <= 0)
+        throw new Exception("Bookmark length must be positive");
+
+    bookmark_insert(session, bk);
+    g_status |= UVIEW | USTATUS;
+    message("Bookmark set at 0x%x (%d byte%s)", bk.address, bk.length, bk.length == 1 ? "" : "s");
+}
+
+// True if any bookmark overlaps [start, start+length).
+bool bookmark_overlaps(Session *session, long start, long length)
+{
+    long end = start + length;
+    foreach (ref Bookmark b; session.bookmarks)
+    {
+        long b_end = b.address + b.length;
+        if (b_end > start && b.address < end)
+            return true;
+    }
+    return false;
+}
+
+// Jump cursor to the first bookmark whose address > current cursor.
+// Wraps to the first bookmark if none found ahead.
+void bookmark_next(Session *session, string[] args)
+{
+    if (session.bookmarks.length == 0)
+        throw new Exception("No bookmarks");
+
+    long cur = session.position_cursor;
+    foreach (ref Bookmark b; session.bookmarks)
+    {
+        if (b.address > cur)
+        {
+            moveabs(session, b.address);
+            message("Bookmark at 0x%x", b.address);
+            return;
+        }
+    }
+
+    // Wrap
+    Bookmark first = session.bookmarks[0];
+    moveabs(session, first.address);
+    message("Bookmark at 0x%x (wrapped)", first.address);
+}
+
+// Jump cursor to the last bookmark whose address < current cursor.
+// Wraps to the last bookmark if none found behind.
+void bookmark_prev(Session *session, string[] args)
+{
+    if (session.bookmarks.length == 0)
+        throw new Exception("No bookmarks");
+
+    long cur = session.position_cursor;
+    foreach_reverse (ref Bookmark b; session.bookmarks)
+    {
+        if (b.address < cur)
+        {
+            moveabs(session, b.address);
+            message("Bookmark at 0x%x", b.address);
+            return;
+        }
+    }
+
+    // Wrap
+    Bookmark last = session.bookmarks[$ - 1];
+    moveabs(session, last.address);
+    message("Bookmark at 0x%x (wrapped)", last.address);
+}
+
+// Toggle: unset overlapping bookmarks if any, otherwise set one.
+void bookmark_toggle(Session *session, string[] args)
+{
+    Bookmark bk = bookmark_range(session, args);
+
+    if (bk.length <= 0)
+        throw new Exception("Range length must be positive");
+
+    if (bookmark_overlaps(session, bk.address, bk.length))
+        bookmark_unset(session, args);
+    else
+        bookmark_set(session, args);
+}
+
+// Remove every bookmark whose range overlaps args/selection/cursor.
+void bookmark_unset(Session *session, string[] args)
+{
+    Bookmark bk = bookmark_range(session, args);
+
+    if (bk.length <= 0)
+        throw new Exception("Range length must be positive");
+
+    long end = bk.address + bk.length; // exclusive
+
+    size_t removed;
+    size_t i;
+    while (i < session.bookmarks.length)
+    {
+        Bookmark b = session.bookmarks[i];
+        long b_end = b.address + b.length; // exclusive
+        // Overlap test: !(b_end <= start || b.address >= end)
+        if (b_end > bk.address && b.address < end)
+        {
+            session.bookmarks = session.bookmarks[0..i] ~ session.bookmarks[i+1..$];
+            ++removed;
+            continue;
+        }
+        ++i;
+    }
+
+    if (removed == 0)
+    {
+        message("No bookmark in range");
+        return;
+    }
+
+    g_status |= UVIEW | USTATUS;
+    message("Removed %d bookmark%s", removed, removed == 1 ? "" : "s");
 }
 
 //

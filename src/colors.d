@@ -25,11 +25,11 @@ enum ColorScheme
     selection,
     mirror,
     zero,
+    bookmark,
     // The following are just future ideas
     //modified,   // edited data
     //address,    // layout: address/offset
     //constant,   // layout: known constant value
-    //bookmark,
     //search,     // search result (could otherwise be "highlighted" or just selection)
     //diff_added,     // 
     //diff_removed,   // 
@@ -46,6 +46,7 @@ ColorScheme getScheme(string name)
     case "selection":   return ColorScheme.selection;
     case "mirror":      return ColorScheme.mirror;
     case "zero":        return ColorScheme.zero;
+    case "bookmark":    return ColorScheme.bookmark;
     default:
         throw new Exception(text("Unknown scheme: ", name));
     }
@@ -171,7 +172,10 @@ struct ColorMapper
     enum ColorMap DEFAULT_SELECTION = ColorMap(COLORMAP_INVERTED);
     enum ColorMap DEFAULT_MIRROR    = ColorMap(0, Nullable!TermColor.init, Nullable!TermColor(TermColor.red));
     enum ColorMap DEFAULT_ZERO      = ColorMap(0, Nullable!TermColor(TermColor.gray));
-    
+    enum ColorMap DEFAULT_BOOKMARK  = ColorMap(0,
+        Nullable!TermColor(TermColor.black),
+        Nullable!TermColor(TermColor.yellow));
+
     // Initial color specifications
     private
     ColorMap[SCHEMES] maps = [
@@ -180,6 +184,7 @@ struct ColorMapper
         DEFAULT_SELECTION,
         DEFAULT_MIRROR,
         DEFAULT_ZERO,
+        DEFAULT_BOOKMARK,
     ];
     static assert(maps.length == SCHEMES);
     // Defaults
@@ -190,6 +195,7 @@ struct ColorMapper
         DEFAULT_SELECTION,
         DEFAULT_MIRROR,
         DEFAULT_ZERO,
+        DEFAULT_BOOKMARK,
     ];
     static assert(defaults.length == SCHEMES);
     
