@@ -49,6 +49,7 @@ string writingModeToString(WritingMode mode)
 // Address specifications
 //
 
+// TODO: re-use enum Format for Address
 /// Address type used for displaying offsets.
 enum AddressType // short names to avoid name conflicts
 {
@@ -164,43 +165,175 @@ unittest
 // Data handling
 //
 
-/// Data representation.
-enum DataType
+/// Underlying interpretation of the raw bytes (size + signedness/float).
+enum BaseType : ubyte
 {
-    x8,     /// 8-bit hexadecimal (e.g., 0xff -> ff)
-    x16,    /// 16-bit hexadecimal
-    x32,    /// 32-bit hexadecimal
-    d8,     /// 8-bit unsigned decimal (0xff -> 255)
-    d16,    /// 16-bit unsigned decimal
-    d32,    /// 32-bit unsigned decimal
-    o8,     /// 8-bit unsigned octal (0xff -> 377)
-    o16,    /// 16-bit unsigned octal
-    o32,    /// 32-bit unsigned octal
+    u8,     /// 8-bit unsigned integer.
+    u16,    /// 16-bit unsigned integer.
+    u32,    /// 32-bit unsigned integer.
 }
-/// Data type count.
-enum TYPES = EnumMembers!DataType.length;
 
-// Connects data types to definitions
-private immutable static DataSpec[] data_specs = [
-    // hex
-    { DataType.x8,  DataType.x8.stringof,   "%0*x", 2,  ubyte.sizeof },
-    { DataType.x16, DataType.x16.stringof,  "%0*x", 4,  ushort.sizeof },
-    { DataType.x32, DataType.x32.stringof,  "%0*x", 8,  uint.sizeof },
-    // dec
-    { DataType.d8,  DataType.d8.stringof,   "%0*d", 3,  ubyte.sizeof },
-    { DataType.d16, DataType.d16.stringof,  "%0*d", 5,  ushort.sizeof },
-    { DataType.d32, DataType.d32.stringof,  "%0*d", 10, uint.sizeof },
-    // oct
-    { DataType.o8,  DataType.o8.stringof,   "%0*o", 3,  ubyte.sizeof },
-    { DataType.o16, DataType.o16.stringof,  "%0*o", 6,  ushort.sizeof },
-    { DataType.o32, DataType.o32.stringof,  "%0*o", 11, uint.sizeof },
+/// How a value is rendered for display and parsing.
+enum Format : ubyte
+{
+    hex,    /// Hexadecimal digits.
+    dec,    /// Unsigned decimal digits.
+    oct,    /// Unsigned octal digits.
+}
+
+// Size in bytes per base type, indexed by BaseType.
+private immutable static int[] base_sizes = [
+    ubyte.sizeof,
+    ushort.sizeof,
+    uint.sizeof,
 ];
+
+// printf-family conversion character per format, indexed by Format.
+private immutable static char[] format_chars = [ 'x', 'd', 'o' ];
+
+// Precomputed printf-family format specifier per format, indexed by Format.
+private immutable static string[] format_specs = [ "%0*x", "%0*d", "%0*o" ];
+
+// Maximum display width in characters for (base, format).
+// Rows: BaseType (u8, u16, u32); Cols: Format (hex, dec, oct).
+private immutable static int[3][3] spacing_table = [
+    [  2,  3,  3 ], // u8:  ff,        255,        377
+    [  4,  5,  6 ], // u16: ffff,      65535,      177777
+    [  8, 10, 11 ], // u32: ffffffff,  4294967295, 37777777777
+];
+
+/// Size in bytes of a base type.
+int size_of(BaseType base)
+{
+    size_t i = cast(size_t)base;
+    version (D_NoBoundsChecks)
+        assertion(i < base_sizes.length, "size_of(BaseType): OOB");
+    return base_sizes[i];
+}
+
+/// Maximum display width in characters for the (base, format) pair.
+int spacing_of(BaseType base, Format format)
+{
+    size_t b = cast(size_t)base, f = cast(size_t)format;
+    version (D_NoBoundsChecks)
+    {
+        assertion(b < spacing_table.length, "spacing_of: base OOB");
+        assertion(f < spacing_table[0].length, "spacing_of: format OOB");
+    }
+    return spacing_table[b][f];
+}
+
+/// Whether the (base, format) pair is meaningful.
+///
+/// Currently all integer bases accept all integer formats, so every pair is
+/// valid. Float and char formats will narrow this when those land.
+bool valid(BaseType base, Format format)
+{
+    return true;
+}
+
+/// Data representation: a (base, format) pair.
+///
+/// Named manifest constants (x8, d16, o32, ...) match the legacy DataType
+/// enum members so callers using `DataType.x8` keep compiling.
+struct DataType
+{
+    BaseType base;
+    Format format;
+
+    /// 8-bit hexadecimal (e.g., 0xff -> ff)
+    enum DataType x8  = DataType(BaseType.u8,  Format.hex);
+    /// 16-bit hexadecimal
+    enum DataType x16 = DataType(BaseType.u16, Format.hex);
+    /// 32-bit hexadecimal
+    enum DataType x32 = DataType(BaseType.u32, Format.hex);
+    /// 8-bit unsigned decimal (0xff -> 255)
+    enum DataType d8  = DataType(BaseType.u8,  Format.dec);
+    /// 16-bit unsigned decimal
+    enum DataType d16 = DataType(BaseType.u16, Format.dec);
+    /// 32-bit unsigned decimal
+    enum DataType d32 = DataType(BaseType.u32, Format.dec);
+    /// 8-bit unsigned octal (0xff -> 377)
+    enum DataType o8  = DataType(BaseType.u8,  Format.oct);
+    /// 16-bit unsigned octal
+    enum DataType o16 = DataType(BaseType.u16, Format.oct);
+    /// 32-bit unsigned octal
+    enum DataType o32 = DataType(BaseType.u32, Format.oct);
+}
+/// Data type count (legacy preset count).
+enum TYPES = type_pairs.length;
+
+// Legacy DataType -> (BaseType, Format) mapping. Order matches DataType.
+private struct TypePair { BaseType base; Format format; }
+private immutable static TypePair[] type_pairs = [
+    { BaseType.u8,  Format.hex }, // x8
+    { BaseType.u16, Format.hex }, // x16
+    { BaseType.u32, Format.hex }, // x32
+    { BaseType.u8,  Format.dec }, // d8
+    { BaseType.u16, Format.dec }, // d16
+    { BaseType.u32, Format.dec }, // d32
+    { BaseType.u8,  Format.oct }, // o8
+    { BaseType.u16, Format.oct }, // o16
+    { BaseType.u32, Format.oct }, // o32
+];
+// Stringified legacy DataType names, indexed alongside type_pairs.
+private immutable static string[] type_names = [
+    DataType.x8.stringof,  DataType.x16.stringof, DataType.x32.stringof,
+    DataType.d8.stringof,  DataType.d16.stringof, DataType.d32.stringof,
+    DataType.o8.stringof,  DataType.o16.stringof, DataType.o32.stringof,
+];
+// Connects data types to definitions, composed at compile time from the
+// (base, format) pair table above.
+private immutable static DataSpec[] data_specs = () {
+    DataSpec[] r;
+    foreach (i, ref p; type_pairs)
+    {
+        DataSpec s;
+        s.type    = DataType(p.base, p.format);
+        s.name    = type_names[i];
+        s.base    = p.base;
+        s.format  = p.format;
+        s.size_of = base_sizes[cast(size_t)p.base];
+        s.spacing = spacing_table[cast(size_t)p.base][cast(size_t)p.format];
+        s.fmtspec = format_specs[cast(size_t)p.format];
+        r ~= s;
+    }
+    return r;
+}();
 unittest
 {
-    // Check array aligns with DataType members
-    foreach (i, type; EnumMembers!DataType)
+    // Check each spec round-trips through DataType.
+    foreach (i, ref p; type_pairs)
     {
-        assert(type == data_specs[i].type);
+        DataType t = DataType(p.base, p.format);
+        assert(data_specs[i].type == t);
+        assert(data_specs[i].base == p.base);
+        assert(data_specs[i].format == p.format);
+    }
+}
+unittest
+{
+    // Lock the (BaseType, Format) tables against the composed data_specs
+    // entries so future edits cannot silently drift sizes or widths.
+    static struct Pair { DataType d; BaseType b; Format f; }
+    immutable Pair[] pairs = [
+        { DataType.x8,  BaseType.u8,  Format.hex },
+        { DataType.x16, BaseType.u16, Format.hex },
+        { DataType.x32, BaseType.u32, Format.hex },
+        { DataType.d8,  BaseType.u8,  Format.dec },
+        { DataType.d16, BaseType.u16, Format.dec },
+        { DataType.d32, BaseType.u32, Format.dec },
+        { DataType.o8,  BaseType.u8,  Format.oct },
+        { DataType.o16, BaseType.u16, Format.oct },
+        { DataType.o32, BaseType.u32, Format.oct },
+    ];
+    foreach (ref p; pairs)
+    {
+        DataSpec legacy = selectDataSpec(p.d);
+        assert(size_of(p.b)             == legacy.size_of);
+        assert(spacing_of(p.b, p.f)     == legacy.spacing);
+        assert(format_chars[p.f]        == legacy.fmtspec[$ - 1]);
+        assert(valid(p.b, p.f));
     }
 }
 
@@ -214,21 +347,17 @@ DataType selectDataType(string type)
     }
     throw new Exception("Unknown data type");
 }
-// data type enum -> data specifications
+// data type -> data specifications, composed from the (base, format) pair.
 DataSpec selectDataSpec(DataType type)
 {
-    size_t i = cast(size_t)type;
-    version (D_NoBoundsChecks)
-    {
-        assertion(i < data_specs.length, "selectDataSpec: OOB");
-    }
-    return data_specs[i];
+    return makeSpec(type.base, type.format);
 }
 unittest
 {
-    foreach (i, type; EnumMembers!DataType)
+    foreach (i, ref p; type_pairs)
     {
-        assert(selectDataSpec(type).type == data_specs[i].type);
+        DataType t = DataType(p.base, p.format);
+        assert(selectDataSpec(t).type == data_specs[i].type);
     }
 }
 
@@ -237,12 +366,7 @@ unittest
 // Mostly used by view module.
 int size_of(DataType type)
 {
-    size_t i = cast(size_t)type;
-    version (D_NoBoundsChecks)
-    {
-        assertion(i < data_specs.length, "size_of: OOB");
-    }
-    return data_specs[i].size_of;
+    return size_of(type.base);
 }
 unittest
 {
@@ -255,12 +379,7 @@ unittest
 // Cheap function used by view module.
 int spacing_of(DataType type)
 {
-    size_t i = cast(size_t)type;
-    version (D_NoBoundsChecks)
-    {
-        assertion(i < data_specs.length, "spacing_of: OOB");
-    }
-    return data_specs[i].spacing;
+    return spacing_of(type.base, type.format);
 }
 
 // Given the data type (hex, dec, oct) return the value
@@ -363,16 +482,16 @@ union Element
         if (stripped.length == 0)
             return false;
 
-        try final switch (type) {
-        case DataType.x8:   u8  = to!ubyte(stripped, 16); return true;
-        case DataType.x16:  u16 = to!ushort(stripped, 16); return true;
-        case DataType.x32:  u32 = to!uint(stripped, 16); return true;
-        case DataType.d8:   u8  = to!ubyte(stripped, 10); return true;
-        case DataType.d16:  u16 = to!ushort(stripped, 10); return true;
-        case DataType.d32:  u32 = to!uint(stripped, 10); return true;
-        case DataType.o8:   u8  = to!ubyte(stripped, 8); return true;
-        case DataType.o16:  u16 = to!ushort(stripped, 8); return true;
-        case DataType.o32:  u32 = to!uint(stripped, 8); return true;
+        uint radix;
+        final switch (spec.format) {
+        case Format.hex: radix = 16; break;
+        case Format.dec: radix = 10; break;
+        case Format.oct: radix = 8;  break;
+        }
+        try final switch (spec.base) {
+        case BaseType.u8:  u8  = to!ubyte (stripped, radix); return true;
+        case BaseType.u16: u16 = to!ushort(stripped, radix); return true;
+        case BaseType.u32: u32 = to!uint  (stripped, radix); return true;
         }
         catch (Exception ex) {}
         return false;
@@ -431,6 +550,36 @@ struct DataSpec
     int spacing;
     /// Size of data type in bytes.
     int size_of; // Avoids conflict with .sizeof
+    /// Underlying base interpretation.
+    BaseType base;
+    /// Display/parse format.
+    Format format;
+}
+
+/// Build a DataSpec from a (base, format) pair.
+///
+/// `type` is populated when the pair matches one of the named DataType
+/// presets, otherwise left at its `.init` value.
+DataSpec makeSpec(BaseType base, Format format)
+{
+    assert(valid(base, format), "makeSpec: invalid (base, format) pair");
+    DataSpec s;
+    s.base    = base;
+    s.format  = format;
+    s.size_of = size_of(base);
+    s.spacing = spacing_of(base, format);
+    s.fmtspec = format_specs[cast(size_t)format];
+    // Best-effort back-map to a legacy DataType for callers still keyed on it.
+    foreach (i, ref p; type_pairs)
+    {
+        if (p.base == base && p.format == format)
+        {
+            s.type = DataType(base, format);
+            s.name = type_names[i];
+            break;
+        }
+    }
+    return s;
 }
 
 /// Get label for this data type.
@@ -438,17 +587,12 @@ struct DataSpec
 /// Returns: Label.
 string dataTypeToString(DataType type) // Only used in statusbar code
 {
-    final switch (type) {
-    case DataType.x8:   return DataType.x8.stringof;
-    case DataType.x16:  return DataType.x16.stringof;
-    case DataType.x32:  return DataType.x32.stringof;
-    case DataType.d8:   return DataType.d8.stringof;
-    case DataType.d16:  return DataType.d16.stringof;
-    case DataType.d32:  return DataType.d32.stringof;
-    case DataType.o8:   return DataType.o8.stringof;
-    case DataType.o16:  return DataType.o16.stringof;
-    case DataType.o32:  return DataType.o32.stringof;
+    foreach (i, ref p; type_pairs)
+    {
+        if (p.base == type.base && p.format == type.format)
+            return type_names[i];
     }
+    return null; // unnamed (base, format) combination
 }
 unittest
 {
@@ -479,51 +623,39 @@ struct DataFormatter
         if (i >= size)
             return cast(string)sformat(buf, "%*s", spec.spacing, "");
         
-        final switch (spec.type) {
-        case DataType.x8:
-        case DataType.d8:
-        case DataType.o8:
+        final switch (spec.base) {
+        case BaseType.u8:
             ubyte v = *cast(ubyte*)(buffer + i);
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
-        case DataType.x16:
-        case DataType.d16:
-        case DataType.o16:
+        case BaseType.u16:
             ushort v;
             ptrdiff_t left = size - i;
             memcpy(&v, buffer + i, left >= ushort.sizeof ? ushort.sizeof : left);
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
-        case DataType.x32:
-        case DataType.d32:
-        case DataType.o32:
+        case BaseType.u32:
             uint v;
             ptrdiff_t left = size - i;
             memcpy(&v, buffer + i, left >= uint.sizeof ? uint.sizeof : left);
             return cast(string)sformat(buf, spec.fmtspec, spec.spacing, v);
         }
     }
-    
-    // 
+
+    //
     bool iszero()
     {
         if (i >= size)
             return false;
-        
+
         // lazy lol
-        final switch (spec.type) {
-        case DataType.x8:
-        case DataType.d8:
-        case DataType.o8:
+        final switch (spec.base) {
+        case BaseType.u8:
             return *cast(ubyte*)(buffer + i) == 0;
-        case DataType.x16:
-        case DataType.d16:
-        case DataType.o16:
+        case BaseType.u16:
             ushort v;
             ptrdiff_t left = size - i;
             memcpy(&v, buffer + i, left >= ushort.sizeof ? ushort.sizeof : left);
             return v == 0;
-        case DataType.x32:
-        case DataType.d32:
-        case DataType.o32:
+        case BaseType.u32:
             uint v;
             ptrdiff_t left = size - i;
             memcpy(&v, buffer + i, left >= uint.sizeof ? uint.sizeof : left);
@@ -599,14 +731,14 @@ class InputFormatter
     // Validate character is valid for current DataType
     bool validate(char character)
     {
-        final switch (spec.type) {
-        case DataType.x8, DataType.x16, DataType.x32:
+        final switch (spec.format) {
+        case Format.hex:
             if (keydata_hex(character) < 0) return false;
             break;
-        case DataType.d8, DataType.d16, DataType.d32:
+        case Format.dec:
             if (keydata_dec(character) < 0) return false;
             break;
-        case DataType.o8, DataType.o16, DataType.o32:
+        case Format.oct:
             if (keydata_oct(character) < 0) return false;
             break;
         }
@@ -639,15 +771,15 @@ class InputFormatter
     // Used for digit mode
     string formatRaw(char[] buf, const(void)* raw, size_t len)
     {
-        final switch (spec.type) {
-        case DataType.x8, DataType.d8, DataType.o8:
+        final switch (spec.base) {
+        case BaseType.u8:
             ubyte v = *cast(ubyte*) raw;
             return cast(string) sformat(buf, spec.fmtspec, spec.spacing, v);
-        case DataType.x16, DataType.d16, DataType.o16:
+        case BaseType.u16:
             ushort v;
             memcpy(&v, raw, len >= ushort.sizeof ? ushort.sizeof : len);
             return cast(string) sformat(buf, spec.fmtspec, spec.spacing, v);
-        case DataType.x32, DataType.d32, DataType.o32:
+        case BaseType.u32:
             uint v;
             memcpy(&v, raw, len >= uint.sizeof ? uint.sizeof : len);
             return cast(string) sformat(buf, spec.fmtspec, spec.spacing, v);
