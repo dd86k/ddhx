@@ -2825,7 +2825,7 @@ void neselect(Session *session, long start, long end)
 {
     session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = start;
-    session.position_cursor  = end;
+    moveabs(session, end);
 }
 
 // Force unselection
