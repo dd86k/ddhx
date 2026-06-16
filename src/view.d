@@ -3128,6 +3128,8 @@ void bookmark_next(Session *session, string[] args)
     if (session.bookmarks.length == 0)
         throw new Exception("No bookmarks");
 
+    unselect(session); // Navigation, unselect
+
     long cur = session.position_cursor;
     foreach (ref Bookmark b; session.bookmarks)
     {
@@ -3151,6 +3153,8 @@ void bookmark_prev(Session *session, string[] args)
 {
     if (session.bookmarks.length == 0)
         throw new Exception("No bookmarks");
+
+    unselect(session); // Navigation, unselect
 
     long cur = session.position_cursor;
     foreach_reverse (ref Bookmark b; session.bookmarks)
