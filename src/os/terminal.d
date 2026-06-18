@@ -826,7 +826,12 @@ void terminalInvertColor()
 {
     version (Windows)
     {
-        SetConsoleTextAttribute(hOut, oldAttr | COMMON_LVB_REVERSE_VIDEO);
+        // NOTE: COMMON_LVB_REVERSE_VIDEO
+        //       While it works for conhost on Windows 10 and later, this flag is a CJK-only
+        //       feature before 10.
+        //       The weird bonus is a slight render speed bonus of ~0.5 ms.
+        //       (maybe the flag peeks and pokes attributes itself...)
+        SetConsoleTextAttribute(hOut, cast(ubyte)(oldAttr << 4 | oldAttr >> 4));
     }
     else version (Posix)
     {
