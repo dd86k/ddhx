@@ -310,6 +310,12 @@ immutable Command[] default_commands = [
         ']',                        &bookmark_next },
     { "bookmark-prev",              "Jump to the previous bookmark",
         '[',                        &bookmark_prev },
+    { "bookmark-clear",             "Clear list of bookmarks",
+        0,                          &bookmark_clear },
+    { "bookmark-save",              "Save bookmarks to a file",
+        0,                          &bookmark_save },
+    { "bookmark-load",              "Load bookmarks from a file",
+        0,                          &bookmark_load },
     // Mode, panel...
     { "change-panel",               "Switch data panel",
         Key.Tab,                    &change_panel },
@@ -575,7 +581,7 @@ Session* create_session(IDocumentEditor editor, ref RC rc, string path)
     return session;
 }
 
-void start_session(Session *session, string initmsg)
+void start_session(Session *session, string initmsg, string bookmarks_file = null)
 {
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
     terminalClear(); // alt buffers usually clears, except on framebuffers (e.g., fbcon)
@@ -593,6 +599,16 @@ void start_session(Session *session, string initmsg)
     
     message(initmsg);
     
+    if (bookmarks_file)
+    {
+        try bookmark_load(session, [ bookmarks_file ]);
+        catch (Exception ex)
+        {
+            log("%s", ex);
+            message("bookmarks: %s", ex.msg);
+        }
+    }
+
     loop(g_session);
     
     terminalRestore();
@@ -3221,6 +3237,105 @@ void bookmark_unset(Session *session, string[] args)
 
     g_status |= UVIEW | USTATUS;
     message("Removed %d bookmark%s", removed, removed == 1 ? "" : "s");
+}
+
+// Clear bookmark list
+void bookmark_clear(Session *session, string[] args)
+{
+    session.bookmarks.length = 0;
+    session.bookmarks = null;
+}
+
+// Save bookmarks to a text file: one bookmark per line as "0xADDR LENGTH".
+// Lines starting with '#' and blank lines are ignored on load.
+void bookmark_save(Session *session, string[] args)
+{
+    import std.stdio : File;
+
+    if (session.bookmarks.length == 0)
+        throw new Exception("No bookmarks to save");
+
+    string path = askstring(args, 0, "Save bookmarks to: ");
+
+    File f = File(path, "w"); // Overwrite
+    f.writeln("# ddhx bookmarks");
+    foreach (ref Bookmark b; session.bookmarks)
+        f.writefln("0x%x\t%d", b.address, b.length);
+    f.close();
+
+    message("Bookmarks saved");
+}
+
+// indexOf but considers whitespace
+// returns index of first whitespace character or -1 if not found
+ptrdiff_t indexOfSpace(string input) @safe pure
+{
+    foreach (i, c ; input)
+    {
+        import std.uni : isWhite;
+        if (isWhite(c))
+            return i;
+    }
+    return -1;
+}
+unittest
+{
+    assert(indexOfSpace("a b") == 1);
+    assert(indexOfSpace("ab")  == -1);
+    assert(indexOfSpace("a\tb")== 1);
+}
+
+// Load bookmarks from a file produced by bookmark-save (or compatible).
+// Each non-comment line: "<address> <length>" with address in hex (0x...) or
+// decimal, length in decimal. Loaded entries are merged with existing ones.
+void bookmark_load(Session *session, string[] args)
+{
+    import std.stdio : File;
+    import std.string : strip, stripLeft, split;
+    import std.conv : parse, ConvException;
+    import std.string : indexOf;
+
+    string path = askstring(args, 0, "Load bookmarks from: ");
+
+    File f = File(path, "rt"); // text-mode just in case windows user hand-writes one
+
+    size_t lineno;
+    foreach (raw; f.byLine())
+    {
+        ++lineno;
+        string line = strip(cast(string)raw);
+        if (line.length == 0 || line[0] == '#')
+            continue;
+
+        // std.array.split uses appender thus is GC-bound
+        // Right now, bookmarks only use integers, so no string copies needed
+        ptrdiff_t sepi = indexOfSpace(line);
+        if (sepi <= 0)
+            throw new Exception(text("Bookmark: line ", lineno, ": expected '<address> <length>'"));
+        
+        string straddr = line[0..sepi];
+        string strlent = stripLeft(line[sepi..$]);
+
+        Bookmark bk;
+        try
+        {
+            import utils : scan;
+            bk.address = scan(straddr);
+            bk.length  = parse!long(strlent);
+        }
+        catch (ConvException e)
+        {
+            throw new Exception(text("Bookmark: line ", lineno, ": ", e.msg));
+        }
+
+        if (bk.address < 0 || bk.length <= 0)
+            throw new Exception(text("Bookmark: line ", lineno, ": invalid address or length"));
+
+        bookmark_insert(session, bk);
+    }
+
+    g_status |= UVIEW | USTATUS;
+    message("Bookmarks loaded");
 }
 
 //

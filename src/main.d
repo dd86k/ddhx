@@ -156,6 +156,7 @@ void main(string[] args)
     RC rc;
     string orc; /// Use this rc file instead
     bool onorc; /// Do not use rc file if it exists, force defaults
+    string bookmarks_file; /// Bookmarks file to load on startup
     GetoptResult res = void;
     try
     {
@@ -209,6 +210,7 @@ void main(string[] args)
             },
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,
+        "bookmarks",    "Load bookmarks from a file on startup", &bookmarks_file,
         //
         // Pages
         //
@@ -367,7 +369,7 @@ void main(string[] args)
     log(`initmsg="%s"`, initmsg);
     assert(initmsg, "Forgot initmsg?");
     
-    try start_session(session, initmsg);
+    try start_session(session, initmsg, bookmarks_file);
     catch (Exception ex)
     {
         writeln(); // if cursor was at some weird place, start at newline
