@@ -14,15 +14,16 @@ import std.algorithm.comparison : min, max;
 import std.array : insertInPlace;
 import std.conv : text, to;
 import std.file : exists;
-import std.string; // imports format
-import std.traits : EnumMembers;
+import std.process : environment;
+import std.stdio : File;
+import std.format : format, sformat;
 
 import os.terminal;
 
 import ddhx.document.base : IDocument;
 import ddhx.document.file : FileDocument, OFlags;
 import ddhx.document.memory : MemoryDocument;
-import ddhx.editor.base : IDirtyRange, IDocumentEditor, PieceInfo;
+import ddhx.editor.base : IDocumentEditor, PieceInfo;
 import ddhx.formatting;
 import ddhx.inspector;
 import ddhx.logger;
@@ -441,7 +442,6 @@ void initdefaults()
         case "dump":
             string target = args.length > 1 ? args[1] : "ddhx_dump.txt";
             
-            import std.stdio : File;
             import std.datetime : Clock;
             import ddhx.platform : TARGET_ENV, TARGET_OS, TARGET_PLATFORM;
             File file; // Old LDC opAssign bug might resurface, idk
@@ -920,7 +920,6 @@ void save_to_file(IDocumentEditor editor, string target)
     assertion(target != null,    "target is NULL");
     assertion(target.length > 0, "target is EMPTY");
     
-    import std.stdio : File;
     import std.path : baseName, dirName, buildPath;
     import std.file : rename, exists, getAttributes, setAttributes, remove;
     import os.file : availableDiskSpace;
@@ -3250,8 +3249,6 @@ void bookmark_clear(Session *session, string[] args)
 // Lines starting with '#' and blank lines are ignored on load.
 void bookmark_save(Session *session, string[] args)
 {
-    import std.stdio : File;
-
     if (session.bookmarks.length == 0)
         throw new Exception("No bookmarks to save");
 
@@ -3290,10 +3287,8 @@ unittest
 // decimal, length in decimal. Loaded entries are merged with existing ones.
 void bookmark_load(Session *session, string[] args)
 {
-    import std.stdio : File;
-    import std.string : strip, stripLeft, split;
+    import std.string : strip, stripLeft;
     import std.conv : parse, ConvException;
-    import std.string : indexOf;
 
     string path = askstring(args, 0, "Load bookmarks from: ");
 
@@ -3319,7 +3314,6 @@ void bookmark_load(Session *session, string[] args)
         Bookmark bk;
         try
         {
-            import utils : scan;
             bk.address = scan(straddr);
             bk.length  = parse!long(strlent);
         }
@@ -3605,7 +3599,6 @@ void export_range(Session *session, string[] args)
         }
     }
     
-    import std.stdio : File;
     File output = File(name, "w");
     
     // Re-using search alloc func because lazy
@@ -4016,7 +4009,6 @@ void save(Session *session, string[] args)
     try
     {
         // Fallback environment variable
-        import std.process : environment;
         if (environment.get("DDHX_NO_INPLACE_SAVE") == "1")
             goto Lfallback;
         
@@ -4129,6 +4121,8 @@ void color(Session *session, string[] args)
 {
     if (args.length < 1)
         throw new Exception("Missing scheme");
+    
+    import std.traits : EnumMembers;
     
     if (args[0] == "reset") // reset all
     {
