@@ -1,7 +1,7 @@
 .\" ddhx - modal hex editor
 .\" Copyright (c) 2017-2026 dd86k <dd@dax.moe>
 .\" MIT License
-.TH DDHX 1 "2026-05-21" "ddhx 0.9.3" "User Commands"
+.TH DDHX 1 "2026-06-19" "ddhx 0.10.0" "User Commands"
 .
 .SH NAME
 ddhx \- modal TUI hex editor
@@ -43,6 +43,12 @@ Multiple charset representations: ascii, mac, cp437, ebcdic
 Search data with a powerful pattern syntax
 .IP \(bu
 Skip identical data or repeating patterns by selection
+.IP \(bu
+Bookmark ranges and jump between them, with save/load to a file
+.IP \(bu
+Data inspector panel
+.IP \(bu
+Find and replace, including replacing all occurrences
 .IP \(bu
 Customizable with configuration file
 .IP \(bu
@@ -102,6 +108,12 @@ Ignore user configuration files and use defaults.
 .TP
 .BI "\-f, \-\-rcfile=" PATH
 Use the specified file for configuration instead of the default locations.
+.TP
+.BI \-\-bookmarks= PATH
+Load bookmarks from the specified file on startup. See the
+.SM
+.B BOOKMARKS
+section for the file format.
 .
 .SS Information
 .TP
@@ -233,6 +245,19 @@ to skip forward.
 The cursor will skip over all consecutive occurrences of the selected pattern
 until a mismatch is found.
 .
+.SS Bookmarks
+.TS
+lb l.
+m	Toggle a bookmark over the selection or cursor
+]	Jump to the next bookmark
+[	Jump to the previous bookmark
+.TE
+.PP
+Bookmarks mark a range of data and are highlighted in the view. Navigation
+between bookmarks wraps around the document. See the
+.B BOOKMARKS
+section for the related commands.
+.
 .SS Editing
 .TS
 lb l.
@@ -241,10 +266,9 @@ Insert	Cycle writing mode (OVR, INS, DIG)
 Delete	Delete element at cursor
 Backspace	Delete element before cursor
 Ctrl+U	Undo
-Ctrl+R	Redo
+Ctrl+Y	Redo
 Ctrl+S	Save document
 Ctrl+O	Save As another name and set new target
-Tab	Switch between data and text columns
 Alt+C	Copy selection
 Alt+X	Cut selection
 Alt+V	Paste
@@ -277,6 +301,15 @@ Ctrl+F	Find forward
 Ctrl+B	Find backward
 Ctrl+N	Find next (repeat forward)
 Shift+N	Find previous (repeat backward)
+Ctrl+R	Find and replace next (repeat last)
+.TE
+.
+.SS Display
+.TS
+lb l.
+Tab	Switch between data and text columns
+Alt+I	Toggle the data inspector panel
+Alt+E	Toggle inspector endian (little/big)
 .TE
 .
 .SS Other
@@ -350,6 +383,28 @@ Repeat the last search forward.
 .TP
 .B find\-prev
 Repeat the last search backward.
+.TP
+.BI find\-replace " [NEEDLE \fR\-\-\fP REPLACEMENT]"
+Find the next occurrence of
+.I NEEDLE
+and replace it with
+.IR REPLACEMENT .
+The needle and replacement are both patterns, separated by a literal
+.BR \-\- .
+With no arguments, repeats the last find-replace
+.RB ( Ctrl+R ).
+.TP
+.BI find\-replace\-all " [NEEDLE \fR\-\-\fP REPLACEMENT]"
+Find and replace every occurrence.
+With an active selection, only that range is searched.
+.PP
+Example: replace the string "foo" with "bar":
+.RS
+.nf
+find\-replace s:foo \-\- s:bar
+find\-replace\-all x:00 \-\- x:ff
+.fi
+.RE
 .PP
 Once a search needle is defined, it can be reused using
 .B find\-next
@@ -381,14 +436,24 @@ to go to the previous result.
 .
 .SS Editing Commands
 .TP
-.BI insert " [COUNT] PATTERN"
+.BI insert " PATTERN"
 Insert
 .I PATTERN
-at the cursor position.
-.I COUNT
-specifies the number of repetitions.
+at the cursor position, or over the active selection.
 .TP
-.BI replace " [RANGE] PATTERN"
+.BI replace " PATTERN"
+Replace data at the cursor with
+.IR PATTERN ,
+or over the active selection.
+.TP
+.BI insert\-range " RANGE PATTERN"
+Insert
+.I PATTERN
+at the start of
+.IR RANGE .
+With an active selection, only a pattern is needed.
+.TP
+.BI replace\-range " RANGE PATTERN"
 Replace data in
 .I RANGE
 with
@@ -419,6 +484,9 @@ Cut selected data to the internal clipboard.
 .B paste
 Paste data from the internal clipboard.
 .TP
+.B clear\-clip
+Clear the internal clipboard.
+.TP
 .B delete
 Delete the element at the cursor position.
 .TP
@@ -427,6 +495,58 @@ Undo the last change.
 .TP
 .B redo
 Redo the last undone change.
+.
+.SS Bookmark Commands
+.TP
+.BI bookmark\-set " [RANGE]"
+Add a bookmark over
+.IR RANGE ,
+the active selection, or the cursor element.
+.TP
+.BI bookmark\-unset " [RANGE]"
+Remove bookmarks overlapping
+.IR RANGE ,
+the active selection, or the cursor element.
+.TP
+.BI bookmark\-toggle " [RANGE]"
+Set a bookmark, or remove any that overlap the target
+.RB (key: m ).
+.TP
+.B bookmark\-next
+Jump to the next bookmark
+.RB (key: ] ).
+Wraps to the first bookmark.
+.TP
+.B bookmark\-prev
+Jump to the previous bookmark
+.RB (key: [ ).
+Wraps to the last bookmark.
+.TP
+.B bookmark\-clear
+Remove all bookmarks.
+.TP
+.BI bookmark\-save " PATH"
+Save all bookmarks to a file. See the
+.SM
+.B BOOKMARKS
+section for the format.
+.TP
+.BI bookmark\-load " PATH"
+Load bookmarks from a file and merge them with the current list.
+.
+.SS Display Commands
+.TP
+.B change\-panel
+Switch the cursor between the data and text columns
+.RB ( Tab ).
+.TP
+.B toggle\-inspector
+Show or hide the data inspector panel
+.RB ( Alt+I ).
+.TP
+.B toggle\-endian
+Toggle the inspector between little- and big-endian
+.RB ( Alt+E ).
 .
 .SS File Commands
 .TP
@@ -438,6 +558,23 @@ Save the document to a new file and set it as the current target.
 .TP
 .BI export\-range " RANGE PATH"
 Export the specified range to a file.
+.
+.SS Reporting Commands
+.TP
+.B report
+Report the cursor position, document size, and percentage
+.RB ( Ctrl+P ).
+The report format is customizable using the
+.B status-report
+configuration property.
+.TP
+.B report\-name
+Report the current document name on screen.
+.TP
+.B report\-version
+Report the
+.B ddhx
+version on screen.
 .
 .SS Configuration Commands
 .TP
@@ -503,9 +640,13 @@ Example:
 Supported commands:
 .BR find ,
 .BR find\-back ,
+.BR find\-replace ,
+.BR find\-replace\-all ,
 .BR insert ,
+.BR insert\-range ,
+.BR replace ,
 and
-.BR replace .
+.BR replace\-range .
 .
 .SH RANGES
 A range expression represents a start and end position inclusively, typically
@@ -540,19 +681,85 @@ select 0x10:0x19     \fRSelect positions 0x10 to 0x19\fP
 select 0x10:+9       \fRSame range (0x10 + 9 = 0x19)\fP
 select 0x10:.        \fRFrom 0x10 to cursor position\fP
 select 0x10:$        \fRFrom 0x10 to end of document\fP
-replace 200:$ x:00   \fRReplace from address 200 to EOF with zeros\fP
-replace 200:. x:00   \fRReplace from 200 to cursor with zeros\fP
-insert 100 x:90      \fRInsert 100 0x90 bytes at cursor\fP
+replace\-range 200:$ x:00   \fRReplace from address 200 to EOF with zeros\fP
+replace\-range 200:. x:00   \fRReplace from 200 to cursor with zeros\fP
+insert\-range 100 x:90      \fRInsert 100 0x90 bytes at cursor\fP
 select 4             \fRSelect 4 elements from cursor\fP
 .fi
 .RE
 .PP
 Supported commands:
 .BR select ,
-.BR insert ,
-.BR replace ,
+.BR insert\-range ,
+.BR replace\-range ,
+.BR export\-range ,
+.BR bookmark\-set ,
+.BR bookmark\-unset ,
 and
 .BR delete .
+.
+.SH BOOKMARKS
+Bookmarks mark a range of data for quick navigation. They are highlighted in
+the view and can be jumped between with
+.B ]
+.RB ( bookmark\-next )
+and
+.B [
+.RB ( bookmark\-prev ),
+both of which wrap around the document.
+.PP
+Press
+.B m
+.RB ( bookmark\-toggle )
+to set a bookmark over the current selection or cursor, or to remove any
+bookmarks overlapping it.
+.PP
+Bookmarks can be written to a file with
+.B bookmark\-save
+and read back with
+.BR bookmark\-load .
+The
+.B \-\-bookmarks
+option loads a file on startup.
+The file is plain text, one bookmark per line, in the form:
+.RS
+.IB ADDRESS " " LENGTH
+.RE
+.PP
+.I ADDRESS
+may be hexadecimal
+.RB ( 0x
+prefix) or decimal, and
+.I LENGTH
+is decimal. Lines beginning with
+.B #
+are comments. Loaded entries are merged with existing bookmarks.
+.PP
+Example:
+.RS
+.nf
+# ddhx bookmarks
+0x10    4
+0x100   16
+.fi
+.RE
+.
+.SH DATA INSPECTOR
+The data inspector is an optional panel, shown below the view, that interprets
+the bytes at the cursor as multiple data types: 8-, 16-, and 32-bit signed and
+unsigned integers, and 32- and 64-bit floating point values.
+.PP
+Toggle the panel with
+.B Alt+I
+.RB ( toggle\-inspector )
+or the
+.B inspector
+setting.
+Multi-byte values respect the
+.B endian
+setting, which can be flipped at runtime with
+.B Alt+E
+.RB ( toggle\-endian ).
 .
 .SH CONFIGURATION
 Configuration can be set via command-line options, configuration files, or the
@@ -620,6 +827,18 @@ Number of elements per row. Default:
 .BR data " \fRx8\fP | x16 | x32 | d8 | d16 | d32 | o8 | o16 | o32"
 Data display format. Default:
 .BR x8 .
+.TP
+.BR endian " \fRlittle\fP | big"
+Endian used by the data inspector for multi-byte values. Aliases
+.B le
+and
+.B be
+are accepted. Default:
+.BR little .
+.TP
+.BR inspector " on | \fRoff\fP"
+Show the data inspector panel below the view. Default:
+.BR off .
 .TP
 .BR highlight\-zeros " \fRon\fP | off"
 If enabled, highlight zero values (defaults to gray). Default:
@@ -784,8 +1003,8 @@ If a shortcut doesn't work, the
 .B bind
 command allows binding a command to a different shortcut.
 For example,
-.B bind alt+e select\-end
-binds Alt+E to extend the selection to the end of the line.
+.B bind ctrl+e select\-end
+binds Ctrl+E to extend the selection to the end of the line.
 Commands can still be executed from the command prompt.
 .
 .SH ENVIRONMENT
