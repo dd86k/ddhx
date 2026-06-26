@@ -10,13 +10,8 @@ __test__*__
 *.obj
 *.exe
 *.pdb
-*.zip
-*.tar
-*.gz
-*.xz
 *.lib
 *.a
-*.bzip2
 docs/
 
 # Project
@@ -24,6 +19,15 @@ docs/
 *.log
 *.patch
 ddhx_dump.txt
+
+# Packaging
+*.bzip2
+*.zip
+*.tar
+*.gz
+*.xz
+*.deb
+*.rpm
 
 # flamegraph
 perf.data
