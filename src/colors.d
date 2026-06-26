@@ -26,14 +26,13 @@ enum ColorScheme
     mirror,
     zero,
     bookmark,
+    diff_changed,   // byte differs between the two files
+    diff_missing,   // address present in one file only (length mismatch)
     // The following are just future ideas
     //modified,   // edited data
     //address,    // layout: address/offset
     //constant,   // layout: known constant value
     //search,     // search result (could otherwise be "highlighted" or just selection)
-    //diff_added,     // 
-    //diff_removed,   // 
-    //diff_changed,   // 
 }
 enum SCHEMES = EnumMembers!(ColorScheme).length;
 
@@ -47,6 +46,8 @@ ColorScheme getScheme(string name)
     case "mirror":      return ColorScheme.mirror;
     case "zero":        return ColorScheme.zero;
     case "bookmark":    return ColorScheme.bookmark;
+    case "diff-changed":return ColorScheme.diff_changed;
+    case "diff-missing":return ColorScheme.diff_missing;
     default:
         throw new Exception(text("Unknown scheme: ", name));
     }
@@ -175,6 +176,11 @@ struct ColorMapper
     enum ColorMap DEFAULT_BOOKMARK  = ColorMap(0,
         Nullable!TermColor(TermColor.black),
         Nullable!TermColor(TermColor.yellow));
+    enum ColorMap DEFAULT_DIFF_CHANGED  = ColorMap(0,
+        Nullable!TermColor.init,
+        Nullable!TermColor(TermColor.red));
+    enum ColorMap DEFAULT_DIFF_MISSING  = ColorMap(0,
+        Nullable!TermColor(TermColor.gray));
 
     // Initial color specifications
     private
@@ -185,6 +191,8 @@ struct ColorMapper
         DEFAULT_MIRROR,
         DEFAULT_ZERO,
         DEFAULT_BOOKMARK,
+        DEFAULT_DIFF_CHANGED,
+        DEFAULT_DIFF_MISSING,
     ];
     static assert(maps.length == SCHEMES);
     // Defaults
@@ -196,6 +204,8 @@ struct ColorMapper
         DEFAULT_MIRROR,
         DEFAULT_ZERO,
         DEFAULT_BOOKMARK,
+        DEFAULT_DIFF_CHANGED,
+        DEFAULT_DIFF_MISSING,
     ];
     static assert(defaults.length == SCHEMES);
     

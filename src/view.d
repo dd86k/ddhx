@@ -42,6 +42,9 @@ private debug enum DEBUG = "+debug"; else enum DEBUG = "";
 /// Copyright string
 immutable string DDHX_COPYRIGHT = "Copyright (c) 2017-2026 dd86k <dd@dax.moe>";
 /// App version
+///
+/// For packaging, the DEB script expects this.
+/// Also, Debian uses tilde (~) for pre-release markers.
 immutable string DDHX_VERSION   = "0.10.0"~DEBUG;
 /// Build information
 immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
@@ -161,6 +164,12 @@ struct Session
     long editpos;
     /// Input system
     InputFormatter input;
+
+    /// Diff panel: file compared against the current view (null = panel hidden).
+    /// Opened by the "diff-file" command, shown at the bottom of the screen.
+    IDocument diffdoc;
+    /// Path of the diffed file, displayed inside the panel separator line.
+    string diffpath;
 }
 
 private __gshared // globals have the ugly "g_" prefix to be told apart
@@ -324,6 +333,9 @@ immutable Command[] default_commands = [
         Mod.alt|Key.I,              &toggle_inspector },
     { "toggle-endian",              "Toggle inspector endian (little/big)",
         Mod.alt|Key.E,              &toggle_endian },
+    // Acting as a toggle (file opened + no args=close) is fine
+    { "diff-file",                  "Diff a file against the current view (no path closes it)",
+        0,                          &diff_file },
     { "change-mode",                "Change writing mode (between overwrite and insert)",
         Key.Insert,                 &change_writemode },
     // Find
@@ -2180,6 +2192,15 @@ void update(Session *session)
         g_viewrows -= ins_h;
     }
 
+    // Reserve rows for the diff panel if a file is open and there is room.
+    // The panel takes about half the rows left for the data view.
+    int diff_h;
+    if (session.diffdoc && g_viewrows >= 4)
+    {
+        diff_h = diffHeight(g_viewrows);
+        g_viewrows -= diff_h;
+    }
+
     if (session.rc.header)
         update_header(session);
     
@@ -2188,6 +2209,12 @@ void update(Session *session)
     if (ins_h)
         update_inspector(session, ins_h);
     
+    if (diff_h)
+    {
+        int rowdisp = session.rc.header ? 1 : 0;
+        update_diff(session, rowdisp + g_viewrows + ins_h, diff_h);
+    }
+
     if (session.rc.status || g_status & UMESSAGE)
         update_status(session);
     
@@ -2237,6 +2264,180 @@ void update_inspector(Session *session, int height)
     }
 
     terminalFlush();
+}
+
+// Total reserved height of the diff panel (separator + data rows): about half
+// the rows otherwise available to the data view, leaving the rest to the view.
+// `avail` is the data-view height before reservation.
+int diffHeight(int avail)
+{
+    return avail / 2;
+}
+
+// Render the diff panel at the bottom of the screen. It shows the bytes of
+// session.diffdoc for the same base address as the main view ("follow main
+// view"), painting elements that differ from the editor's bytes. The target
+// file name is embedded in the separator line: "--name.bin-----------".
+void update_diff(Session *session, int top, int height)
+{
+    import std.path : baseName;
+
+    int cols = session.rc.columns;
+    DataSpec data_spec = selectDataSpec(session.rc.data_type);
+    int linesize = cols * data_spec.size_of;
+
+    // Separator line with the file name embedded after two leading dashes.
+    terminalCursor(0, top);
+    terminalResetColor();
+    string label = baseName(session.diffpath);
+    int used = cast(int)terminalWriteChar('-', 2);
+    if (used < g_cols)
+    {
+        if (label.length > g_cols - used)
+            label = label[0 .. g_cols - used];
+        used += cast(int)terminalWrite(label);
+    }
+    if (used < g_cols)
+        terminalWriteChar('-', g_cols - used);
+
+    int rows = height - 1; // data rows below the separator
+
+    // Read both sides for the same span: editor (current, with unsaved edits)
+    // and the diffed file on disk. Buffers are reused across frames.
+    __gshared ubyte[] minebuf;
+    __gshared ubyte[] theirbuf;
+    size_t span = rows * linesize;
+    if (minebuf.length < span)
+    {
+        minebuf.length = span;
+        theirbuf.length = span;
+    }
+    long base = session.position_view;
+    ubyte[] mine = session.editor.view(base, minebuf[0 .. span]);
+    ubyte[] theirs = session.diffdoc.readAt(base, theirbuf[0 .. span]);
+
+    AddressFormatter afmt = AddressFormatter(session.rc.address_type);
+    DataFormatter dfmt = DataFormatter(session.rc.data_type, theirs.ptr, theirs.length);
+
+    Line line = Line(128);
+    ElementText buf = void;
+    long address = base;
+    for (int row; row < rows; ++row, address += linesize)
+    {
+        line.reset();
+
+        // Address + spacer
+        size_t chars = line.normal(afmt.textual(buf, address, session.rc.address_spacing), "  ");
+
+        for (int col; col < cols; col++)
+        {
+            if (chars > g_cols)
+                break;
+
+            int byteoff = (row * linesize) + (col * data_spec.size_of);
+
+            // Compare this element's bytes between the two sides.
+            ColorScheme scheme = ColorScheme.normal;
+            for (int b; b < data_spec.size_of; b++)
+            {
+                size_t o = byteoff + b;
+                bool hasmine  = o < mine.length;
+                bool hastheir = o < theirs.length;
+                if (hasmine != hastheir)        // one side ran out
+                {
+                    scheme = ColorScheme.diff_missing;
+                    break;
+                }
+                if (hasmine && hastheir && mine[o] != theirs[o])
+                    scheme = ColorScheme.diff_changed;
+            }
+
+            // Spacer before element keeps the previous scheme run going only
+            // for normal; diff highlights stay tight to the element.
+            if (col)
+                chars += line.normal(" ");
+
+            string data = dfmt.textual(buf);
+            assertion(data);
+            dfmt.step();
+            chars += line.add(data, scheme);
+        }
+
+        // data-text spacer, then the text column (per byte, same diff coloring)
+        chars += line.normal("  ");
+        for (int idx; idx < linesize; idx++)
+        {
+            if (chars > g_cols)
+                break;
+
+            size_t o = (row * linesize) + idx;
+            bool hasmine  = o < mine.length;
+            bool hastheir = o < theirs.length;
+
+            ColorScheme scheme = ColorScheme.normal;
+            if (hasmine != hastheir)
+                scheme = ColorScheme.diff_missing;
+            else if (hastheir && mine[o] != theirs[o])
+                scheme = ColorScheme.diff_changed;
+
+            string text = " ";
+            if (hastheir)
+            {
+                string c = transcode(theirs[o], session.rc.charset);
+                text = c ? c : ".";
+            }
+            chars += line.add(text, scheme);
+        }
+
+        render_line(line, top + 1 + row);
+    }
+
+    terminalFlush();
+}
+
+// Render a prepared Line of colored segments on the given terminal row,
+// truncating to width and clearing the remainder. Shared by the diff panel.
+void render_line(ref Line line, int y)
+{
+    terminalCursor(0, y);
+    ColorMap lastmap;
+    size_t rendered;
+    foreach (ref segment; line.segments)
+    {
+        if (rendered >= g_cols) break;
+
+        ColorMap map = g_colors.get(segment.scheme);
+        bool change = lastmap != map;
+
+        if (change)
+            terminalResetColor();
+        if (map.foreground.isNull == false && change)
+            terminalForeground(map.foreground.get);
+        if (map.background.isNull == false && change)
+            terminalBackground(map.background.get);
+        if (map.flags & COLORMAP_INVERTED && change)
+            terminalInvertColor();
+
+        size_t avail = g_cols - rendered;
+        if (segment.data.length <= avail)
+        {
+            terminalWrite(segment.data);
+            rendered += segment.data.length;
+        }
+        else
+        {
+            terminalWrite(segment.data[0..avail]);
+            rendered += avail;
+        }
+
+        lastmap = map;
+    }
+
+    if (rendered < g_cols)
+    {
+        terminalResetColor();
+        terminalWriteChar(' ', cast(int)(g_cols - rendered));
+    }
 }
 
 // Special function to update progress
@@ -3411,9 +3612,46 @@ void toggle_inspector(Session *session, string[] args)
 void toggle_endian(Session *session, string[] args)
 {
     import std.system : Endian;
-    session.rc.endian = session.rc.endian == Endian.littleEndian
-        ? Endian.bigEndian
-        : Endian.littleEndian;
+    session.rc.endian =
+        session.rc.endian == Endian.littleEndian ?
+        Endian.bigEndian : Endian.littleEndian;
+    g_status |= UVIEW;
+}
+
+// Open a file to diff against the current view, shown in a bottom panel.
+// "diff-file PATH" opens (or replaces) the panel; bare "diff-file" while a
+// panel is open closes it. Comparing the current file against its last-saved
+// state is done by passing its own path (the on-disk copy is read fresh, while
+// the view reflects unsaved edits).
+void diff_file(Session *session, string[] args)
+{
+    // No path given while a diff is active: close the panel.
+    if ((args is null || args.length == 0) && session.diffdoc)
+    {
+        diff_close(session);
+        return;
+    }
+
+    string path = askstring(args, 0, "Diff against file: ");
+
+    IDocument doc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+
+    // Replace any previously opened diff document.
+    if (session.diffdoc)
+        session.diffdoc.close();
+    session.diffdoc = doc;
+    session.diffpath = path;
+
+    g_status |= UVIEW;
+}
+
+void diff_close(Session *session)
+{
+    if (session.diffdoc is null)
+        return;
+    session.diffdoc.close();
+    session.diffdoc = null;
+    session.diffpath = null;
     g_status |= UVIEW;
 }
 
