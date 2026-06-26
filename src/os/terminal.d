@@ -960,6 +960,18 @@ alias terminalHasInput = terminalPeek; // alias
 
 version (Posix)
 {
+/// Expected length of a UTF-8 sequence from its lead byte, or 0 if the
+/// byte is a continuation byte or otherwise not a valid lead.
+private
+size_t _utf8len(char c)
+{
+    if (c < 0x80)           return 1; // ASCII
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 0; // 0x80..0xBF continuation, or 0xF8..0xFF invalid
+}
+
 /// Determine the byte length of the first complete terminal input
 /// sequence in buf. Returns 1 for non-ESC bytes, and the full
 /// CSI/SS3/Alt sequence length for escape sequences.
@@ -968,11 +980,34 @@ size_t _seqlen(const(char)[] buf)
 {
     if (buf.length == 0)
         return 0;
-
+    
+    // NOTE: NetBSD (wsvt25) and OpenBSD (vt220) Alt+key
+    //       Their terminal driver (at least framebuffer) encodes Alt+I by setting
+    //       the 8th bit (e.g., 'i' | 0x80 = 0xe9). This is old behaviour *and*
+    //       coincidentally a UTF-8 leading byte, tripping any UTF decoding functions.
+    //
+    //       Making a specific NetBSD/OpenBSD hack would be irresponsible, it would be
+    //       bad future-proofing. On top of the fact that this changes if a different
+    //       emulator is used (ESC-prefix meta over high bit).
+    //
+    //       Detecting this from the environment would be messy and maybe error-prone.
     if (buf[0] != 0x1b) // not ESCAPE
     {
-        // Use graphemeStride to handle base char + combining marks as one unit
-        // (e.g. 'e' + U+0300 combining grave -> 'è' as a single sequence)
+        // High-bit bytes that don't form a complete, valid UTF-8 sequence
+        // must be consumed as a single raw byte. Some terminals (e.g. the
+        // NetBSD console) encode Alt+key by setting the 8th bit: Alt+I emits
+        // 'i' | 0x80 = 0xE9, which happens to look like a 3-byte UTF-8 lead.
+        // Handing an incomplete sequence to graphemeStride makes it decode
+        // past the end of the buffer and throw.
+        size_t need = _utf8len(buf[0]);
+        if (need == 0 || need > buf.length)
+            return 1; // invalid lead byte or truncated sequence
+        for (size_t i = 1; i < need; ++i)
+            if ((buf[i] & 0xC0) != 0x80)
+                return 1; // bad continuation byte
+
+        // Valid UTF-8 start: use graphemeStride to handle base char +
+        // combining marks as one unit (e.g. 'e' + U+0300 -> 'è').
         import std.uni : graphemeStride;
         return graphemeStride(buf, 0);
     }
@@ -1030,6 +1065,15 @@ unittest
     // Decomposed: 'e' + U+0300 combining grave = 3 bytes as one grapheme
     assert(_seqlen("e\xCC\x80") == 3);      // è (decomposed)
     assert(_seqlen("e\xCC\x80abc") == 3);   // è + trailing data
+
+    // High-bit raw bytes (e.g. NetBSD Alt+key sets the 8th bit): not valid
+    // UTF-8 on their own, must be consumed one byte at a time, never decoded.
+    assert(_seqlen("\xE9") == 1);           // Alt+I -> 'i'|0x80, lone 3-byte lead
+    assert(_seqlen("\xE9\xE9") == 1);       // two of them
+    assert(_seqlen("\x80") == 1);           // lone continuation byte
+    assert(_seqlen("\xFF") == 1);           // invalid lead byte
+    assert(_seqlen("\xC3") == 1);           // truncated 2-byte sequence
+    assert(_seqlen("\xC3z") == 1);          // bad continuation byte
 }
 } // version (Posix)
 
