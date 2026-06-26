@@ -209,7 +209,7 @@ void main(string[] args)
             },
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,
-        "bookmarks",    "Load bookmarks from a file on startup", &bookmarks_file,
+        "B|bookmarks",  "Load bookmarks from a file on startup", &bookmarks_file,
         //
         // Pages
         //
