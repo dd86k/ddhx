@@ -50,6 +50,10 @@ Title font: Shaded Blocky (FIGlet)
   * Skip identical data or repeating patterns by selection
   * Customizable with configuration file
   * Copy, Cut, and Paste data at will
+  * Bookmarks with navigation, save/load/clear operations
+  * Data inspector panel
+  * Find-and-replace, including replacing all occurrences
+  * Diff panel
 
 ////////////////////////////////////////////////////////////////////////////////
 // Roadmap
@@ -63,7 +67,7 @@ This list may change at any given time without notice.
 - [x] View: Other data types (d8, o8, d16, f32, etc.)
 
 0.10: WIP
-- [ ] Diff view (vs. opened document)
+- [x] Diff view (vs. opened document)
 - [x] Bookmark system
 - [x] Data inspector panel
 
