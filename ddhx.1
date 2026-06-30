@@ -23,7 +23,7 @@ pattern-based search, unlimited undo/redo, and files up to 8\ EiB in size.
 .PP
 When invoked with no arguments,
 .B ddhx
-opens an empty buffer or, if there is data, will open the standard input stream
+opens an empty buffer or, if there is data, opens the standard input stream
 into an in-memory buffer.
 .PP
 Minimum recommended terminal size is 80x24 characters.
@@ -109,7 +109,7 @@ Ignore user configuration files and use defaults.
 .BI "\-f, \-\-rcfile=" PATH
 Use the specified file for configuration instead of the default locations.
 .TP
-.BI \-\-bookmarks= PATH
+.BI "-B, \-\-bookmarks=" PATH
 Load bookmarks from the specified file on startup. See the
 .SM
 .B BOOKMARKS
@@ -203,7 +203,7 @@ Ctrl+Left/Right	Skip identical elements
 Ctrl+G	Goto address
 .TE
 .PP
-Navigation should resemble most text editors. If you wish to setup custom
+Navigation should resemble most text editors. If you wish to set up custom
 keybindings, see the CONFIGURATION section.
 .
 .SS Selection
@@ -346,6 +346,8 @@ missing arguments, or continue if there is an active selection.
 .BI goto " ADDRESS"
 Jump to the specified address. Supports hexadecimal
 .RB ( 0x
+prefix), binary
+.RB ( 0b
 prefix), octal
 .RB ( 0
 prefix), decimal, and percentage
@@ -361,6 +363,7 @@ Examples:
 .RS
 .nf
 goto 0x10        \fRJump to position 16 (hexadecimal)\fP
+goto 0b1010      \fRJump to position 10 (binary)\fP
 goto +020        \fRJump forward 16 bytes (octal)\fP
 goto \-5          \fRJump backward 5 bytes (decimal)\fP
 goto %45.1       \fRJump to 45.1% of the document size\fP
@@ -432,7 +435,7 @@ to go to the next result or
 .B Shift+N
 to go to the previous result.
 .PP
-.BR "LIMITATION:" " Search does not wrap and depends on cursor position."
+.BR "LIMITATION:" " Search does not wrap and depends on the cursor position."
 .
 .SS Editing Commands
 .TP
@@ -547,6 +550,14 @@ Show or hide the data inspector panel
 .B toggle\-endian
 Toggle the inspector between little- and big-endian
 .RB ( Alt+E ).
+.TP
+.BI diff\-file " [PATH]"
+Open
+.I PATH
+in a diff panel below the view, highlighting bytes that differ from the current document.
+The panel follows the main view's position.
+With no argument while a diff panel is open, the panel closes.
+To compare unsaved changes against the on-disk copy, pass the document's own path.
 .
 .SS File Commands
 .TP
@@ -623,12 +634,12 @@ Example:
 .BR "x:00" ", " "0xff" ", " "x:0101" .
 .TP
 .BI d: VALUE
-Decimal signed integer.
+Decimal unsigned integer.
 Example:
 .BR "d:255" .
 .TP
 .BI o: VALUE
-Octal signed integer.
+Octal unsigned integer.
 Example:
 .BR "o:377" .
 .TP
@@ -636,6 +647,12 @@ Example:
 String (currently ASCII only). Quoted strings need a terminator.
 Example:
 .BR "s:hello" ", " "\(dqtest\(dq" .
+.TP
+.B ?
+Match any single byte (wildcard).
+.TP
+.B *
+Match zero or more bytes (wildcard).
 .PP
 Supported commands:
 .BR find ,
@@ -797,9 +814,9 @@ Path specified with
 .TP
 4.
 .I /etc/ddhx/.ddhxrc
-.
-The 
-.I --help-config 
+.PP
+The
+.BR \-\-help\-config
 option lists possible paths.
 .
 .SS Settings
@@ -817,7 +834,7 @@ Character set for the text column. Default:
 .BR ascii .
 .TP
 .BR coalesce " \fRon\fP | off"
-Enable edit coalescing (group consecutive edits into single undo steps). Default:
+Enable edit coalescing (group consecutive edits into a single undo step). Default:
 .BR on .
 .TP
 .BI columns " N \fR|\fP auto"
@@ -877,7 +894,7 @@ Default:
 .BR color " ELEMENT FOREGROUND:BACKGROUND"
 Set color for ELEMENT (
 .IR normal ", " cursor ", " selection ", " mirror ", " zero
-). Foreground and background are both optional, defaulting to terminal defaults.
+). Foreground and background are both optional, defaulting to terminal default colors.
 .
 .SS Example Configuration
 .RS
