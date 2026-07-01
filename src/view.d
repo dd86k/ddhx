@@ -275,7 +275,7 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.UpArrow,       &view_up },
     { "view-down",                  "Move view down a row",
         Mod.ctrl|Key.DownArrow,     &view_down },
-    { "skip-back",                  "Skip same elements backends",
+    { "skip-back",                  "Skip same elements backward",
         Mod.ctrl|Key.LeftArrow,     &move_skip_backward },
     { "skip-front",                 "Skip same elements forward",
         Mod.ctrl|Key.RightArrow,    &move_skip_forward },
@@ -406,7 +406,7 @@ immutable Command[] default_commands = [
         Mod.alt|Key.R,              &autosize },
     { "set",                        "Set a configuration value for this session",
         0,                          &set },
-    { "bind",                       "Bind a shortcut to an action for this session",
+    { "bind",                       "Bind a new command shortcut for this session",
         0,                          &bind },
     { "unbind",                     "Remove or reset a bind shortcut",
         0,                          &unbind },
@@ -851,7 +851,7 @@ Lread:
     if (input.type != InputType.keyDown)
         goto Lread;
     if (iscancelling(input))
-        throw new Exception("Cancelled");
+        throw new Exception("Canceled");
     
     return input.key;
 }
@@ -865,7 +865,7 @@ string askstring(string[] args, size_t idx, string prefix)
     // Bonus: Besides, throwing an exception is easier to manage than
     // manually checking the output at every invokation.
     if (s is null || s.length == 0)
-        throw new Exception("Cancelled");
+        throw new Exception("Canceled");
     
     return s;
 }
@@ -942,7 +942,7 @@ void save_to_file(IDocumentEditor editor, string target)
     ulong avail = availableDiskSpace(target);
     log("avail=%u docsize=%d", avail, docsize);
     if (avail < docsize)
-        throw new Exception(text("Unsuficient space, need ", docsize - avail, " bytes"));
+        throw new Exception(text("Insufficient space, need ", docsize - avail, " bytes"));
     
     // 1. Create a temp file into same directory (with tmp suffix)
     string basedir = dirName(target);
@@ -2572,7 +2572,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
         do
         {
             if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
-                throw new Exception("Cancelled");
+                throw new Exception("Canceled");
             
             base -= CONFIG_CHUNKSIZE;
             if (base < 0)
@@ -2615,7 +2615,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
         do
         {
             if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
-                throw new Exception("Cancelled");
+                throw new Exception("Canceled");
             
             ubyte[] haystack = session.editor.view(position, hay);
             if (haystack.length < needle.length)
@@ -4034,9 +4034,8 @@ void replace_file(Session *session, string[] args)
     
     IDocument file = new FileDocument(path, true);
     session.documents ~= file;
-    long curpos = session.position_cursor;
     
-    session.editor.fileReplace(curpos, file);
+    session.editor.fileReplace(session.position_cursor, file);
     g_status |= UVIEW;
 }
 
