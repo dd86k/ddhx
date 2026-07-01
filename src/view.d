@@ -594,7 +594,8 @@ Session* create_session(IDocumentEditor editor, ref RC rc, string path)
     return session;
 }
 
-void start_session(Session *session, string initmsg, string bookmarks_file = null)
+void start_session(Session *session, string initmsg, string bookmarks_file = null,
+    string diff_file = null)
 {
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);
     terminalClear(); // alt buffers usually clears, except on framebuffers (e.g., fbcon)
@@ -614,11 +615,23 @@ void start_session(Session *session, string initmsg, string bookmarks_file = nul
     
     if (bookmarks_file)
     {
+        log(`bookmarks_file="%s"`, diff_file);
         try bookmark_load(session, [ bookmarks_file ]);
         catch (Exception ex)
         {
             log("%s", ex);
             message("bookmarks: %s", ex.msg);
+        }
+    }
+
+    if (diff_file)
+    {
+        log(`diff_file="%s"`, diff_file);
+        try .diff_file(session, [ diff_file ]);
+        catch (Exception ex)
+        {
+            log("%s", ex);
+            message("diff: %s", ex.msg);
         }
     }
 
