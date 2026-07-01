@@ -891,10 +891,32 @@ Default:
 .BR "\(dq%d / %s B (%q%%)\(dq" .
 .
 .TP
-.BR color " ELEMENT FOREGROUND:BACKGROUND"
-Set color for ELEMENT (
-.IR normal ", " cursor ", " selection ", " mirror ", " zero
-). Foreground and background are both optional, defaulting to terminal default colors.
+.BR color " ELEMENT COLOR"
+Set color for ELEMENT.
+Valid elements are:
+.IR normal ", " cursor ", " selection ", " mirror ", " zero ", " bookmark ", " diff\-changed ", " diff\-missing .
+.PP
+.I COLOR
+is
+.IB FOREGROUND : BACKGROUND
+where either part is optional (omitting defaults to the terminal color).
+For example,
+.B red:blue
+sets red foreground and blue background;
+.B red
+or
+.B red:
+sets only foreground;
+.B :blue
+sets only background.
+The special value
+.B invert
+swaps foreground and background instead.
+.PP
+Color names:
+.IR black ", " blue ", " green ", " aqua ", " red ", " purple ", " yellow ", " gray ", "
+.IR lightgray ", " brightblue ", " brightgreen ", " brightaqua ", " brightred ", "
+.IR brightpurple ", " brightyellow ", " white ", " invert " (used alone), and " default " (used alone)."
 .
 .SS Example Configuration
 .RS
