@@ -66,16 +66,19 @@ This list may change at any given time without notice.
 - [x] Piece Coalescing
 - [x] View: Other data types (d8, o8, d16, f32, etc.)
 
-0.10: WIP
+0.10: Released!
 - [x] Diff view (vs. opened document)
 - [x] Bookmark system
 - [x] Data inspector panel
 
-Wishlist:
+0.11: WIP
+- [ ] Find-and-bookmark (find-bookmark)
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
+- [ ] Endian-specific pattern prefixes (e.g., u32le:)
+
+Wishlist:
 - [ ] Document: Disk
 - [ ] Document: Process memory
-- [ ] Endian-specific pattern prefixes (e.g., u32le:)
 - [ ] Layout system
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -141,6 +144,8 @@ Default target is 'release', meaning an optimized release will be created.
 Other targets include 'debug', 'debugv', 'native', 'debug-static',
 'release-static', and 'native-static'.
 
+It supports the DC variable (ie, DC=/usr/pkg/gcc15/bin/gdc make).
+
 ////////////////////////////////////////////////////////////////////////////////
 // Debugging
 
@@ -164,7 +169,7 @@ Environment variables:
   - Forces BACKEND to be selected.
   - Version: Since 0.7
   - Default: "piecev3" (since 0.9)
-  - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8), "piece" (>=0.7 <0.9)
+  - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8)
 - DDHX_NO_INPLACE_SAVE
   - If set to 1, avoid the use of the newer "in-place" saving mechanic.
   - Version: Since 0.9
