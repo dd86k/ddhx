@@ -90,6 +90,11 @@ Default:
 .BI \-\-address\-spacing= N
 Set the address column width in characters. Default: 11.
 .TP
+.B \-\-autoresize
+Automatically resize the number of columns to fit the terminal width on
+dimension change. Equivalent to
+.BR "\-\-columns=auto" .
+.TP
 .BI "\-C, \-\-charset=" CHARSET
 Set character translation:
 .BR ascii ,
@@ -370,6 +375,11 @@ goto %45.1       \fRJump to 45.1% of the document size\fP
 .fi
 .RE
 .RE
+.PP
+With an active selection of 1 to 8 bytes, no address argument is used.
+Instead, the selected bytes are read as a native-endian integer and the
+cursor jumps to that absolute position, letting a selected field be
+followed like a pointer.
 .
 .SS Search Commands
 .TP
@@ -558,6 +568,17 @@ in a diff panel below the view, highlighting bytes that differ from the current 
 The panel follows the main view's position.
 With no argument while a diff panel is open, the panel closes.
 To compare unsaved changes against the on-disk copy, pass the document's own path.
+.TP
+.B refresh
+Redraw the entire screen
+.RB ( Ctrl+L ).
+.TP
+.B autosize
+Automatically set the number of columns to fit the terminal width, once
+.RB ( Alt+R ).
+Unlike the
+.B columns auto
+setting, this does not persist the automatic behavior across resizes.
 .
 .SS File Commands
 .TP
@@ -605,6 +626,16 @@ Remove a keybinding.
 .TP
 .B reset\-keys
 Restore all keybindings to their defaults.
+.TP
+.BI color " ELEMENT COLOR"
+Set the color for
+.IR ELEMENT .
+See the Colors subsection under
+.SM
+.B CONFIGURATION
+for the list of elements, color syntax, and the
+.B reset
+value.
 .PP
 Examples:
 .RS
@@ -613,6 +644,8 @@ set charset mac              \fRSet character set to Mac\fP
 bind right\-arrow goto +32    \fRBind Right Arrow to jump 32 bytes\fP
 unbind right\-arrow           \fRRemove the binding\fP
 reset\-keys                   \fRReset all bindings to defaults\fP
+color cursor red:blue        \fRSet cursor color\fP
+color cursor reset           \fRReset cursor color to default\fP
 .fi
 .RE
 .
@@ -638,10 +671,10 @@ Decimal unsigned integer.
 Example:
 .BR "d:255" .
 .TP
-.BI o: VALUE
+.BI o: VALUE "\fR, \fP" 0o VALUE
 Octal unsigned integer.
 Example:
-.BR "o:377" .
+.BR "o:377" ", " "0o377" .
 .TP
 .BI s: STRING "\fR, \fP \(dq" STRING \(dq
 String (currently ASCII only). Quoted strings need a terminator.
@@ -890,9 +923,18 @@ Format string for the position report
 Default:
 .BR "\(dq%d / %s B (%q%%)\(dq" .
 .
-.TP
-.BR color " ELEMENT COLOR"
-Set color for ELEMENT.
+.SS Colors
+Unlike the settings above, colors are not changed with
+.BR set .
+Instead, use the
+.B color
+command
+.RB ( "color ELEMENT COLOR" ),
+either at the command prompt or as its own line in a configuration file:
+.RS
+.IB color " ELEMENT COLOR"
+.RE
+.PP
 Valid elements are:
 .IR normal ", " cursor ", " selection ", " mirror ", " zero ", " bookmark ", " diff\-changed ", " diff\-missing .
 .PP
@@ -912,6 +954,13 @@ sets only background.
 The special value
 .B invert
 swaps foreground and background instead.
+The special value
+.B reset
+in place of
+.I COLOR
+restores that element's default color; running
+.B color reset
+with no element resets every element to its default.
 .PP
 Color names:
 .IR black ", " blue ", " green ", " aqua ", " red ", " purple ", " yellow ", " gray ", "
@@ -945,11 +994,11 @@ settings accept format strings with the following specifiers.
 Specifiers may include an optional width and alignment between the
 .B %
 and the letter:
-.BI % WIDTH SPEC
+.BI % WIDTH
 right-aligns the result, padding with spaces to
 .I WIDTH
 characters.
-.BI %\- WIDTH SPEC
+.BI %\- WIDTH
 left-aligns instead.
 If the result is already wider than
 .IR WIDTH ,
