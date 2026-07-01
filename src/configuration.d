@@ -14,6 +14,7 @@ import ddhx.transcoder : CharacterSet, selectCharacterSet;
 import os.terminal : terminal_keybind;
 
 import colors;
+import messages;
 import utils : arguments;
 
 import view : bindkey, setcolor, initdefaults, binded;
@@ -110,7 +111,7 @@ bool boolean(string input)
     switch (input) {
     case "on":  return true;
     case "off": return false;
-    default:    throw new Exception(`Only "on" or "off" accepted`);
+    default:    throw new Exception(MSG_ON_OR_OFF_ACCEPTED);
     }
 }
 unittest
@@ -142,13 +143,13 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
         
         string[] args = arguments(line);
         if (args.length < 2)
-            throw new Exception("Missing value");
+            throw new Exception(MSG_MISSING_VALUE);
         
         // Special
         switch (args[0]) {
         case "bind": // bind KEY COMMAND [ARGS...]
             if (args.length < 3)
-                throw new Exception("Missing command");
+                throw new Exception(MSG_MISSING_COMMAND);
             bindkey(
                 terminal_keybind( args[1] ),
                 args[2],
@@ -156,7 +157,7 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
             continue;
         case "color": // color SCHEME COLOR
             if (args.length < 3)
-                throw new Exception("Missing color");
+                throw new Exception(MSG_MISSING_COLOR);
             setcolor(
                 getScheme(args[1]),
                 ColorMap.parse(args[2])
@@ -262,6 +263,7 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_inspector
     },
     {
+        //TODO: Shouldn't there be a "native" option?
         "endian", "Endian used by the inspector for multi-byte values",
         `"little" or "big" (aliases: "le", "be")`, `"little"`,
         &configure_endian
@@ -318,7 +320,7 @@ void configRC(ref RC rc, string field, string value, bool conf = false)
         }
     }
     
-    throw new Exception(text("Unknown field: ", field));
+    throw new Exception(text(MSG_UNKNOWN_FIELD, field));
 }
 unittest
 {
@@ -353,7 +355,7 @@ void configure_columns(ref RC rc, string value, bool conf = false)
     
     int cols = to!int(value);
     if (cols < 0)
-        throw new Exception("Cannot have negative columns");
+        throw new Exception(MSG_NEGATIVE_COLUMNS);
     rc.columns = cols;
     rc.columns_set = true;
 }
@@ -365,7 +367,7 @@ void configure_address(ref RC rc, string value, bool conf = false)
     
     if (value is null || value.length == 0)
     Lerror:
-        throw new Exception(text("Unknown address type: ", value));
+        throw new Exception(text(MSG_UNKNOWN_ADDRESS_TYPE, value));
     
     switch (value[0]) { // cheap "startsWith"
     case 'h': rc.address_type = AddressType.hex; break;
@@ -392,7 +394,7 @@ void configure_address_spacing(ref RC rc, string value, bool conf = false)
     
     int spacing = to!int(value);
     if (spacing < 3 && spacing > -3) // due to offset indicator ("hex",etc.)
-        throw new Exception("Address spacing too low (3 or more needed)");
+        throw new Exception(MSG_ADDRESS_SPACING_TOO_LOW);
     rc.address_spacing = spacing;
     rc.address_spacing_set = true;
 }
@@ -469,7 +471,7 @@ void configure_endian(ref RC rc, string value, bool conf = false)
     switch (value) {
     case "little", "le": rc.endian = Endian.littleEndian; break;
     case "big",    "be": rc.endian = Endian.bigEndian;    break;
-    default: throw new Exception(text("Unknown endian: ", value));
+    default: throw new Exception(text(MSG_UNKNOWN_ENDIAN, value));
     }
     rc.endian_set = true;
 }

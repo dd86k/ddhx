@@ -11,6 +11,8 @@ module ddhx.transcoder;
 import std.encoding : codeUnits, CodeUnits;
 import std.conv : text;
 
+import messages;
+
 /// Character set.
 enum CharacterSet
 {
@@ -47,7 +49,7 @@ CharacterSet selectCharacterSet(string id)
     case ID_CP437:  return cp437;
     case ID_EBCDIC: return ebcdic;
     case ID_MAC:    return mac;
-    default:        throw new Exception(text("Invalid charset: ", id));
+    default:        throw new Exception(text(MSG_INVALID_CHARSET, id));
     }
 }
 /// Transcode data using this character set.
@@ -74,7 +76,7 @@ string charsetID(CharacterSet charset)
     case cp437:     return ID_CP437;
     case ebcdic:    return ID_EBCDIC;
     case mac:       return ID_MAC;
-    default:        throw new Exception(text("Invalid charset: ", charset));
+    default:        throw new Exception(text(MSG_INVALID_CHARSET, charset));
     }
 }
 /// Get character set name.
@@ -87,7 +89,7 @@ string charsetName(int charset)
     case cp437:     return NAME_CP437;
     case ebcdic:    return NAME_EBCDIC;
     case mac:       return NAME_MAC;
-    default:        throw new Exception(text("Invalid charset: ", charset));
+    default:        throw new Exception(text(MSG_INVALID_CHARSET, charset));
     }
 }
 

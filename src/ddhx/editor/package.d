@@ -9,6 +9,8 @@ public import ddhx.editor.base : IDocumentEditor;
 import ddhx.editor.piecev2 : PieceV2DocumentEditor;
 import ddhx.editor.piecev3 : PieceV3DocumentEditor;
 
+import messages;
+
 // Convenience function used in main.d and benchmarks.
 /// Select and initiate new document editor instance.
 ///
@@ -25,6 +27,6 @@ IDocumentEditor spawnEditor(string name = null)
     case "piecev3", null: // NOTE: null chooses default backend
         return new PieceV3DocumentEditor();
     default:
-        throw new Exception(text("Backend does not exist: ", name));
+        throw new Exception(text(MSG_BACKEND_DOES_NOT_EXIST, name));
     }
 }

@@ -32,6 +32,7 @@ import ddhx.transcoder;
 
 import colors;
 import configuration;
+import messages;
 import patterns;
 import ranges;
 import status;
@@ -438,7 +439,7 @@ void initdefaults()
     (Session* session, string[] args)
     {
         if (args.length == 0)
-            throw new Exception("Missing action");
+            throw new Exception(MSG_MISSING_ACTION);
         
         // Don't need a throw command, this throws plenty
         switch (args[0]) {
@@ -546,7 +547,7 @@ void bindkey(int key, string command, string[] parameters)
     
     void function(Session*, string[]) *impl = command in g_commands;
     if (impl == null)
-        throw new Exception(text("Unknown command: ", command));
+        throw new Exception(text(MSG_UNKNOWN_COMMAND, command));
     
     g_keys[key] = Keybind( *impl, parameters );
 }
@@ -834,7 +835,7 @@ int promptkey(string text)
     TerminalSize tsize = terminalSize();
     int tcols = tsize.columns - 1;
     if (tcols < 10)
-        throw new Exception("Not enough space for prompt");
+        throw new Exception(MSG_NOT_ENOUGH_SPACE_FOR_PROMPT);
     terminalCursor(0, tsize.rows - 1);
     terminalWriteChar(' ', tcols);
     
@@ -851,7 +852,7 @@ Lread:
     if (input.type != InputType.keyDown)
         goto Lread;
     if (iscancelling(input))
-        throw new Exception("Canceled");
+        throw new Exception(MSG_CANCELED);
     
     return input.key;
 }
@@ -865,7 +866,7 @@ string askstring(string[] args, size_t idx, string prefix)
     // Bonus: Besides, throwing an exception is easier to manage than
     // manually checking the output at every invokation.
     if (s is null || s.length == 0)
-        throw new Exception("Canceled");
+        throw new Exception(MSG_CANCELED);
     
     return s;
 }
@@ -879,7 +880,7 @@ Range askrange(string[] args, size_t idx, string prefix)
     
     switch (r.start) {
     case RangeSentinel.eof: // why would you?
-        throw new Exception("Range start cannot be EOF");
+        throw new Exception(MSG_RANGE_START_CANNOT_BE_EOF);
     case RangeSentinel.cursor:
         r.start = g_session.position_cursor;
         break;
@@ -901,11 +902,11 @@ Range askrange(string[] args, size_t idx, string prefix)
     }
     
     if (r.start < 0)
-        throw new Exception("range: Start out of range");
+        throw new Exception(MSG_RANGE_START_OUT_OF_RANGE);
     if (r.end   < 0)
-        throw new Exception("range: End out of range");
+        throw new Exception(MSG_RANGE_END_OUT_OF_RANGE);
     if (r.start > r.end)
-        throw new Exception("range: Cannot start after end");
+        throw new Exception(MSG_RANGE_START_AFTER_END);
     
     return r;
 }
@@ -942,7 +943,7 @@ void save_to_file(IDocumentEditor editor, string target)
     ulong avail = availableDiskSpace(target);
     log("avail=%u docsize=%d", avail, docsize);
     if (avail < docsize)
-        throw new Exception(text("Insufficient space, need ", docsize - avail, " bytes"));
+        throw new Exception(text(MSG_INSUFFICIENT_SPACE_NEED, docsize - avail, " bytes"));
     
     // 1. Create a temp file into same directory (with tmp suffix)
     string basedir = dirName(target);
@@ -959,7 +960,7 @@ void save_to_file(IDocumentEditor editor, string target)
     {
         ubyte[] buffer = (cast(ubyte*)malloc(CONFIG_CHUNKSIZE))[0..CONFIG_CHUNKSIZE];
         if (buffer is null)
-            throw new Exception("error: Out of memory");
+            throw new Exception(MSG_OUT_OF_MEMORY);
         scope(exit) free(buffer.ptr);
         
         File fileout = File(tmppath, "w");
@@ -2552,7 +2553,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
     // Throwing on malloc failure is weird... but uses less memory than a search buffer would
     ubyte[] hay = (cast(ubyte*)malloc(CONFIG_CHUNKSIZE))[0..CONFIG_CHUNKSIZE];
     if (hay is null)
-        throw new Exception("error: Out of memory");
+        throw new Exception(MSG_OUT_OF_MEMORY);
     scope(exit) free(hay.ptr);
     
     log("position=%d flags=%#x needle=[%(%#x,%)]", position, flags, needle);
@@ -2572,7 +2573,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
         do
         {
             if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
-                throw new Exception("Canceled");
+                throw new Exception(MSG_CANCELED);
             
             base -= CONFIG_CHUNKSIZE;
             if (base < 0)
@@ -2615,7 +2616,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
         do
         {
             if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
-                throw new Exception("Canceled");
+                throw new Exception(MSG_CANCELED);
             
             ubyte[] haystack = session.editor.view(position, hay);
             if (haystack.length < needle.length)
@@ -2727,7 +2728,7 @@ void prompt_command(Session *session, string[] args)
     const(void function(Session*, string[])) *com = name in g_commands;
     if (com == null)
     {
-        throw new Exception(text("command not found: ", name));
+        throw new Exception(text(MSG_COMMAND_NOT_FOUND, name));
     }
     
     // Run command, it's ok if it throws, it's covered by a key operation,
@@ -2871,7 +2872,7 @@ void move_skip_backward(Session *session, string[] args)
     if (sel.length)
     {
         if (sel.length > MiB!256)
-            throw new Exception("Selection too big");
+            throw new Exception(MSG_SELECTION_TOO_BIG);
         needle.length = cast(size_t)sel.length;
         needle = session.editor.view(sel.start, needle);
         if (needle.length < sel.length)
@@ -2918,7 +2919,7 @@ void move_skip_forward(Session *session, string[] args)
     if (sel.length)
     {
         if (sel.length > MiB!256)
-            throw new Exception("Selection too big");
+            throw new Exception(MSG_SELECTION_TOO_BIG);
         needle.length = cast(size_t)sel.length;
         needle = session.editor.view(sel.start, needle);
         if (needle.length < sel.length)
@@ -3317,7 +3318,7 @@ void bookmark_set(Session *session, string[] args)
 {
     Bookmark bk = bookmark_range(session, args);
     if (bk.length <= 0)
-        throw new Exception("Bookmark length must be positive");
+        throw new Exception(MSG_BOOKMARK_LENGTH_MUST_BE_POSITIVE);
 
     bookmark_insert(session, bk);
     g_status |= UVIEW | USTATUS;
@@ -3342,7 +3343,7 @@ bool bookmark_overlaps(Session *session, long start, long length)
 void bookmark_next(Session *session, string[] args)
 {
     if (session.bookmarks.length == 0)
-        throw new Exception("No bookmarks");
+        throw new Exception(MSG_NO_BOOKMARKS);
 
     unselect(session); // Navigation, unselect
 
@@ -3368,7 +3369,7 @@ void bookmark_next(Session *session, string[] args)
 void bookmark_prev(Session *session, string[] args)
 {
     if (session.bookmarks.length == 0)
-        throw new Exception("No bookmarks");
+        throw new Exception(MSG_NO_BOOKMARKS);
 
     unselect(session); // Navigation, unselect
 
@@ -3395,7 +3396,7 @@ void bookmark_toggle(Session *session, string[] args)
     Bookmark bk = bookmark_range(session, args);
 
     if (bk.length <= 0)
-        throw new Exception("Range length must be positive");
+        throw new Exception(MSG_RANGE_LENGTH_MUST_BE_POSITIVE);
 
     if (bookmark_overlaps(session, bk.address, bk.length))
         bookmark_unset(session, args);
@@ -3409,7 +3410,7 @@ void bookmark_unset(Session *session, string[] args)
     Bookmark bk = bookmark_range(session, args);
 
     if (bk.length <= 0)
-        throw new Exception("Range length must be positive");
+        throw new Exception(MSG_RANGE_LENGTH_MUST_BE_POSITIVE);
 
     long end = bk.address + bk.length; // exclusive
 
@@ -3451,7 +3452,7 @@ void bookmark_clear(Session *session, string[] args)
 void bookmark_save(Session *session, string[] args)
 {
     if (session.bookmarks.length == 0)
-        throw new Exception("No bookmarks to save");
+        throw new Exception(MSG_NO_BOOKMARKS_TO_SAVE);
 
     string path = askstring(args, 0, "Save bookmarks to: ");
 
@@ -3507,7 +3508,7 @@ void bookmark_load(Session *session, string[] args)
         // Right now, bookmarks only use integers, so no string copies needed
         ptrdiff_t sepi = indexOfSpace(line);
         if (sepi <= 0)
-            throw new Exception(text("Bookmark: line ", lineno, ": expected '<address> <length>'"));
+            throw new Exception(text(MSG_BOOKMARK_LINE_PREFIX, lineno, ": expected '<address> <length>'"));
         
         string straddr = line[0..sepi];
         string strlent = stripLeft(line[sepi..$]);
@@ -3520,11 +3521,11 @@ void bookmark_load(Session *session, string[] args)
         }
         catch (ConvException e)
         {
-            throw new Exception(text("Bookmark: line ", lineno, ": ", e.msg));
+            throw new Exception(text(MSG_BOOKMARK_LINE_PREFIX, lineno, ": ", e.msg));
         }
 
         if (bk.address < 0 || bk.length <= 0)
-            throw new Exception(text("Bookmark: line ", lineno, ": invalid address or length"));
+            throw new Exception(text(MSG_BOOKMARK_LINE_PREFIX, lineno, ": invalid address or length"));
 
         bookmark_insert(session, bk);
     }
@@ -3542,7 +3543,7 @@ void change_writemode(Session *session, string[] args)
 {
     // Can't switch from restricted mode
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Can't edit in read-only");
+        throw new Exception(MSG_CANT_EDIT_READONLY);
     
     // Optional argument
     if (args.length > 0)
@@ -3561,7 +3562,7 @@ void change_writemode(Session *session, string[] args)
             session.rc.writemode = WritingMode.digit;
             break;
         default:
-            throw new Exception(text("Unknown writemode:", args[0]));
+            throw new Exception(text(MSG_UNKNOWN_WRITEMODE, args[0]));
         }
     }
     else
@@ -3690,7 +3691,7 @@ void goto_(Session *session, string[] args)
     if (sel.length)
     {
         if (sel.length > long.sizeof)
-            throw new Exception("Selection too large");
+            throw new Exception(MSG_SELECTION_TOO_LARGE);
         
         Element e;
         ubyte[] res = session.editor.view(sel.start, e.raw.ptr, cast(size_t)sel.length);
@@ -3714,23 +3715,23 @@ void goto_(Session *session, string[] args)
         switch (off[0]) {
         case '+':
             if (off.length <= 1)
-                throw new Exception("Incomplete number");
+                throw new Exception(MSG_INCOMPLETE_NUMBER);
             position = scan(off[1..$]);
             absolute = false;
             break;
         case '-':
             if (off.length <= 1)
-                throw new Exception("Incomplete number");
+                throw new Exception(MSG_INCOMPLETE_NUMBER);
             position = -scan(off[1..$]);
             absolute = false;
             break;
         case '%':
             if (off.length <= 1) // just '%'
-                throw new Exception("Need percentage number");
+                throw new Exception(MSG_NEED_PERCENTAGE_NUMBER);
             
             double per = to!double(off[1..$]);
             if (per > 100.0) // Can't go beyond document (EOF)
-                throw new Exception("Percentage cannot be over 100");
+                throw new Exception(MSG_PERCENTAGE_OVER_100);
             position = llpercentdivf(session.editor.size(), per);
             absolute = true;
             break;
@@ -3825,7 +3826,7 @@ void export_range(Session *session, string[] args)
 {
     Selection sel = selection(session);
     if (sel.length == 0)
-        throw new Exception("Need selection");
+        throw new Exception(MSG_NEED_SELECTION);
     
     string name = askstring(args, 0, "Name: ");
     if (exists(name))
@@ -3842,7 +3843,7 @@ void export_range(Session *session, string[] args)
     // Re-using search alloc func because lazy
     ubyte[] buf = (cast(ubyte*)malloc(CONFIG_CHUNKSIZE))[0..CONFIG_CHUNKSIZE];
     if (buf is null)
-        throw new Exception("error: Out of memory");
+        throw new Exception(MSG_OUT_OF_MEMORY);
     scope(exit) free(buf.ptr);
     
     // HACK: end is inclusive. D ranges are not.
@@ -3868,7 +3869,7 @@ void export_range(Session *session, string[] args)
 void replace_(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
     Selection sel = selection(session);
     if (sel.length)
@@ -3880,7 +3881,7 @@ void replace_(Session *session, string[] args)
         }
         Pattern p = pattern(session.rc.charset, args);
         if (p.flags & PATTERN_HAS_GLOB)
-            throw new Exception("Can't replace with globbing");
+            throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
@@ -3895,7 +3896,7 @@ void replace_(Session *session, string[] args)
 
     Pattern p = pattern(session.rc.charset, args);
     if (p.flags & PATTERN_HAS_GLOB)
-        throw new Exception("Can't replace with globbing");
+        throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternReplace(session.position_cursor, pb.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
@@ -3905,7 +3906,7 @@ void replace_(Session *session, string[] args)
 void insert_(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
     Selection sel = selection(session);
     if (sel.length)
@@ -3917,7 +3918,7 @@ void insert_(Session *session, string[] args)
         }
         Pattern p = pattern(session.rc.charset, args);
         if (p.flags & PATTERN_HAS_GLOB)
-            throw new Exception("Can't insert with globbing");
+            throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
@@ -3932,7 +3933,7 @@ void insert_(Session *session, string[] args)
 
     Pattern p = pattern(session.rc.charset, args);
     if (p.flags & PATTERN_HAS_GLOB)
-        throw new Exception("Can't insert with globbing");
+        throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternInsert(session.position_cursor, pb.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
@@ -3942,7 +3943,7 @@ void insert_(Session *session, string[] args)
 void replace_range(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
     Selection sel = selection(session);
     if (sel.length)
@@ -3954,7 +3955,7 @@ void replace_range(Session *session, string[] args)
         }
         Pattern p = pattern(session.rc.charset, args);
         if (p.flags & PATTERN_HAS_GLOB)
-            throw new Exception("Can't replace with globbing");
+            throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
@@ -3975,7 +3976,7 @@ void replace_range(Session *session, string[] args)
     Range r = askrange(args, 0, "Range: ");
     Pattern p = pattern(session.rc.charset, args[1..$]);
     if (p.flags & PATTERN_HAS_GLOB)
-        throw new Exception("Can't replace with globbing");
+        throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternReplace(r.start, r.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
@@ -3985,7 +3986,7 @@ void replace_range(Session *session, string[] args)
 void insert_range(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
     Selection sel = selection(session);
     if (sel.length)
@@ -3997,7 +3998,7 @@ void insert_range(Session *session, string[] args)
         }
         Pattern p = pattern(session.rc.charset, args);
         if (p.flags & PATTERN_HAS_GLOB)
-            throw new Exception("Can't insert with globbing");
+            throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
         g_status |= UVIEW | UHEADER | USTATUS;
@@ -4018,7 +4019,7 @@ void insert_range(Session *session, string[] args)
     Range r = askrange(args, 0, "Range: ");
     Pattern p = pattern(session.rc.charset, args[1..$]);
     if (p.flags & PATTERN_HAS_GLOB)
-        throw new Exception("Can't insert with globbing");
+        throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternInsert(r.start, r.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
@@ -4028,7 +4029,7 @@ void insert_range(Session *session, string[] args)
 void replace_file(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
     string path = askstring(args, 0, "File: ");
     
@@ -4043,7 +4044,7 @@ void replace_file(Session *session, string[] args)
 void insert_file(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
     string path = askstring(args, 0, "File: ");
     
@@ -4066,7 +4067,7 @@ void clip_copy(Session *session, string[] args)
     {
         // Address space range check (notably on 32-bit systems)
         if (sel.length > MAXSIZE)
-            throw new Exception("Clipboard cannot contain selection");
+            throw new Exception(MSG_CLIPBOARD_CANNOT_CONTAIN_SELECTION);
         
         if (sel.length >= CONFIG_COPY_WORRY)
         {
@@ -4090,7 +4091,7 @@ void clip_copy(Session *session, string[] args)
     
     void *ptr = realloc(g_clipboard_ptr, len);
     if (ptr == null)
-        throw new Exception("Allocation failed");
+        throw new Exception(MSG_ALLOCATION_FAILED);
     g_clipboard_ptr = cast(ubyte*)ptr;
     
     g_clipboard_len = len;
@@ -4110,7 +4111,7 @@ void clip_cut(Session *session, string[] args)
     {
         // Address space range check (notably on 32-bit systems)
         if (sel.length > MAXSIZE)
-            throw new Exception("Clipboard cannot contain selection");
+            throw new Exception(MSG_CLIPBOARD_CANNOT_CONTAIN_SELECTION);
         
         if (sel.length >= CONFIG_COPY_WORRY)
         {
@@ -4134,7 +4135,7 @@ void clip_cut(Session *session, string[] args)
     
     void *ptr = realloc(g_clipboard_ptr, len);
     if (ptr == null)
-        throw new Exception("Allocation failed");
+        throw new Exception(MSG_ALLOCATION_FAILED);
     g_clipboard_ptr = cast(ubyte*)ptr;
     
     g_clipboard_len = len;
@@ -4149,7 +4150,7 @@ void clip_cut(Session *session, string[] args)
 void clip_paste(Session *session, string[] args)
 {
     if (g_clipboard_ptr == null)
-        throw new Exception("Clipboard is empty");
+        throw new Exception(MSG_CLIPBOARD_EMPTY);
     
     // Typical behaviour with text editors: If we paste with a selection,
     // (a) selection region gets removed and (b) new data is inserted
@@ -4176,7 +4177,7 @@ void clip_paste(Session *session, string[] args)
         session.editor.replace(session.position_cursor, g_clipboard_ptr, g_clipboard_len);
         break;
     case WritingMode.readonly:
-        throw new Exception("Document is read-only");
+        throw new Exception(MSG_DOCUMENT_READONLY);
     }
     
     // Move cursor to end of pasted data, which helps repeating the action of
@@ -4202,7 +4203,7 @@ void clip_clear(Session *session, string[] args)
 void save(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot save, read-only");
+        throw new Exception(MSG_CANNOT_SAVE_READONLY);
     
     // TODO: Document type check
     //       Some document types (ie, disk, process memory) cannot be saved to a file
@@ -4220,7 +4221,7 @@ void save(Session *session, string[] args)
         target = promptline("Name: ");
         if (target.length == 0)
         {
-            throw new Exception("Canceled");
+            throw new Exception(MSG_CANCELED);
         }
         
         // Check if target exists to ask for overwrite
@@ -4232,7 +4233,7 @@ void save(Session *session, string[] args)
             case 'y', 'Y': // Continue
                 break;
             default:
-                throw new Exception("Canceled");
+                throw new Exception(MSG_CANCELED);
             }
         }
     }
@@ -4357,7 +4358,7 @@ void reset_keys(Session *session, string[] args)
 void color(Session *session, string[] args)
 {
     if (args.length < 1)
-        throw new Exception("Missing scheme");
+        throw new Exception(MSG_MISSING_SCHEME);
     
     import std.traits : EnumMembers;
     
@@ -4371,7 +4372,7 @@ void color(Session *session, string[] args)
     }
     
     if (args.length < 2)
-        throw new Exception("Missing color");
+        throw new Exception(MSG_MISSING_COLOR);
     
     // reset: reset only for this scheme
     ColorScheme scheme = getScheme(args[0]);
@@ -4393,7 +4394,7 @@ void find(Session *session, string[] args)
     else if (sel.length) // search by selection
     {
         if (sel.length > CONFIG_NEEDLE_LIMIT)
-            throw new Exception("Selection too big");
+            throw new Exception(MSG_SELECTION_TOO_BIG);
         ubyte[] buf = new ubyte[cast(size_t)sel.length];
         g_needle = Pattern.fromBytes( session.editor.view(sel.start, buf) );
         if (g_needle.length < sel.length)
@@ -4401,7 +4402,7 @@ void find(Session *session, string[] args)
         sel.start += g_needle.length;
     }
     else
-        throw new Exception("Need search");
+        throw new Exception(MSG_NEED_SEARCH);
     
     if (g_needle.length == 0)
         return;
@@ -4441,7 +4442,7 @@ void find_back(Session *session, string[] args)
     else if (sel.length) // selection
     {
         if (sel.length > CONFIG_NEEDLE_LIMIT)
-            throw new Exception("Selection too big");
+            throw new Exception(MSG_SELECTION_TOO_BIG);
         ubyte[] buf = new ubyte[cast(size_t)sel.length];
         g_needle = Pattern.fromBytes( session.editor.view(sel.start, buf) );
         if (g_needle.length < sel.length)
@@ -4449,7 +4450,7 @@ void find_back(Session *session, string[] args)
         sel.start -= g_needle.length;
     }
     else
-        throw new Exception("Need search");
+        throw new Exception(MSG_NEED_SEARCH);
     
     unselect(session);
     
@@ -4548,20 +4549,20 @@ void splitReplaceArgs(string[] args, out string[] needleArgs, out string[] replA
         if (a == "--") { sep = i; break; }
     }
     if (sep == size_t.max)
-        throw new Exception("Need needle and replacement, separated by --");
+        throw new Exception(MSG_NEED_NEEDLE_AND_REPLACEMENT);
     needleArgs = args[0..sep];
     replArgs = args[sep+1..$];
     if (needleArgs.length == 0)
-        throw new Exception("Missing needle");
+        throw new Exception(MSG_MISSING_NEEDLE);
     if (replArgs.length == 0)
-        throw new Exception("Missing replacement");
+        throw new Exception(MSG_MISSING_REPLACEMENT);
 }
 
 //
 void find_replace(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
 
     // Allows find-replace to be repeated (typically via ^R)
     if (args.length)
@@ -4571,14 +4572,14 @@ void find_replace(Session *session, string[] args)
 
         g_needle = pattern(session.rc.charset, needleArgs);
         if (g_needle.length == 0)
-            throw new Exception("Empty needle");
+            throw new Exception(MSG_EMPTY_NEEDLE);
 
         g_replacement = pattern(session.rc.charset, replArgs);
         if (g_replacement.flags & PATTERN_HAS_GLOB)
-            throw new Exception("Can't replace with globbing");
+            throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
     else if (g_needle.data is null || g_replacement.data is null)
-        throw new Exception("No previous find-replace to repeat");
+        throw new Exception(MSG_NO_PREVIOUS_FIND_REPLACE);
 
     Selection sel = selection(session);
     long start = sel.length ? sel.end + 1 : session.position_cursor;
@@ -4612,7 +4613,7 @@ void find_replace(Session *session, string[] args)
 void find_replace_all(Session *session, string[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
-        throw new Exception("Cannot edit, read-only");
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
 
     if (args.length)
     {
@@ -4621,14 +4622,14 @@ void find_replace_all(Session *session, string[] args)
 
         g_needle = pattern(session.rc.charset, needleArgs);
         if (g_needle.length == 0)
-            throw new Exception("Empty needle");
+            throw new Exception(MSG_EMPTY_NEEDLE);
 
         g_replacement = pattern(session.rc.charset, replArgs);
         if (g_replacement.flags & PATTERN_HAS_GLOB)
-            throw new Exception("Can't replace with globbing");
+            throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
     else if (g_needle.data is null || g_replacement.data is null)
-        throw new Exception("No previous find-replace to repeat");
+        throw new Exception(MSG_NO_PREVIOUS_FIND_REPLACE);
 
     ubyte[] pb = g_replacement.toBytes();
 
@@ -4676,7 +4677,7 @@ void quit(Session *session, string[] args)
             break;
         default:
             // Canceling isn't an error, don't know
-            message("Canceled");
+            message(MSG_CANCELED);
             return;
         }
     }

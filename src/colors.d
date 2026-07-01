@@ -11,6 +11,7 @@ import std.conv : text;
 import ddhx.list;
 import ddhx.platform : assertion;
 
+import messages;
 import os.terminal : TermColor;
 
 /* Remember, we only have 8 usable colors in a 16-color space (fg == bg -> bad).
@@ -49,7 +50,7 @@ ColorScheme getScheme(string name)
     case "diff-changed":return ColorScheme.diff_changed;
     case "diff-missing":return ColorScheme.diff_missing;
     default:
-        throw new Exception(text("Unknown scheme: ", name));
+        throw new Exception(text(MSG_UNKNOWN_SCHEME, name));
     }
 }
 unittest
@@ -97,7 +98,7 @@ struct ColorMap
         // "red:"       -> fg=red
         // "red"        -> fg=red
         if (colorstr.length == 0)
-            throw new Exception("Color cannot be empty");
+            throw new Exception(MSG_COLOR_EMPTY);
         
         ColorMap map;
         
@@ -147,7 +148,7 @@ struct ColorMap
         case "brightyellow":return Nullable!TermColor(TermColor.brightyellow);
         case "white":       return Nullable!TermColor(TermColor.white);
         default:
-            throw new Exception(text("Unknown color: ", term));
+            throw new Exception(text(MSG_UNKNOWN_COLOR, term));
         }
     }
 }

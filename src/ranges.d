@@ -5,6 +5,7 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ranges;
 
+import messages;
 import utils : scan;
 
 /// Special values
@@ -38,7 +39,7 @@ struct Range
 Range range(string expr)
 {
     if (expr is null || expr.length == 0)
-        throw new Exception("Empty range");
+        throw new Exception(MSG_EMPTY_RANGE);
     
     import std.string : indexOf;
     
@@ -51,15 +52,15 @@ Range range(string expr)
         r.start = RangeSentinel.cursor;
         r.end   = scan(expr);
         if (r.end == 0)
-            throw new Exception("Length cannot be zero");
+            throw new Exception(MSG_RANGE_LENGTH_ZERO);
         r.end--;
         r.flags = RANGE_RELATIVE;
         return r;
     }
     if (i == 0)
-        throw new Exception("Missing start in range");
+        throw new Exception(MSG_RANGE_MISSING_START);
     if (i+1 == expr.length)
-        throw new Exception("Missing end in range");
+        throw new Exception(MSG_RANGE_MISSING_END);
     
     // Process start
     string a = expr[0..i];
@@ -78,7 +79,7 @@ Range range(string expr)
         if (b[0] == '+')
         {
             if (b.length < 2)
-                throw new Exception("Missing length in range");
+                throw new Exception(MSG_RANGE_MISSING_LENGTH);
             r.end   = scan(b[1..$]);
             r.flags = RANGE_RELATIVE;
         }

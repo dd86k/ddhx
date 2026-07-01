@@ -11,6 +11,8 @@ import std.string : startsWith;
 
 import ddhx.transcoder : CharacterSet;
 
+import messages;
+
 /// Pattern prefix type.
 enum PatternType
 {
@@ -218,7 +220,7 @@ Pattern pattern(CharacterSet charset, string[] args...)
         // Throwing (after slicing) here makes the behaviour consistent and
         // ensures there is at least one or more characters
         if (pfx.str.length == 0)
-            throw new Exception("Missing data for pattern");
+            throw new Exception(MSG_MISSING_PATTERN_DATA);
         
     Lretry:
         final switch (pfx.type) {
@@ -274,7 +276,7 @@ Pattern pattern(CharacterSet charset, string[] args...)
                 pfx.type = last;
                 goto Lretry;
             }
-            throw new Exception(text("Unknown pattern prefix: ", arg));
+            throw new Exception(text(MSG_UNKNOWN_PATTERN_PREFIX, arg));
         }
         last = pfx.type;
     }
