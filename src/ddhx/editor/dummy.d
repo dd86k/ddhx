@@ -20,7 +20,12 @@ class DummyDocumentEditor : IDocumentEditor
     {
         throw new NotImplementedException();
     }
-    
+
+    IDocument document()
+    {
+        return null;
+    }
+
     void close()
     {
         throw new NotImplementedException();
@@ -34,6 +39,11 @@ class DummyDocumentEditor : IDocumentEditor
     void markSaved()
     {
         // Do nothing
+    }
+
+    bool prepareInplaceSave()
+    {
+        return false;
     }
 
     ubyte[] view(long position, void* data, size_t size)

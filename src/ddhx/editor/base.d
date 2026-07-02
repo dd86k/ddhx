@@ -34,7 +34,10 @@ interface IDocumentEditor
 {
     /// Open document with this editor instance.
     typeof(this) open(IDocument);
-    
+
+    /// Returns the currently opened document, or null when none is opened.
+    IDocument document();
+
     /// Close document editor and all references.
     void close();
     
@@ -43,6 +46,22 @@ interface IDocumentEditor
     
     /// Mark the document as saved.
     void markSaved();
+
+    /// Prepare the editor for an in-place save of its source document.
+    ///
+    /// An in-place save overwrites the file ranges matching the logical
+    /// ranges of dirtyPieceInfos(true) and truncates the file to size().
+    /// Editors supporting preservation convert every source reference,
+    /// current or in undo/redo history, that reads from those ranges into
+    /// an in-memory copy, keeping the editor and its history valid after
+    /// the file is rewritten. This also makes write order irrelevant: the
+    /// remaining source references only read ranges the save leaves alone.
+    ///
+    /// Returns: true when references were preserved (history stays valid
+    /// after saving); false when unsupported or failed, in which case the
+    /// caller must not write displaced source pieces at all, and must
+    /// reopen the document after saving.
+    bool prepareInplaceSave();
     
     /// View document at position using buffer.
     ubyte[] view(long position, void *data, size_t size);

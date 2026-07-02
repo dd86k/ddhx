@@ -308,7 +308,14 @@ class PieceV3DocumentEditor : IDocumentEditor
         
         return this;
     }
-    
+
+    /// Currently opened document.
+    /// Returns: Document instance, or null when none is opened.
+    IDocument document()
+    {
+        return basedoc;
+    }
+
     /// Close document.
     ///
     /// Make sure to save it before closing!
@@ -336,6 +343,135 @@ class PieceV3DocumentEditor : IDocumentEditor
     void markSaved()
     {
         history_saved = history_index;
+    }
+
+    /// Prepare the editor for an in-place save of its source document.
+    ///
+    /// Converts every source reference, current or in undo/redo history,
+    /// whose read range the save would overwrite (or truncate away) into
+    /// an in-memory buffer reference. Once done, the save cannot
+    /// invalidate anything the editor still points at: remaining source
+    /// references only read file ranges the save leaves untouched, so
+    /// pieces can be written in any order and history stays usable.
+    /// Returns: true when references were preserved; false on failure.
+    bool prepareInplaceSave()
+    {
+        // A save is a natural coalescing barrier
+        invalidateCoalesce();
+
+        // Without a document, there are no source references to preserve
+        if (basedoc is null)
+            return true;
+
+        // Collect the file ranges the save will overwrite, as [start,end):
+        // write ranges of dirty/displaced pieces, and the truncated tail
+        long[2][] written;
+        foreach (ref info; dirtyPieceInfos(true))
+            written ~= [ info.logicalPos, info.logicalPos + info.size ];
+        written ~= [ logical_size, long.max ];
+
+        // Sort and merge into disjoint ranges for binary searching
+        import std.algorithm.sorting : sort;
+        sort!((a, b) => a[0] < b[0])(written);
+        long[2][] merged = [ written[0] ];
+        foreach (range; written[1 .. $])
+        {
+            if (range[0] <= merged[$ - 1][1])
+                merged[$ - 1][1] = max(merged[$ - 1][1], range[1]);
+            else
+                merged ~= range;
+        }
+
+        // True if [start, end) intersects any written range.
+        // Ranges are disjoint and sorted, so only the last range starting
+        // before end can overlap.
+        bool endangered(long start, long end)
+        {
+            size_t lo, hi = merged.length;
+            while (lo < hi)
+            {
+                size_t mid = (lo + hi) / 2;
+                if (merged[mid][0] < end)
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+            return lo > 0 && merged[lo - 1][1] > start;
+        }
+
+        // Stashed copies keyed by (position, size): the same range is
+        // typically referenced by both a tree piece and its history copy,
+        // so read and store it only once
+        const(void)*[long[2]] stashed;
+        bool failed;
+
+        // Convert an endangered source piece to a buffer piece.
+        // Returns: true when the piece was modified.
+        bool retarget(ref Piece piece)
+        {
+            if (piece.source != Source.source)
+                return false;
+            if (endangered(piece.position, piece.position + piece.size) == false)
+                return false;
+
+            // Cannot address this much memory (32-bit platforms)
+            if (cast(ulong)piece.size > size_t.max)
+            {
+                failed = true;
+                return false;
+            }
+
+            long[2] key = [ piece.position, piece.size ];
+            const(void)* data;
+            if (const(void)** existing = key in stashed)
+            {
+                data = *existing;
+            }
+            else
+            {
+                // Copy the endangered range out of the file. A short read
+                // (file shrank externally) leaves the tail zeroed, which
+                // view() would have truncated anyway.
+                ubyte[] copy; copy.length = cast(size_t)piece.size;
+                basedoc.readAt(piece.position, copy);
+                data = copy.ptr;
+                stashed[key] = data;
+            }
+
+            piece.source = Source.buffer;
+            piece.position = 0;
+            piece.buffer.data = data;
+            piece.buffer.ogsize = cast(size_t)piece.size;
+            piece.buffer.skip = 0;
+            return true;
+        }
+
+        // Current pieces. The tree offers no mutable access through its
+        // ranges, so collect, retarget, and re-insert. Cumulatives and
+        // sizes are unchanged, so ordering is unaffected.
+        IndexedPiece[] pieces;
+        foreach (idx; tree[])
+            pieces ~= idx;
+        bool changed;
+        foreach (ref idx; pieces)
+            changed |= retarget(idx.piece);
+        if (changed)
+        {
+            tree.clear();
+            foreach (ref idx; pieces)
+                tree.insert(idx);
+        }
+
+        // History operations, in both undo and redo directions
+        foreach (i; 0 .. history.length)
+        {
+            foreach (ref piece; history[i].added)
+                retarget(piece);
+            foreach (ref idx; history[i].removed)
+                retarget(idx.piece);
+        }
+
+        return failed == false;
     }
     
     ubyte[] view(long position, void* buffer, size_t size)

@@ -204,7 +204,14 @@ class PieceV2DocumentEditor : IDocumentEditor
         
         return this;
     }
-    
+
+    /// Currently opened document.
+    /// Returns: Document instance, or null when none is opened.
+    IDocument document()
+    {
+        return basedoc;
+    }
+
     /// Close document.
     ///
     /// Make sure to save it before closing!
@@ -228,6 +235,13 @@ class PieceV2DocumentEditor : IDocumentEditor
         return logical_size;
     }
     
+    /// In-place save preservation is not supported by this editor;
+    /// the caller must reopen the document after saving in place.
+    bool prepareInplaceSave()
+    {
+        return false;
+    }
+
     void markSaved()
     {
         history_saved = history_index;

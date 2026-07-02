@@ -40,6 +40,7 @@ static immutable string MSG_NOT_ENOUGH_SPACE_FOR_PROMPT = "Not enough space for 
 static immutable string MSG_CANT_EDIT_READONLY = "Can't edit in read-only";
 static immutable string MSG_CANNOT_EDIT_READONLY = "Cannot edit, read-only";
 static immutable string MSG_CANNOT_SAVE_READONLY = "Cannot save, read-only";
+static immutable string MSG_CANNOT_SAVE_INPLACE_DISPLACED = "Editor cannot preserve displaced data for in-place save";
 static immutable string MSG_DOCUMENT_READONLY = "Document is read-only";
 static immutable string MSG_UNKNOWN_WRITEMODE = "Unknown writemode:";
 

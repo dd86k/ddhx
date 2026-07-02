@@ -52,6 +52,8 @@ immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 
 /// Chunk size to use when I/O is involved (reading, writing)
 private enum CONFIG_CHUNKSIZE      = KiB!128;
+/// In-place save write volume limit; beyond it, prefer a full save.
+private enum CONFIG_INPLACE_MAXVOLUME = MiB!64;
 /// Artificial needle size limit for find/find-back commands.
 private enum CONFIG_NEEDLE_LIMIT   = KiB!128;
 /// Amount of data before warning for a copy for clipboard.
@@ -1062,16 +1064,33 @@ unittest
     remove(path);
 }
 
-/// Returns true if half-open ranges [aStart, aStart+aSize) and [bStart, bStart+bSize) overlap.
-bool overlaps(long aStart, long aSize, long bStart, long bSize)
+// Whether in-place saving is worthwhile for this write volume (total size
+// of dirty/displaced pieces). In-place writes only that volume, but
+// preserving undo history stashes about as much in memory, while a full
+// save rewrites the whole document with no stash and replaces it
+// atomically. When in-place loses its I/O advantage or the stash would be
+// too large, prefer the full save.
+bool prefer_inplace(long writevol, long docsize)
 {
-    return aStart < bStart + bSize && bStart < aStart + aSize;
+    return writevol < docsize && writevol <= CONFIG_INPLACE_MAXVOLUME;
+}
+unittest
+{
+    assert(prefer_inplace(0, 100));            // no edits, nothing to write
+    assert(prefer_inplace(10, 100));           // small edit
+    assert(prefer_inplace(100, 100) == false); // whole document dirty
+    assert(prefer_inplace(150, 100) == false); // grew and entirely dirty
+    assert(prefer_inplace(0, 0) == false);     // empty: nothing gained
+    assert(prefer_inplace(MiB!64 + 1, MiB!512) == false); // stash too large
 }
 
 // Try saving "in-place" (directly) to the file at path.
 // Opens its own read-write handle, writes dirty regions, and closes it.
-// When size is unchanged, writes only non-source (dirty) regions.
-// When size changed, also writes displaced source pieces and truncates/extends.
+// The editor first stashes source references that the save would
+// invalidate (prepareInplaceSave), which keeps its state and undo history
+// valid afterwards and makes write order irrelevant. Editors without that
+// support only qualify when no source piece is displaced, and their
+// history is dropped by reopening the document.
 // Can't save with MemoryDocument, caller responsibility.
 void save_inplace(IDocumentEditor editor, string path)
 {
@@ -1081,136 +1100,73 @@ void save_inplace(IDocumentEditor editor, string path)
 
     long docsize = editor.size();
     long filesize = wdoc.size();
-    bool resized = docsize != filesize;
 
-    log("path='%s' strategy='%s' (editor=%d, file=%d)",
-        path,
-        resized ? "displaced+dirty" : "dirty-only",
-        docsize,
-        filesize);
+    // Preserve source references (including undo history) that this save
+    // would otherwise invalidate. Displaced pieces read from the same file
+    // being written to; preservation buffers the endangered ranges, so
+    // every remaining source reference only reads ranges the save leaves
+    // untouched.
+    bool preserved = editor.prepareInplaceSave();
 
-    if (resized)
+    PieceInfo[] pieces = editor.dirtyPieceInfos(true);
+    bool displaced;
+    foreach (ref piece; pieces)
     {
-        // When the document changed size, displaced source pieces read from
-        // the same file we're writing to.  Writing in the wrong order would
-        // corrupt data before it's read.  Use topological sorting to find a
-        // safe write order based on read/write dependencies.
-
-        if (docsize > filesize)
-            wdoc.resize(docsize); // extend first so we can write to the end
-
-        PieceInfo[] pieces = editor.dirtyPieceInfos(true);
-        size_t n = pieces.length;
-
-        // Build dependency graph: for each source piece S, if another
-        // piece P's write range overlaps S's read range, S must be
-        // written before P (edge S -> P).
-        int[][] adj; adj.length = n;   // adjacency list (before piece i)
-        int[] inDeg; inDeg.length = n; // in-degree list (before piece j)
-
-        foreach (i; 0 .. n)
+        if (piece.sourceOffset >= 0)
         {
-            if (pieces[i].sourceOffset < 0)
-                continue;
-            foreach (j; 0 .. n)
-            {
-                if (i != j && overlaps(pieces[j].logicalPos, pieces[j].size,
-                                       pieces[i].sourceOffset, pieces[i].size))
-                {
-                    adj[i] ~= cast(int) j;
-                    inDeg[j]++;
-                }
-            }
+            displaced = true;
+            break;
         }
-
-        // Kahn's algorithm. Drain zero-in-degree nodes into order.
-        bool[] sorted; sorted.length = n;
-        int[] order;   order.reserve(n);
-        int[] queue;
-
-        // Function to drain the queue
-        void drain()
-        {
-            while (queue.length > 0)
-            {
-                int cur = queue[$ - 1];
-                queue = queue[0 .. $ - 1];
-                order ~= cur;
-                sorted[cur] = true;
-                foreach (next; adj[cur])
-                    if (--inDeg[next] == 0)
-                        queue ~= next;
-            }
-        }
-
-        foreach (i; 0 .. n)
-            if (inDeg[i] == 0)
-                queue ~= cast(int) i;
-        drain();
-
-        // Break cycles by buffering the smallest remaining source piece.
-        // Multiple independent cycles can exist (e.g. swapping two
-        // non-adjacent regions), so loop until all cycles are broken.
-        ubyte[][] cycleBuffers;
-        int[] cycleIndices;
-        while (order.length < n)
-        {
-            int cycleIdx = -1;
-            foreach (i; 0 .. n)
-                if (!sorted[i] && pieces[i].sourceOffset >= 0)
-                    if (cycleIdx < 0 || pieces[i].size < pieces[cycleIdx].size)
-                        cycleIdx = cast(int) i;
-
-            // No source piece left in the remaining unsorted set,
-            // the rest are non-source (new data) with no file-read
-            // dependencies, safe to write in any order.
-            if (cycleIdx < 0) break;
-
-            ubyte[] cdata;
-            cdata.length = cast(size_t) pieces[cycleIdx].size;
-            editor.view(pieces[cycleIdx].logicalPos, cdata);
-            cycleBuffers ~= cdata;
-            cycleIndices ~= cycleIdx;
-
-            sorted[cycleIdx] = true;
-            foreach (next; adj[cycleIdx])
-                if (--inDeg[next] == 0)
-                    queue ~= next;
-            drain();
-        }
-        // Remaining non-source pieces (no file-read dependencies).
-        foreach (i; 0 .. n)
-            if (!sorted[i])
-                order ~= cast(int) i;
-
-        // Write pieces in topological order.
-        ubyte[] buf;  buf.length = CONFIG_CHUNKSIZE;
-
-        foreach (idx; order)
-        {
-            long sz = pieces[idx].size;
-            long lp = pieces[idx].logicalPos;
-            for (long off = 0; off < sz; off += CONFIG_CHUNKSIZE)
-            {
-                size_t len = cast(size_t) min(sz - off, CONFIG_CHUNKSIZE);
-                wdoc.writeAt(lp + off, editor.view(lp + off, buf[0 .. len]));
-            }
-        }
-        // Write buffered cycle pieces last.
-        foreach (ci; 0 .. cycleIndices.length)
-            wdoc.writeAt(pieces[cycleIndices[ci]].logicalPos, cycleBuffers[ci]);
-
-        if (docsize < filesize)
-            wdoc.resize(docsize); // shrink after writing
     }
-    else // Write dirty pieces as-is, document is the same size
+
+    log("path='%s' pieces=%u preserved=%d displaced=%d (editor=%d, file=%d)",
+        path, pieces.length, preserved, displaced, docsize, filesize);
+
+    // Without preservation, displaced pieces read regions this save
+    // overwrites, and no write order is safe without buffering.
+    // Throwing here (before any write) lets the caller fall back to a
+    // full save, which handles displacement fine.
+    if (displaced && preserved == false)
+        throw new Exception(MSG_CANNOT_SAVE_INPLACE_DISPLACED);
+
+    if (docsize > filesize)
+        wdoc.resize(docsize); // extend first so we can write to the end
+
+    // Write all dirty/displaced pieces; order does not matter (see above)
+    ubyte[] buf; buf.length = CONFIG_CHUNKSIZE;
+    foreach (ref piece; pieces)
     {
-        foreach (region; editor.dirtyRegions(false))
-            wdoc.writeAt(region.position, region.data);
+        long sz = piece.size;
+        long lp = piece.logicalPos;
+        for (long off = 0; off < sz; off += CONFIG_CHUNKSIZE)
+        {
+            size_t len = cast(size_t) min(sz - off, CONFIG_CHUNKSIZE);
+            wdoc.writeAt(lp + off, editor.view(lp + off, buf[0 .. len]));
+        }
     }
+
+    if (docsize < filesize)
+        wdoc.resize(docsize); // shrink after writing
 
     wdoc.flush();
-    editor.markSaved();
+
+    if (preserved)
+    {
+        // Editor state, including undo history, is still valid against
+        // the new file contents thanks to the preservation step.
+        editor.markSaved();
+    }
+    else
+    {
+        // The file was rewritten under the editor's own document handle,
+        // so source pieces reference pre-save offsets. Reopening rebases
+        // the editor onto the new file contents at the cost of history.
+        IDocument basedoc = editor.document();
+        if (basedoc)
+            editor.open(basedoc);
+        else
+            editor.markSaved();
+    }
 }
 // Test with zero edits
 unittest
@@ -1641,6 +1597,327 @@ unittest
     fdoc.close();
 
     assert(read(path) == "YYABCXXDEF");
+}
+// Test: same document size, but displaced source piece.
+// Deleting and inserting the same amount keeps the file size, yet the
+// source piece no longer lines up with its file offset and must be
+// rewritten (the size check alone would pick the dirty-only strategy).
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "ABCDEFGH";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[]) data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(0, 3);                    // "DEFGH"
+    static immutable string ins = "XYZ";
+    editor.insert(5, ins.ptr, ins.length);  // "DEFGHXYZ", same size as file
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "DEFGHXYZ");
+}
+// Fill a buffer with deterministic aperiodic bytes for the large tests.
+version (unittest)
+private void fillTestPattern(ubyte[] buffer)
+{
+    ulong state = 0x9E3779B97F4A7C15;
+    foreach (ref b; buffer)
+    {
+        state = state * 6364136223846793005 + 1442695040888963407;
+        b = cast(ubyte)(state >> 56);
+    }
+}
+// Test: source piece larger than one I/O chunk shifted toward higher
+// offsets. The piece overlaps its own read range, so ascending chunk
+// writes would clobber source bytes before later chunks read them.
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    enum SIZE = CONFIG_CHUNKSIZE * 2 + 512; // spans multiple chunks
+    ubyte[] data; data.length = SIZE;
+    fillTestPattern(data);
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    static immutable string ins = "!";
+    editor.insert(0, ins.ptr, ins.length); // shift everything right by one
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    ubyte[] written = cast(ubyte[]) read(path);
+    assert(written.length == SIZE + 1);
+    assert(written[0] == '!');
+    assert(written[1 .. $] == data);
+}
+// Test: source piece larger than one I/O chunk shifted toward lower
+// offsets (delete at start), the ascending order counterpart.
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    enum SIZE = CONFIG_CHUNKSIZE * 2 + 512; // spans multiple chunks
+    ubyte[] data; data.length = SIZE;
+    fillTestPattern(data);
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(0, 1); // shift everything left by one
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+
+    editor.close();
+    fdoc.close();
+
+    assert(cast(ubyte[]) read(path) == data[1 .. $]);
+}
+// Test: editor stays consistent after an in-place save that displaced
+// source pieces. The file is rewritten under the editor, so its view must
+// be rebased, and a following edit + save session must produce the right
+// file (previously, pieces kept reading pre-save offsets).
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "ABCDEF";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[]) data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    static immutable string ins = "YY";
+    editor.insert(0, ins.ptr, ins.length); // "YYABCDEF"
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "YYABCDEF");
+
+    // View must reflect the saved document, not stale source offsets
+    ubyte[16] viewbuf;
+    assert(editor.view(0, viewbuf[0 .. 8]) == "YYABCDEF");
+    assert(editor.size() == 8);
+
+    // Second edit + save session on the rebased editor
+    static immutable string ins2 = "!";
+    editor.insert(8, ins2.ptr, ins2.length); // "YYABCDEF!"
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(editor.view(0, viewbuf[0 .. 9]) == "YYABCDEF!");
+
+    editor.close();
+    fdoc.close();
+
+    assert(read(path) == "YYABCDEF!");
+}
+// Test: undo history survives an in-place save. The overwritten source
+// bytes are stashed in memory before the file is rewritten, so undoing
+// past the save point restores them, and redo still works.
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[]) data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    static immutable string newdata = "plane";
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.replace(7, newdata.ptr, newdata.length);
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "hello, plane!");
+
+    // Undo must restore the overwritten bytes from the stash
+    ubyte[32] buffer;
+    assert(editor.undo() >= 0);
+    assert(editor.edited());
+    assert(editor.view(0, buffer[0 .. 13]) == "hello, world!");
+
+    // And saving the undone state must write them back
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "hello, world!");
+
+    // Redo still works after two in-place saves
+    assert(editor.redo() >= 0);
+    assert(editor.view(0, buffer[0 .. 13]) == "hello, plane!");
+
+    editor.close();
+    fdoc.close();
+}
+// Test: undo survives an in-place save that displaced pieces and grew
+// the document (insert, save, undo, save shrinks it back)
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "ABCDEF";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[]) data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    static immutable string ins = "YY";
+    editor.insert(0, ins.ptr, ins.length); // "YYABCDEF"
+
+    save_inplace(editor, path);
+    assert(read(path) == "YYABCDEF");
+
+    ubyte[16] buffer;
+    assert(editor.undo() >= 0);
+    assert(editor.size() == 6);
+    assert(editor.view(0, buffer[0 .. 6]) == "ABCDEF");
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "ABCDEF");
+
+    editor.close();
+    fdoc.close();
+}
+// Test: undo survives a truncating in-place save (data past the new end
+// is stashed before the file shrinks)
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[]) data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.remove(5, 8); // "hello"
+
+    save_inplace(editor, path);
+    assert(read(path) == "hello");
+
+    ubyte[16] buffer;
+    assert(editor.undo() >= 0);
+    assert(editor.view(0, buffer[0 .. 13]) == "hello, world!");
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "hello, world!");
+
+    editor.close();
+    fdoc.close();
+}
+// Test: editors without preservation support (piecev2) refuse in-place
+// saves with displaced pieces (before touching the file), and drop
+// history on dirty-only in-place saves.
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.exception : assertThrown;
+    import std.file : remove, read;
+
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[]) data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope IDocumentEditor editor = spawnEditor("piecev2");
+    editor.open(fdoc);
+
+    // Dirty-only save works, but history is dropped by the reopen
+    static immutable string rep = "H";
+    editor.replace(0, rep.ptr, rep.length);
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "Hello, world!");
+    assert(editor.undo() < 0); // history gone
+
+    // Displaced pieces are refused, file left untouched
+    static immutable string ins = ">";
+    editor.insert(0, ins.ptr, ins.length);
+    assertThrown!Exception(save_inplace(editor, path));
+    assert(read(path) == "Hello, world!");
+
+    editor.close();
+    fdoc.close();
 }
 
 // Move the cursor relative to its position within the file
@@ -4255,14 +4532,26 @@ void save(Session *session, string[] args)
     // It might take a while depending on the strategy used.
     message("Saving...");
     update_status(session);
-    
+
+    // Volume of bytes an in-place save would write (and stash in memory
+    // to keep undo history valid), used to pick the saving strategy
+    long writevol;
+    foreach (ref piece; session.editor.dirtyPieceInfos(true))
+        writevol += piece.size;
+
     // If the original doc is file, try saving it in-place
     try
     {
         // Fallback environment variable
         if (environment.get("DDHX_NO_INPLACE_SAVE") == "1")
             goto Lfallback;
-        
+
+        // When most of the document needs rewriting anyway, the full
+        // save costs about the same I/O, stashes nothing, and replaces
+        // the file atomically
+        if (prefer_inplace(writevol, session.editor.size()) == false)
+            goto Lfallback;
+
         // It will fail if the target does not exist or
         // fails a permission check (e.g., GVFS with O_RDWR)
         save_inplace(session.editor, target);
