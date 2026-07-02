@@ -2414,20 +2414,10 @@ int terminalKeybind(string value)
     if (value.length == 0)
         throw new Exception("Expected key, got empty");
     
-    if (value.length == 1)
-    {
-        int c = value[0];
-        // ISSUE: Yes, adjusts to Key.* enum, but 'a' is also valid...
-        //        Keeping this for compatibility
-        if (c >= 'a' && c <= 'z') // lower ascii
-            return mod | (c - 32);
-        else if (c >= 32 && c < 127) // printable
-            return mod | c;
-    }
-    
     switch (value) {
     case "insert":      return mod | Key.Insert;
     case "home":        return mod | Key.Home;
+    case "end":         return mod | Key.End;
     case "page-up":     return mod | Key.PageUp;
     case "page-down":   return mod | Key.PageDown;
     case "delete":      return mod | Key.Delete;
@@ -2437,6 +2427,8 @@ int terminalKeybind(string value)
     case "down-arrow":  return mod | Key.DownArrow;
     case "tab":         return mod | Key.Tab;
     case "backspace":   return mod | Key.Backspace;
+    case "enter":       return mod | Key.Enter;
+    case "spacebar":    return mod | Key.Spacebar;
     case "f1":          return mod | Key.F1;
     case "f2":          return mod | Key.F2;
     case "f3":          return mod | Key.F3;
@@ -2450,27 +2442,32 @@ int terminalKeybind(string value)
     case "f11":         return mod | Key.F11;
     case "f12":         return mod | Key.F12;
     default:
+        int c = value[0]; // had zero check earlier, this is fine
+        if (c >= 'a' && c <= 'z') // lower ascii, force to upper to map to Key enum
+            return mod | (c - 32);
+        else if (c >= 32 && c < 127) // printable
+            return mod | c;
     }
     
     throw new Exception("Unknown key");
 }
-// Older alias
-alias terminal_keybind = terminalKeybind;
 unittest
 {
-    assert(terminal_keybind("a")             == Key.A);
-    assert(terminal_keybind("alt+a")         == Mod.alt+Key.A);
-    assert(terminal_keybind("ctrl+a")        == Mod.ctrl+Key.A);
-    assert(terminal_keybind("ctrl+shift+a")  == Mod.ctrl+Mod.shift+Key.A);
-    assert(terminal_keybind("shift+ctrl+a")  == Mod.ctrl+Mod.shift+Key.A);
-    assert(terminal_keybind("shift+a")       == Mod.shift+Key.A);
-    assert(terminal_keybind("ctrl+0")        == Mod.ctrl+Key.D0);
-    assert(terminal_keybind("ctrl+insert")   == Mod.ctrl+Key.Insert);
-    assert(terminal_keybind("ctrl+home")     == Mod.ctrl+Key.Home);
-    assert(terminal_keybind("page-up")       == Key.PageUp);
-    assert(terminal_keybind("shift+page-up") == Mod.shift+Key.PageUp);
-    assert(terminal_keybind("delete")        == Key.Delete);
-    assert(terminal_keybind("f1")            == Key.F1);
-    assert(terminal_keybind(":")             == ':');
-    assert(terminal_keybind(":")             == Key.Colon);
+    assert(terminalKeybind("a")             == Key.A);
+    assert(terminalKeybind("alt+a")         == Mod.alt+Key.A);
+    assert(terminalKeybind("ctrl+a")        == Mod.ctrl+Key.A);
+    assert(terminalKeybind("ctrl+shift+a")  == Mod.ctrl+Mod.shift+Key.A);
+    assert(terminalKeybind("shift+ctrl+a")  == Mod.ctrl+Mod.shift+Key.A);
+    assert(terminalKeybind("shift+a")       == Mod.shift+Key.A);
+    assert(terminalKeybind("ctrl+0")        == Mod.ctrl+Key.D0);
+    assert(terminalKeybind("ctrl+insert")   == Mod.ctrl+Key.Insert);
+    assert(terminalKeybind("ctrl+home")     == Mod.ctrl+Key.Home);
+    assert(terminalKeybind("page-up")       == Key.PageUp);
+    assert(terminalKeybind("shift+page-up") == Mod.shift+Key.PageUp);
+    assert(terminalKeybind("delete")        == Key.Delete);
+    assert(terminalKeybind("f1")            == Key.F1);
+    assert(terminalKeybind(":")             == ':');
+    assert(terminalKeybind(":")             == Key.Colon);
+    assert(terminalKeybind("]")             == ']');
+    assert(terminalKeybind("]")             == Key.RightBracket);
 }

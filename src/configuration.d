@@ -11,7 +11,7 @@ import std.system : Endian;
 import ddhx.formatting;
 import ddhx.transcoder : CharacterSet, selectCharacterSet;
 
-import os.terminal : terminal_keybind;
+import os.terminal : terminalKeybind;
 
 import colors;
 import messages;
@@ -151,7 +151,7 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
             if (args.length < 3)
                 throw new Exception(MSG_MISSING_COMMAND);
             bindkey(
-                terminal_keybind( args[1] ),
+                terminalKeybind( args[1] ),
                 args[2],
                 args.length > 3 ? args[3..$] : null);
             continue;
