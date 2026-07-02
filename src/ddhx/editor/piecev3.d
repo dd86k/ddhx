@@ -148,6 +148,68 @@ struct IndexedPiece
     Piece piece;
 }
 
+// NOTE: Indexing performance, and how an augmented tree would fix it.
+//
+//       Current design: the tree is keyed by each piece's ABSOLUTE end
+//       offset (IndexedPiece.cumulative). This makes offset lookup
+//       O(log n) (see view()), but any edit that changes the document
+//       size shifts the key of every piece after the edit point.
+//       adjustCumulatives() does this by removing and re-inserting all
+//       following nodes, so an insert or removal costs O(k log n), where
+//       k is the number of pieces after the edit position. Measured:
+//       with thousands of accumulated pieces, single-byte inserts at
+//       position 0 take milliseconds each, while the same edits at EOF
+//       are near-instant (k = 0). Coalescing keeps piece counts low for
+//       typical sessions, so this only hurts once a document accumulates
+//       tens of thousands of scattered edits.
+//
+//       The fix is a self-balancing tree AUGMENTED with subtree sizes,
+//       also known as an order-statistic tree (CLRS chapter 14). VS Code's
+//       "piece tree" text buffer is the canonical editor example:
+//       https://code.visualstudio.com/blogs/2018/03/23/text-buffer-reimplementation
+//
+//       Instead of an absolute offset, each node stores:
+//       - size: byte length of its own piece (Piece.size, already there)
+//       - left_total: total byte length of its LEFT subtree
+//         (equivalently, the whole subtree's total; only the bookkeeping
+//         differs)
+//
+//       Lookup by document offset becomes a root-to-leaf descent, with no
+//       absolute positions stored anywhere:
+//
+//           node = root;
+//           while (node)
+//           {
+//               if (offset < node.left_total)
+//                   node = node.left;   // target is in the left subtree
+//               else if (offset < node.left_total + node.size)
+//                   return node;        // inside this piece, at in-piece
+//                                       // offset (offset - node.left_total)
+//               else
+//               {
+//                   offset -= node.left_total + node.size;
+//                   node = node.right;  // target is in the right subtree
+//               }
+//           }
+//
+//       Because positions are derived on the way down rather than stored,
+//       there is nothing to shift when the document size changes: growing,
+//       shrinking, inserting, or removing a piece only updates left_total
+//       on the O(log n) ancestors whose left subtree contains it, and the
+//       rebalancing rotations fix up the totals of the two rotated nodes.
+//
+//       Advantages over the current design:
+//       - insert/remove/replace become O(log n) at ANY position;
+//         adjustCumulatives() disappears entirely.
+//       - Lookup stays O(log n), same as today.
+//       - Recorded operations can no longer hold stale absolute
+//         cumulatives, removing a whole class of undo/redo bugs.
+//
+//       The cost: std.container.rbtree cannot be augmented, as it offers
+//       no hook to maintain per-node metadata through its rotations. This
+//       needs a custom red-black (or AVL) tree that fixes up left_total
+//       during rotation, which is why it is a refactor and not a patch.
+
 /// Tree format
 private alias Tree = RedBlackTree!(IndexedPiece, "a.cumulative < b.cumulative");
 
@@ -311,10 +373,13 @@ class PieceV3DocumentEditor : IDocumentEditor
             // Assumes view buffer is ... under 2 GiB
             size_t to_read = cast(size_t)min(available, buffer.length - bi);
             
-            // Read from the piece
+            // Read from the piece. Documents may read short if the piece
+            // claims more data than the source holds (e.g., file shrank);
+            // memory sources always fill the request.
+            size_t got = to_read;
             final switch (index.piece.source) {
             case Source.source:
-                basedoc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]);
+                got = basedoc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]).length;
                 break;
             case Source.buffer:
                 memcpy(buffer.ptr + bi, 
@@ -357,11 +422,15 @@ class PieceV3DocumentEditor : IDocumentEditor
                 }
                 break;
             case Source.document:
-                index.piece.doc.doc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]);
+                got = index.piece.doc.doc.readAt(index.piece.position + piece_offset, buffer[bi..bi+to_read]).length;
                 break;
             }
-            
-            bi += to_read;
+
+            bi += got;
+
+            // Short read: return only what could actually be read
+            if (got < to_read)
+                break;
         }
         
         // Soft assert to be able to catch details
@@ -436,39 +505,39 @@ class PieceV3DocumentEditor : IDocumentEditor
 
         // Create operation with required info, read tree only
         Operation op = Operation(position, -removed, OperationType.remove, position, removed);
-        // Walk tree and RECORD what needs to change (tree remains unchanged!)
-        long cumulative;
-        foreach (idx; tree)
+        // Walk overlapping pieces and RECORD what needs to change
+        // (tree remains unchanged!)
+        // upperBound() already skips pieces ending at or before the removal
+        // start, and pieces are contiguous, so piece_end > position holds.
+        foreach (idx; tree.upperBound(IndexedPiece(position)))
         {
-            long piece_start = cumulative;
+            long piece_start = idx.cumulative - idx.piece.size;
             long piece_end = idx.cumulative;
 
-            // Does this piece overlap with the removal region?
-            if (piece_start < end && piece_end > position)
+            // This piece starts at or past the removal region: all done
+            if (piece_start >= end)
+                break;
+
+            // Record this piece for removal
+            op.removed ~= idx;
+
+            // If piece extends before removal region, keep left portion
+            if (piece_start < position)
             {
-                // Record this piece for removal
-                op.removed ~= idx;
-
-                // If piece extends before removal region, keep left portion
-                if (piece_start < position)
-                {
-                    Piece left = idx.piece;
-                    left.size = position - piece_start;
-                    op.added ~= left;
-                }
-
-                // If piece extends after removal region, keep right portion
-                if (piece_end > end)
-                {
-                    long skip = end - piece_start;
-                    long keep = piece_end - end;
-                    Piece right = trimPiece(idx.piece, skip, keep);
-                    right.size = keep;
-                    op.added ~= right;
-                }
+                Piece left = idx.piece;
+                left.size = position - piece_start;
+                op.added ~= left;
             }
 
-            cumulative = idx.cumulative;
+            // If piece extends after removal region, keep right portion
+            if (piece_end > end)
+            {
+                long skip = end - piece_start;
+                long keep = piece_end - end;
+                Piece right = trimPiece(idx.piece, skip, keep);
+                right.size = keep;
+                op.added ~= right;
+            }
         }
 
         applyOperation(op);
@@ -733,8 +802,9 @@ private:
             break;
         case Source.document: break; // like source
         case Source.pattern:
-            assertion(skip <= uint.max, "skip <= uint.max"); // bad hack, to be reminded later
-            piece.pattern.skip = cast(size_t)(piece.pattern.skip + skip) % piece.pattern.ogsize;
+            // Modulo in 64-bit first: huge pattern pieces can be split past
+            // 4 GiB, and the resulting in-cycle offset always fits size_t
+            piece.pattern.skip = cast(size_t)((piece.pattern.skip + skip) % piece.pattern.ogsize);
             break;
         }
         return piece;
@@ -936,46 +1006,27 @@ private:
     {
         assertion(position <= logical_size, "position <= current.logical_size");
         
-        // 
-        Operation op = Operation(position, piece.size, OperationType.insert);
-        op.affected = piece.size;
-        long cumulative;
+        // In every case (SOF, EOF, boundary, or mid-piece split), the
+        // operation applies at the insertion position itself
+        Operation op = Operation(position, piece.size, OperationType.insert, position, piece.size);
         IndexedPiece split_piece;
         bool needs_split;
         long split_offset;
-        foreach (idx; tree) // for cumulative
+        // Only the first piece ending after the position can contain it.
+        // Pieces are contiguous, so its start can only be at or before the
+        // position; a boundary insertion (start == position) needs no split,
+        // and an EOF insertion finds no piece at all.
+        foreach (idx; tree.upperBound(IndexedPiece(position)))
         {
-            long piece_start = cumulative;
-            long piece_end = idx.cumulative;
-            
-            if (piece_end <= position)
-            {
-                // This piece is entirely before the insertion point
-                cumulative = idx.cumulative;
-            }
-            else if (piece_start < position && position < piece_end)
+            long piece_start = idx.cumulative - idx.piece.size;
+            if (piece_start < position)
             {
                 // Insertion point is INSIDE this piece - we need to split it
                 split_piece = idx;
                 split_offset = position - piece_start;
                 needs_split = true;
-                op.cumulative = piece_start + split_offset;
-                break;
             }
-            else
-            {
-                // Insertion point is at a piece boundary (or before all pieces)
-                op.cumulative = cumulative;
-                break;
-            }
-            
-            cumulative = idx.cumulative;
-        }
-        
-        // Handle EOF insertion (position equals current document size)
-        if (needs_split == false && cumulative == position)
-        {
-            op.cumulative = cumulative;
+            break;
         }
         
         // Build the operation based on whether we need to split
@@ -1009,6 +1060,10 @@ private:
     // This piece replaces data from this position
     void replacePiece(long position, Piece piece)
     {
+        // Replacing past EOF would inflate the logical size while leaving
+        // a hole with no piece covering it
+        assertion(position <= logical_size, "position <= logical_size");
+
         long overwritten = min(piece.size, logical_size - position);
         long end = position + overwritten;
         long delta = piece.size - overwritten;
@@ -1021,44 +1076,45 @@ private:
             piece.size,
         );
         bool inserted;
-        long cumulative;
-        foreach (idx; tree)
+        // upperBound() already skips pieces ending at or before the
+        // replacement start, and pieces are contiguous, so only the
+        // overlap end needs checking.
+        foreach (idx; tree.upperBound(IndexedPiece(position)))
         {
-            long piece_start = cumulative;
+            long piece_start = idx.cumulative - idx.piece.size;
             long piece_end = idx.cumulative;
-            
-            if (piece_start < end && piece_end > position)
+
+            // This piece starts at or past the replaced region: all done
+            if (piece_start >= end)
+                break;
+
+            // Record piece being replaced
+            op.removed ~= idx;
+
+            // Keep left portion if it exists (before replacement starts)
+            if (piece_start < position)
             {
-                // Record piece being replaced
-                op.removed ~= idx;
-                
-                // Keep left portion if it exists (before replacement starts)
-                if (piece_start < position)
-                {
-                    Piece left = idx.piece;
-                    left.size = position - piece_start;
-                    op.added ~= left;
-                }
-                
-                // Insert new piece exactly once (at first overlapping piece)
-                if (inserted == false)
-                {
-                    op.added ~= piece;
-                    inserted = true;
-                }
-                
-                // Keep right portion if it exists (after replacement ends)
-                if (piece_end > end)
-                {
-                    long skip = end - piece_start;
-                    long keep = piece_end - end;
-                    Piece right = trimPiece(idx.piece, skip, keep);
-                    right.size = keep;
-                    op.added ~= right;
-                }
+                Piece left = idx.piece;
+                left.size = position - piece_start;
+                op.added ~= left;
             }
-            
-            cumulative = idx.cumulative;
+
+            // Insert new piece exactly once (at first overlapping piece)
+            if (inserted == false)
+            {
+                op.added ~= piece;
+                inserted = true;
+            }
+
+            // Keep right portion if it exists (after replacement ends)
+            if (piece_end > end)
+            {
+                long skip = end - piece_start;
+                long keep = piece_end - end;
+                Piece right = trimPiece(idx.piece, skip, keep);
+                right.size = keep;
+                op.added ~= right;
+            }
         }
         
         // If no pieces overlapped (EOF replacement/insertion), just add new piece
@@ -1200,12 +1256,15 @@ private:
         size_t chunkSize = cast(size_t)(remaining < BUFFER_SIZE ? remaining : BUFFER_SIZE);
         _currentChunkSize = chunkSize;
 
+        // Dirty regions feed saving: a short read here means the source
+        // shrank underneath us, and writing garbage would corrupt the save
+        size_t got = chunkSize;
         final switch (_currentIdx.piece.source) {
         case Source.source:
             // Displaced source piece: read from original document
-            _basedoc.readAt(
+            got = _basedoc.readAt(
                 _currentIdx.piece.position + _pieceOffset,
-                _buf[0..chunkSize]);
+                _buf[0..chunkSize]).length;
             break;
         case Source.buffer:
             memcpy(_buf.ptr,
@@ -1236,11 +1295,13 @@ private:
             }
             break;
         case Source.document:
-            _currentIdx.piece.doc.doc.readAt(
+            got = _currentIdx.piece.doc.doc.readAt(
                 _currentIdx.piece.position + _pieceOffset,
-                _buf[0..chunkSize]);
+                _buf[0..chunkSize]).length;
             break;
         }
+
+        assertion(got == chunkSize, "short read while materializing dirty region");
 
         _current = DirtyRegion(_logicalStart + _pieceOffset, _buf[0..chunkSize]);
     }
@@ -2283,4 +2344,52 @@ unittest
     ubyte[8] buffer;
     assert(e.size() == 0);
     assert(e.view(0, buffer) == []);
+}
+
+/// Split a huge pattern piece past the 4 GiB mark
+unittest
+{
+    log("TEST-0030");
+
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
+
+    enum _10GB = 10L * 1024 * 1024 * 1024;
+    enum _5GB  =  5L * 1024 * 1024 * 1024;
+
+    static immutable string pat = "AB";
+    e.patternInsert(0, _10GB, pat.ptr, pat.length);
+
+    // Replacing deep inside the pattern splits it with a skip over 4 GiB
+    ubyte z = 'z';
+    e.replace(_5GB + 1, &z, 1);
+
+    ubyte[4] buffer;
+    assert(e.size() == _10GB);
+    assert(e.view(_5GB - 1, buffer) == "BAzA");
+}
+
+/// Replacing past EOF is rejected (would leave a hole in the document)
+unittest
+{
+    import ddhx.document.memory : MemoryDocument;
+    import ddhx.platform : Assertion;
+
+    log("TEST-0031");
+
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4 ];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte x = 0xAA;
+    bool caught;
+    try e.replace(6, &x, 1);
+    catch (Assertion) caught = true;
+    assert(caught);
+
+    // Replacing AT EOF is fine and extends the document
+    e.replace(5, &x, 1);
+    ubyte[8] buffer;
+    assert(e.size() == 6);
+    assert(e.view(0, buffer) == [ 0, 1, 2, 3, 4, 0xAA ]);
 }
