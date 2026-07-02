@@ -4334,7 +4334,7 @@ void set(Session *session, string[] args)
 // Bind key to action (command + parameters)
 void bind(Session *session, string[] args)
 {
-    int key = terminal_keybind( askstring(args, 0, "Key: ") );
+    int key = terminalKeybind( askstring(args, 0, "Key: ") );
     string[] commands = arguments( askstring(args, 1, "Command: ") );
     
     // When prompted interactively, we might get "goto +32" as a single
@@ -4354,7 +4354,7 @@ void bind(Session *session, string[] args)
 // Unbind key
 void unbind(Session *session, string[] args)
 {
-    int key = terminal_keybind( askstring(args, 0, "Key: ") );
+    int key = terminalKeybind( askstring(args, 0, "Key: ") );
     unbindkey(key);
     message("Key unbinded");
 }

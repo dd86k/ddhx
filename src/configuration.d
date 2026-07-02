@@ -170,13 +170,13 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
 }
 unittest
 {
-    import os.terminal : terminal_keybind;
+    import os.terminal : terminalKeybind;
     
     initdefaults(); // bindkey depends on g_commands (command names)
     
     // Check defaults
     RC rc;
-    int key = terminal_keybind("j");
+    int key = terminalKeybind("j");
     assert(rc.columns == 16);
     assert(binded(key) == null);
     
