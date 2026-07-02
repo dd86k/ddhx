@@ -1480,6 +1480,11 @@ Lread:
         // Only when single byte, multi-byte UTF-8 lead bytes overlap this range
         else if (r == 1 && c >= 225 && c <= 250)
             event.key = (c - 160) | Mod.alt;
+        else if (r > 1) // valid multi-byte UTF-8 grapheme (e.g. accented key)
+        {
+            int cp = _keyCodepoint(event.kbuffer[0..r]);
+            event.key = cp >= 0 ? cp : c; // fall back to lead byte if undecodable
+        }
         else
             event.key = c;
         
@@ -2378,6 +2383,25 @@ unittest
     assert(strhas("ctrl+", "shift+ctrl+a") == "shift+a");
 }
 
+/// Decode a single Unicode codepoint from a UTF-8 buffer for use as a key
+/// value (bits 15..0 of the translated keycode).
+/// Returns: The decoded codepoint, or -1 if the buffer is malformed UTF-8,
+/// or the codepoint is astral (>0xFFFF, e.g. emoji) and would collide with
+/// the special-key/modifier bits.
+private
+int _keyCodepoint(const(char)[] buf)
+{
+    import std.utf : decode, UTFException;
+    size_t idx;
+    try
+    {
+        dchar dc = decode(buf, idx);
+        return dc < SPECIALKEY ? cast(int)dc : -1;
+    }
+    catch (UTFException)
+        return -1;
+}
+
 /// Return key value from string interpretation.
 /// Throws: Exception.
 /// Params:
@@ -2447,6 +2471,12 @@ int terminalKeybind(string value)
             return mod | (c - 32);
         else if (c >= 32 && c < 127) // printable
             return mod | c;
+        else // possible UTF-8 lead byte (accented/non-ASCII key)
+        {
+            int cp = _keyCodepoint(value);
+            if (cp >= 0)
+                return mod | cp;
+        }
     }
     
     throw new Exception("Unknown key");
@@ -2470,4 +2500,20 @@ unittest
     assert(terminalKeybind(":")             == Key.Colon);
     assert(terminalKeybind("]")             == ']');
     assert(terminalKeybind("]")             == Key.RightBracket);
+
+    // Non-ASCII (accented) keys decode to their full codepoint, not just
+    // the UTF-8 lead byte
+    assert(terminalKeybind("é")         == 0xE9);
+    assert(terminalKeybind("ctrl+é")    == (Mod.ctrl | 0xE9));
+    assert(terminalKeybind("ñ")         == 0xF1);
+    assert(terminalKeybind("ë")         == 0xEB);
+    assert(terminalKeybind("€")         == 0x20AC);
+
+    // Astral-plane codepoints (e.g. emoji) don't fit the character bits
+    try
+    {
+        cast(void)terminalKeybind("😀");
+        assert(false);
+    }
+    catch (Exception) {}
 }
