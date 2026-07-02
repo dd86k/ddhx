@@ -42,6 +42,9 @@ static immutable string MSG_CANNOT_EDIT_READONLY = "Cannot edit, read-only";
 static immutable string MSG_CANNOT_SAVE_READONLY = "Cannot save, read-only";
 static immutable string MSG_CANNOT_SAVE_INPLACE_DISPLACED = "Editor cannot preserve displaced data for in-place save";
 static immutable string MSG_DOCUMENT_READONLY = "Document is read-only";
+static immutable string MSG_DOCUMENT_FIXED_SIZE = "Document is fixed size";
+static immutable string MSG_INSERT_MODE_UNAVAILABLE = "Cannot insert, document is fixed size";
+static immutable string MSG_CANNOT_SAVE_FULL = "Cannot fully save this document type";
 static immutable string MSG_UNKNOWN_WRITEMODE = "Unknown writemode:";
 
 // Globbing

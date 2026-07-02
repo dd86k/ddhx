@@ -15,9 +15,11 @@ import std.container.rbtree : RedBlackTree;
 import os.mem : syspagesize;
 
 import ddhx.editor.base : IDocumentEditor, IDirtyRange, DirtyRegion, PieceInfo;
-import ddhx.document.base : IDocument;
+import ddhx.document.base : IDocument, DocCaps;
 import ddhx.platform : assertion;
 import ddhx.logger;
+
+import messages : MSG_DOCUMENT_FIXED_SIZE;
 
 // TODO: CPU cache friendliness
 //       Reference: https://skoredin.pro/blog/golang/cpu-cache-friendly-go
@@ -293,7 +295,13 @@ class PieceV3DocumentEditor : IDocumentEditor
         invalidateCoalesce();
         long docsize = doc.size();
         basedoc = doc;
-        
+
+        // Derive editing policy from the document's capabilities
+        int dcaps = doc.caps();
+        _can_resize = (dcaps & DocCaps.resize) != 0;
+        _track_history = (dcaps & DocCaps.stable) != 0;
+        _edited = false;
+
         logical_size = docsize;
         
         // Clear history
@@ -331,6 +339,8 @@ class PieceV3DocumentEditor : IDocumentEditor
         logical_size = 0;
         add_buffer.length = 0;
         add_size = 0;
+        _can_resize = _track_history = true;
+        _edited = false;
     }
     
     /// Total size of document in bytes with edits.
@@ -343,6 +353,7 @@ class PieceV3DocumentEditor : IDocumentEditor
     void markSaved()
     {
         history_saved = history_index;
+        _edited = false;
     }
 
     /// Prepare the editor for an in-place save of its source document.
@@ -577,6 +588,9 @@ class PieceV3DocumentEditor : IDocumentEditor
     
     bool edited()
     {
+        // Direct mode: no history to compare against, use the edit flag
+        if (_track_history == false)
+            return _edited;
         // Just having a document open does not mean we have active edits.
         return history_index != history_saved;
     }
@@ -591,6 +605,9 @@ class PieceV3DocumentEditor : IDocumentEditor
     in (len > 0, "len > 0")
     {
         log("REMOVE pos=%d len=%u", position, len);
+
+        if (_can_resize == false)
+            throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
 
         // Nothing to remove; do not record coalescing state for a no-op,
         // or a later remove could coalesce with an unrelated operation
@@ -691,6 +708,11 @@ class PieceV3DocumentEditor : IDocumentEditor
     in (len > 0,  "len > 0")
     {
         log("REPLACE pos=%d len=%u data=%s", position, len, data);
+
+        // A replace ending past EOF grows the document
+        if (_can_resize == false && position + len > logical_size)
+            throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
+
         void* newBuf = bufferAdd(data, len);
 
         if (canCoalesce(OperationType.replace, position, len, newBuf))
@@ -723,6 +745,11 @@ class PieceV3DocumentEditor : IDocumentEditor
     {
         invalidateCoalesce();
         log("REPLACE PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
+
+        // A replace ending past EOF grows the document
+        if (_can_resize == false && position + len > logical_size)
+            throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
+
         Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         replacePiece(position, piece);
     }
@@ -737,6 +764,10 @@ class PieceV3DocumentEditor : IDocumentEditor
     {
         invalidateCoalesce();
         log("REPLACE FILE pos=%d", position);
+
+        // A replace ending past EOF grows the document
+        if (_can_resize == false && position + doc.size() > logical_size)
+            throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
         Piece piece = Piece.makefile( 0, doc.size(), doc );
         replacePiece(position, piece);
     }
@@ -752,6 +783,10 @@ class PieceV3DocumentEditor : IDocumentEditor
     in (len > 0, "len > 0")
     {
         log("INSERT pos=%d len=%u data=%s", position, len, data);
+
+        if (_can_resize == false)
+            throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
+
         void* newBuf = bufferAdd(data, len);
 
         if (canCoalesce(OperationType.insert, position, len, newBuf))
@@ -784,6 +819,10 @@ class PieceV3DocumentEditor : IDocumentEditor
     {
         invalidateCoalesce();
         log("INSERT PATTERN pos=%d len=%d data=%s datlen=%u", position, len, data, datlen);
+
+        if (_can_resize == false)
+            throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
+
         Piece piece = Piece.makepattern( 0, len, bufferAdd(data, datlen), datlen );
         insertPiece(position, piece);
     }
@@ -798,6 +837,9 @@ class PieceV3DocumentEditor : IDocumentEditor
     {
         invalidateCoalesce();
         log("INSERT FILE pos=%d", position);
+
+        if (_can_resize == false)
+            throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
         Piece piece = Piece.makefile( 0, doc.size(), doc );
         insertPiece(position, piece);
     }
@@ -853,6 +895,15 @@ private:
 
     /// If piece coalescing is enabled.
     bool _coalescing = true; // Enabled by default, important for tests!
+
+    /// Document allows changing size (derived from DocCaps.resize).
+    bool _can_resize = true;
+    /// Document is stable, so history is recorded (derived from
+    /// DocCaps.stable). Without it, the editor runs in direct mode:
+    /// edits overlay the live medium and cannot be undone.
+    bool _track_history = true;
+    /// Pending edits flag when history is not tracked.
+    bool _edited;
 
     /// Coalescing state for combining consecutive same-type operations.
     struct CoalesceState
@@ -1039,6 +1090,15 @@ private:
             throw ex;
         }
         
+        // Direct mode (unstable document): the operation is applied to the
+        // piece table but not recorded, as the medium changes outside our
+        // control and old references would be meaningless to undo to.
+        if (_track_history == false)
+        {
+            _edited = true;
+            return;
+        }
+
         if (history_index < history.length) // Branching: discard stale redo tail
         {
             // If the save point lives in the discarded operations, the saved
@@ -2528,4 +2588,92 @@ unittest
     ubyte[8] buffer;
     assert(e.size() == 6);
     assert(e.view(0, buffer) == [ 0, 1, 2, 3, 4, 0xAA ]);
+}
+
+version (unittest)
+private import ddhx.document.memory : MemoryDocument;
+
+/// Test document with restricted capabilities, standing in for the
+/// future disk and process document types.
+version (unittest)
+private class TestCapsDocument : MemoryDocument
+{
+    this(const(ubyte)[] data, int documentCaps)
+    {
+        super(data);
+        _caps = documentCaps;
+    }
+    override int caps() { return _caps; }
+    private int _caps;
+}
+
+/// Fixed-size media (disk-like: no resize, stable): size-changing
+/// operations are rejected, in-bounds edits and history work
+unittest
+{
+    import std.exception : assertThrown;
+
+    log("TEST-0032");
+
+    scope TestCapsDocument doc = new TestCapsDocument(
+        cast(const(ubyte)[])"ABCDEFGH",
+        DocCaps.read | DocCaps.write | DocCaps.stable);
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(doc);
+
+    static immutable string two = "XY";
+    assertThrown!Exception(e.insert(0, two.ptr, two.length));
+    assertThrown!Exception(e.remove(0, 2));
+    assertThrown!Exception(e.patternInsert(0, 4, two.ptr, two.length));
+    assertThrown!Exception(e.fileInsert(0, doc));
+    // Replaces ending past EOF would grow the document
+    assertThrown!Exception(e.replace(7, two.ptr, two.length));
+    assertThrown!Exception(e.patternReplace(6, 4, two.ptr, two.length));
+    assert(e.size() == 8);
+    assert(e.edited() == false);
+
+    // In-bounds replace works, and history is recorded (stable medium)
+    e.replace(0, two.ptr, two.length);
+    ubyte[8] buffer;
+    assert(e.view(0, buffer) == "XYCDEFGH");
+    assert(e.edited());
+    assert(e.undo() >= 0);
+    assert(e.view(0, buffer) == "ABCDEFGH");
+    assert(e.edited() == false);
+}
+
+/// Unstable media (process-like: no stable): direct mode, edits overlay
+/// the live medium and there is no history
+unittest
+{
+    import std.exception : assertThrown;
+
+    log("TEST-0033");
+
+    scope TestCapsDocument doc = new TestCapsDocument(
+        cast(const(ubyte)[])"ABCDEFGH",
+        DocCaps.read | DocCaps.write);
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(doc);
+
+    static immutable string two = "XY";
+    e.replace(0, two.ptr, two.length);
+    ubyte[8] buffer;
+    assert(e.view(0, buffer) == "XYCDEFGH");
+    assert(e.edited());
+
+    // No history to undo or redo, and the edit stays applied
+    assert(e.undo() < 0);
+    assert(e.view(0, buffer) == "XYCDEFGH");
+    assert(e.redo() < 0);
+
+    e.markSaved();
+    assert(e.edited() == false);
+
+    // Also fixed size here (no resize capability)
+    assertThrown!Exception(e.insert(0, two.ptr, two.length));
+
+    // Policy resets when the editor is reused with a capable document
+    e.close();
+    e.open(new MemoryDocument(cast(const(ubyte)[])"ABCDEFGH"));
+    e.insert(0, two.ptr, two.length);
+    assert(e.undo() >= 0);
 }

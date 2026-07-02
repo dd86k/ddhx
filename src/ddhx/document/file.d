@@ -28,6 +28,16 @@ class FileDocument : IDocument
     }
     ~this() { close(); }
     
+    /// File media capabilities.
+    ///
+    /// Describes the medium: this handle may still have been opened
+    /// read-only (see writable()), as saving opens its own write handle.
+    /// Returns: Capability flags (DocCaps).
+    int caps()
+    {
+        return DocCaps.read | DocCaps.write | DocCaps.resize | DocCaps.stable | DocCaps.replace;
+    }
+
     /// Size of document in bytes.
     /// Returns: Size in bytes.
     long size()

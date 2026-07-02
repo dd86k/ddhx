@@ -20,7 +20,7 @@ import std.format : format, sformat;
 
 import os.terminal;
 
-import ddhx.document.base : IDocument;
+import ddhx.document.base : IDocument, DocCaps;
 import ddhx.document.file : FileDocument, OFlags;
 import ddhx.document.memory : MemoryDocument;
 import ddhx.editor.base : IDocumentEditor, PieceInfo;
@@ -1920,6 +1920,13 @@ unittest
     fdoc.close();
 }
 
+// True if the opened document cannot change size (e.g., disk, process memory)
+bool fixedsize(Session *session)
+{
+    IDocument doc = session.editor.document();
+    return doc ? (doc.caps() & DocCaps.resize) == 0 : false;
+}
+
 // Move the cursor relative to its position within the file
 void moverel(Session *session, long pos)
 {
@@ -1948,6 +1955,9 @@ void moveabs(Session *session, long pos)
     // Fix when cursor is attempting to select non-existant data
     else if (session.selection.status && pos >= docsize)
         // Ternary fixes zero-length + selection overflow
+        pos = (docsize > 0) ? docsize - 1 : 0;
+    // Fixed-size documents cannot append, so there is no EOF position
+    else if (pos >= docsize && fixedsize(session))
         pos = (docsize > 0) ? docsize - 1 : 0;
     // Fix when cursor is past playable area (doc size + EOF)
     else if (pos > docsize)
@@ -3840,6 +3850,8 @@ void change_writemode(Session *session, string[] args)
     {
         switch (args[0][0]) {
         case 'i':
+            if (fixedsize(session))
+                throw new Exception(MSG_INSERT_MODE_UNAVAILABLE);
             session.rc.writemode = WritingMode.insert;
             break;
         case 'o':
@@ -3859,7 +3871,10 @@ void change_writemode(Session *session, string[] args)
     {
         // Cycle: overwrite -> insert -> digit -> overwrite
         final switch (session.rc.writemode) {
-        case WritingMode.overwrite: session.rc.writemode = WritingMode.insert; break;
+        case WritingMode.overwrite:
+            // Fixed-size documents cannot insert; skip to digit mode
+            session.rc.writemode = fixedsize(session) ? WritingMode.digit : WritingMode.insert;
+            break;
         case WritingMode.insert:    session.rc.writemode = WritingMode.digit; break;
         case WritingMode.digit:     session.rc.writemode = WritingMode.overwrite; break;
         case WritingMode.readonly:  break; // unreachable, checked above
@@ -4539,6 +4554,10 @@ void save(Session *session, string[] args)
     foreach (ref piece; session.editor.dirtyPieceInfos(true))
         writevol += piece.size;
 
+    // A full save replaces a file target wholesale; media without that
+    // capability (e.g., disk, process memory) can only be saved in-place
+    bool canreplace = session.ogdoc is null || (session.ogdoc.caps() & DocCaps.replace) != 0;
+
     // If the original doc is file, try saving it in-place
     try
     {
@@ -4549,7 +4568,7 @@ void save(Session *session, string[] args)
         // When most of the document needs rewriting anyway, the full
         // save costs about the same I/O, stashes nothing, and replaces
         // the file atomically
-        if (prefer_inplace(writevol, session.editor.size()) == false)
+        if (canreplace && prefer_inplace(writevol, session.editor.size()) == false)
             goto Lfallback;
 
         // It will fail if the target does not exist or
@@ -4561,10 +4580,16 @@ void save(Session *session, string[] args)
     {
         // Indicator that save_inplace failed, and we're now going to fallback
         log("[NOTE] save_inplace: '%s'", ex.msg);
+
+        // No fallback available: report the in-place failure itself
+        if (canreplace == false)
+            throw ex;
     }
     
     // Write document fully. If this one fails, it's caught by ddhx
 Lfallback:
+    if (canreplace == false)
+        throw new Exception(MSG_CANNOT_SAVE_FULL);
     save_to_file(session.editor, target);
     
 Ldone:

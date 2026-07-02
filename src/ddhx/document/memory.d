@@ -5,7 +5,7 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx.document.memory;
 
-import ddhx.document.base : IDocument;
+import ddhx.document.base : IDocument, DocCaps;
 
 /// Memory document, holds data in memory entirely.
 ///
@@ -29,6 +29,14 @@ class MemoryDocument : IDocument
         buffer ~= data;
     }
     
+    /// Memory buffer capabilities.
+    /// Returns: Capability flags (DocCaps).
+    int caps()
+    {
+        return DocCaps.read | DocCaps.write | DocCaps.resize |
+            DocCaps.stable | DocCaps.replace;
+    }
+
     /// Current size of document.
     /// Returns: Size in bytes.
     long size()
