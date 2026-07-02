@@ -1173,7 +1173,12 @@ Lread:
             case VK_UP:     event.key |= Key.UpArrow; break;
             case VK_DOWN:   event.key |= Key.DownArrow; break;
             default: // Special key range
-                const char ascii = ir.KeyEvent.AsciiChar;
+                // NOTE: UnicodeChar (not AsciiChar) is used so accented and
+                //       other non-ASCII keys (e.g. AltGr-composed characters
+                //       on European layouts) decode to their real codepoint,
+                //       matching POSIX and terminalKeybind's UTF-8 decoding
+                //       instead of being mangled through the ANSI codepage.
+                const wchar wc = ir.KeyEvent.UnicodeChar;
                 if (keycode >= VK_NUMPAD0 && keycode <= VK_NUMPAD9)
                 {
                     event.key = (keycode - VK_NUMPAD0) + '0';
@@ -1182,15 +1187,21 @@ Lread:
                 {
                     event.key = (keycode - VK_F1) + Key.F1;
                 }
-                else if (ascii >= 'a' && ascii <= 'z')
+                else if (wc >= 'a' && wc <= 'z')
                 {
-                    event.key |= ascii - 32;
+                    event.key |= wc - 32;
                 }
-                else if (ascii >= 32 && ascii < 127)
+                else if (wc >= 32 && wc < 127)
                 {
-                    event.key |= ascii;
+                    event.key |= wc;
                     // HACK: Remove unnatural modifiers (ie, for '@')
                     //       readline depends on this
+                    event.key &= ~(Mod.ctrl|Mod.alt);
+                }
+                else if (wc >= 0x80 && (wc < 0xD800 || wc > 0xDFFF)) // BMP, non-surrogate
+                {
+                    event.key |= wc;
+                    // Same AltGr HACK as above, e.g. AltGr+key on European layouts
                     event.key &= ~(Mod.ctrl|Mod.alt);
                 }
                 else
