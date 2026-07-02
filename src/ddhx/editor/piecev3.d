@@ -387,6 +387,14 @@ class PieceV3DocumentEditor : IDocumentEditor
     {
         log("REMOVE pos=%d len=%u", position, len);
 
+        // Nothing to remove; do not record coalescing state for a no-op,
+        // or a later remove could coalesce with an unrelated operation
+        if (logical_size == 0)
+        {
+            invalidateCoalesce();
+            return;
+        }
+
         if (canCoalesce(OperationType.remove, position, len, null))
         {
             reverseOperation(history[--history_index]);
@@ -718,9 +726,10 @@ private:
         case Source.source: break;
         case Source.buffer:
             assertion(skip <= uint.max, "skip <= uint.max"); // bad hack, to be reminded later
+            // Accumulate: this piece may already be the result of a split
+            piece.buffer.skip += cast(size_t)skip;
             with (piece)
             assertion(buffer.skip <= buffer.ogsize, "buffer.skip <= buffer.ogsize");
-            piece.buffer.skip = cast(size_t)skip;
             break;
         case Source.document: break; // like source
         case Source.pattern:
@@ -824,10 +833,16 @@ private:
             throw ex;
         }
         
-        if (history_index < history.length) // Replace
-            history[history_index] = op;
-        else // Insert
-            history.insert(op);
+        if (history_index < history.length) // Branching: discard stale redo tail
+        {
+            // If the save point lives in the discarded operations, the saved
+            // state is no longer reachable, so edited() must stay true until
+            // the next markSaved().
+            if (history_saved > history_index)
+                history_saved = size_t.max;
+            history.length = history_index;
+        }
+        history.insert(op);
         history_index++;
     }
     
@@ -1068,14 +1083,11 @@ private:
     //
     void* bufferAdd(const(void) *data, size_t len)
     {
-        if (add_buffer.length == 0)
-        {
-            add_buffer.length = pagesize;
-        }
-        
+        // Grow in whole pages until the new data fits entirely
         if (add_size + len >= add_buffer.length)
         {
-            add_buffer.length += pagesize;
+            size_t pages = ((add_size + len) / pagesize) + 1;
+            add_buffer.length = pages * pagesize;
         }
         
         void *ptr = add_buffer.ptr + add_size;
@@ -2134,4 +2146,141 @@ unittest
     static immutable ubyte[] newdata = [ 0, 1, 2, 3, 4 ];
     e.insert(0, newdata.ptr, newdata.length);
     assert(e.view(0, buffer) == newdata);
+}
+
+/// History branching: a new edit after undo discards the stale redo tail
+unittest
+{
+    import ddhx.document.memory : MemoryDocument;
+
+    log("TEST-0025");
+
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    // Three separate operations (non-adjacent, so no coalescing)
+    ubyte a = 0xAA;
+    ubyte b = 0xBB;
+    ubyte c = 0xCC;
+    e.replace(0, &a, 1);
+    e.replace(3, &b, 1);
+    e.replace(6, &c, 1);
+
+    // Undo twice, then branch off with a new edit; only one history slot
+    // gets overwritten, the second undone operation must be discarded
+    e.undo();
+    e.undo();
+    ubyte d = 0xDD;
+    e.replace(9, &d, 1);
+
+    assert(e.redo() < 0); // Nothing left to redo
+    assert(e.size() == 10);
+    assert(e.view(0, buffer) == [ 0xAA, 1, 2, 3, 4, 5, 6, 7, 8, 0xDD ]);
+}
+
+/// History branching: save point in discarded redo tail stays dirty
+unittest
+{
+    import ddhx.document.memory : MemoryDocument;
+
+    log("TEST-0026");
+
+    static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(
+        new MemoryDocument(data)
+    );
+
+    ubyte[32] buffer;
+
+    ubyte a = 0xAA;
+    ubyte b = 0xBB;
+    e.replace(0, &a, 1);
+    e.replace(3, &b, 1);
+    e.markSaved();
+    assert(e.edited() == false);
+
+    // Branch: history index lands back on the saved index, but the content
+    // no longer matches what was saved
+    e.undo();
+    ubyte c = 0xCC;
+    e.replace(6, &c, 1);
+    assert(e.edited());
+    assert(e.view(0, buffer) == [ 0xAA, 1, 2, 3, 4, 5, 0xCC, 7, 8, 9 ]);
+
+    // Saving again resumes normal tracking
+    e.markSaved();
+    assert(e.edited() == false);
+}
+
+/// Split a buffer piece twice: buffer skip must accumulate
+unittest
+{
+    log("TEST-0027");
+
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
+
+    ubyte[32] buffer;
+
+    string data = "ABCDEFGH";
+    e.insert(0, data.ptr, data.length);
+
+    // First removal splits the buffer piece, trimming its right side
+    e.remove(1, 2); // "ADEFGH"
+    assert(e.view(0, buffer) == "ADEFGH");
+
+    // Second removal (non-coalescable) splits the trimmed piece again
+    e.remove(3, 2); // "ADEH"
+    assert(e.view(0, buffer) == "ADEH");
+}
+
+/// Inserts larger than a page must not overflow the add buffer
+unittest
+{
+    log("TEST-0028");
+
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
+
+    size_t biglen = (syspagesize() * 2) + 500;
+    ubyte[] big = new ubyte[biglen];
+    foreach (i, ref ubyte bb; big)
+        bb = cast(ubyte)i;
+
+    e.insert(0, big.ptr, big.length);
+
+    // Force the add buffer to grow again; this must not clobber the data
+    // referenced by the first piece
+    ubyte z = 0x55;
+    e.insert(0, &z, 1);
+
+    ubyte[8] buffer;
+    assert(e.size() == biglen + 1);
+    assert(e.view(0, buffer) == cast(ubyte[])[ 0x55 ] ~ big[0..7]);
+    assert(e.view(biglen - 7, buffer) == big[$-8..$]);
+}
+
+/// Remove on an empty document is a no-op and must not poison coalescing
+unittest
+{
+    log("TEST-0029");
+
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
+
+    string data = "ABCD";
+    e.insert(0, data.ptr, data.length);
+    e.remove(0, 4); // document now empty
+    e.undo();
+    e.redo(); // empty again, with history and coalescing invalidated
+
+    // These have nothing to remove; the second one must not coalesce with
+    // a phantom operation and reverse the remove above
+    e.remove(0, 1);
+    e.remove(0, 1);
+
+    ubyte[8] buffer;
+    assert(e.size() == 0);
+    assert(e.view(0, buffer) == []);
 }
