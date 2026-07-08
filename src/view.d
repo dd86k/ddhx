@@ -1247,6 +1247,60 @@ unittest
 
     assert(read(path) == "hello, plane!");
 }
+// Test that undo/redo history survives an in-place save, and that saving
+// again after undo/redo writes the reverted/reapplied contents to disk.
+// This mirrors the Ctrl+S / Ctrl+U / Ctrl+Y flow end to end.
+unittest
+{
+    import ddhx.editor : spawnEditor;
+    import std.file : remove, read;
+
+    // create document with init data
+    static immutable string path = "temp";
+    static immutable string data = "hello, world!";
+    {
+        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
+        setup.writeAt(0, cast(ubyte[])data);
+        setup.flush();
+        setup.close();
+    }
+    scope(exit) remove(path);
+
+    // open read-only, create editor and edit ('h' -> 'H')
+    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    static immutable char newbyte = 'H';
+    scope IDocumentEditor editor = spawnEditor();
+    editor.open(fdoc);
+    editor.replace(0, &newbyte, 1);
+
+    // save in place; edit is now on disk and editor is clean
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "Hello, world!");
+
+    // undo must still be available after the save (history preserved)
+    assert(editor.undo() >= 0);
+    assert(editor.edited());             // now differs from the saved file
+    ubyte[13] buf = void;
+    assert(editor.view(0, buf[]) == "hello, world!"); // reverted in memory
+
+    // saving again writes the reverted contents back to disk
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "hello, world!");
+
+    // redo must also survive the save and reapply the edit
+    assert(editor.redo() >= 0);
+    assert(editor.edited());
+    assert(editor.view(0, buf[]) == "Hello, world!");
+
+    save_inplace(editor, path);
+    assert(editor.edited() == false);
+    assert(read(path) == "Hello, world!");
+
+    editor.close();
+    fdoc.close();
+}
 // Test with one edit that makes document larger
 unittest
 {
