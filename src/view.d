@@ -52,8 +52,10 @@ immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 
 /// Chunk size to use when I/O is involved (reading, writing)
 private enum CONFIG_CHUNKSIZE      = KiB!128;
-/// In-place save write volume limit; beyond it, prefer a full save.
-private enum CONFIG_INPLACE_MAXVOLUME = MiB!64;
+/// In-place save history-preservation stash cap. Beyond this volume of
+/// overwritten source ranges, save in place but drop undo history rather
+/// than buffering it all in memory.
+private enum CONFIG_INPLACE_STASH_BUDGET = MiB!64;
 /// Artificial needle size limit for find/find-back commands.
 private enum CONFIG_NEEDLE_LIMIT   = KiB!128;
 /// Amount of data before warning for a copy for clipboard.
@@ -1065,14 +1067,19 @@ unittest
 }
 
 // Whether in-place saving is worthwhile for this write volume (total size
-// of dirty/displaced pieces). In-place writes only that volume, but
-// preserving undo history stashes about as much in memory, while a full
-// save rewrites the whole document with no stash and replaces it
-// atomically. When in-place loses its I/O advantage or the stash would be
-// too large, prefer the full save.
+// of dirty/displaced pieces). In-place writes only that volume; a full save
+// rewrites the whole document and replaces it atomically. Once the write
+// volume approaches the document size the I/O advantage vanishes, so prefer
+// the full save (and its atomicity) past a margin. The memory stash needed
+// to preserve undo history is sized and decided later, in save_inplace.
+// This function is for file documents, it is useless for disk/process doc types.
 bool prefer_inplace(long writevol, long docsize)
 {
-    return writevol < docsize && writevol <= CONFIG_INPLACE_MAXVOLUME;
+    // 75% margin guard. Over that, saving in-place is a little pointless.
+    // Subtract rather than (docsize * 3 / 4): the multiply overflows near
+    // ~2.6 EiB (long.max/3), the subtraction never does.
+    long margin = docsize - (docsize / 4);
+    return writevol < margin;
 }
 unittest
 {
@@ -1081,12 +1088,15 @@ unittest
     assert(prefer_inplace(100, 100) == false); // whole document dirty
     assert(prefer_inplace(150, 100) == false); // grew and entirely dirty
     assert(prefer_inplace(0, 0) == false);     // empty: nothing gained
-    assert(prefer_inplace(MiB!64 + 1, MiB!512) == false); // stash too large
+    // Large edit on a much larger file: worthwhile
+    assert(prefer_inplace(MiB!64 + 1, MiB!512));
+    assert(prefer_inplace(MiB!128, MiB!512));
+    assert(prefer_inplace(MiB!256, MiB!512));
 }
 
 // Try saving "in-place" (directly) to the file at path.
 // Opens its own read-write handle, writes dirty regions, and closes it.
-// The editor first stashes source references that the save would
+// The editor first stashes (to keep undo history valid) source references that the save would
 // invalidate (prepareInplaceSave), which keeps its state and undo history
 // valid afterwards and makes write order irrelevant. Editors without that
 // support only qualify when no source piece is displaced, and their
@@ -1101,26 +1111,31 @@ void save_inplace(IDocumentEditor editor, string path)
     long docsize = editor.size();
     long filesize = wdoc.size();
 
-    // Preserve source references (including undo history) that this save
-    // would otherwise invalidate. Displaced pieces read from the same file
-    // being written to; preservation buffers the endangered ranges, so
-    // every remaining source reference only reads ranges the save leaves
-    // untouched.
-    bool preserved = editor.prepareInplaceSave();
-
+    // Pieces this save writes. Read before preservation: retargeting turns
+    // displaced source pieces into buffer pieces (clearing displacement),
+    // but leaves logicalPos/size intact, so this list stays valid for the
+    // write loop either way.
     PieceInfo[] pieces = editor.dirtyPieceInfos(true);
+    long writevol;
     bool displaced;
     foreach (ref piece; pieces)
     {
+        writevol += piece.size;
         if (piece.sourceOffset >= 0)
-        {
             displaced = true;
-            break;
-        }
     }
 
-    log("path='%s' pieces=%u preserved=%d displaced=%d (editor=%d, file=%d)",
-        path, pieces.length, preserved, displaced, docsize, filesize);
+    // Preserving undo history stashes the overwritten source ranges in
+    // memory (~writevol). Past the budget, save in place but drop history
+    // instead of rewriting the whole file: the write is still writevol
+    // bytes, and reopening rebases the editor onto the new contents.
+    // In simpler terms, if the stash is too large to fit in memory,
+    // continue saving in-place, but don't bother keeping stash (undo history).
+    bool preserve = writevol <= CONFIG_INPLACE_STASH_BUDGET;
+    bool preserved = preserve && editor.prepareInplaceSave();
+
+    log("path='%s' pieces=%u writevol=%d preserve=%d preserved=%d displaced=%d (editor=%d, file=%d)",
+        path, pieces.length, writevol, preserve, preserved, displaced, docsize, filesize);
 
     // Without preservation, displaced pieces read regions this save
     // overwrites, and no write order is safe without buffering.
@@ -1163,7 +1178,7 @@ void save_inplace(IDocumentEditor editor, string path)
         // the editor onto the new file contents at the cost of history.
         IDocument basedoc = editor.document();
         if (basedoc)
-            editor.open(basedoc);
+            editor.open(basedoc); // TODO: Signal history lost
         else
             editor.markSaved();
     }

@@ -131,10 +131,13 @@ struct OSFile
             if (flags & OFlags.read)    dwAccess |= GENERIC_READ;
             if (flags & OFlags.write)   dwAccess |= GENERIC_WRITE;
             
-            // NOTE: toUTF16z/tempCStringW
-            //       Phobos internally uses tempCStringW from std.internal
-            //       but I doubt it's meant for us to use so...
-            //       Legacy baggage?
+            // NOTE: FILE_SHARE_DELETE
+            //       A full save's rename(tmp, target) still successd over this open
+            //       handle, and the handle keep reading the original (now replaced)
+            //       stream. Modern Windows gives POSIX-style rename semantics, so
+            //       undo history survives the save.
+            //       While adding FILE_SHARE_DELETE is safe, including it would lead
+            //       to issues because ddhx uses a live file to fill data into view.
             uint dwShare = flags & OFlags.share ? FILE_SHARE_READ | FILE_SHARE_WRITE : 0;
 
             handle = CreateFileW(
