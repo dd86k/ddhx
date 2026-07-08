@@ -46,7 +46,7 @@ immutable string DDHX_COPYRIGHT = "Copyright (c) 2017-2026 dd86k <dd@dax.moe>";
 ///
 /// For packaging, the DEB script expects this.
 /// Also, Debian uses tilde (~) for pre-release markers.
-immutable string DDHX_VERSION   = "0.10.1"~DEBUG;
+immutable string DDHX_VERSION   = "0.11.0"~DEBUG;
 /// Build information
 immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 
