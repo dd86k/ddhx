@@ -71,10 +71,14 @@ This list may change at any given time without notice.
 - [x] Bookmark system
 - [x] Data inspector panel
 
-0.11: WIP
+0.11 featured important stability bugfixes and QOL improvements.
+
+0.12: WIP
 - [ ] Find-and-bookmark (find-bookmark)
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
+
+1.0: TBD
 
 Wishlist:
 - [ ] Document: Disk
