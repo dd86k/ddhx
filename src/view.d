@@ -528,7 +528,6 @@ void initdefaults()
             file.writeln("\tg_session.rc.mirror_cursor\t: ", g_session.rc.mirror_cursor);
             file.writeln("\tg_session.rc.writemode\t: ", g_session.rc.writemode);
             
-            import ddhx.editor.piecev2 : PieceV2DocumentEditor;
             file.writeln("Editor");
             file.writeln("\tClass\t: ", session.editor); // prints type!
             file.writeln("\tSize\t: ", session.editor.size());
@@ -598,7 +597,8 @@ Session* create_session(IDocumentEditor editor, ref RC rc, string path)
     return session;
 }
 
-void start_session(Session *session, string initmsg, string bookmarks_file = null,
+void start_session(Session *session, string initmsg,
+    string bookmarks_file = null,
     string diff_file = null)
 {
     terminalInit(TermFeat.altScreen | TermFeat.inputSys);

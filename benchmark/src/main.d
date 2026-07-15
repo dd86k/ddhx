@@ -4,7 +4,7 @@ import core.memory : GC;
 import std.getopt;
 import std.stdio;
 import std.datetime.stopwatch;
-import editor;
+import ddhx.editor;
 
 @nogc nothrow
 const(char)[] fmtbin(ulong b, ref char[16] buf) {
@@ -196,6 +196,12 @@ void test(string name, int rounds = 30, int runs = 100)
 
 void main(string[] args)
 {
+    if (args.length <= 1)
+    {
+        test(null);
+        return;
+    }
+    
     foreach (string backend; args[1..$])
     {
         test(backend);
