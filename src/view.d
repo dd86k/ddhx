@@ -614,9 +614,10 @@ void start_session(Session *session, string initmsg,
     session.input = new InputFormatter; // hack due to buffer escapes
     
     sync_settings();
-    
+
     message(initmsg);
-    
+    demote_writemode(session); // may replace initmsg, warning is more important
+
     if (bookmarks_file)
     {
         log(`bookmarks_file="%s"`, diff_file);
@@ -653,6 +654,19 @@ void sync_settings()
     g_session.editor.coalescing = g_session.rc.coalescing;
     // Input system
     g_session.input.change(g_session.rc.data_type);
+}
+
+// Insert mode is unavailable on fixed-size documents (e.g., disks), but the
+// configuration is applied before knowing which document gets opened.
+// Rather than refusing to start (or refusing every setting change), the mode
+// is demoted to overwrite, and the user is told about it.
+void demote_writemode(Session *session)
+{
+    if (session.rc.writemode != WritingMode.insert || fixedsize(session) == false)
+        return;
+
+    session.rc.writemode = WritingMode.overwrite;
+    message(MSG_INSERT_MODE_UNAVAILABLE);
 }
 
 void onresize() // I/O is allowed here
@@ -3917,24 +3931,10 @@ void change_writemode(Session *session, string[] args)
     // Optional argument
     if (args.length > 0)
     {
-        switch (args[0][0]) {
-        case 'i':
-            if (fixedsize(session))
-                throw new Exception(MSG_INSERT_MODE_UNAVAILABLE);
-            session.rc.writemode = WritingMode.insert;
-            break;
-        case 'o':
-            session.rc.writemode = WritingMode.overwrite;
-            break;
-        case 'r':
-            session.rc.writemode = WritingMode.readonly;
-            break;
-        case 'd':
-            session.rc.writemode = WritingMode.digit;
-            break;
-        default:
-            throw new Exception(text(MSG_UNKNOWN_WRITEMODE, args[0]));
-        }
+        WritingMode mode = selectWritingMode(args[0]);
+        if (mode == WritingMode.insert && fixedsize(session))
+            throw new Exception(MSG_INSERT_MODE_UNAVAILABLE);
+        session.rc.writemode = mode;
     }
     else
     {
@@ -4712,6 +4712,7 @@ void set(Session *session, string[] args)
     configRC(session.rc, setting, value);
 
     sync_settings();
+    demote_writemode(session);
 }
 
 // Bind key to action (command + parameters)

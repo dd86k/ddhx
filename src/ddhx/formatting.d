@@ -7,7 +7,7 @@ module ddhx.formatting;
 
 import core.stdc.string : memcpy;
 
-import std.conv : to; // lazy, but convenient
+import std.conv : text, to; // lazy, but convenient
 import std.format;
 import std.path;
 import std.string : strip;
@@ -15,6 +15,8 @@ import std.traits : EnumMembers;
 
 import ddhx.platform : assertion;
 import ddhx.transcoder : CharacterSet;
+
+import messages : MSG_UNKNOWN_WRITEMODE;
 
 // This alias exists because more recent compilers complain about local
 // static buffers being escape despite that's exactly what I want...
@@ -43,6 +45,48 @@ string writingModeToString(WritingMode mode)
     case WritingMode.insert:    return "INS";
     case WritingMode.digit:     return "DIG";
     }
+}
+
+/// Select a writing mode out of its name.
+///
+/// Only the first character is significant, so both the full name
+/// ("overwrite") and its shorthand ("o") are accepted.
+/// Params: mode = Writing mode name.
+/// Returns: WritingMode.
+/// Throws: Exception if the name matches no writing mode.
+WritingMode selectWritingMode(string mode)
+{
+    if (mode.length == 0)
+    Lerror:
+        throw new Exception(text(MSG_UNKNOWN_WRITEMODE, mode));
+
+    switch (mode[0]) { // cheaper than "startsWith"
+    case 'r': return WritingMode.readonly;
+    case 'o': return WritingMode.overwrite;
+    case 'i': return WritingMode.insert;
+    case 'd': return WritingMode.digit;
+    default: goto Lerror;
+    }
+}
+unittest
+{
+    assert(selectWritingMode("readonly")  == WritingMode.readonly);
+    assert(selectWritingMode("overwrite") == WritingMode.overwrite);
+    assert(selectWritingMode("insert")    == WritingMode.insert);
+    assert(selectWritingMode("digit")     == WritingMode.digit);
+    assert(selectWritingMode("o")         == WritingMode.overwrite);
+    try
+    {
+        cast(void)selectWritingMode("nope");
+        assert(false);
+    }
+    catch (Exception) {}
+    try
+    {
+        cast(void)selectWritingMode(null);
+        assert(false);
+    }
+    catch (Exception) {}
 }
 
 //

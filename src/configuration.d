@@ -283,6 +283,11 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         "Format string", `"SEL: %V (%v Bytes)"`,
         &configure_status_fmt_selection
     },
+    {
+        "writemode", "Writing mode used when entering data",
+        `"readonly", "overwrite", "insert", "digit"`, `"overwrite"`,
+        &configure_writemode
+    },
 ];
 unittest
 {
@@ -337,6 +342,27 @@ unittest
     
     configRC(rc, "charset", "ebcdic");
     assert(rc.charset == CharacterSet.ebcdic);
+
+    configRC(rc, "writemode", "insert");
+    assert(rc.writemode == WritingMode.insert);
+}
+unittest
+{
+    // Restricted (-R) can't be lifted, by config file or at runtime
+    RC rc;
+    configure_writemode(rc, "readonly");
+    assert(rc.writemode == WritingMode.readonly);
+
+    loadRC(rc, "writemode overwrite");
+    assert(rc.writemode == WritingMode.readonly);
+
+    try
+    {
+        configRC(rc, "writemode", "overwrite");
+        assert(false);
+    }
+    catch (Exception) {}
+    assert(rc.writemode == WritingMode.readonly);
 }
 
 void configure_columns(ref RC rc, string value, bool conf = false)
@@ -492,6 +518,22 @@ void configure_status_fmt_selection(ref RC rc, string value, bool conf = false)
 
     rc.status_fmt_selection = value;
     rc.status_fmt_selection_set = true;
+}
+
+void configure_writemode(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.writemode_set)
+        return;
+
+    WritingMode mode = selectWritingMode(value);
+
+    // Read-only is a restriction (-R/--restrict), and like the change-mode
+    // command, there is no way out of it for the rest of the session.
+    if (rc.writemode == WritingMode.readonly && mode != WritingMode.readonly)
+        throw new Exception(MSG_CANT_EDIT_READONLY);
+
+    rc.writemode = mode;
+    rc.writemode_set = true;
 }
 
 void configure_status_fmt_report(ref RC rc, string value, bool conf = false)

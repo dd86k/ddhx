@@ -203,10 +203,10 @@ void main(string[] args)
         //
         // Misc
         //
-        "R|restrict",   "Restrict document editing",
+        "R|restrict",   `Restrict document editing (same as "writemode readonly")`,
             ()
             {
-                rc.writemode = WritingMode.readonly;
+                configure_writemode(rc, "readonly");
             },
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,

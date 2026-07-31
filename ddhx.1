@@ -106,7 +106,11 @@ Default:
 .BR ascii .
 .TP
 .B \-R, \-\-restrict
-Restrict document editing.
+Restrict document editing. Same as the
+.B writemode
+setting with the
+.B readonly
+value. Once restricted, editing cannot be enabled back for the session.
 .TP
 .B \-I, \-\-norc
 Ignore user configuration files and use defaults.
@@ -922,6 +926,22 @@ Format string for the position report
 .RB ( Ctrl+P ).
 Default:
 .BR "\(dq%d / %s B (%q%%)\(dq" .
+.TP
+.BR writemode " readonly | \fRoverwrite\fP | insert | digit"
+Writing mode used when entering data. Only the first character is
+significant, so
+.B o
+is accepted for
+.BR overwrite .
+The
+.B readonly
+value restricts editing like
+.BR \-R / \-\-restrict ,
+and cannot be lifted afterward. On fixed\-size documents, insert mode is
+reported as unavailable and falls back to
+.BR overwrite .
+Default:
+.BR overwrite .
 .
 .SS Colors
 Unlike the settings above, colors are not changed with
