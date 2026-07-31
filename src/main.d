@@ -206,7 +206,7 @@ void main(string[] args)
         "R|restrict",   `Restrict document editing (same as "writemode readonly")`,
             ()
             {
-                configure_writemode(rc, "readonly");
+                restrictRC(rc);
             },
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,

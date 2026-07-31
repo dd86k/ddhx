@@ -3924,8 +3924,8 @@ void bookmark_load(Session *session, string[] args)
 // Change writing mode
 void change_writemode(Session *session, string[] args)
 {
-    // Can't switch from restricted mode
-    if (session.rc.writemode == WritingMode.readonly)
+    // Can't switch out of a restricted session (-R/--restrict)
+    if (session.rc.restricted)
         throw new Exception(MSG_CANT_EDIT_READONLY);
     
     // Optional argument
@@ -3946,7 +3946,8 @@ void change_writemode(Session *session, string[] args)
             break;
         case WritingMode.insert:    session.rc.writemode = WritingMode.digit; break;
         case WritingMode.digit:     session.rc.writemode = WritingMode.overwrite; break;
-        case WritingMode.readonly:  break; // unreachable, checked above
+        // Only unrestricted sessions get here, so editing can be enabled back
+        case WritingMode.readonly:  session.rc.writemode = WritingMode.overwrite; break;
         }
     }
     g_digitpos = 0;

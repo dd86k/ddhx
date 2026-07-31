@@ -38,7 +38,13 @@ struct RC
     ///
     /// Opening document as read-only automatically sets this as readonly too.
     WritingMode writemode = WritingMode.overwrite;
-    
+
+    /// If set, editing is restricted for the whole session (-R/--restrict).
+    ///
+    /// Unlike the readonly writing mode, which is only the current mode and
+    /// can be changed back, this cannot be lifted once the session started.
+    bool restricted;
+
     /// Number of columns
     int columns = 16;
     
@@ -350,7 +356,7 @@ unittest
 {
     // Restricted (-R) can't be lifted, by config file or at runtime
     RC rc;
-    configure_writemode(rc, "readonly");
+    restrictRC(rc);
     assert(rc.writemode == WritingMode.readonly);
 
     loadRC(rc, "writemode overwrite");
@@ -363,6 +369,16 @@ unittest
     }
     catch (Exception) {}
     assert(rc.writemode == WritingMode.readonly);
+}
+unittest
+{
+    // Without -R, the readonly mode is just a mode, and can be changed back
+    RC rc;
+    loadRC(rc, "writemode readonly");
+    assert(rc.writemode == WritingMode.readonly);
+
+    configRC(rc, "writemode", "overwrite");
+    assert(rc.writemode == WritingMode.overwrite);
 }
 
 void configure_columns(ref RC rc, string value, bool conf = false)
@@ -527,12 +543,24 @@ void configure_writemode(ref RC rc, string value, bool conf = false)
 
     WritingMode mode = selectWritingMode(value);
 
-    // Read-only is a restriction (-R/--restrict), and like the change-mode
-    // command, there is no way out of it for the rest of the session.
-    if (rc.writemode == WritingMode.readonly && mode != WritingMode.readonly)
+    // Restricted sessions (-R/--restrict) stay read-only, like the
+    // change-mode command refuses to switch out of it
+    if (rc.restricted && mode != WritingMode.readonly)
         throw new Exception(MSG_CANT_EDIT_READONLY);
 
     rc.writemode = mode;
+    rc.writemode_set = true;
+}
+
+/// Restrict document editing for the session (-R/--restrict).
+///
+/// A restricted session starts read-only and cannot be switched to another
+/// writing mode, neither by configuration file nor at runtime.
+/// Params: rc = RC instance reference.
+void restrictRC(ref RC rc)
+{
+    rc.restricted = true;
+    rc.writemode = WritingMode.readonly;
     rc.writemode_set = true;
 }
 
