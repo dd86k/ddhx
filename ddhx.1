@@ -112,6 +112,13 @@ writing mode, like the
 .B writemode
 setting, but editing cannot be enabled back afterward.
 .TP
+.B \-W, \-\-writable
+Allow document editing, ignoring the
+.B writemode
+setting from configuration files. Lifts
+.BR \-R / \-\-restrict
+when given after it, the last of the two options wins.
+.TP
 .B \-I, \-\-norc
 Ignore user configuration files and use defaults.
 .TP

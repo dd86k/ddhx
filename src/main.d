@@ -208,6 +208,11 @@ void main(string[] args)
             {
                 restrictRC(rc);
             },
+        "W|writable",   `Allow document editing, ignoring "writemode" configurations`,
+            ()
+            {
+                unrestrictRC(rc);
+            },
         "I|norc",       "Use defaults and ignore user configuration files", &onorc,
         "f|rcfile",     "Use supplied file for options", &orc,
         "B|bookmarks",  "Load bookmarks from a file on startup", &bookmarks_file,

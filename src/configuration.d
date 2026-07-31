@@ -380,6 +380,22 @@ unittest
     configRC(rc, "writemode", "overwrite");
     assert(rc.writemode == WritingMode.overwrite);
 }
+unittest
+{
+    // -W lifts -R (last option wins) and configuration files can't restrict
+    RC rc;
+    restrictRC(rc);
+    unrestrictRC(rc);
+    assert(rc.restricted == false);
+    assert(rc.writemode == WritingMode.overwrite);
+
+    loadRC(rc, "writemode readonly");
+    assert(rc.writemode == WritingMode.overwrite);
+
+    // And editing can still be restricted afterward, at runtime
+    configRC(rc, "writemode", "readonly");
+    assert(rc.writemode == WritingMode.readonly);
+}
 
 void configure_columns(ref RC rc, string value, bool conf = false)
 {
@@ -561,6 +577,18 @@ void restrictRC(ref RC rc)
 {
     rc.restricted = true;
     rc.writemode = WritingMode.readonly;
+    rc.writemode_set = true;
+}
+
+/// Allow document editing for the session (-W/--writable).
+///
+/// Lifts a restriction set earlier at the command-line, and keeps
+/// configuration files from starting the session read-only.
+/// Params: rc = RC instance reference.
+void unrestrictRC(ref RC rc)
+{
+    rc.restricted = false;
+    rc.writemode = WritingMode.overwrite;
     rc.writemode_set = true;
 }
 
