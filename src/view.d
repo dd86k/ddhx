@@ -2708,6 +2708,15 @@ void update_diff(Session *session, int top, int height)
     ubyte[] mine = session.editor.view(base, minebuf[0 .. span]);
     ubyte[] theirs = session.diffdoc.readAt(base, theirbuf[0 .. span]);
 
+    // Mirror the view's cursor in the panel, so the element being looked at is
+    // easy to spot among highlights. The panel is shorter than the view, so the
+    // cursor is only mirrored while it lands within the panel's own span.
+    // Negative marks it as off-panel.
+    ptrdiff_t cursoroff = -1;
+    long cursorrel = session.position_cursor - base;
+    if (cursorrel >= 0 && cursorrel < span)
+        cursoroff = cast(ptrdiff_t)(cursorrel - (cursorrel % data_spec.size_of));
+
     AddressFormatter afmt = AddressFormatter(session.rc.address_type);
     DataFormatter dfmt = DataFormatter(session.rc.data_type, theirs.ptr, theirs.length);
 
@@ -2744,6 +2753,11 @@ void update_diff(Session *session, int top, int height)
                     scheme = ColorScheme.diff_changed;
             }
 
+            // Mirrored cursor wins over diff coloring, otherwise it would be
+            // invisible on a differing element (which is where it usually is).
+            if (byteoff == cursoroff)
+                scheme = ColorScheme.cursor;
+
             // Spacer before element keeps the previous scheme run going only
             // for normal; diff highlights stay tight to the element.
             if (col)
@@ -2771,6 +2785,10 @@ void update_diff(Session *session, int top, int height)
                 scheme = ColorScheme.diff_missing;
             else if (hastheir && mine[o] != theirs[o])
                 scheme = ColorScheme.diff_changed;
+
+            ptrdiff_t so = cast(ptrdiff_t)o;
+            if (cursoroff >= 0 && so >= cursoroff && so < cursoroff + data_spec.size_of)
+                scheme = ColorScheme.cursor;
 
             string text = " ";
             if (hastheir)
