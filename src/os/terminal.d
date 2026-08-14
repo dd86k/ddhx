@@ -1648,6 +1648,7 @@ private
 size_t graphs(inout(char)[] s)
 {
     import std.uni : graphemeStride;
+    import std.utf : decode;
 
     if (s is null || s.length == 0)
         return 0;
@@ -1657,8 +1658,9 @@ size_t graphs(inout(char)[] s)
     while (i < s.length)
     {
         size_t stride = graphemeStride(s, i);
-        dchar c = s[i];  // First char of grapheme
-        
+        size_t p = i;
+        dchar c = decode(cast(const(char)[])s, p);  // First char of grapheme
+
         // Rough heuristic for wide chars
         if (c >= 0x1100 && (
             (c >= 0x1100 && c <= 0x115F) ||  // Hangul
@@ -1680,6 +1682,7 @@ unittest
     assert(graphs("")           == 0);
     assert(graphs("hello")      == "hello".length);
     assert(graphs("🥴")         == 1); // WOOZY, U+1F974
+    assert(graphs("中")         == 2); // CJK, U+4E2D
 }
 
 private
@@ -1737,6 +1740,63 @@ unittest
     assert(graphwalk("", 0, true) == 0);
     assert(graphwalk(null, 0) == 0);
     assert(graphwalk(null, 0, true) == 0);
+}
+
+// Advance in a multibyte string until at least `cells` cells were passed.
+// Used to find the first byte visible on-screen for a given view offset.
+// Because a grapheme can straddle the view edge, the amount of cells actually
+// passed (`consumed`) can be higher than requested.
+private
+size_t graphskip(inout(char)[] s, size_t start, size_t cells, out size_t consumed)
+{
+    size_t pos = start;
+    while (pos < s.length && consumed < cells)
+    {
+        size_t next = graphwalk(s, pos);
+        consumed += graphs(s[pos..next]);
+        pos = next;
+    }
+    return pos;
+}
+unittest
+{
+    size_t consumed = void;
+    assert(graphskip("hello", 0, 0, consumed) == 0 && consumed == 0);
+    assert(graphskip("hello", 0, 2, consumed) == 2 && consumed == 2);
+    assert(graphskip("hello", 1, 2, consumed) == 3 && consumed == 2);
+    assert(graphskip("hello", 0, 99, consumed) == 5 && consumed == 5); // clamped
+    assert(graphskip("aä", 0, 2, consumed)  == 3 && consumed == 2);
+    assert(graphskip("中", 0, 1, consumed)  == 3 && consumed == 2); // straddles
+}
+
+// Advance in a multibyte string while no more than `cells` cells are passed.
+// Used to truncate text to the space available on-screen, where a grapheme
+// straddling the right edge is left out entirely.
+private
+size_t graphfit(inout(char)[] s, size_t start, size_t cells, out size_t consumed)
+{
+    size_t pos = start;
+    while (pos < s.length)
+    {
+        size_t next = graphwalk(s, pos);
+        size_t w = graphs(s[pos..next]);
+        if (consumed + w > cells)
+            break;
+        consumed += w;
+        pos = next;
+    }
+    return pos;
+}
+unittest
+{
+    size_t consumed = void;
+    assert(graphfit("hello", 0, 0, consumed) == 0 && consumed == 0);
+    assert(graphfit("hello", 0, 2, consumed) == 2 && consumed == 2);
+    assert(graphfit("hello", 1, 2, consumed) == 3 && consumed == 2);
+    assert(graphfit("hello", 0, 99, consumed) == 5 && consumed == 5); // clamped
+    assert(graphfit("aä", 0, 2, consumed)  == 3 && consumed == 2);
+    assert(graphfit("中", 0, 1, consumed)  == 0 && consumed == 0); // does not fit
+    assert(graphfit("中", 0, 2, consumed)  == 3 && consumed == 2);
 }
 
 // Returns true if narrow byte character is space
@@ -1843,52 +1903,100 @@ struct ReadlineState
     size_t caret;
     /// Base position. View/camera.
     size_t base;
+    /// Byte position of the earliest buffer change since the last render.
+    size_t dirty;
+    /// View/camera position as last rendered.
+    size_t rendered_base;
+    /// Amount of text cells last painted on-screen, from the view position.
+    size_t rendered_cells;
+    /// Terminal width as of the last render.
+    int rendered_width;
 }
 // Render line on-screen
+//
+// Only the part of the line that actually changed gets repainted:
+// - Caret moves alone (arrows, Home, End) only move the caret.
+// - Buffer edits repaint from the edited character up to the right edge.
+// - Scrolling the view or resizing the terminal repaints the whole line.
 private
-void readlineRender(ref ReadlineState state, char[] buffer, size_t characters, int flags)
+void readlineRender(ref ReadlineState state, char[] buffer, int flags)
 {
-    import std.algorithm : min, max;
-    
+    import std.algorithm : min;
+
     // Could also be an imposed max size (like for a text field)
     TerminalSize tsize = terminalSize();
-    
-    terminalMove(state.orig_col, state.orig_row);
-    
+
     int width = tsize.columns;
     int avail = width - state.orig_col;
-    
+    if (avail <= 0) // no room to render anything
+        return;
+
     // Cell width of text before caret (for screen positioning)
     size_t caret_cells = graphs(buffer[0 .. min(state.caret, buffer.length)]);
-    
-    // Adjust view (in cell units)
+
+    // Adjust view (in cell units), only when the caret is out of sight
     if (caret_cells < state.base)
         state.base = caret_cells;
-    else if (caret_cells >= avail)
-        state.base = caret_cells - avail;
-    
-    // Write buffer: find byte range for visible cells
-    // Skip `state.base` cells to find the start byte
-    size_t start_byte;
-    size_t skipped_cells;
-    while (start_byte < buffer.length && skipped_cells < state.base)
+    else if (caret_cells >= state.base + avail)
+        state.base = caret_cells - avail + 1;
+
+    // View moved or terminal was resized, nothing on-screen can be reused
+    bool repaint = state.base != state.rendered_base || width != state.rendered_width;
+
+    // Nothing was painted over, only the caret needs to move
+    if (repaint == false && (flags & _RL_BUFCHANGED) == 0)
     {
-        size_t stride = graphwalk(buffer, start_byte) - start_byte;
-        skipped_cells += graphs(buffer[start_byte .. start_byte + stride]);
-        start_byte += stride;
+        terminalMove(readlineCaretColumn(state, caret_cells, width), state.orig_row);
+        terminalFlush(); // fbcons on Linux/BSDs need this
+        return;
     }
-    
-    int w = cast(int)terminalWrite(buffer[start_byte .. buffer.length]);
-    if (w < avail) // fill
-        terminalWriteChar(' ', avail - w);
-    
-    // Position caret on screen (cell-based)
-    int x = state.orig_col + cast(int)(caret_cells - state.base);
-    if (x >= width) // outside buffer
-        x = width - 1;
-    terminalMove(x, state.orig_row);
-    
+
+    // First byte visible on-screen. A grapheme can straddle the left edge,
+    // so the view gets snapped to that grapheme.
+    size_t skipped = void;
+    size_t view_byte = graphskip(buffer, 0, state.base, skipped);
+    state.base = skipped;
+
+    // Where the repaint starts, in bytes and in cells from the start of the line
+    size_t start_byte  = view_byte;
+    size_t start_cells = state.base;
+    if (repaint == false && state.dirty > view_byte)
+    {
+        start_byte  = min(state.dirty, buffer.length);
+        start_cells = graphs(buffer[0 .. start_byte]);
+    }
+
+    // Fit the remainder of the line in the cells left on-screen
+    size_t left = state.base + avail;
+    left = start_cells < left ? left - start_cells : 0;
+    size_t painted = void;
+    size_t end_byte = graphfit(buffer, start_byte, left, painted);
+
+    int start_col = cast(int)(start_cells - state.base);
+    terminalMove(state.orig_col + start_col, state.orig_row);
+    terminalWrite(buffer[start_byte .. end_byte]);
+
+    // Erase what the line used to occupy past its new end. On a full repaint,
+    // the previous content is unknown, so clear up to the right edge.
+    int end_col = start_col + cast(int)painted;
+    int erase = (repaint ? avail : cast(int)state.rendered_cells) - end_col;
+    if (erase > 0)
+        terminalWriteChar(' ', erase);
+
+    state.rendered_base  = state.base;
+    state.rendered_cells = end_col;
+    state.rendered_width = width;
+
+    terminalMove(readlineCaretColumn(state, caret_cells, width), state.orig_row);
+
     terminalFlush(); // fbcons on Linux/BSDs need this
+}
+// Screen column of the caret (cell-based)
+private
+int readlineCaretColumn(ref ReadlineState state, size_t caret_cells, int width)
+{
+    int x = state.orig_col + cast(int)(caret_cells - state.base);
+    return x >= width ? width - 1 : x; // outside buffer
 }
 
 // Flags to better define behavior versus relying on current_features.
@@ -1948,9 +2056,20 @@ string readline(int column, int row, int flags = 0, const(string)[] completions 
     size_t tab_match_idx;   // current match index (cycles)
     char[] tab_prefix;      // prefix that was matched
     bool tab_active;        // currently cycling through matches
+
+    // Signal the renderer that the buffer changed from byte position `offset`,
+    // everything before that is still valid on-screen
+    void markDirty(size_t offset)
+    {
+        if (offset < rl_state.dirty)
+            rl_state.dirty = offset;
+        rl_flags |= _RL_BUFCHANGED;
+    }
+
 Lread: // Emulate line buffer
     rl_flags = flags;
-    
+    rl_state.dirty = size_t.max;
+
     TermInput input = terminalRead();
     
     // No need to shout (throw exception), it's not some exceptional error
@@ -2018,7 +2137,7 @@ Lread: // Emulate line buffer
         line.insert(0, cast(char[])hentry);
         rl_state.caret = line.length;
         rl_state.base = 0;
-        rl_flags |= _RL_BUFCHANGED;
+        markDirty(0);
         break;
     case Key.DownArrow:
         if ((flags & RL_HISTORY) == 0)
@@ -2041,7 +2160,7 @@ Lread: // Emulate line buffer
         }
         rl_state.caret = line.length;
         rl_state.base = 0;
-        rl_flags |= _RL_BUFCHANGED;
+        markDirty(0);
         break;
     case Key.Home:
         rl_state.caret = 0;
@@ -2054,7 +2173,7 @@ Lread: // Emulate line buffer
             goto Lread;
         size_t next = graphwalk(line[], rl_state.caret);
         line.deleteAt(rl_state.caret, next - rl_state.caret);
-        rl_flags |= _RL_BUFCHANGED;
+        markDirty(rl_state.caret);
         break;
     case Mod.ctrl | Key.Delete: // front delete word
         if (rl_state.caret >= line.length) // nothing to delete
@@ -2067,7 +2186,7 @@ Lread: // Emulate line buffer
                 break;
         }
         line.deleteAt(rl_state.caret, i - rl_state.caret);
-        rl_flags |= _RL_BUFCHANGED;
+        markDirty(rl_state.caret);
         break;
     case Key.Backspace: // back delete character
         if (rl_state.caret == 0) // nothing to delete
@@ -2075,7 +2194,7 @@ Lread: // Emulate line buffer
         size_t prev = graphwalk(line[], rl_state.caret, true);
         line.deleteAt(prev, rl_state.caret - prev);
         rl_state.caret = prev;
-        rl_flags |= _RL_BUFCHANGED;
+        markDirty(prev);
         break;
     case Mod.ctrl | Key.Backspace: // back delete word
         if (rl_state.caret == 0) // nothing to delete
@@ -2089,7 +2208,7 @@ Lread: // Emulate line buffer
         }
         line.deleteAt(i, rl_state.caret - i);
         rl_state.caret = i;
-        rl_flags |= _RL_BUFCHANGED;
+        markDirty(i);
         break;
     case Key.Tab:
         if (completions is null || completions.length == 0)
@@ -2115,7 +2234,7 @@ Lread: // Emulate line buffer
             line.insert(0, cast(char[])c);
             rl_state.caret = line.length;
             rl_state.base = 0;
-            rl_flags |= _RL_BUFCHANGED;
+            markDirty(0);
         }
         
         import std.algorithm : startsWith;
@@ -2168,11 +2287,11 @@ Lread: // Emulate line buffer
         if (input.ksize == 1 && !isprint(input.kbuffer[0]))
             goto Lread;
         
-        rl_state.caret +=
-            line.insert(rl_state.caret, input.kbuffer[0..input.ksize]);
-        rl_flags |= _RL_BUFCHANGED;
+        size_t at = rl_state.caret;
+        rl_state.caret += line.insert(at, input.kbuffer[0..input.ksize]);
+        markDirty(at);
     }
-    readlineRender(rl_state, line[], line.cells, rl_flags);
+    readlineRender(rl_state, line[], rl_flags);
     goto Lread;
     
 Lout:
