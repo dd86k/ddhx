@@ -58,6 +58,10 @@ private enum CONFIG_CHUNKSIZE      = KiB!128;
 private enum CONFIG_INPLACE_STASH_BUDGET = MiB!64;
 /// Artificial needle size limit for find/find-back commands.
 private enum CONFIG_NEEDLE_LIMIT   = KiB!128;
+/// Buffer size for diff navigation scans: a chunk, plus room for the one
+/// element of overlap that carries the hunk state between chunks (the widest
+/// supported element is 8 bytes).
+private enum CONFIG_DIFFBUFSIZE    = CONFIG_CHUNKSIZE + 8;
 /// Amount of data before warning for a copy for clipboard.
 private enum CONFIG_COPY_WORRY     = MiB!16;
 
@@ -341,6 +345,10 @@ immutable Command[] default_commands = [
     // Acting as a toggle (file opened + no args=close) is fine
     { "diff-file",                  "Diff a file against the current view (no path closes it)",
         0,                          &diff_file },
+    { "diff-next",                  "Jump to the next difference against the diffed file",
+        Key.RightBrace,             &diff_next },
+    { "diff-prev",                  "Jump to the previous difference against the diffed file",
+        Key.LeftBrace,              &diff_prev },
     { "change-mode",                "Change writing mode (between overwrite and insert)",
         Key.Insert,                 &change_writemode },
     // Find
@@ -4029,6 +4037,292 @@ void diff_close(Session *session)
     session.diffdoc = null;
     session.diffpath = null;
     g_status |= UVIEW;
+}
+
+enum {
+    /// Scan backward instead of forward.
+    DIFF_REVERSE = 1,
+    /// Do not check for a cancel key while scanning, and do not draw progress.
+    /// Used for unittests, because they run without an interactive terminal.
+    DIFF_DISALLOW_CANCEL = 2,
+
+    /// No difference found in the requested direction.
+    DIFF_RESULT_NOT_FOUND = -1,
+}
+
+// True if the element of `size` bytes at `offset` differs between the two
+// buffers. A byte that exists on one side only (past the end of the shorter
+// document) counts as a difference, matching what the panel paints with
+// ColorScheme.diff_missing.
+bool diff_element(ubyte[] mine, ubyte[] theirs, size_t offset, int size)
+{
+    for (int b; b < size; ++b)
+    {
+        size_t o = offset + b;
+        bool hasmine  = o < mine.length;
+        bool hastheir = o < theirs.length;
+        if (hasmine != hastheir)    // one side ran out
+            return true;
+        if (hasmine && mine[o] != theirs[o])
+            return true;
+    }
+    return false;
+}
+
+/// Find the start of the diff hunk that follows (or precedes) `position`.
+///
+/// Akin to search function, but with diffs.
+///
+/// A hunk is a run of consecutive differing elements, and only its first
+/// element is a stop, so a large modified region takes one jump instead of
+/// hundreds. Comparisons are done at element granularity and aligned like the
+/// view is, so results land on what the diff panel highlights.
+///
+/// Backward, a hunk start strictly below the cursor is returned, meaning that
+/// a cursor sitting inside a hunk moves to that hunk's own start first.
+///
+/// Params:
+///     session = Current session, with a diff document opened.
+///     position = Starting position.
+///     flags = Operation flags.
+/// Returns: Address of the hunk start, or DIFF_RESULT_NOT_FOUND.
+long diff_seek(Session *session, long position, int flags)
+{
+    assertion(session.diffdoc, "Need diff document");
+
+    int esize = size_of(session.rc.data_type);
+
+    // Elements past the end of one side still count (as missing data), so
+    // both documents are scanned in full.
+    long limit = max(session.editor.size(), session.diffdoc.size());
+    if (limit <= 0)
+        return DIFF_RESULT_NOT_FOUND;
+
+    // Buffers are reused across invocations, like the diff panel does.
+    __gshared ubyte[] minebuf;
+    __gshared ubyte[] theirbuf;
+    if (minebuf.length < CONFIG_DIFFBUFSIZE)
+    {
+        minebuf.length = CONFIG_DIFFBUFSIZE;
+        theirbuf.length = CONFIG_DIFFBUFSIZE;
+    }
+
+    // Cursor can sit anywhere within an element, so align it down first.
+    long cursor = (position / esize) * esize;
+
+    log("position=%d cursor=%d esize=%d limit=%d flags=%#x", position, cursor, esize, limit, flags);
+
+    debug import std.datetime.stopwatch : StopWatch;
+    debug StopWatch sw;
+    debug sw.start;
+    debug scope(exit) { sw.stop(); log("diff_seek=%s", sw.peek()); }
+
+    if (flags & DIFF_REVERSE)
+    {
+        // Nothing below the first element
+        if (cursor <= 0)
+            return DIFF_RESULT_NOT_FOUND;
+
+        long end = cursor; // exclusive, candidates are below it
+        while (end > 0)
+        {
+            if ((flags & DIFF_DISALLOW_CANCEL) == 0 && cancelling())
+                throw new Exception(MSG_CANCELED);
+
+            long base = end - CONFIG_CHUNKSIZE;
+            if (base < 0)
+                base = 0;
+
+            // Read one element before the chunk, to tell whether the lowest
+            // candidate starts a hunk or continues one.
+            long readbase = base > 0 ? base - esize : 0;
+            size_t span = cast(size_t)(end - readbase);
+            ubyte[] mine   = session.editor.view(readbase, minebuf[0..span]);
+            ubyte[] theirs = session.diffdoc.readAt(readbase, theirbuf[0..span]);
+
+            size_t low = cast(size_t)(base - readbase);  // lowest candidate
+            size_t top = span - esize;                   // highest candidate
+            bool curdiff = diff_element(mine, theirs, top, esize);
+            for (size_t o = top; ; o -= esize)
+            {
+                // Element zero has nothing before it, so it starts a hunk
+                // whenever it differs.
+                bool prevdiff = readbase + o > 0 ?
+                    diff_element(mine, theirs, o - esize, esize) : false;
+
+                if (curdiff && prevdiff == false)
+                    return readbase + o;
+
+                curdiff = prevdiff;
+                if (o <= low)
+                    break;
+            }
+
+            if ((flags & DIFF_DISALLOW_CANCEL) == 0)
+                update_progress(session, limit - base, limit);
+
+            end = base;
+        }
+
+        return DIFF_RESULT_NOT_FOUND;
+    }
+
+    // Forward: first candidate is the element after the cursor, and the
+    // element before it tells whether that candidate starts a hunk.
+    long readbase = cursor;
+    while (readbase < limit)
+    {
+        if ((flags & DIFF_DISALLOW_CANCEL) == 0 && cancelling())
+            throw new Exception(MSG_CANCELED);
+
+        size_t span = cast(size_t) min(CONFIG_CHUNKSIZE, limit - readbase);
+        if (span <= esize) // only the reference element left, no candidate
+            break;
+
+        ubyte[] mine   = session.editor.view(readbase, minebuf[0..span]);
+        ubyte[] theirs = session.diffdoc.readAt(readbase, theirbuf[0..span]);
+
+        bool prevdiff = diff_element(mine, theirs, 0, esize);
+        for (size_t o = esize; o < span; o += esize)
+        {
+            bool curdiff = diff_element(mine, theirs, o, esize);
+            if (curdiff && prevdiff == false)
+                return readbase + o;
+            prevdiff = curdiff;
+        }
+
+        if ((flags & DIFF_DISALLOW_CANCEL) == 0)
+            update_progress(session, readbase + span, limit);
+
+        // Overlap by one element, so the run state carries into the next chunk
+        readbase += span - esize;
+    }
+
+    return DIFF_RESULT_NOT_FOUND;
+}
+
+// Hunks group consecutive differing elements: navigation stops on the first
+// element of a run, forward and backward, and a cursor inside a run goes back
+// to that run's own start.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    // "AAXXAAXXAA": hunks start at 2 and 6
+    Session session;
+    session.editor  = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAAAAAAAA");
+    session.diffdoc = new MemoryDocument(cast(const(ubyte)[]) "AAXXAAXXAA");
+
+    assert(diff_seek(&session, 0, DIFF_DISALLOW_CANCEL) == 2);
+    assert(diff_seek(&session, 2, DIFF_DISALLOW_CANCEL) == 6);
+    assert(diff_seek(&session, 3, DIFF_DISALLOW_CANCEL) == 6, "from inside a hunk");
+    assert(diff_seek(&session, 6, DIFF_DISALLOW_CANCEL) == DIFF_RESULT_NOT_FOUND);
+
+    assert(diff_seek(&session, 9, DIFF_REVERSE|DIFF_DISALLOW_CANCEL) == 6);
+    assert(diff_seek(&session, 7, DIFF_REVERSE|DIFF_DISALLOW_CANCEL) == 6, "from inside a hunk");
+    assert(diff_seek(&session, 6, DIFF_REVERSE|DIFF_DISALLOW_CANCEL) == 2);
+    assert(diff_seek(&session, 2, DIFF_REVERSE|DIFF_DISALLOW_CANCEL) == DIFF_RESULT_NOT_FOUND);
+}
+// A hunk starting at address zero has no element before it, and is still
+// reported when scanning backward from further ahead.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor  = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAA");
+    session.diffdoc = new MemoryDocument(cast(const(ubyte)[]) "XAAA");
+
+    assert(diff_seek(&session, 3, DIFF_REVERSE|DIFF_DISALLOW_CANCEL) == 0);
+    assert(diff_seek(&session, 0, DIFF_DISALLOW_CANCEL) == DIFF_RESULT_NOT_FOUND);
+}
+// Data existing on one side only counts as a difference, like the panel
+// paints it, whichever side is the shorter one.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session shorter_diff;
+    shorter_diff.editor  = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAA");
+    shorter_diff.diffdoc = new MemoryDocument(cast(const(ubyte)[]) "AA");
+    assert(diff_seek(&shorter_diff, 0, DIFF_DISALLOW_CANCEL) == 2);
+
+    Session shorter_editor;
+    shorter_editor.editor  = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AA");
+    shorter_editor.diffdoc = new MemoryDocument(cast(const(ubyte)[]) "AAAA");
+    assert(diff_seek(&shorter_editor, 0, DIFF_DISALLOW_CANCEL) == 2);
+}
+// A hunk overlapping a chunk boundary is one hunk: the element of overlap
+// between chunks must carry the run state, otherwise the part after the
+// boundary is reported as a new hunk.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    enum SIZE = CONFIG_CHUNKSIZE * 2;
+    enum HUNK = CONFIG_CHUNKSIZE - 2; // spans the boundary by two bytes
+
+    ubyte[] mine   = new ubyte[SIZE];
+    ubyte[] theirs = new ubyte[SIZE];
+    theirs[HUNK .. CONFIG_CHUNKSIZE + 2] = 0xff;
+
+    Session session;
+    session.editor  = new DummyDocumentEditor(cast(immutable(ubyte)[]) mine.idup);
+    session.diffdoc = new MemoryDocument(theirs);
+
+    assert(diff_seek(&session, 0, DIFF_DISALLOW_CANCEL) == HUNK);
+    assert(diff_seek(&session, HUNK, DIFF_DISALLOW_CANCEL) == DIFF_RESULT_NOT_FOUND);
+    assert(diff_seek(&session, SIZE - 1, DIFF_REVERSE|DIFF_DISALLOW_CANCEL) == HUNK);
+}
+// Identical documents have nothing to navigate to.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor  = new DummyDocumentEditor(cast(immutable(ubyte)[]) "hello");
+    session.diffdoc = new MemoryDocument(cast(const(ubyte)[]) "hello");
+
+    assert(diff_seek(&session, 0, DIFF_DISALLOW_CANCEL) == DIFF_RESULT_NOT_FOUND);
+    assert(diff_seek(&session, 4, DIFF_REVERSE|DIFF_DISALLOW_CANCEL) == DIFF_RESULT_NOT_FOUND);
+}
+
+// Jump the cursor to the start of the next difference against the diffed file.
+void diff_next(Session *session, string[] args)
+{
+    if (session.diffdoc is null)
+        throw new Exception(MSG_NO_DIFF_OPEN);
+
+    unselect(session); // Navigation, unselect
+
+    long pos = diff_seek(session, session.position_cursor, 0);
+    if (pos < 0)
+    {
+        message(MSG_NO_MORE_DIFFERENCES);
+        return;
+    }
+
+    moveabs(session, pos);
+    message("Difference at 0x%x", pos);
+}
+
+// Jump the cursor to the start of the previous difference against the diffed file.
+void diff_prev(Session *session, string[] args)
+{
+    if (session.diffdoc is null)
+        throw new Exception(MSG_NO_DIFF_OPEN);
+
+    unselect(session); // Navigation, unselect
+
+    long pos = diff_seek(session, session.position_cursor, DIFF_REVERSE);
+    if (pos < 0)
+    {
+        message(MSG_NO_MORE_DIFFERENCES);
+        return;
+    }
+
+    moveabs(session, pos);
+    message("Difference at 0x%x", pos);
 }
 
 // 

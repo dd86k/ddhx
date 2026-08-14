@@ -73,6 +73,11 @@ static immutable string MSG_MISSING_REPLACEMENT = "Missing replacement";
 static immutable string MSG_EMPTY_NEEDLE = "Empty needle";
 static immutable string MSG_NO_PREVIOUS_FIND_REPLACE = "No previous find-replace to repeat";
 
+// Diff
+
+static immutable string MSG_NO_DIFF_OPEN = "No diff file open";
+static immutable string MSG_NO_MORE_DIFFERENCES = "No more differences";
+
 // Numeric input
 
 static immutable string MSG_INCOMPLETE_NUMBER = "Incomplete number";

@@ -328,6 +328,20 @@ Alt+I	Toggle the data inspector panel
 Alt+E	Toggle inspector endian (little/big)
 .TE
 .
+.SS Diff
+.TS
+lb l.
+}	Jump to the next difference
+{	Jump to the previous difference
+.TE
+.PP
+With a diff panel open (see the
+.B diff\-file
+command), these move the cursor between differences.
+A run of consecutive differing elements counts as one difference, so a large
+modified region is one jump rather than one per element.
+Navigation does not wrap around the document.
+.
 .SS Other
 .TS
 lb l.
@@ -579,6 +593,15 @@ in a diff panel below the view, highlighting bytes that differ from the current 
 The panel follows the main view's position.
 With no argument while a diff panel is open, the panel closes.
 To compare unsaved changes against the on-disk copy, pass the document's own path.
+.TP
+.B diff\-next
+Move the cursor to the start of the next difference against the diffed file
+.RB (key: } ).
+.TP
+.B diff\-prev
+Move the cursor to the start of the previous difference against the diffed file
+.RB (key: { ).
+A cursor sitting inside a difference moves to the start of that difference first.
 .TP
 .B refresh
 Redraw the entire screen
