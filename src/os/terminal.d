@@ -2283,6 +2283,12 @@ enum Key // These are fine for now
     Caret = 94,
     Underscore = 95,
     Backtick = 96,
+    
+    // a-z range: 97 to 122
+    
+    LeftBrace = 123,
+    Pipe = 124,
+    RightBrace = 125,
 
     // Special keys
     PageUp      = SPECIALKEY,
