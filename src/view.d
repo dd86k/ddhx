@@ -2585,7 +2585,7 @@ void update(Session *session)
     }
 
     // Reserve rows for the diff panel if a file is open and there is room.
-    // The panel takes about half the rows left for the data view.
+    // The panel takes half the rows left for the data view, separator included.
     int diff_h;
     if (session.diffdoc && g_viewrows >= 4)
     {
@@ -2658,12 +2658,36 @@ void update_inspector(Session *session, int height)
     terminalFlush();
 }
 
-// Total reserved height of the diff panel (separator + data rows): about half
-// the rows otherwise available to the data view, leaving the rest to the view.
+// Total reserved height of the diff panel (separator + data rows): half of the
+// rows otherwise available to the data view, leaving the rest to the view.
 // `avail` is the data-view height before reservation.
+//
+// The separator line is paid for out of the panel's share, so both halves are
+// counted in data rows only: the panel gets ceil((avail - 1) / 2) rows and the
+// main view keeps the floor. That way an odd row goes to the panel, which
+// matters most on short terminals where one row is a large fraction of it.
 int diffHeight(int avail)
 {
-    return avail / 2;
+    return 1 + (avail / 2);
+}
+unittest
+{
+    // avail, expected panel height (separator + data), view rows, panel rows
+    static immutable int[3][] cases = [
+        // avail  view rows       panel data rows
+        [ 3,      1,              1 ],
+        [ 4,      1,              2 ],
+        [ 5,      2,              2 ],
+        [ 6,      2,              3 ],
+        [ 20,     9,              10 ],
+        [ 21,     10,             10 ],
+    ];
+    foreach (ref c; cases)
+    {
+        int height = diffHeight(c[0]);
+        assert(c[0] - height == c[1]);
+        assert(height - 1 == c[2]);
+    }
 }
 
 // Render the diff panel at the bottom of the screen. It shows the bytes of
