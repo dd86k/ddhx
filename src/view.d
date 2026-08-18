@@ -2114,35 +2114,54 @@ void update_header(Session *session)
     AddressFormatter address = AddressFormatter(session.rc.address_type);
     DataSpec dataspec = selectDataSpec(session.rc.data_type);
     
+    // Count what goes out ourselves. The writer flushes when it fills up, so
+    // its length() only counts what is still pending, and the header must never
+    // exceed the terminal width, or it wraps and pushes the view down a row.
+    int written;
+    void putText(const(char)[] text)
+    {
+        if (written >= g_cols) return;
+        if (text.length > g_cols - written)
+            text = text[0 .. g_cols - written];
+        buffwriter.put(text);
+        written += cast(int)text.length;
+    }
+    void putSpaces(int count)
+    {
+        if (count <= 0 || written >= g_cols) return;
+        if (count > g_cols - written)
+            count = g_cols - written;
+        buffwriter.repeat(' ', count);
+        written += count;
+    }
+
     // Print spacers and current address type
     import std.math : abs;
     string atype = addressTypeToString(session.rc.address_type);
     int prespaces = abs( session.rc.address_spacing ) - cast(int)atype.length;
     if (session.rc.address_spacing < 0) // left-align
     {
-        buffwriter.put(atype);
-        buffwriter.repeat(' ', prespaces);
+        putText(atype);
+        putSpaces(prespaces);
     }
     else
     {
-        buffwriter.repeat(' ', prespaces);
-        buffwriter.put(atype);
+        putSpaces(prespaces);
+        putText(atype);
     }
-    buffwriter.repeat(' ', 1);
+    putSpaces(1);
 
     ElementText buf = void;
     int cols = session.rc.columns;
-    for (int col, ad; col < cols; ++col, ad += dataspec.size_of)
+    for (int col, ad; col < cols && written < g_cols; ++col, ad += dataspec.size_of)
     {
-        buffwriter.repeat(' ', 1);
-        buffwriter.put(address.textual(buf, ad, dataspec.spacing));
+        putSpaces(1);
+        putText(address.textual(buf, ad, dataspec.spacing));
     }
-    
+
     // Fill rest of upper bar with spaces
-    int rem = g_cols - cast(int)buffwriter.length();
-    if (rem > 0)
-        buffwriter.repeat(' ', rem);
-    
+    putSpaces(g_cols - written);
+
     buffwriter.flush();
     terminalFlush();
 }
@@ -2343,9 +2362,15 @@ void update_view(Session *session)
         // Render data by element, so by column
         for (int col; col < cols; col++)
         {
+            // Past the terminal edge: nothing else on this row is visible, but
+            // the formatter still has to be moved to the end of the row, or the
+            // next row would start on the elements this one skipped.
             if (chars > g_cols)
+            {
+                dfmt.skip(cols - col);
                 break;
-            
+            }
+
             int elemidx = (row * cols) + col;
             
             // Is element zero?
@@ -2409,9 +2434,14 @@ void update_view(Session *session)
         // Render text by byte
         for (int idx; idx < g_linesize; idx++, ci++)
         {
+            // Same as the data panel: skipped bytes still count, otherwise the
+            // next row would resume on this row's leftover characters.
             if (chars > g_cols)
+            {
+                ci += g_linesize - idx;
                 break;
-            
+            }
+
             // Convert byte offset to element index for state checking
             int elementIndex = ((row * g_linesize) + idx) / data_spec.size_of;
             
@@ -2756,8 +2786,13 @@ void update_diff(Session *session, int top, int height)
 
         for (int col; col < cols; col++)
         {
+            // Keep the formatter on the row boundary when the row is cut short
+            // by the terminal edge, same as the main view.
             if (chars > g_cols)
+            {
+                dfmt.skip(cols - col);
                 break;
+            }
 
             int byteoff = (row * linesize) + (col * data_spec.size_of);
 

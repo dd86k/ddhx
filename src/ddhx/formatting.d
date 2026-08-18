@@ -646,7 +646,13 @@ struct DataFormatter
     }
     
     void step() { i += spec.size_of; }
-    
+
+    /// Advance over elements without formatting them, for when a row is cut
+    /// short by the terminal edge but the next row must still start on the
+    /// right element.
+    /// Params: count = Number of elements to skip.
+    void skip(int count) { i += count * spec.size_of; }
+
     /// Format an element.
     /// Params: buf = Buffer.
     /// Returns: Formatted data or null when end of data.
