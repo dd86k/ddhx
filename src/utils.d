@@ -18,9 +18,20 @@ template KiB(int base)
     enum KiB = cast(long)base * 1024;
 }
 
-// TODO: See splitting/quote behavior in other shells and try to imitiate those
-//       Potentially looking at the minimum CMD and Bash
 /// Split arguments while accounting for quotes.
+///
+/// This layer is responsible for word splitting and quoting only. It resolves
+/// what it needs to find argument boundaries and nothing else:
+///
+/// $(UL
+/// $(LI `'single quotes'` are literal: every byte up to the closing quote is
+///      taken verbatim, backslashes included. There is no way to embed a `'`;
+///      close, escape, and reopen instead (`'it'\''s'`).)
+/// $(LI Anywhere else, a backslash before `"`, `'`, or `\` is consumed and the
+///      character taken literally.)
+/// $(LI Any other backslash is passed through with its sequence intact, so
+///      `\t` and friends reach whoever interprets them (see patterns.unescape).)
+/// )
 ///
 /// Uses the GC to append to the new array.
 /// Params: buffer = Shell-like input.
@@ -44,7 +55,19 @@ string[] arguments(const(char)[] buffer)
     for (size_t i; i < buffer.length; ++i)
     {
         char c = buffer[i];
-        
+
+        // Single quotes are literal, so no escape or quote processing happens
+        // in here. This is the escape hatch for data carrying its own escape
+        // syntax, where being unescaped twice would be a nuisance.
+        if (inQuote && quoteChar == '\'')
+        {
+            if (c == '\'')
+                inQuote = false;
+            else
+                argBuf.put(c);
+            continue;
+        }
+
         // Skip leading whitespace when not in a quote
         if (!inQuote && (isControl(c) || isWhite(c)))
         {
@@ -61,8 +84,10 @@ string[] arguments(const(char)[] buffer)
         if (c == '\\' && i + 1 < buffer.length)
         {
             char next = buffer[i + 1];
-            // Escape next character if it's a quote, backslash, or we're in a quote
-            if (next == '"' || next == '\'' || next == '\\' || inQuote)
+            // Only quotes and backslashes are consumed here. Anything else
+            // keeps its backslash, so sequences like "\t" reach whoever
+            // interprets them (e.g. string patterns).
+            if (next == '"' || next == '\'' || next == '\\')
             {
                 argBuf.put(next);
                 ++i; // Skip the escaped character
@@ -113,18 +138,38 @@ string[] arguments(const(char)[] buffer)
     assert(arguments(`/type "yes string"`) == [ "/type", "yes string" ]);
     assert(arguments(`A           B`) == [ "A", "B" ]);
     
-    // Escape tests
+    // Escapes, unquoted and in double quotes: a backslash before a quote or a
+    // backslash is consumed, the character taken literally
     assert(arguments(`a \"b c\" d`) == [ "a", `"b`, `c"`, "d" ]);
     assert(arguments(`a "b \"c\" d"`) == [ "a", `b "c" d` ]);
-    assert(arguments(`a 'b \'c\' d'`) == [ "a", `b 'c' d` ]);
     assert(arguments(`test\\ value`) == [ `test\`, "value" ]);
     assert(arguments(`test\\value`) == [ `test\value` ]);
     assert(arguments(`"test\\"`) == [ `test\` ]);
-    assert(arguments(`'test\\'`) == [ `test\` ]);
     assert(arguments(`a\\ b`) == [ `a\`, "b" ]);
     assert(arguments(`"a\\ b"`) == [ `a\ b` ]);
     assert(arguments(`\"a\"`) == [ `"a"` ]);
-    
+
+    // Every other backslash sequence is passed through untouched, for the
+    // command to interpret (or not). This layer does not know what "\t" means.
+    assert(arguments(`find s:a\tb`)   == [ "find", `s:a\tb` ]);
+    assert(arguments(`find "a\tb"`)   == [ "find", `a\tb` ]);
+    assert(arguments(`find "a\\tb"`)  == [ "find", `a\tb` ]);
+    assert(arguments(`open "C:\dir"`) == [ "open", `C:\dir` ]);
+    assert(arguments(`open C:\dir`)   == [ "open", `C:\dir` ]);
+
+    // Single quotes are literal: no escape processing whatsoever inside
+    assert(arguments(`'test\\'`)      == [ `test\\` ]);
+    assert(arguments(`find 'a\tb'`)   == [ "find", `a\tb` ]);
+    assert(arguments(`find 's:C:\\Users'`) == [ "find", `s:C:\\Users` ]);
+    assert(arguments(`open 'C:\dir'`) == [ "open", `C:\dir` ]);
+    assert(arguments(`'a "b" c'`)     == [ `a "b" c` ]);
+    // A single quote cannot be escaped into a literal run; close, escape and
+    // reopen instead, same as POSIX shells
+    assert(arguments(`a 'b \'c\' d'`) == [ "a", `b \c'`, "d" ]);
+    assert(arguments(`'it'\''s'`)     == [ `it's` ]);
+    assert(arguments(`'a'\\'b'`)      == [ `a\b` ]);
+
+
     // Nested/mixed quotes
     assert(arguments(`a "b 'c' d" e`) == [ "a", `b 'c' d`, "e" ]);
     assert(arguments(`a 'b "c" d' e`) == [ "a", `b "c" d`, "e" ]);
