@@ -1,0 +1,1451 @@
+Changelog for ddhx, newest first. See README for the roadmap.
+
+Categories are used consistently across releases: Added, Changed, Fixed,
+Removed, and (where relevant) Docs.
+
+////////////////////////////////////////////////////////////////////////////////
+// Upcoming
+
+- Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}' /
+  '{') jump between differing regions, with a cursor mirror and better
+  alignment in the diff panel.
+- Write protection overhaul: new '-W'/'--writable' flag and 'writemode'
+  config; write mode is now enforced on fixed-size media, with a dedicated
+  restricted-mode variable to back it.
+- Terminal rendering fixes: partial rendering for readline, correct cell
+  counting/truncation on narrow terminals, and a fixed CJK width heuristic.
+  Tested on Linux (VTE, fbcon) and Windows (Terminal, conhost).
+- View/formatting fixes: row drift when lines are truncated by terminal
+  width is fixed.
+
+// Added
+- '-W'/'--writable' flag (cb1c02d)
+- 'writemode' config option, enforced on fixed-size media (6fd3d7e)
+- 'diff-next' / 'diff-prev' commands mapped to '}' / '{' (73a5983)
+- Cursor mirror in the diff panel (e77bd04)
+- 'Braces' and 'Pipe' terminal enum values (7d15f8b)
+
+// Changed
+- Restricted mode split into its own variable, simplifying '-W' handling
+  (0ae096e)
+- Diff panel alignment improved (391a387)
+- Benchmark tool: fixed compile, uses default editor when run without args
+  (3ffdac4)
+
+// Fixed
+- Row drift when lines are truncated by terminal width (4bcb010)
+- Terminal partial rendering for readline (63cdbf7), with fixes:
+  - cell count no longer relies on terminalWrite, counts using graphs
+    instead
+  - text truncated correctly according to terminal size
+  - scroll condition no longer ignores base position
+  - CJK width heuristic no longer fails to fire (byte vs char comparison
+    bug)
+
+// Docs
+- README updated (700136c)
+- ddhx.1 manpage updated for writemode, -W, and diff-next/diff-prev
+  (6fd3d7e, 0ae096e, cb1c02d, 73a5983)
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.11.0
+
+Small additions, fixes, and dropping "experimental" status.
+
+// Added
+- '-d'/'--diff-file' to start diff panel from CLI.
+- In-place saving for large files: edits can be written back without
+  spilling to a temp copy, and your undo history survives the save (capped
+  by a max volume so it stays sane).
+- Capability-based enforcement for documents, so operations that a document
+  type can't support are blocked cleanly. This will be used in a future
+  version for disk and process type documents.
+- Upgraded terminal module to handle multibyte POSIX and UnicodeChar on
+  Windows.
+  - It's now possible to bind fancier keybindings, like to (U+20AC).
+- Enter, spacebar, escape, and end special keys to be bound with.
+- More members in the Key enum.
+  - Fixes cast(Key)91 in --help-keys. Instead, you'll see LeftBracket.
+
+// Fixed
+- Editing past the 4 GiB mark of very large files now works (fixed a bad
+  32-bit skip calculation).
+- Replacing exactly at end-of-file correctly extends the document instead
+  of leaving a gap.
+- Reads near EOF no longer count uninitialized bytes as real data.
+- Undo/redo fixes: branching off a new edit after undo now properly
+  discards the stale redo tail, the "edited" indicator stays accurate
+  across save points, and several coalescing edge cases (empty-document
+  removes, double-split buffers) were corrected so undo can't corrupt
+  unrelated history.
+
+// Docs
+- ddhx.1: Added CLI, commands, and color sections; updated color
+  elements/list; general proofreading.
+- README: Removed the experimental notice, fixed test-color Makefile typo.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.10.0
+
+Various additions like bookmarks, diff panel, inspector panel, and
+find-and-replace support.
+
+Release tested on:
+- Ubuntu 24.04 amd64 using VTE 0.76;
+- Alpine 3.22 amd64 using framebuffer;
+- Windows 11 amd64 using Windows Terminal 1.24.11321.0;
+- Windows 10 amd64 using conhost;
+- And NetBSD 10 amd64 using framebuffer.
+
+// Bookmarks
+
+Bookmarks. Anchors.
+
+Bookmarks mark addresses (or ranges) you want to come back to. Set one with
+'m' ('bookmark-toggle') at the cursor, then jump between them with '['
+('bookmark-prev') and ']' ('bookmark-next'). Bookmarked bytes are
+highlighted in both the data and text panels so they stay visible as you
+scroll.
+
+A bookmark can cover a single element, an explicit range, or the current
+selection. The 'bookmark-toggle' command picks the right action from
+context, and 'bookmark-set' / 'bookmark-unset' commands are available for
+custom bindings.
+
+Use 'bookmark-clear' to clear all bookmarks from memory, or before you load
+a list from a file using 'bookmark-load'. Want to save them? 'bookmark-save'.
+
+The '--bookmarks=FILE' switch allows loading from the CLI.
+
+// Diff Panel
+
+It is used to show byte-level differences against another file.
+
+The diff panel can be shown using the 'diff-file FILE' command and can be
+hidden using 'diff-file' (no arguments).
+
+// Data Inspector Panel
+
+The inspector is a small read-only panel that decodes the bytes under the
+cursor as common numeric types (u8/i8, u16/i16, u32/i32, u64/i64, f32, f64)
+all at once.
+
+Toggle the panel with Alt+I, and flip between little- and big-endian
+interpretation with Alt+E. Rows that don't have enough bytes available
+(near EOF) show "N/A"; non-finite floats show "NaN" or "Inf".
+
+// Added
+- Bookmarks! You can use 'bookmark-toggle' command (mapped to m) to set and
+  unset bookmarks
+  - 'bookmark-set': Add a bookmark over a range, selection, or cursor
+  - 'bookmark-unset': Remove bookmarks overlapping a range, selection, or
+    cursor
+  - 'bookmark-toggle' ('m'): Set a bookmark, or unset any that overlap the
+    target range
+  - 'bookmark-next' (']'): Jump to the next bookmark
+  - 'bookmark-prev' ('['): Jump to the previous bookmark
+  - 'bookmark-clear': Clear list of bookmarks
+  - 'bookmark-save': Save bookmarks to a file
+  - 'bookmark-load': Load bookmarks from a file (additive, does not clear
+    list)
+  - '-B' and '--bookmarks=' to load bookmarks from the CLI
+  - New color scheme: bookmark (feel free to color bookmark :red if you
+    want!)
+- Diff panel!
+  - Use 'diff-file FILE' to open panel to compare against FILE.
+  - Use 'diff-file' without any arguments to close it.
+- 'find-replace' and 'find-replace-all' commands: Find and replace data
+  using -- separator.
+  - Syntax: 'find-replace FROM -- WITH' (uses patterns)
+  - Bound to Ctrl+R by default (^H used by most GUI editors is typically
+    Backspace for terminals).
+  - 'redo' was default-remapped to Ctrl+Y (to be consistent with many
+    other editors)
+- 'toggle-inspector' command (Alt+I): New inspector panel.
+- 'toggle-endian' command (Alt+E): (for inspector panel) toggle endianness.
+- 'replace-range' and 'insert-range' commands: Replace or insert data using
+  a range or selection.
+  - These replace the behavior of replace and insert with an explicit
+    range specifier.
+
+// Changed
+- Make 'find', 'find-next', and 'find-prev' force a selection over result
+  when finding matching data.
+  - Matches behaviour with most text editor offerings.
+- 'replace', 'insert': Removed length parameter, as it is assumed from
+  given pattern or selection.
+  - This allows behaviour like replace 0xff to replace byte at current
+    cursor position.
+  - Selection behaviour unchanged.
+  - Older behavior with the length parameter moved to replace-range and
+    insert-range commands.
+- 'redo' default binding reassigned to Ctrl+Y.
+  ^Y is already the redo default for most text editors. This was a design
+  oversight. You're still able to rebind the redo command.
+
+// Fixed
+- Fix using globbing near EOF would hit the update_progress assert.
+- Fix tab autocomplete for commands.
+- Fix color reverse video on conhost before Windows 10. Renderer gains
+  ~0.5ms.
+- Fix high-bit terminal drivers for Alt+key. This fixes Alt+I for OpenBSD
+  and NetBSD terminal drivers.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.9.3
+
+// Added
+- 'find': Add support for globbing with ? (single element) and * (one or
+  more elements).
+  e.g., 'find x:FF ? FF' finds the next entry to [ 0xff, ?, 0xff ].
+- '0o' as a pattern alias to 'o:', the octal prefix.
+- 'goto' command now understands the binary sequence with the 0b prefix.
+- TIOCGWINSZ definition for OpenBSD.
+- Readline also allows Escape to cancel input.
+
+// Fixed
+- Respect VINTR (c_cc[VINTR] on POSIX platforms) and AsciiChar == \003 on
+  Windows for ^C (EXT), instead of hardcoding the Ctrl+C check.
+  - Previous versions hardcoded the ^C check to Ctrl+C to cancel actions,
+    which may be different in other keyboard layouts.
+  - We're talking possibly Dvorak, Colemak, Workman, Neo, BEPO, YCUKEH...
+- Readline no longer shouts "Cancelled" when cancelling input.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.9.2
+
+Small update with status bar customization and fixes.
+
+// Status Customization
+
+Three configurable format strings: 'status-format', 'status-selection',
+'status-report'.
+
+Bars:
+- 'status-format': The regular status bar.
+  - Defaults to "%e %m | %t | %c | %8p"
+- 'status-selection': Status bar when there is an active selection.
+  - Defaults to "SEL: %V (%v Bytes)"
+- 'status-report': Status message for the 'report' (Ctrl+P) command.
+  - Defaults to "%d / %s B (%q%%)"
+
+Specifiers:
+  %f     Target file basename
+  %F     Full target path
+  %s     Document size in bytes (decimal)
+  %S     Document size in human-readable format (B, K, M, G, T, P)
+  %P     Document size in current address format
+  %p     Cursor position in current address format
+  %d     Cursor position in decimal
+  %h     Cursor position in hexadecimal
+  %o     Cursor position in octal
+  %q     Cursor position as percentage
+  %v     Selection length in bytes
+  %V     Selection range in current address format
+  %e     Edited indicator (* or space)
+  %m     Writing mode (OVR, INS, DIG, R/O)
+  %c     Character set
+  %t     Data type
+  %%     Literal %
+
+// Width and Alignment
+
+An optional width can be added between '%' and the specifier.
+
+- '%10p' -- right-align in 10-character field.
+- '%-20f' -- left-align in 20-character field.
+- No padding added if the result is already wider than the specified
+  width.
+
+// Added
+- Status bar customization!
+  - 'status-format', 'status-selection', 'status-report' configurations.
+  - Printf-like specifiers with support for width.
+- Other possible values for "data" configuration, only affects
+  --help-config.
+- TIOCGWINSZ definition for NetBSD. ddhx works on NetBSD!
+
+// Changed
+- Improved readline function that accepts accents on Windows and POSIX
+  platforms.
+  - On Windows, wide characters are translated to CP_UTF8 to match output
+    codepage.
+  - On POSIX, input filtering was improved.
+- Renamed 'report-position' command to 'report'.
+  - The command was repurposed to perform just a form of customized user
+    report.
+
+// Fixed
+- Fix when turning off status bar would cause visual glitches.
+- Fix selection in an empty file (zero-length) causing overflow.
+- Fix "bind" command parameters in interactive mode.
+- Fix capturing ctrl+return on POSIX platforms.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.9.1
+
+Maintenance release focused around terminal enhancements.
+
+// Added
+- Makefile as an alternative to DUB.
+- Command History: Previous commands are saved in memory, accessible via
+  up/down keys in prompt.
+- Input buffering, enabling scrolling with the mouse scrollwheel on POSIX
+  platforms.
+- Tab Completion: Commands can be autocompleted in the prompt using Tab.
+- Windows scrollwheel mouse events are mapped to up/down arrow keys.
+
+// Fixed
+- Fixed using scrollwheel on POSIX platforms caused insertion of 'A' and
+  'B' characters.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.9.0
+
+Version 0.9 brings new data modes, edit coalescing, a new digit cursor
+mode, various fixes and quality of life changes.
+
+// PieceV3 & Coalescing
+
+The new document editor revision, PieceV3, now has support for coalescing
+edits.
+
+Instead of undoing every single edit one-by-one, if a series of edits were
+made next to each other, the series of edits are undone.
+
+This is akin to modern text editors, where a word can be written, and a
+single undo removes the word.
+
+To disable this feature, set configuration 'coalesce' to "off". It only
+affects future edits.
+
+// Data Modes
+
+Data modes have been added: "x16", "x32", "d8", "d16", "d32", "o8", "o16",
+and "o32".
+
+These provide new ways to represent data, and you can still directly input
+existing and new elements into the document.
+
+Example using "o32" and octal addresses (4 columns):
+
+    oct            0           4          10          14
+      0  04010020040 04010020040 04010020040 04010020040
+     20  04010020040 04044313342 04010020040 22670420040      ...       ..
+     40  22145561221 04044313342 04010020040 22670420040  .......       ..
+     60  22145561221 04044313342 22145561040 34244313342  .......  .......
+  ...
+  OVR | o32 |    ascii |        0
+
+For example, I managed to write an octal-encoded message from a screenshot
+to see its ASCII text data.
+
+Set by the 'data' configuration field, or via the command-line with
+'--data=MODE'.
+
+// Digit Cursor
+
+A new digit cursor mode was added, next to insert and overwrite.
+
+This enables editing a single digit (or nibble), avoids having to retype
+the entire element.
+
+The new cycle is: Overwrite -> Insert -> Digit -> Overwrite.
+
+For example, if you have your cursor on the lower nibble of F0, and type
+'f', it will register as FF, versus having to type "FF", or worse under
+x32: FFFFFFFF.
+
+// Improved File Handling
+
+In 0.8.3, when a file couldn't be opened as read-write, it would be
+confusing what other options were available, even if it would succeed with
+'-R'.
+
+In 0.9, all files are opened as read-only. If an operating system error
+occurs, other than "file not found" (for a new buffer), it is reported
+(i.e., permission issue).
+
+There are other fixes to make it possible for ddhx to save in network
+shares (tested GVFS with an SMB share, where O_RDWR and chmod.2 are
+disallowed).
+
+// Fast Save Optimization
+
+When the operating system allows a file to be opened as read-write, only
+the dirty regions are written onto the file.
+
+Otherwise, the fallback to traditional saving method is used (write and
+replace).
+
+No more writing the entire 100 GiB file if a single byte was changed!
+
+// Colors
+
+ddhx 0.9 now has support for color mappings with the 'color' configuration
+and command.
+
+For example, to set a different background color to the cursor:
+'color cursor :blue' (blue background)
+
+Here are available elements:
+- 'normal': The default.
+- 'cursor': The cursor.
+- 'selection': The active selection.
+- 'mirror': The mirrored cursor.
+- 'zero': When data value is zero (affected by the 'highlight-zeros'
+  config).
+
+Syntax: "foreground:background". Both are optional, empty meaning terminal
+default.
+
+Colors:
+- 'default': Default terminal color.
+- 'invert': Invert color from default terminal color.
+- Colors: black, blue, green, aqua, red, purple, yellow, gray, lightgray,
+  brightblue, brightgreen, brightaqua, brightred, brightpurple,
+  brightyellow, white.
+
+// Added
+- "highlight-zeros" configuration.
+- "x16", "x32", "d8", "d16", "d32", "o8", "o16", "o32" data modes.
+- Digit cursor mode.
+- Input coalescing with "piecev3" backend.
+- Support for color schemes.
+
+// Changed
+- Fast Save Optimization.
+- Fallback to traditional saving method to help with network shares.
+- Improve handling files (properly error out on permission errors).
+- If opened as restricted, append "[readonly]" into the initial message.
+- 'address-spacing' now accepts negative values for right-alignment.
+- '--readonly' was renamed to '--restrict' to better reflect its function.
+  '-R' stays the same.
+- Renamed confusing "addressing" configuration to "address", to be
+  consistent with "data".
+
+// Fixed
+- "save-as" command not working in read-only/restricted mode.
+- Fixed opening and editing an empty file.
+- Fixed '--addressing-spacing' calling charset config instead.
+- On Windows, using conhost, re-hide the cursor on console resize.
+- Fixed Backspace and Ctrl+Backspace being inverted on FreeBSD.
+
+// Removed
+- The "autoresize" configuration is removed. Use "columns auto" instead,
+  or Alt+R within the editor.
+
+// Docs
+- Command descriptions were revised for clarity.
+- New ddhx.1 manpage.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.8.3
+
+Maintenance release with some extras.
+
+// Copy-Cut-Paste Support
+
+This release supports the 'copy' (Alt+C), 'cut' (Alt+X), 'paste' (Alt+V),
+and 'clear-clip' commands!
+
+An internal buffer is used for the clipboard, and pasting data can be
+performed multiple times in a row. Without an active selection, only the
+element (byte) is selected to be copied.
+
+If more than 16 MiB of data is about to be copied, a warning will appear,
+but feel free to copy as much as you want in memory. Emptying the internal
+buffer can be used with the 'clear-clip' command, useful to free the
+clipboard immediately.
+
+The actual limit of the clipboard depends on the amount of memory available
+and the system's address range (on 32-bit systems, that should be 2 or 4
+GiB).
+
+No support for X11/Wayland/etc., I'd go insane. Though, you're free to use
+the 'export-range' and 'insert-file' commands.
+
+// FIFO detection
+
+With this update, when no filename are provided and stdin is a FIFO (or
+Pipe), ddhx will automatically copy the standard input stream data into
+memory.
+
+The "-" argument is no longer needed, but you can still use it.
+
+// Added
+- FIFO/Pipe auto-detection.
+- Copy-Cut-Paste support.
+
+// Changed
+- Ask to overwrite file for 'export-range' command.
+- Made save prompt easier to parse for its default action ("(Y/N)" to
+  "[y/N]").
+
+// Fixed
+- Throwing an exception if stdin is a Pipe on Windows.
+- Actual fix for prompts on FreeBSD framebuffer outside tmux.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.8.2
+
+Maintenance release with a few extras.
+
+// Changed
+- Search operations can be cancelled using Ctrl+C or Escape.
+- Search operations will show a progress bar after some time.
+
+// Fixed
+- Prompt line wrapping on Windows.
+- Misrendering data after cursor on Windows.
+- Unusable prompt in FreeBSD fbcon.
+
+// Removed
+- 'autoresize' configuration (deprecated), use "columns auto" instead.
+- "chunk" backend.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.8.1
+
+Minor fixes relating to terminal functions.
+
+// Changed
+- When a prompt is open, Escape does the same as Ctrl+C.
+
+// Fixed
+- Unwanted newlines when a prompt is longer than 1 character.
+- Scrolling with a prompt open would eventually crash it.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.8.0
+
+This release features a new undo-redo system, a readline implementation,
+and some quality of life changes.
+
+Happy holidays!
+
+// New Undo-Redo Stack
+
+The Piece V1 backend had a serious design flaw.
+
+After extremely long sessions, performing thousands of edits, the memory
+usage would steadily increase towards hundreds of megabytes.
+
+To fix this, a new Piece V2 "piecev2" (new default) was introduced.
+
+In the same scenario, it would instead only use about 2.5 MiB of
+additional GC memory used.
+
+Technical background: This new backend replaces the snapshot mechanic to a
+command history stack, trading undo and redo operations from O(1) to O(n).
+However, saves a tremendous amount of memory (only saving critical pieces
+vs. saving whole snapshots).
+
+When I wrote the first version of the Piece Table, I wanted something that
+worked ASAP. I knew the limitations, but I still wanted to release
+something sooner!
+
+I have written a blog post about the new undo-redo stack, if you want a
+more technical analysis:
+https://blog.dd86k.space/post/939/remember-to-benchmark/
+
+// Readline
+
+Up until now, the only way to cancel input on a prompt is to give it an
+empty line.
+
+Not very intuitive, so, I thought of capturing Ctrl+C (^C).
+
+The nature of terminal input has lead me to implement my own variant of a
+readline, which allows, for example, word navigation (Ctrl+Left/Right
+arrows) and word deletion (Ctrl+Backspace), alongside support for handling
+Ctrl+C both in prompt and outside.
+
+This also opens the door to support history, input selection, and more.
+Eventually.
+
+It is far from perfect, but still an improvement from seeing a sabotaged
+terminal session when ^C was hit, or seeing control characters in the
+input.
+
+Right now, ^C is hard-coded to a few things:
+- Quit the editor if hit twice. A warning is displayed after the first
+  invokation;
+- Cancel the current selection;
+- And cancel the active prompt.
+
+Design-wise, "cancel anything" is my best bet when handling ^C.
+
+To celebrate the new Readline feature, and to be consistent with other
+text editors, the prompt was moved at the bottom of the screen.
+
+Technical background: Technically, each console or terminal emulator
+handle their own line input buffer. By default, it's only ever returned to
+the application (to "you") when Enter or Return are hit.
+
+On POSIX, to capture ^C from read(2), you need to disable ISIG (lflags).
+However, just disabling ISIG puts ^C ('\033') into the line buffer. To get
+the key input immediately, ICANON (lflags), the terminal's line mode,
+needs to be disabled as well.
+
+On Windows, to capture ^C from ReadConsoleInput, you disable
+ENABLE_PROCESSED_INPUT.
+
+Trying to manage these on the fly is rather painful. Eventually, I'll need
+to do multithread on the front-end to come up with a solution to cancel
+current operations (ie, search).
+
+// Length-only Operations
+
+New length-only shorthand for Range expressions.
+
+Instead of '.:+3' (current position plus 3 additional elements), '4' acts
+as the same.
+
+Notable examples (without a selection):
+- Insert 1,000 zeros at cursor position: 'insert 1000 x:0'
+- Fill the next 2 bytes with this integer: 'replace 2 0x1234'
+- Select the next 128 bytes: 'select 128'
+
+Technical background: Technically, ranges are inclusive. However, this
+update allows omitting the ':' character to denote a length "range"
+instead. It's an implicit behavior that transform LEN into '.:+LEN-1'
+internally.
+
+// Added
+- New Piece V2 "piecev2" backend.
+- New readline module.
+- Length-only range expressions.
+- "mark" and "unmark" commands (start/end a selection). Alternative to
+  Shift+Nav.
+- "header" and "status" configurations as visibility toggles.
+- "mirror-cursor" configuration. This makes the cursor visible in both
+  columns, in a different color.
+
+// Changed
+- Make "menu" command (command prompt) bindable.
+- Bindings now accept modifiers in any given order.
+
+// Fixed
+- Fix cases where special characters, like ':', couldn't be used for
+  binding.
+- Undo/redo with a selection did not unselect it.
+- Minor improvements to rendering when changing column sizes.
+
+// Removed
+- --help-debug. Its content (target triple, compiler used) were moved
+  into --version.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.7.2
+
+// Fixed
+- Fixes editing after the first undo on a new buffer.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.7.1
+
+Bugfixes and small quality of life changes.
+
+// Range Expression
+
+A new expression was added to denote ranges: Range Expressions.
+
+Range expressions are inclusive in an attempt to avoid confusion when
+performing position-sensitive operations.
+
+Implemented for "insert", "replace", "select", and "delete" commands.
+
+Warnings:
+- "select" now takes one argument (Range Expression) instead of two
+  separate positions.
+- "insert" and "replace" still only requires pattern arguments when using
+  a visual selection.
+- "insert" and "replace" require a range as first argument when no visual
+  selection is active.
+
+Special characters:
+- '$': End of document.
+- '.': Cursor position.
+
+Examples:
+- "0x10:0x12" selects positions 0x10, 0x11, and 0x12 (3 Bytes).
+- "0x10:+2" selects the same positions from the previous examples.
+- "64:$" selects positions starting from 64 to the end of document (EOF).
+- ".:0x200" selects positions starting from cursor position to 0x200.
+- "0x200:." selects positions starting from 0x200 to cursor position.
+- ".:$" selects positions starting from cursor position to end of document
+  (EOF).
+- ".:+3" selects positions starting from cursor plus 3 next Bytes.
+
+Command examples:
+- "replace 0x430:0x433 x:00" zero-fills bytes 0x430 to 0x433 (4 Bytes).
+- "delete .:+0xFF" deletes 256 bytes starting from cursor.
+- "insert 100:+99 s:Hello" inserts pattern at specified range.
+- "insert .:+999999 x:0" can zero-fill an empty document for 1 million
+  bytes.
+
+// Added
+- Range expressions for "replace", "insert", "select", and "delete"
+  commands.
+
+// Changed
+- Add message when a search starts.
+- goto % now accepts decimals (e.g., "goto %5.86").
+- Make more argument prompts cancellable by giving empty input.
+- "change-mode" accepts a writing mode argument.
+  - Default (without arguments) remains switching between Insert/
+    Overwrite.
+  - Arguments: "i"=Insert, "o"=Overwrite, "r"=Restricted (Read-only).
+  - It is now possible to enable restricted mode at runtime.
+  - Beware, you cannot switch from restricted mode once set!
+  - You can undo and redo after setting restricted mode, but cannot save.
+
+// Fixed
+- "replace" and "insert" commands taking only one pattern parameter.
+- Crash when "replace" and "insert" commands were missing parameters.
+- Missing writing mode checks when in restricted (read-only) mode.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.7.0
+
+Welcome, welcome to ddhx 0.7.
+
+Brand new backend, performance optimization, and general improvements.
+
+// New Backend
+
+A new backend was introduced for this update.
+
+The previous backend served its purpose, but without going too much into
+technical details, it was too inflexible to allow new operations to be
+implemented without significant effort (and hair loss).
+
+So, a new Piece Table backend was added, enabling efficient insertion and
+deletion operations that were previously impractical.
+
+To demonstrate its capabilities, new commands were added:
+- 'replace'/'insert' - add data from lazy patterns
+- 'replace-file'/'insert-file' - add data from files as references
+
+For example, you can select a large region and invoke 'replace s:HELLO!!'
+(using the pattern system) to fill the entire selection, using a minimal
+amount of memory.
+
+Another example? Select and delete those pesky iTXt PNG chunks!
+
+Want to insert Windows11.vdi file at the current position?
+'insert-file Windows11.vdi'
+
+The old backend remains available via the DDHX_BACKEND=chunk environment
+variable, though it lacks all the new features and will be removed in a
+future release.
+
+I've also written a brief blog article about the technical details of the
+new backend:
+https://blog.dd86k.space/post/866/ddhx-beyond-fixed-buffers/
+
+Note: Memory usage is a little bad with very lengthy sessions.
+
+While 100 edits will use about 1.16 MiB of additional memory, 1,000 edits
+will use about ~93.5 MiB of memory.
+
+This will be fixed in a later release.
+
+// Optimizations
+
+Did ddhx feel a little slow, especially on Windows?
+
+- Buffered rendering: The headerbar and main view are now buffered.
+  - 10x speedup on Windows (conhost: ~50-55 ms -> ~5 ms)
+  - 5x speedup on Linux (VTE: 2-3 ms -> ~500 us)
+  - General gains across all platforms
+- Smarter document reads: The editor avoids redundant reads when possible.
+  - ~500 us saved when viewing without edits
+- Improved save strategy: Files are saved using atomic rename operations.
+  - Previously: wrote to temp dir, then copied to destination (2 writes)
+  - Now: write to temp file in target dir, then atomic rename (1 write +
+    rename)
+
+// Added
+- New "piece" backend with efficient insertion and deletion support.
+- Development environment variables:
+  - DDHX_LOG for debug logging.
+  - DDHX_BACKEND for backend selection: "piece" (default) or "chunk".
+  - DDHX_CHUNKSIZE for chunk backend buffer size (deprecated).
+- Commands:
+  - "report-version" - display ddhx version information.
+  - "export-range" - export selection to a new file.
+  - "select-all" (Ctrl+A) - select entire document.
+  - "select-top" (Ctrl+Shift+Home) - select from current position to
+    start.
+  - "select-bottom" (Ctrl+Shift+End) - select from current position to
+    end.
+  - "select" - explicitly select a range using START and END parameters.
+  - "delete" (Delete) and "delete-back" (Backspace) - remove bytes.
+  - "insert" / "replace" - add data using patterns.
+  - "insert-file" / "replace-file" - add data from files.
+
+// Changed
+- Rendering performance through output buffering.
+- Document read efficiency, only read when necessary for updates.
+- Save reliability using atomic file operations.
+- Display optimization (truncate empty rows).
+- Save prompt clarity: "Save? (Yes/No/Cancel) ".
+- Patterns: Now supports multibyte values, so "0x1234" will be two bytes
+  (platform-native).
+- System path is now checked for the configuration file.
+- The home path is now prioritized over the application path for the
+  configuration file.
+- Renamed --help-configs to --help-config, now displays which config is
+  used.
+
+// Removed
+- --log and --chunksize command-line options (use environment variables
+  instead).
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.7.0-beta.1
+
+Welcome to the ddhx 0.7 beta!
+
+This release introduces a completely rewritten backend.
+
+With such fundamental changes, bugs are expected. Happy Halloween!
+
+// Added
+- New piece table backend: Uses a Red-Black Tree indexing for efficient
+  editing with insert/delete support
+- Pattern insertion/replacement: Insert repeating byte patterns without
+  allocating memory
+- File insertion/replacement: Insert entire files as references
+- Improved undo/redo: Snapshot-based history
+
+// How to Help Testing
+
+Enable Logging: Set the DDHX_LOG environment variable to capture debug
+information:
+- Windows: SET DDHX_LOG=ddhx.log (or environment variable dialog)
+- POSIX: export DDHX_LOG=ddhx.log (or full path to your liking)
+
+When reporting bugs, please include this log file!
+
+What to Test: Focus on edge cases and boundary conditions, especially past
+4 GiB.
+
+Basic operations:
+- Replace, insert, and delete data at:
+  - Start of file (position 0)
+  - End of file
+  - Odd offsets (e.g., 0x1337, middle of the view)
+  - Across piece boundaries (after previous edits)
+
+Pattern operations:
+- 'insert PATTERN' and 'replace PATTERN' (with selection)
+- Example: Select bytes, then 'replace x:01 02 03 04'
+- "Cut into" new patterns by overwriting partially
+- Replace single bytes within inserted patterns
+
+File operations:
+- 'insert-file PATH' and 'replace-file PATH'
+- Insert/replace at various positions
+- Undo/redo after file operations
+- Edit around inserted file data
+
+Stress testing:
+- Multiple sequential edits
+- Deep undo/redo chains
+- Large selections
+- Mixed operation types (insert -> replace -> delete -> undo)
+
+// Reporting Bugs
+
+Please report issues with:
+- Log file (DDHX_LOG output)
+- Steps to reproduce
+- Expected vs actual behavior
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.6.0
+
+This release focuses on quality of life improvements.
+
+Featured changes include a search command, selection capabilities, and
+configuration file support.
+
+Warning: 'quit' has been remapped from Q to Ctrl+Q as a default key, to
+really confirm quitting as an action (you can still bind it back to Q).
+
+// Find Data
+
+What's a hex editor without a search function?
+
+You're now able to search by pattern. A pattern is made up of a prefix and
+data.
+
+For example, 'x:00 01' will search for [0x00, 0x01].
+
+It is possible to compound patterns: 'find o:33 s:hi x:dd 00' will search
+for [0x1b, 0x68, 0x69, 0xdd, 0x00].
+
+Syntax: 'find PATTERN...'
+
+Patterns:
+- 'x:', '0x': 8-bit unsigned hexadecimal.
+- 'd:': 8-bit unsigned decimal.
+- 'o:': 8-bit unsigned octal.
+- 's:', '"..."': UTF-8 string.
+  - Quotes have to be escaped ('\"...\"') due to prompt processing.
+  - Future update: Transcode to current character set.
+
+Commands implemented:
+- 'find' (Ctrl+F), 'find-back' (Ctrl+B)
+  - 'find-back' simply initiates the search backwards, meaning towards
+    start of document.
+- 'find-next' (Ctrl+N), 'find-prev' (Shift+N)
+  - Allows traversing results forward and backward.
+
+// Selecting Data
+
+Selection has to be my new favourite feature for this version.
+
+Using the Shift modifier and navigation keys, it's possible to select data
+and perform shortcuts and commands directly with it.
+
+Example flow (skip forward):
+1. Select bytes, this will be used as a search needle.
+2. Either hit Ctrl+RightArrow or use command 'skip-front'.
+
+That's it! The command will automatically detect if there is a selection
+and use it.
+
+Commands supporting selection:
+- 'move-skip-front', 'move-skip-back'
+  - Selection allows skipping data by this pattern.
+  - e.g., Selecting [0x01, 0x02, 0x03, 0x04] will skip all of this pattern
+    or to EOF, like a word.
+- 'find', 'find-back'
+  - Selection allows searching for this same needle by selected pattern.
+  - e.g., Selecting [0x01, 0x02, 0x03, 0x04] will search for the same
+    instance.
+- 'goto'
+  - Selection allows performing an absolute seek to this position.
+  - e.g., Selecting [0x01, 0x02, 0x03, 0x04] will go to this position
+    (0x04030201 on little systems).
+
+Commands implemented:
+- 'select-left' (Shift+LeftArrow)
+- 'select-right' (Shift+RightArrow)
+- 'select-up' (Shift+UpArrow)
+- 'select-down' (Shift+DownArrow)
+- 'select-home' (Shift+Home)
+- 'select-end' (Shift+End)
+
+// Bind Key
+
+Prefer your current code editor keybinds?
+
+The 'bind' command allows you to dynamically rebind keys.
+
+Example of binding keys to match vim navigation keys:
+- 'bind h left'
+- 'bind j down'
+- 'bind k up'
+- 'bind l right'
+
+It's also possible to map new default parameters:
+- 'bind shift+p goto +32' will map Shift+P to 'goto +32' (jump 32 bytes
+  ahead).
+
+Keys set within a session are only valid for the session.
+
+The 'unbind' command either unbinds the key or resets it to its default
+keymap.
+
+Syntax:
+- 'bind KEY COMMAND [PARAMETERS...]'
+- 'unbind KEY'
+- 'reset-keys'
+
+// Config File
+
+If you want EBCDIC by default, you can!
+
+Configuration files are now supported.
+
+It's now possible to set default configuration values and remap keys.
+
+Example format:
+
+  # Comments uses '#'
+  # For "address", "d", "dec", and "decimal" are all valid!
+  address decimal
+  columns 10
+
+  # Imitate vim navigation
+  bind h left
+  bind j down
+  bind k up
+  bind l right
+
+  # Add command parameters to command!
+  bind ctrl+p goto +32
+
+  # Older quit behavior
+  bind q quit
+
+  # Imitate nano
+  bind ctrl+x quit
+  bind ctrl+g find-next
+
+Here are example paths that will be tried, in order. Only the first config
+path found is loaded. Command-line parameters still take priority.
+
+Windows:
+- %LOCALAPPDATA%\ddhx\.ddhxrc
+  - e.g., C:\Users\dd\AppData\Local\ddhx\.ddhxrc
+- %USERPROFILE%\.ddhxrc
+  - e.g., C:\Users\dd\.ddhxrc
+
+POSIX:
+- $XDG_HOME_CONFIG/ddhx/.ddhxrc
+  - e.g., /home/dd/.config/ddhx/.ddhxrc
+- ~/.ddhxrc
+  - e.g., /home/dd/.ddhxrc
+
+To avoid loading configs, use '-I' or '--norc'.
+
+To use a specific config file, use '-f' or '--rcfile' with a specified
+file.
+
+// Added
+- Config file support.
+- 'select-right' (Shift+RightArrow), 'select-left' (Shift+LeftArrow),
+  'select-up' (Shift+UpArrow), 'select-down' (Shift+DownArrow),
+  'select-home' (Shift+Home), 'select-end' (Shift+End) selection commands.
+- 'find' (Ctrl+F), 'find-back' (Ctrl+B), 'find-next' (Ctrl+N), 'find-prev'
+  (Shift+N) search commands.
+- 'bind' command.
+- 'unbind' command.
+- 'reset-keys' command.
+- 'autoresize' configuration.
+
+// Changed
+- VT220 input scanning, and other general improvements to terminal
+  handling.
+- Command prompt handles embedded quote escapes.
+
+// Removed
+- "start" and "end" aliases for 'goto', since we have "top" (Ctrl+Home)
+  and "bottom" (Ctrl+End) commands.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.5.1
+
+This release fixes 'cursor-skip-front' and 'cursor-skip-back'. No idea how
+I did not notice that while testing.
+
+// Added
+- --help-commands, --help-configs, and --help-debug.
+
+// Changed
+- Changed --address to --addressing and -A.
+  - --addressing=o and --addressing=octal means the same thing.
+  - -Ao and -Aoctal means the same thing.
+
+// Fixed
+- 'cursor-skip-back' (Ctrl+LeftArrow) and 'cursor-skip-front'
+  (Ctrl+RightArrow).
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.5.0
+
+And it's official, the 0.5 version release.
+
+This release is a focus on getting basic stuff working (byte overwrite and
+append operations) with an emphasis on navigation.
+
+Not all features from older releases made it back (e.g., searching). It
+will eventually.
+
+Code is somewhat horrible and should work reliably at the moment to edit
+existing and new files.
+
+Changes since 0.5.0-rc.1:
+
+// Added
+- --help-keys as a help page for default shortcuts.
+
+// Changed
+- Various unimportant tweaks, like how edit chunks are aligned by page
+  size.
+
+// Fixed
+- View camera not adjusting to the very last line to EOF.
+- Skip bytes forward/backward not going its search buffer.
+
+Notes:
+- The linux-static released was built on Alpine 3.20.
+  - It was tested successfully on Ubuntu 20.04 and Ubuntu 24.04.
+- A thankful person validated that 0.5.0-rc.1 works on macOS.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.5.0-rc.1
+
+Considered mostly stable and ready to be used for light editing.
+
+Changes since v0.5.0-beta.1:
+
+// Added
+- "report-name" (Ctrl+N) to report the name of the document on-screen (or
+  "(new buffer)" if unnamed).
+- "autosize" (Alt+R) to automatically adjust the number of columns
+  according to screen size.
+
+// Fixed
+- Inconsistent behaviour across C runtimes (affects static builds
+  primarily).
+
+Notes:
+- Linux static version compiled against Alpine 3.20 (Musl 1.2.5) using
+  GDC 13.2.1.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.5.0-beta.1
+
+// Added
+- "refresh" (Ctrl+L) command.
+- "view-up" (Ctrl+UpArrow) and "view-down" (Ctrl+DownArrow) to move the
+  view, not the cursor.
+- Navigation by percentage. "goto" now accepts %n arguments where n is a
+  number between 0 and 100.
+  - "goto %50" will move the cursor halfway through the document.
+
+// Fixed
+- Rendering when base document overlapped chunk ahead.
+- "cursor-skip-back" when cursor is at end of buffer.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.5.0-alpha.3
+
+// Added
+- "cursor-skip-back" (Ctrl+LeftArrow) and "cursor-skip-front"
+  (Ctrl+RightArrow) to skip same bytes.
+- "save-as" (Ctrl+O) to save as another name.
+- "report-position" (Ctrl+P) to report the position of the cursor in the
+  buffer.
+- --address-spacing CLI option to set left address column spacing, in
+  characters.
+- --chunksize for debugging purposes.
+- Support for stdin. Data can be piped to the application.
+
+// Fixed
+- Saving without edits.
+- Performance when jumping across gigabytes.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.5.0-alpha.2
+
+Changes since alpha.1:
+
+// Added
+- "goto" command with shortcut ^G (Ctrl+G).
+- "set" command. Sets session and rc settings.
+  - Separated from command prompt to set clearer intent.
+- Build info in version page.
+- Commands can now prompt for a parameter if it wasn't provided to it via
+  the command prompt.
+
+// Changed
+- Remapped command prompt key to Enter.
+
+// Fixed
+- Android (Bionic) compilation.
+- Undo/redo properly moves cursor to edit location. (As observed in
+  vscodium, for example)
+
+Notes:
+- ddhx-0.5.0-alpha.1-glibc-amd64.tar.xz was built against Ubuntu 20.04
+  (Glibc 2.31) as I couldn't get static builds going.
+- ddhx-0.5.0-alpha.1-musl-amd64.tar.gz was build against Alpine 3.20
+  (Musl 1.2.5). Same as above.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.5.0-alpha.1
+
+First test release of ddhx 0.5.
+
+Rewritten from scratch (too many times) to support editing. Currently, it
+only supports overwriting empty buffers and from existing files. One
+element at a time, with undo/redo.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.4.2
+
+It's usable, I swear.
+
+// Added
+- IEC/SI inconsistencies addressed, introduced --si.
+
+// Changed
+- Small tweak in the statusbar to be a little more readable.
+
+// Fixed
+- Where the terminal module would unconditionally reset itself on exit,
+  impacting --dump.
+- Input system would mess up under Linux, particularly for the menu using
+  --stdin.
+- Where --dump would output greater numbers than one specified with
+  --length.
+- Where --dump kept resetting the position numbers on its left.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.4.1
+
+Further cleaning and fix a little thing.
+
+// Added
+- Mac OS Roman (Windows-10000) character transcoding.
+
+// Fixed
+- Selecting a character set on Windows and dump mode forgot to set the
+  output encoding to utf-8.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.4.0
+
+Oh, look, it's a major refactor.
+
+This release features a refactor of the entire project that I totally did
+not expect to take this much time to do. But hey, I've been meaning to
+refactor this project for a while now, so it's no longer really a "quick
+and dirty" data viewer. It's now more of a cleaner raw data viewer, per se.
+
+As version 0.5 is planned to have editing capabilities, so finally turning
+it into a "hex editor"!
+
+Anyway, enjoy!
+
+// Known Bugs
+- With x86_omf builds, in interactive mode, on Windows XP, selecting
+  another character set will make the application seem to stop responding
+  to input. However, the dump mode is still fully functional.
+  - No fix is planned.
+- With linux_console (as noticed on Alpine and Ubuntu Server, so $TERM
+  outputting "linux"), the alternative buffer is not being selected, if
+  that even exists, which will disrupt the main console screen buffer.
+  - Will see how other TUI editors do it.
+
+// Added
+- Character translation. New "charset <charset>" command.
+  - ASCII ("ascii", default), CP437 ("cp437"), and EBCDIC ("ebcdic").
+- Skip byte feature. New "skip <byte>" command.
+  - This allows skipping a different byte that's being repeated. So
+    "skip 0x3a" skips all bytes forward until it finds a different byte.
+  - By default, the first byte of the view buffer is taken.
+  - Only a forward version exists at the moment.
+- "reset" command, to reset session to default values.
+  - Default character: "."
+  - Default row width: 16
+  - Default character set: ASCII
+  - Default data mode: Hexadecimal
+  - Default offset mode: Hexadecimal
+- "/type value" alias to search forwards.
+  - The old syntax "search type value" is now deprecated.
+- "?type value" to search backwards.
+  - Oh yeah, it's possible to perform a backward search now!
+- Secret. Classic assistant won't leave me alone.
+
+// Changed
+- Redone input file handling system.
+  - stdin streams can now be opened in interactive mode.
+- With no input arguments, --stdin is implied.
+- Terminal input system was vastly improved. Character input is now
+  treated as a first class citizen.
+  - Windows: AsciiChar is now included in result.
+  - Linux: Moved from a getchar(3p) model to read(2).
+  - The command prompt character, instead of '>', is now ':'.
+    - The ':' key is now also a shortcut to the menu.
+  - More vim key bindings and commands underway.
+- Status bar to be more informative.
+- New interactive sessions will now use an alternative screen buffer to
+  avoid disrupting the main screen buffer on both Windows and Linux
+  operating systems.
+- Commands in menu now keep items within double and single quotation
+  marks.
+- Error messages can now also be taken from the operating system.
+- Some optimizations to the core display rendering.
+
+// Fixed
+- Status bar not sticking to the bottom if input was too small in certain
+  cases.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.3.3
+
+Little fix for an annoyance!
+
+// Fixed
+- Instances where the bottom bar wasn't being flushed on certain runtimes
+  (e.g., dmcrt, musl).
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.3.2
+
+Maintenance release.
+
+// Changed
+- Viewing stdin data in interactive mode. It was previously disabled.
+- Having no file input is now an alias to --stdin.
+
+// Fixed
+- Output of --ver.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.3.1
+
+Oops, bugs!
+
+// Fixed
+- Incomplete status fill on smaller printouts.
+- Offset bar not adjusting itself on offsets higher than 0xffffffff.
+- Crappy un-formatting by just using... sscanf.
+- Dumping.
+- Skipping with stdin.
+- Statusbar not initially printed on first shown on Musl systems.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.3.0
+
+This release gets somewhat of a code refactor with a refreshed rendering
+and search engines.
+
+Underneath, a lot changed a lot for the better, since it integrates a new
+error module with consistent errors.
+
+But the most important feature in this version is the dumping
+functionality.
+
+This version also adds support for the DigitalMars and the musl C
+runtimes, so Windows XP and Alpine Linux support are there.
+
+// Added
+- -C|--defaultchar option.
+- --dump option.
+- --skip option for dumping.
+- --length option for dumping.
+- --file option to force the input to File, this is the default.
+- --mmfile option to force the input to MmFile.
+- --stdin option to force the input to Stdin.
+- Bind 'n' key to repeat search with last saved item.
+
+// Changed
+- Changed all hexadecimal output to lowercase.
+
+// Fixed
+- x86-omf runtime errors.
+- musl build errors.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.2.2-1
+
+Maintenance release.
+
+Notes:
+- Windows 32-bit build will complain over large (>1.5GiB) files.
+- Windows 32-bit build is mscoff, not omf. So no Windows XP support.
+- Classical I/O as an option will be available... In some next release.
+
+Changes since v0.2.1:
+
+// Changed
+- Optimized, and internally improved searcher module.
+
+// Fixed
+- Linux builds that acted as ctrl was always held down.
+  - Note: Not yet a feature but still an error on my end.
+- Unhandled exception on opening device and zero files.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.2.1
+
+Maintenance release to fix the search module.
+
+// Changed
+- Rename globals to make them a little more tolerable
+  (73ccd4ba27fc99349e2d221dfba4dcf7a01dea02).
+
+// Fixed
+- Sort of searcher rewrite to be less crappy
+  (4d2d6b16f64892d6907bb1660618a84a6716f97c).
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.2.0
+
+This release features a rewritten renderer, uses mmfile, searching
+improvements, and many bugfixes.
+
+// Added
+- windows: add scrolling support (4c4c77b263b8db171d39d05223e6fd14ae80e4d6)
+- add vim keys (61e4df336e68ea77059da22a6983b58253063f66)
+- open menu with colon (7dc3119e73e5deae38db87b5ae522136ac5a904a)
+
+// Changed
+- Re-write and enable new core renderer
+  (5ee328a646f91cdf44a025704d086ec9fae96fb9)
+- Renderer tweaks (339d830a60ebca3828da68bf24599beea67cc095)
+- Renderer optimization, tweaks, and README
+  (523322748f93e070a7fba3df65eea4a6a6f82670)
+- Some unformat improvements (b68039f3ebf55830d7c2f1f2d57471d60e7b9fdb)
+- searcher and menu small improvements
+  (3ca4168ad7ce88eb766b6b3c854146326f017e8c)
+- Tweak CLI, redo text render, cleanup+optimizations, use mmfile
+  (770ed49f615ef936ef897cafaca972e680b2b9b8)
+- Various improvements (091743bf1825af895a306eddc1bb474d481a0411)
+- improve vimkeys switch (56b5ea484b18303e6733d1acf76848bedd194dfc)
+- Code cleanup (eca0d4866b463ddbeb6983a3a26d4a3e2bb8dbb9)
+- import cleaning (41f0d119a848a0016d015ae001f82930e39ae8eb)
+- File renames (97b0612e66e278e89ba217b06f837e460926a345)
+- Convert spaces to tabs, modified style
+  (67c728ce178542094a062d3e270cd02fc7f05f7b)
+- Tweak ddcon (94d2f1501939a7b93fa4a0ec4cd853667d272c15)
+- gitignore (3286b1ef5412de9a166361cfa1696449899c9b67)
+- Merge pull request #6 from TypicalFence/master
+  (30317424ab62500dc018bb4109989fe5afe27109)
+- Add #2 (Github) (d8e53d9dedd2329ed6be4761284cfdcc627ead70)
+
+// Fixed
+- Fixes (85b4034f459682d183cb26e9a49557e2e1bc3dfd)
+- Fix 64-bit compilation (4d9fe06511440fe1560ef7ccb62f939ce6783537)
+- Fix typo, missing '{' (488998ec4a794a82088dd2e307dcad8c6c031266)
+- Fix debugs in ddcon (5581085cbd2f2c453893f8ecfd01db9c48a6b29f)
+
+// Docs
+- README update (6d0eeb022a997ce79c4f49327d6428e1ded12e57)
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.1.0
+
+Been a long while I have not touched this project, so I decided to take
+care of that.
+
+In fact, 0xdd was my first tool published to Github and ddhx is its
+replacement, so it's only normal I'd work on it at some point again!
+
+// Added
+- Relative offset jumping, e.g. 'g +100h'
+- New shortcut to goto: g
+
+// Changed
+- Huge displayrenderer optimization and other minor optimizations.
+- Tweaked chunk searching size to 4096.
+- Tweaked the CLI.
+
+// Removed
+- Display mode entirely.
+- --width and --offset. -w and -o are still available.
+
+////////////////////////////////////////////////////////////////////////////////
+// v0.0.0-2
+
+Initial release.
