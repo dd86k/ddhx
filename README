@@ -1,8 +1,8 @@
-                    ░       ░░░       ░░░  ░░░░  ░░  ░░░░  ░
-                    ▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒▒  ▒▒  ▒▒
-                    ▓  ▓▓▓▓  ▓▓  ▓▓▓▓  ▓▓        ▓▓▓▓    ▓▓▓
-                    █  ████  ██  ████  ██  ████  ███  ██  ██
-                    █       ███       ███  ████  ██  ████  █
+░░░░░░░░░░░░░░░░░░░░░       ░░░       ░░░  ░░░░  ░░  ░░░░  ░░░░░░░░░░░░░░░░░░░░░
+▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒▒  ▒▒  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  ▓▓▓▓  ▓▓  ▓▓▓▓  ▓▓        ▓▓▓▓    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+█████████████████████  ████  ██  ████  ██  ████  ███  ██  ██████████████████████
+█████████████████████       ███       ███  ████  ██  ████  █████████████████████
 
 +------------------------------------------------------------------------------+
         hex   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f                   
@@ -74,13 +74,12 @@ This list may change at any given time without notice.
 0.11 featured important stability bugfixes and QOL improvements.
 
 0.12: WIP
+- [ ] String expressions (allow escapes like \t)
 - [ ] Find-and-bookmark (find-bookmark)
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
 - [ ] Endian-specific pattern prefixes (e.g., u32le:)
 
 1.0: TBD
-
-Wishlist:
 - [ ] Document: Disk
 - [ ] Document: Process memory
 - [ ] Layout system
