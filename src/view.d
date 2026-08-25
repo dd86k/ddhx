@@ -97,7 +97,7 @@ private enum PanelType
                // jump cursor to a typed value).
 }
 
-private alias command_func = void function(Session*, string[]);
+private alias command_func = void function(Session*, Argument[]);
 
 private
 struct Keybind
@@ -105,7 +105,7 @@ struct Keybind
     /// Function implementing command
     command_func impl;
     /// Parameters to add
-    string[] parameters;
+    Argument[] parameters;
 }
 
 private
@@ -447,25 +447,24 @@ void initdefaults()
     }
     
     // Add a "debug" command for, you guessed it, debugging for debug builds
-    debug g_commands["debug"] =
-    (Session* session, string[] args)
+    debug g_commands["debug"] = (Session* session, Argument[] args)
     {
         if (args.length == 0)
             throw new Exception(MSG_MISSING_ACTION);
         
         // Don't need a throw command, this throws plenty
-        switch (args[0]) {
+        switch (args[0].text) {
         case "msg":
             // Very long message by default
             string msg = args.length > 1 ?
-                args[1] :
+                args[1].text :
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"~
                 "aaaaaa"; // Otherwise, 86x 'a'
             
             message(msg);
             break;
         case "dump":
-            string target = args.length > 1 ? args[1] : "ddhx_dump.txt";
+            string target = args.length > 1 ? args[1].text : "ddhx_dump.txt";
             
             import std.datetime : Clock;
             import ddhx.platform : TARGET_ENV, TARGET_OS, TARGET_PLATFORM;
@@ -552,11 +551,11 @@ void initdefaults()
 }
 
 // Bind a key to a command with default set of parameters
-void bindkey(int key, string command, string[] parameters)
+void bindkey(int key, string command, Argument[] parameters)
 {
     log(`key=%d command="%s" params="%s"`, key, command, parameters);
     
-    void function(Session*, string[]) *impl = command in g_commands;
+    void function(Session*, Argument[]) *impl = command in g_commands;
     if (impl == null)
         throw new Exception(text(MSG_UNKNOWN_COMMAND, command));
     
@@ -629,7 +628,7 @@ void start_session(Session *session, string initmsg,
     if (bookmarks_file)
     {
         log(`bookmarks_file="%s"`, diff_file);
-        try bookmark_load(session, [ bookmarks_file ]);
+        try bookmark_load(session, [ Argument(bookmarks_file) ]);
         catch (Exception ex)
         {
             log("%s", ex);
@@ -640,7 +639,7 @@ void start_session(Session *session, string initmsg,
     if (diff_file)
     {
         log(`diff_file="%s"`, diff_file);
-        try .diff_file(session, [ diff_file ]);
+        try .diff_file(session, [ Argument(diff_file) ]);
         catch (Exception ex)
         {
             log("%s", ex);
@@ -726,7 +725,7 @@ Lread:
         if (k)
         {
             log("key=%s (%d)", input.key, input.key);
-            try k.impl(session, cast(string[])k.parameters);
+            try k.impl(session, cast(Argument[])k.parameters);
             catch (Exception ex)
             {
                 log("%s", ex);
@@ -897,9 +896,9 @@ Lread:
 }
 
 // Command requires argument
-string askstring(string[] args, size_t idx, string prefix)
+string askstring(Argument[] args, size_t idx, string prefix)
 {
-    string s = args is null || args.length <= idx ? promptline(prefix) : args[idx];
+    string s = args is null || args.length <= idx ? promptline(prefix) : args[idx].text;
     
     // Empty string? Cancel! Can't do anything with that.
     // Bonus: Besides, throwing an exception is easier to manage than
@@ -911,7 +910,7 @@ string askstring(string[] args, size_t idx, string prefix)
 }
 
 // Ask for range expression
-Range askrange(string[] args, size_t idx, string prefix)
+Range askrange(Argument[] args, size_t idx, string prefix)
 {
     string str = askstring(args, idx, prefix);
     
@@ -3178,34 +3177,34 @@ unittest
 //
 
 // Run command
-void prompt_command(Session *session, string[] args)
+void prompt_command(Session *session, Argument[] args)
 {
     string line = promptline(">", g_commands.keys);
     if (line.length == 0)
         return;
     
-    string[] argv = arguments(line);
+    Argument[] argv = arguments(line);
     if (argv.length == 0)
         return;
     
     log("command='%s'", argv);
-    string name = argv[0];
+    immutable(ubyte)[] name = argv[0].data;
     argv = argv.length > 1 ? argv[1..$] : null;
     
     // Get command by its name
-    const(void function(Session*, string[])) *com = name in g_commands;
+    const(void function(Session*, Argument[])) *com = cast(string)name in g_commands;
     if (com == null)
     {
-        throw new Exception(text(MSG_COMMAND_NOT_FOUND, name));
+        throw new Exception(text(MSG_COMMAND_NOT_FOUND, printable(name)));
     }
     
-    // Run command, it's ok if it throws, it's covered by a key operation,
-    // including command prompt (Return)
+    // Run command, it's ok if it throws, it's covered by main loop,
+    // including command prompt
     (*com)(session, argv);
 }
 
 // Move back a single item
-void move_left(Session *session, string[] args)
+void move_left(Session *session, Argument[] args)
 {
     unselect(session);
     
@@ -3228,7 +3227,7 @@ void move_left(Session *session, string[] args)
     moverel(session, -size_of(session.rc.data_type));
 }
 // Move forward a single item
-void move_right(Session *session, string[] args)
+void move_right(Session *session, Argument[] args)
 {
     unselect(session);
     
@@ -3246,7 +3245,7 @@ void move_right(Session *session, string[] args)
     moverel(session, +size_of(session.rc.data_type));
 }
 // Move back a row
-void move_up(Session *session, string[] args)
+void move_up(Session *session, Argument[] args)
 {
     unselect(session);
     
@@ -3256,14 +3255,14 @@ void move_up(Session *session, string[] args)
     moverel(session, -(session.rc.columns * size_of(session.rc.data_type)));
 }
 // Move forward a row
-void move_down(Session *session, string[] args)
+void move_down(Session *session, Argument[] args)
 {
     unselect(session);
     
     moverel(session, +(session.rc.columns * size_of(session.rc.data_type)));
 }
 // Move back a page
-void move_pg_up(Session *session, string[] args)
+void move_pg_up(Session *session, Argument[] args)
 {
     unselect(session);
     g_digitpos = 0;
@@ -3274,7 +3273,7 @@ void move_pg_up(Session *session, string[] args)
     moverel(session, -(g_viewrows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move forward a page
-void move_pg_down(Session *session, string[] args)
+void move_pg_down(Session *session, Argument[] args)
 {
     unselect(session);
     g_digitpos = 0;
@@ -3282,7 +3281,7 @@ void move_pg_down(Session *session, string[] args)
     moverel(session, +(g_viewrows * (session.rc.columns * size_of(session.rc.data_type))));
 }
 // Move to start of line
-void move_ln_start(Session *session, string[] args) // move to start of line
+void move_ln_start(Session *session, Argument[] args) // move to start of line
 {
     unselect(session);
     g_digitpos = 0;
@@ -3291,7 +3290,7 @@ void move_ln_start(Session *session, string[] args) // move to start of line
     moverel(session, -(session.position_cursor % g));
 }
 // Move to end of line
-void move_ln_end(Session *session, string[] args) // move to end of line
+void move_ln_end(Session *session, Argument[] args) // move to end of line
 {
     unselect(session);
     
@@ -3302,7 +3301,7 @@ void move_ln_end(Session *session, string[] args) // move to end of line
     moverel(session, +(g - (session.position_cursor % g)) - 1);
 }
 // Move to absolute start of document
-void move_abs_start(Session *session, string[] args)
+void move_abs_start(Session *session, Argument[] args)
 {
     unselect(session);
     g_digitpos = 0;
@@ -3310,7 +3309,7 @@ void move_abs_start(Session *session, string[] args)
     moveabs(session, 0);
 }
 // Move to absolute end of document
-void move_abs_end(Session *session, string[] args)
+void move_abs_end(Session *session, Argument[] args)
 {
     unselect(session);
     
@@ -3320,7 +3319,7 @@ void move_abs_end(Session *session, string[] args)
 }
 
 // Move to different element backward
-void move_skip_backward(Session *session, string[] args)
+void move_skip_backward(Session *session, Argument[] args)
 {
     g_digitpos = 0;
     long curpos = session.position_cursor;
@@ -3371,7 +3370,7 @@ void move_skip_backward(Session *session, string[] args)
 }
 
 // Move to different element forward
-void move_skip_forward(Session *session, string[] args)
+void move_skip_forward(Session *session, Argument[] args)
 {
     g_digitpos = 0;
     long curpos  = session.position_cursor;
@@ -3415,7 +3414,7 @@ void move_skip_forward(Session *session, string[] args)
 }
 
 // Move view up
-void view_up(Session *session, string[] args)
+void view_up(Session *session, Argument[] args)
 {
     if (session.position_view == 0)
         return;
@@ -3427,7 +3426,7 @@ void view_up(Session *session, string[] args)
 }
 
 // Move view down
-void view_down(Session *session, string[] args)
+void view_down(Session *session, Argument[] args)
 {
     int count = session.rc.columns * g_viewrows;
     long max = session.editor.size() - count;
@@ -3442,7 +3441,7 @@ void view_down(Session *session, string[] args)
 // Deletion
 //
 
-void delete_front(Session *session, string[] args)
+void delete_front(Session *session, Argument[] args)
 {
     Selection sel = selection(session);
     if (args.length > 0)
@@ -3472,7 +3471,7 @@ void delete_front(Session *session, string[] args)
     g_status |= UVIEW;
 }
 
-void delete_back(Session *session, string[] args)
+void delete_back(Session *session, Argument[] args)
 {
     Selection sel = selection(session);
     if (sel.length)
@@ -3597,7 +3596,7 @@ unittest
 }
 
 // Expand selection backward
-void select_left(Session *session, string[] args)
+void select_left(Session *session, Argument[] args)
 {
     if (!session.selection.status)
     {
@@ -3609,7 +3608,7 @@ void select_left(Session *session, string[] args)
 }
 
 // Expand selection forward
-void select_right(Session *session, string[] args)
+void select_right(Session *session, Argument[] args)
 {
     if (!session.selection.status)
     {
@@ -3621,7 +3620,7 @@ void select_right(Session *session, string[] args)
 }
 
 // Expand selection back a line
-void select_up(Session *session, string[] args)
+void select_up(Session *session, Argument[] args)
 {
     if (!session.selection.status)
     {
@@ -3633,7 +3632,7 @@ void select_up(Session *session, string[] args)
 }
 
 // Expand selection forward a line
-void select_down(Session *session, string[] args)
+void select_down(Session *session, Argument[] args)
 {
     if (!session.selection.status)
     {
@@ -3645,7 +3644,7 @@ void select_down(Session *session, string[] args)
 }
 
 // Expand selection towards end of line
-void select_home(Session *session, string[] args)
+void select_home(Session *session, Argument[] args)
 {
     if (!session.selection.status)
     {
@@ -3658,7 +3657,7 @@ void select_home(Session *session, string[] args)
 }
 
 // Expand selection forward a line
-void select_end(Session *session, string[] args)
+void select_end(Session *session, Argument[] args)
 {
     if (!session.selection.status)
     {
@@ -3671,7 +3670,7 @@ void select_end(Session *session, string[] args)
 }
 
 // Select from current position to start of document
-void select_top(Session *session, string[] args)
+void select_top(Session *session, Argument[] args)
 {
     long docsize = session.editor.size();
     if (docsize <= 0)
@@ -3683,7 +3682,7 @@ void select_top(Session *session, string[] args)
 }
 
 // Select from current position to end of document
-void select_bottom(Session *session, string[] args)
+void select_bottom(Session *session, Argument[] args)
 {
     long docsize = session.editor.size();
     if (docsize <= 0)
@@ -3695,7 +3694,7 @@ void select_bottom(Session *session, string[] args)
 }
 
 // Select all of document
-void select_all(Session *session, string[] args)
+void select_all(Session *session, Argument[] args)
 {
     long docsize = session.editor.size();
     if (docsize <= 0)
@@ -3707,7 +3706,7 @@ void select_all(Session *session, string[] args)
 }
 
 // Make an explicit selection
-void select(Session *session, string[] args)
+void select(Session *session, Argument[] args)
 {
     Range ran = askrange(args, 0, "Range: ");
     
@@ -3717,14 +3716,14 @@ void select(Session *session, string[] args)
 }
 
 // Start an active selection
-void mark(Session *session, string[] args)
+void mark(Session *session, Argument[] args)
 {
     session.selection.status = SELECT_ACTIVE | SELECT_ONGOING;
     session.selection.anchor = session.position_cursor;
 }
 
 // End the active selection
-void unmark(Session *session, string[] args)
+void unmark(Session *session, Argument[] args)
 {
     session.selection.status &= ~SELECT_ONGOING;
 }
@@ -3748,7 +3747,7 @@ struct Bookmark
 
 // Get a bookmark by range, assumed from the session:
 // First args, then selection, and finally just at the cursor position
-Bookmark bookmark_range(Session *session, string[] args)
+Bookmark bookmark_range(Session *session, Argument[] args)
 {
     if (args.length > 0)
     {
@@ -3782,7 +3781,7 @@ void bookmark_insert(Session *session, Bookmark b)
 }
 
 // Add a bookmark covering args/selection/cursor.
-void bookmark_set(Session *session, string[] args)
+void bookmark_set(Session *session, Argument[] args)
 {
     Bookmark bk = bookmark_range(session, args);
     if (bk.length <= 0)
@@ -3808,7 +3807,7 @@ bool bookmark_overlaps(Session *session, long start, long length)
 
 // Jump cursor to the first bookmark whose address > current cursor.
 // Wraps to the first bookmark if none found ahead.
-void bookmark_next(Session *session, string[] args)
+void bookmark_next(Session *session, Argument[] args)
 {
     if (session.bookmarks.length == 0)
         throw new Exception(MSG_NO_BOOKMARKS);
@@ -3834,7 +3833,7 @@ void bookmark_next(Session *session, string[] args)
 
 // Jump cursor to the last bookmark whose address < current cursor.
 // Wraps to the last bookmark if none found behind.
-void bookmark_prev(Session *session, string[] args)
+void bookmark_prev(Session *session, Argument[] args)
 {
     if (session.bookmarks.length == 0)
         throw new Exception(MSG_NO_BOOKMARKS);
@@ -3859,7 +3858,7 @@ void bookmark_prev(Session *session, string[] args)
 }
 
 // Toggle: unset overlapping bookmarks if any, otherwise set one.
-void bookmark_toggle(Session *session, string[] args)
+void bookmark_toggle(Session *session, Argument[] args)
 {
     Bookmark bk = bookmark_range(session, args);
 
@@ -3873,7 +3872,7 @@ void bookmark_toggle(Session *session, string[] args)
 }
 
 // Remove every bookmark whose range overlaps args/selection/cursor.
-void bookmark_unset(Session *session, string[] args)
+void bookmark_unset(Session *session, Argument[] args)
 {
     Bookmark bk = bookmark_range(session, args);
 
@@ -3909,7 +3908,7 @@ void bookmark_unset(Session *session, string[] args)
 }
 
 // Clear bookmark list
-void bookmark_clear(Session *session, string[] args)
+void bookmark_clear(Session *session, Argument[] args)
 {
     session.bookmarks.length = 0;
     session.bookmarks = null;
@@ -3917,7 +3916,7 @@ void bookmark_clear(Session *session, string[] args)
 
 // Save bookmarks to a text file: one bookmark per line as "0xADDR LENGTH".
 // Lines starting with '#' and blank lines are ignored on load.
-void bookmark_save(Session *session, string[] args)
+void bookmark_save(Session *session, Argument[] args)
 {
     if (session.bookmarks.length == 0)
         throw new Exception(MSG_NO_BOOKMARKS_TO_SAVE);
@@ -3955,7 +3954,7 @@ unittest
 // Load bookmarks from a file produced by bookmark-save (or compatible).
 // Each non-comment line: "<address> <length>" with address in hex (0x...) or
 // decimal, length in decimal. Loaded entries are merged with existing ones.
-void bookmark_load(Session *session, string[] args)
+void bookmark_load(Session *session, Argument[] args)
 {
     import std.string : strip, stripLeft;
     import std.conv : parse, ConvException;
@@ -4007,7 +4006,7 @@ void bookmark_load(Session *session, string[] args)
 //
 
 // Change writing mode
-void change_writemode(Session *session, string[] args)
+void change_writemode(Session *session, Argument[] args)
 {
     // Can't switch out of a restricted session (-R/--restrict)
     if (session.rc.restricted)
@@ -4016,7 +4015,7 @@ void change_writemode(Session *session, string[] args)
     // Optional argument
     if (args.length > 0)
     {
-        WritingMode mode = selectWritingMode(args[0]);
+        WritingMode mode = selectWritingMode(args[0].text);
         if (mode == WritingMode.insert && fixedsize(session))
             throw new Exception(MSG_INSERT_MODE_UNAVAILABLE);
         session.rc.writemode = mode;
@@ -4040,14 +4039,14 @@ void change_writemode(Session *session, string[] args)
 }
 
 // Refresh screen
-void refresh(Session *session, string[] args)
+void refresh(Session *session, Argument[] args)
 {
     terminalClear();
     update(session);
 }
 
 // Change active panel
-void change_panel(Session *session, string[] args)
+void change_panel(Session *session, Argument[] args)
 {
     // First parameter could be panel name, still cycling to default
     // But honestly this is fine for now
@@ -4061,7 +4060,7 @@ void change_panel(Session *session, string[] args)
     } while (session.panel == PanelType.inspector && session.rc.inspector == false);
 }
 
-void toggle_inspector(Session *session, string[] args)
+void toggle_inspector(Session *session, Argument[] args)
 {
     session.rc.inspector = session.rc.inspector == false;
     // Leave inspector focus if we just hid it.
@@ -4070,7 +4069,7 @@ void toggle_inspector(Session *session, string[] args)
     g_status |= UVIEW;
 }
 
-void toggle_endian(Session *session, string[] args)
+void toggle_endian(Session *session, Argument[] args)
 {
     import std.system : Endian;
     session.rc.endian =
@@ -4084,7 +4083,7 @@ void toggle_endian(Session *session, string[] args)
 // panel is open closes it. Comparing the current file against its last-saved
 // state is done by passing its own path (the on-disk copy is read fresh, while
 // the view reflects unsaved edits).
-void diff_file(Session *session, string[] args)
+void diff_file(Session *session, Argument[] args)
 {
     // No path given while a diff is active: close the panel.
     if ((args is null || args.length == 0) && session.diffdoc)
@@ -4365,7 +4364,7 @@ unittest
 }
 
 // Jump the cursor to the start of the next difference against the diffed file.
-void diff_next(Session *session, string[] args)
+void diff_next(Session *session, Argument[] args)
 {
     if (session.diffdoc is null)
         throw new Exception(MSG_NO_DIFF_OPEN);
@@ -4384,7 +4383,7 @@ void diff_next(Session *session, string[] args)
 }
 
 // Jump the cursor to the start of the previous difference against the diffed file.
-void diff_prev(Session *session, string[] args)
+void diff_prev(Session *session, Argument[] args)
 {
     if (session.diffdoc is null)
         throw new Exception(MSG_NO_DIFF_OPEN);
@@ -4403,7 +4402,7 @@ void diff_prev(Session *session, string[] args)
 }
 
 // 
-void undo(Session *session, string[] args)
+void undo(Session *session, Argument[] args)
 {
     long pos = session.editor.undo();
     if (pos < 0)
@@ -4415,7 +4414,7 @@ void undo(Session *session, string[] args)
 }
 
 // 
-void redo(Session *session, string[] args)
+void redo(Session *session, Argument[] args)
 {
     long pos = session.editor.redo();
     if (pos < 0)
@@ -4427,7 +4426,7 @@ void redo(Session *session, string[] args)
 }
 
 // Go to position in document
-void goto_(Session *session, string[] args)
+void goto_(Session *session, Argument[] args)
 {
     long position = void;
     bool absolute = void;
@@ -4499,7 +4498,7 @@ void goto_(Session *session, string[] args)
 }
 
 // Report alternative status bar
-void report(Session *session, string[] args)
+void report(Session *session, Argument[] args)
 {
     Selection sel = selection(session);
     SliceWriter sw = SliceWriter(g_messagebuf); // uses message buffer
@@ -4509,14 +4508,14 @@ void report(Session *session, string[] args)
 }
 
 // Report document name on screen (as a reminder)
-void report_name(Session *session, string[] args)
+void report_name(Session *session, Argument[] args)
 {
     import std.path : baseName;
     message( session.target is null ? "(new buffer)" : baseName(session.target) );
 }
 
 // Report program version on screen
-void report_version(Session *session, string[] args)
+void report_version(Session *session, Argument[] args)
 {
     message( DDHX_VERSION );
 }
@@ -4557,7 +4556,7 @@ unittest
 
 // Automatically size the number of columns that can fix on screen
 // using the currently selected data mode.
-void autosize(Session *session, string[] args)
+void autosize(Session *session, Argument[] args)
 {
     import std.math : abs;
     int adspacing = abs( session.rc.address_spacing );
@@ -4568,7 +4567,7 @@ void autosize(Session *session, string[] args)
 }
 
 // Export selected range to file
-void export_range(Session *session, string[] args)
+void export_range(Session *session, Argument[] args)
 {
     Selection sel = selection(session);
     if (sel.length == 0)
@@ -4612,7 +4611,7 @@ void export_range(Session *session, string[] args)
 }
 
 // Replace data using pattern
-void replace_(Session *session, string[] args)
+void replace_(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
@@ -4649,7 +4648,7 @@ void replace_(Session *session, string[] args)
 }
 
 // Insert data using pattern
-void insert_(Session *session, string[] args)
+void insert_(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
@@ -4686,7 +4685,7 @@ void insert_(Session *session, string[] args)
 }
 
 // Replace data using pattern
-void replace_range(Session *session, string[] args)
+void replace_range(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
@@ -4729,7 +4728,7 @@ void replace_range(Session *session, string[] args)
 }
 
 // Insert data using pattern
-void insert_range(Session *session, string[] args)
+void insert_range(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
@@ -4772,7 +4771,7 @@ void insert_range(Session *session, string[] args)
 }
 
 // Replace data using file
-void replace_file(Session *session, string[] args)
+void replace_file(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
@@ -4787,7 +4786,7 @@ void replace_file(Session *session, string[] args)
 }
 
 // Insert data using file
-void insert_file(Session *session, string[] args)
+void insert_file(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
@@ -4803,7 +4802,7 @@ void insert_file(Session *session, string[] args)
 }
 
 // Copy data into clipboard buffer
-void clip_copy(Session *session, string[] args)
+void clip_copy(Session *session, Argument[] args)
 {
     long start;
     size_t len;
@@ -4846,7 +4845,7 @@ void clip_copy(Session *session, string[] args)
 }
 
 // Cut data into clipboard buffer
-void clip_cut(Session *session, string[] args)
+void clip_cut(Session *session, Argument[] args)
 {
     // shameless copy from clip_copy
     long start;
@@ -4893,7 +4892,7 @@ void clip_cut(Session *session, string[] args)
 }
 
 // Paste data from clipboard buffer
-void clip_paste(Session *session, string[] args)
+void clip_paste(Session *session, Argument[] args)
 {
     if (g_clipboard_ptr == null)
         throw new Exception(MSG_CLIPBOARD_EMPTY);
@@ -4935,7 +4934,7 @@ void clip_paste(Session *session, string[] args)
 }
 
 // Clear clipboard buffer
-void clip_clear(Session *session, string[] args)
+void clip_clear(Session *session, Argument[] args)
 {
     if (g_clipboard_ptr == null)
         return;
@@ -4946,7 +4945,7 @@ void clip_clear(Session *session, string[] args)
 }
 
 // Save changes (assumes to a file)
-void save(Session *session, string[] args)
+void save(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_SAVE_READONLY);
@@ -5050,7 +5049,7 @@ Ldone:
 }
 
 // Save as file
-void save_as(Session *session, string[] args)
+void save_as(Session *session, Argument[] args)
 {
     string name = askstring(args, 0, "Save as: ");
     
@@ -5076,7 +5075,7 @@ void save_as(Session *session, string[] args)
 }
 
 // Set runtime config
-void set(Session *session, string[] args)
+void set(Session *session, Argument[] args)
 {
     string setting = askstring(args, 0, "Setting: ");
     string value   = askstring(args, 1, "Value: ");
@@ -5088,10 +5087,10 @@ void set(Session *session, string[] args)
 }
 
 // Bind key to action (command + parameters)
-void bind(Session *session, string[] args)
+void bind(Session *session, Argument[] args)
 {
     int key = terminalKeybind( askstring(args, 0, "Key: ") );
-    string[] commands = arguments( askstring(args, 1, "Command: ") );
+    Argument[] commands = arguments( askstring(args, 1, "Command: ") );
     
     // When prompted interactively, we might get "goto +32" as a single
     // string. Split it so the command name and parameters are separated.
@@ -5103,12 +5102,12 @@ void bind(Session *session, string[] args)
         if (argv.length > 1) params = argv[1..$];
     }*/
     
-    bindkey(key, commands[0], commands.length > 1 ? commands[1..$] : null);
+    bindkey(key, commands[0].text, commands.length > 1 ? commands[1..$] : null);
     message("Key binded");
 }
 
 // Unbind key
-void unbind(Session *session, string[] args)
+void unbind(Session *session, Argument[] args)
 {
     int key = terminalKeybind( askstring(args, 0, "Key: ") );
     unbindkey(key);
@@ -5116,7 +5115,7 @@ void unbind(Session *session, string[] args)
 }
 
 // Reset all keys
-void reset_keys(Session *session, string[] args)
+void reset_keys(Session *session, Argument[] args)
 {
     g_keys.clear();
     initdefaults();
@@ -5124,14 +5123,14 @@ void reset_keys(Session *session, string[] args)
 }
 
 // Set color scheme at runtime
-void color(Session *session, string[] args)
+void color(Session *session, Argument[] args)
 {
     if (args.length < 1)
         throw new Exception(MSG_MISSING_SCHEME);
     
     import std.traits : EnumMembers;
     
-    if (args[0] == "reset") // reset all
+    if (args[0].text == "reset") // reset all
     {
         foreach (scheme; EnumMembers!(ColorScheme))
         {
@@ -5144,13 +5143,13 @@ void color(Session *session, string[] args)
         throw new Exception(MSG_MISSING_COLOR);
     
     // reset: reset only for this scheme
-    ColorScheme scheme = getScheme(args[0]);
+    ColorScheme scheme = getScheme(args[0].text);
     setcolor(scheme,
-        args[1] == "reset" ? ColorMapper.default_(scheme) : ColorMap.parse(args[1]));
+        args[1].text == "reset" ? ColorMapper.default_(scheme) : ColorMap.parse(args[1].text));
 }
 
 //
-void find(Session *session, string[] args)
+void find(Session *session, Argument[] args)
 {
     Selection sel = selection(session);
     
@@ -5198,7 +5197,7 @@ void find(Session *session, string[] args)
 }
 
 //
-void find_back(Session *session, string[] args)
+void find_back(Session *session, Argument[] args)
 {
     Selection sel = selection(session);
     
@@ -5243,7 +5242,7 @@ void find_back(Session *session, string[] args)
 }
 
 //
-void find_next(Session *session, string[] args)
+void find_next(Session *session, Argument[] args)
 {
     if (g_needle.data is null)
         return;
@@ -5276,7 +5275,7 @@ void find_next(Session *session, string[] args)
 }
 
 //
-void find_prev(Session *session, string[] args)
+void find_prev(Session *session, Argument[] args)
 {
     if (g_needle.data is null)
         return;
@@ -5310,12 +5309,12 @@ void find_prev(Session *session, string[] args)
 
 // Split find-replace args around the "--" separator into needle and
 // replacement pattern argument lists.
-void splitReplaceArgs(string[] args, out string[] needleArgs, out string[] replArgs)
+void splitReplaceArgs(Argument[] args, out Argument[] needleArgs, out Argument[] replArgs)
 {
     size_t sep = size_t.max;
     foreach (i, a; args)
     {
-        if (a == "--") { sep = i; break; }
+        if (a.text == "--") { sep = i; break; }
     }
     if (sep == size_t.max)
         throw new Exception(MSG_NEED_NEEDLE_AND_REPLACEMENT);
@@ -5328,7 +5327,7 @@ void splitReplaceArgs(string[] args, out string[] needleArgs, out string[] replA
 }
 
 //
-void find_replace(Session *session, string[] args)
+void find_replace(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
@@ -5336,7 +5335,7 @@ void find_replace(Session *session, string[] args)
     // Allows find-replace to be repeated (typically via ^R)
     if (args.length)
     {
-        string[] needleArgs, replArgs;
+        Argument[] needleArgs, replArgs;
         splitReplaceArgs(args, needleArgs, replArgs);
 
         g_needle = pattern(session.rc.charset, needleArgs);
@@ -5379,14 +5378,14 @@ void find_replace(Session *session, string[] args)
 }
 
 //
-void find_replace_all(Session *session, string[] args)
+void find_replace_all(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
 
     if (args.length)
     {
-        string[] needleArgs, replArgs;
+        Argument[] needleArgs, replArgs;
         splitReplaceArgs(args, needleArgs, replArgs);
 
         g_needle = pattern(session.rc.charset, needleArgs);
@@ -5434,7 +5433,7 @@ void find_replace_all(Session *session, string[] args)
 }
 
 // Quit app
-void quit(Session *session, string[] args)
+void quit(Session *session, Argument[] args)
 {
     if (session.editor.edited())
     {

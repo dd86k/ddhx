@@ -18,170 +18,506 @@ template KiB(int base)
     enum KiB = cast(long)base * 1024;
 }
 
+/// One argument out of arguments().
+///
+/// Because ddhx deals with bytes, arguments are resolved to bytes, allowing
+/// weirder escapes and in general, byte arrays.
+///
+/// No `alias this`, it'd collide with std.conv.text.
+struct Argument
+{
+    /// Argument bytes, quotes removed and escape sequences resolved.
+    immutable(ubyte)[] data;
+
+    /// An argument out of raw text, for callers that are not the command line.
+    ///
+    /// Taken as typed. D source has already resolved its own escapes, so
+    /// `Argument("s:\t")` holds a real tab and has nothing left to interpret.
+    /// Params: text = Argument text.
+    this(string text)
+    {
+        data = cast(immutable(ubyte)[])text;
+    }
+
+    /// An argument out of bytes.
+    /// Params: newdata = Argument bytes.
+    this(immutable(ubyte)[] newdata)
+    {
+        data = newdata;
+    }
+
+    /// Translate argument as text. This validates text.
+    ///
+    /// Returns: Argument text.
+    /// Throws: Exception if the bytes are not valid UTF-8.
+    string text() const
+    {
+        import std.utf : validate, UTFException;
+        import std.conv : text;
+        import messages : MSG_ARGUMENT_NOT_TEXT;
+
+        string result = cast(string)data;
+
+        try validate(result);
+        catch (UTFException ex)
+            throw new Exception(text(MSG_ARGUMENT_NOT_TEXT, printable(data)));
+
+        return result;
+    }
+}
+unittest
+{
+    assert(Argument("s:ab").data == cast(immutable(ubyte)[])"s:ab");
+    assert(Argument("s:ab").text == "s:ab");
+    assert(Argument("héllo").text == "héllo");
+
+    // Bytes that are not text are an argument all the same, they are just not
+    // one that a command taking a file name can do anything with
+    Argument arg = Argument(cast(immutable(ubyte)[])[ 0x41, 0xff ]);
+    assert(arg.data == [ 0x41, 0xff ]);
+    try
+    {
+        cast(void)arg.text;
+        assert(false, "text() should have thrown");
+    }
+    catch (Exception) {}
+}
+
+/// Take a list of arguments as text.
+///
+/// For the callers that only ever wanted text, such as passing a command line
+/// on to something that has no idea what quoting is.
+/// Params: args = Arguments.
+/// Returns: Argument texts.
+/// Throws: Exception if an argument is not valid UTF-8.
+string[] texts(Argument[] args)
+{
+    string[] result = new string[args.length];
+    foreach (i, Argument arg; args) result[i] = arg.text;
+    return result;
+}
+
+/// Render bytes for an error message, since the bytes in question are, by
+/// definition, the ones that cannot be printed as-is.
+/// Params: data = Bytes.
+/// Returns: Printable text.
+string printable(immutable(ubyte)[] data)
+{
+    import std.ascii : isPrintable;
+    import std.format : format;
+
+    string result;
+    foreach (ubyte b; data)
+    {
+        if (isPrintable(b))
+            result ~= cast(char)b;
+        else
+            result ~= format("\\x%02x", b);
+    }
+    return result;
+}
+unittest
+{
+    assert(printable(cast(immutable(ubyte)[])"ab") == "ab");
+    assert(printable(cast(immutable(ubyte)[])[ 0x41, 0xff, 0x0a ]) == `A\xff\x0a`);
+}
+
+// Interpret C string escapes ("\0", "\t", "\x1b", "\101", etc.) into raw bytes.
+//
+// Unknown sequences throw instead of silently dropping the backslash: a
+// backslash that quietly means itself is a gray area, and a needle that
+// matches the wrong bytes is worse than one that refuses to compile. A literal
+// backslash is "\\", and raw text is what single quotes are for.
+//
+// Used for double-quoted runs only, see arguments().
+private
+ubyte[] unescape(const(char)[] input)
+{
+    import std.ascii : isHexDigit, isOctalDigit;
+    import std.conv : text;
+    import messages;
+
+    ubyte[] result;
+
+    for (size_t i; i < input.length; ++i)
+    {
+        char c = input[i];
+
+        if (c != '\\')
+        {
+            result ~= cast(ubyte)c;
+            continue;
+        }
+
+        if (++i >= input.length)
+            throw new Exception(MSG_INCOMPLETE_ESCAPE);
+
+        char e = input[i];
+        switch (e) {
+        case 'a':  result ~= '\a'; continue;
+        case 'b':  result ~= '\b'; continue;
+        case 'e':  result ~= 0x1b; continue; // GNU extension, handy for terminal dumps
+        case 'f':  result ~= '\f'; continue;
+        case 'n':  result ~= '\n'; continue;
+        case 'r':  result ~= '\r'; continue;
+        case 't':  result ~= '\t'; continue;
+        case 'v':  result ~= '\v'; continue;
+        case '\\': result ~= '\\'; continue;
+        case '\'': result ~= '\''; continue;
+        case '"':  result ~= '"';  continue;
+        case '?':  result ~= '?';  continue;
+        // Octal, one to three digits ("\0", "\12", "\377")
+        case '0': .. case '7':
+            uint v = e - '0';
+            for (int d = 1; d < 3 && i + 1 < input.length && isOctalDigit(input[i + 1]); ++d)
+                v = (v * 8) + (input[++i] - '0');
+            if (v > 0xff)
+                throw new Exception(text(MSG_ESCAPE_OUT_OF_RANGE, `\`, e));
+            result ~= cast(ubyte)v;
+            continue;
+        // Hexadecimal, one or two digits ("\x0", "\x1b"). C would keep eating
+        // digits and overflow; a trailing hex digit here is ambiguous with
+        // literal text ("\x1bfoo"), so it is rejected rather than guessed at.
+        case 'x':
+            if (i + 1 >= input.length || isHexDigit(input[i + 1]) == false)
+                throw new Exception(text(MSG_UNKNOWN_ESCAPE, `\x`));
+            size_t esc = i - 1; // on '\\', for error reporting
+            uint h;
+            for (int d; d < 2 && i + 1 < input.length && isHexDigit(input[i + 1]); ++d)
+            {
+                char x = input[++i];
+                h = (h * 16) + (x <= '9' ? x - '0' : (x | 0x20) - 'a' + 10);
+            }
+            if (i + 1 < input.length && isHexDigit(input[i + 1]))
+                throw new Exception(text(MSG_ESCAPE_TOO_MANY_DIGITS, input[esc..i + 2]));
+            result ~= cast(ubyte)h;
+            continue;
+        default:
+            throw new Exception(text(MSG_UNKNOWN_ESCAPE, `\`, e, MSG_ESCAPE_RAW_HINT));
+        }
+    }
+
+    return result;
+}
+unittest
+{
+    assert(unescape("")     == []);
+    assert(unescape("test") == cast(ubyte[])"test");
+
+    // Single-character escapes
+    assert(unescape(`\a`)  == [ 0x07 ]);
+    assert(unescape(`\b`)  == [ 0x08 ]);
+    assert(unescape(`\e`)  == [ 0x1b ]);
+    assert(unescape(`\f`)  == [ 0x0c ]);
+    assert(unescape(`\n`)  == [ 0x0a ]);
+    assert(unescape(`\r`)  == [ 0x0d ]);
+    assert(unescape(`\t`)  == [ 0x09 ]);
+    assert(unescape(`\v`)  == [ 0x0b ]);
+    assert(unescape(`\\`)  == [ '\\' ]);
+    assert(unescape(`\'`)  == [ '\'' ]);
+    assert(unescape(`\"`)  == [ '"' ]);
+    assert(unescape(`\?`)  == [ '?' ]);
+
+    // Octal
+    assert(unescape(`\0`)    == [ 0 ]);
+    assert(unescape(`\00`)   == [ 0 ]);
+    assert(unescape(`\000`)  == [ 0 ]);
+    assert(unescape(`\7`)    == [ 7 ]);
+    assert(unescape(`\12`)   == [ 0x0a ]);
+    assert(unescape(`\101`)  == [ 'A' ]);
+    assert(unescape(`\377`)  == [ 0xff ]);
+    assert(unescape(`\0008`) == [ 0, '8' ]);  // stops after three digits
+    assert(unescape(`\08`)   == [ 0, '8' ]);  // '8' is not octal
+
+    // Hexadecimal
+    assert(unescape(`\x0`)      == [ 0 ]);
+    assert(unescape(`\x00`)     == [ 0 ]);
+    assert(unescape(`\x1b`)     == [ 0x1b ]);
+    assert(unescape(`\xFF`)     == [ 0xff ]);
+    assert(unescape(`\x41z`)    == [ 'A', 'z' ]);
+    assert(unescape(`\x0z`)     == [ 0, 'z' ]);
+
+    // Mixed
+    assert(unescape(`a\tb`)      == [ 'a', 0x09, 'b' ]);
+    assert(unescape(`\r\n`)      == [ 0x0d, 0x0a ]);
+    assert(unescape(`C:\\Users`) == cast(ubyte[])`C:\Users`);
+
+    void test_throw(string input)
+    {
+        try { cast(void)unescape(input); } catch (Exception) { return; }
+
+        import std.stdio : stderr, writeln;
+        stderr.writeln("Failed to throw with: ", input);
+        assert(false, "test_throw test failed");
+    }
+    test_throw(`\`);        // dangling backslash
+    test_throw(`a\`);
+    test_throw(`\z`);       // unknown escape
+    test_throw(`\U0001`);   // universal character names unsupported
+    test_throw(`\x`);       // missing hex digits
+    test_throw(`\xzz`);
+    test_throw(`\xdead`);   // ambiguous with literal text, use "\xde ad" or x:dead
+    test_throw(`\x1bfoo`);
+    test_throw(`\400`);     // over 0xff
+    test_throw(`\777`);
+}
+
 /// Split arguments while accounting for quotes.
 ///
-/// This layer is responsible for word splitting and quoting only. It resolves
-/// what it needs to find argument boundaries and nothing else:
+/// Word splitting, quoting, and escapes, in one pass, out the other end as
+/// bytes. Quoting style selects how a run of text is read, the same way it does
+/// in a programming language, and the two quotes buy two independent things:
+///
+/// ---
+///              protects whitespace    escape sequences
+///  s:text             no                   no
+///  s:'text'           yes                  no
+///  s:"text"           yes                  yes
+/// ---
+///
+/// So `s:C:\Users` and `s:'C:\Program Files'` are paths as typed, while
+/// `s:"\x1b[0m"` is an escape sequence:
 ///
 /// $(UL
-/// $(LI `'single quotes'` are literal: every byte up to the closing quote is
-///      taken verbatim, backslashes included. There is no way to embed a `'`;
-///      close, escape, and reopen instead (`'it'\''s'`).)
-/// $(LI Anywhere else, a backslash before `"`, `'`, or `\` is consumed and the
-///      character taken literally.)
-/// $(LI Any other backslash is passed through with its sequence intact, so
-///      `\t` and friends reach whoever interprets them (see patterns.unescape).)
+/// $(LI Unquoted and `'single quoted'` text is raw. Every byte up to the end of
+///      the run is taken verbatim, backslashes included, and there are no
+///      escapes at all. A `'` therefore cannot appear inside single quotes.)
+/// $(LI `"double quoted"` text is a C string literal and is resolved here, see
+///      unescape. An unknown escape is an error rather than a backslash that
+///      means itself, so `"C:\dir"` is `'C:\dir'` or `"C:\\dir"`.)
 /// )
+///
+/// Adjacent runs concatenate into one argument, each read its own way, so
+/// `s:'C:\Users'"\0"` is a raw path followed by a NUL. That is a plain
+/// concatenation of literals, as in any language that has more than one kind.
+///
+/// A quote is written by using the other kind (`"'"`, `'"'`), which is the only
+/// way, there being no escapes outside of double quotes.
+///
+/// The result is bytes because an escape can produce one that is not text: it
+/// is up to the command to say whether it wanted text, see Argument.text.
 ///
 /// Uses the GC to append to the new array.
 /// Params: buffer = Shell-like input.
 /// Returns: Arguments.
-/// Throws: Does not explicitly throw any exceptions.
-string[] arguments(const(char)[] buffer)
+/// Throws: Exception on an unterminated quote or an invalid escape sequence.
+Argument[] arguments(const(char)[] buffer)
 {
     import std.string : strip;
     import std.ascii : isControl, isWhite;
-    import std.array : appender;
+    import std.conv : text;
+    import messages : MSG_UNTERMINATED_QUOTE;
     
     buffer = strip(buffer);
     
     if (buffer.length == 0) return [];
     
-    string[] results;
-    scope auto argBuf = appender!string();
-    bool inQuote = false;
-    char quoteChar;
+    Argument[] results;
+    immutable(ubyte)[] data; // Bytes of the argument being read
     
+    // Empty quotes are not an empty argument, they are no argument
+    void flush()
+    {
+        if (data.length == 0) return;
+
+        results ~= Argument(data);
+        data = null;
+    }
+
     for (size_t i; i < buffer.length; ++i)
     {
         char c = buffer[i];
 
-        // Single quotes are literal, so no escape or quote processing happens
-        // in here. This is the escape hatch for data carrying its own escape
-        // syntax, where being unescaped twice would be a nuisance.
-        if (inQuote && quoteChar == '\'')
+        // Whitespace outside of a quote ends the argument
+        if (isControl(c) || isWhite(c))
         {
-            if (c == '\'')
-                inQuote = false;
-            else
-                argBuf.put(c);
+            flush();
             continue;
         }
 
-        // Skip leading whitespace when not in a quote
-        if (!inQuote && (isControl(c) || isWhite(c)))
+        // Single quotes are literal to the byte. They end at the next quote and
+        // nothing in between is syntax, not even a backslash, which is what
+        // makes them the form for data carrying its own
+        if (c == '\'')
         {
-            // If we have accumulated text, save it
-            if (argBuf.data.length > 0)
+            size_t start = ++i;
+            while (i < buffer.length && buffer[i] != '\'') ++i;
+            if (i >= buffer.length)
+                throw new Exception(text(MSG_UNTERMINATED_QUOTE, c));
+            data ~= cast(const(ubyte)[])buffer[start..i];
+            continue;
+        }
+
+        // Double quotes are a C string. The end of the run is found first, with
+        // a backslash only recognized as covering the next character, so a pair
+        // cannot swallow the closing quote and `"C:\\"` terminates
+        if (c == '"')
+        {
+            size_t start = ++i;
+            for (; i < buffer.length; ++i)
             {
-                results ~= argBuf.data;
-                argBuf = appender!string(); // Create new appender
+                if (buffer[i] == '\\') { ++i; continue; }
+                if (buffer[i] == '"') break;
             }
+            if (i >= buffer.length)
+                throw new Exception(text(MSG_UNTERMINATED_QUOTE, c));
+            data ~= unescape(buffer[start..i]);
             continue;
         }
-        
-        // Handle escape character
-        if (c == '\\' && i + 1 < buffer.length)
+
+        // Unquoted text is raw and runs until whitespace or a quote
+        size_t start = i;
+        while (i < buffer.length)
         {
-            char next = buffer[i + 1];
-            // Only quotes and backslashes are consumed here. Anything else
-            // keeps its backslash, so sequences like "\t" reach whoever
-            // interprets them (e.g. string patterns).
-            if (next == '"' || next == '\'' || next == '\\')
-            {
-                argBuf.put(next);
-                ++i; // Skip the escaped character
-                continue;
-            }
+            char u = buffer[i];
+            if (isControl(u) || isWhite(u) || u == '\'' || u == '"') break;
+            ++i;
         }
-        
-        // Handle quotes
-        if ((c == '"' || c == '\'') && !inQuote)
-        {
-            inQuote = true;
-            quoteChar = c;
-            continue;
-        }
-        else if (inQuote && c == quoteChar)
-        {
-            inQuote = false;
-            continue;
-        }
-        
-        // Regular character - add to buffer
-        argBuf.put(c);
+        data ~= cast(const(ubyte)[])buffer[start..i];
+        --i; // Whatever stopped the run has not been read yet
     }
-    
-    // Add any remaining argument
-    if (argBuf.data.length > 0)
-        results ~= argBuf.data;
-    
+
+    flush();
+
     return results;
 }
 @system unittest
 {
-    assert(arguments("") == []);
-    assert(arguments("\n") == []);
-    assert(arguments("a") == [ "a" ]);
-    assert(arguments("simple") == [ "simple" ]);
-    assert(arguments("simple a b c") == [ "simple", "a", "b", "c" ]);
-    assert(arguments("simple test\n") == [ "simple", "test" ]);
-    assert(arguments("simple test\r\n") == [ "simple", "test" ]);
-    assert(arguments("/simple/ /test/") == [ "/simple/", "/test/" ]);
-    assert(arguments(`simple 'test extreme'`) == [ "simple", "test extreme" ]);
-    assert(arguments(`simple "test extreme"`) == [ "simple", "test extreme" ]);
-    assert(arguments(`simple '  hehe  '`) == [ "simple", "  hehe  " ]);
-    assert(arguments(`simple "  hehe  "`) == [ "simple", "  hehe  " ]);
-    assert(arguments(`a 'b c' d`) == [ "a", "b c", "d" ]);
-    assert(arguments(`a "b c" d`) == [ "a", "b c", "d" ]);
-    assert(arguments(`/type 'yes string'`) == [ "/type", "yes string" ]);
-    assert(arguments(`/type "yes string"`) == [ "/type", "yes string" ]);
-    assert(arguments(`A           B`) == [ "A", "B" ]);
-    
-    // Escapes, unquoted and in double quotes: a backslash before a quote or a
-    // backslash is consumed, the character taken literally
-    assert(arguments(`a \"b c\" d`) == [ "a", `"b`, `c"`, "d" ]);
-    assert(arguments(`a "b \"c\" d"`) == [ "a", `b "c" d` ]);
-    assert(arguments(`test\\ value`) == [ `test\`, "value" ]);
-    assert(arguments(`test\\value`) == [ `test\value` ]);
-    assert(arguments(`"test\\"`) == [ `test\` ]);
-    assert(arguments(`a\\ b`) == [ `a\`, "b" ]);
-    assert(arguments(`"a\\ b"`) == [ `a\ b` ]);
-    assert(arguments(`\"a\"`) == [ `"a"` ]);
+    void test_throw(string input)
+    {
+        Argument[] r;
+        try { r = arguments(input); } catch (Exception) { return; }
 
-    // Every other backslash sequence is passed through untouched, for the
-    // command to interpret (or not). This layer does not know what "\t" means.
-    assert(arguments(`find s:a\tb`)   == [ "find", `s:a\tb` ]);
-    assert(arguments(`find "a\tb"`)   == [ "find", `a\tb` ]);
-    assert(arguments(`find "a\\tb"`)  == [ "find", `a\tb` ]);
-    assert(arguments(`open "C:\dir"`) == [ "open", `C:\dir` ]);
-    assert(arguments(`open C:\dir`)   == [ "open", `C:\dir` ]);
+        import std.stdio : stderr, writeln;
+        stderr.writeln("Failed to throw with: ", input, " it produced: ", r);
+        assert(false, "test_throw test failed");
+    }
 
-    // Single quotes are literal: no escape processing whatsoever inside
-    assert(arguments(`'test\\'`)      == [ `test\\` ]);
-    assert(arguments(`find 'a\tb'`)   == [ "find", `a\tb` ]);
-    assert(arguments(`find 's:C:\\Users'`) == [ "find", `s:C:\\Users` ]);
-    assert(arguments(`open 'C:\dir'`) == [ "open", `C:\dir` ]);
-    assert(arguments(`'a "b" c'`)     == [ `a "b" c` ]);
-    // A single quote cannot be escaped into a literal run; close, escape and
-    // reopen instead, same as POSIX shells
-    assert(arguments(`a 'b \'c\' d'`) == [ "a", `b \c'`, "d" ]);
-    assert(arguments(`'it'\''s'`)     == [ `it's` ]);
-    assert(arguments(`'a'\\'b'`)      == [ `a\b` ]);
+    assert(texts(arguments("")) == []);
+    assert(texts(arguments("\n")) == []);
+    assert(texts(arguments("a")) == [ "a" ]);
+    assert(texts(arguments("simple")) == [ "simple" ]);
+    assert(texts(arguments("simple a b c")) == [ "simple", "a", "b", "c" ]);
+    assert(texts(arguments("simple test\n")) == [ "simple", "test" ]);
+    assert(texts(arguments("simple test\r\n")) == [ "simple", "test" ]);
+    assert(texts(arguments("/simple/ /test/")) == [ "/simple/", "/test/" ]);
+    assert(texts(arguments(`simple 'test extreme'`)) == [ "simple", "test extreme" ]);
+    assert(texts(arguments(`simple "test extreme"`)) == [ "simple", "test extreme" ]);
+    assert(texts(arguments(`simple '  hehe  '`)) == [ "simple", "  hehe  " ]);
+    assert(texts(arguments(`simple "  hehe  "`)) == [ "simple", "  hehe  " ]);
+    assert(texts(arguments(`a 'b c' d`)) == [ "a", "b c", "d" ]);
+    assert(texts(arguments(`a "b c" d`)) == [ "a", "b c", "d" ]);
+    assert(texts(arguments(`/type 'yes string'`)) == [ "/type", "yes string" ]);
+    assert(texts(arguments(`/type "yes string"`)) == [ "/type", "yes string" ]);
+    assert(texts(arguments(`A           B`)) == [ "A", "B" ]);
 
+    // Double quotes are the C string literal, so that is the one place a
+    // backslash is syntax. Everywhere else it is data and costs nothing
+    assert(texts(arguments(`find s:a\tb`)) == [ "find", `s:a\tb` ]);
+    assert(texts(arguments(`find "a\tb"`)) == [ "find", "a\tb" ]);
+    assert(texts(arguments(`find s:C:\\Users`)) == [ "find", `s:C:\\Users` ]);
+    assert(texts(arguments(`find "s:C:\\Users"`)) == [ "find", `s:C:\Users` ]);
+    assert(texts(arguments(`test\\ value`)) == [ `test\\`, "value" ]);
+    assert(texts(arguments(`test\\value`)) == [ `test\\value` ]);
+    assert(texts(arguments(`"a\\ b"`)) == [ `a\ b` ]);
+    assert(texts(arguments(`a "b \"c\" d"`)) == [ "a", `b "c" d` ]);
+    assert(texts(arguments(`open C:\dir`)) == [ "open", `C:\dir` ]);
+
+    // An unknown escape is an error, not a backslash that means itself, so a
+    // Windows path in double quotes has to say which it is. Bash would take
+    // `"C:\dir"` as written and `"C:\take"` as a path with a tab in it
+    test_throw(`open "C:\dir"`);
+    assert(texts(arguments(`open 'C:\dir'`)) == [ "open", `C:\dir` ]);
+    assert(texts(arguments(`open "C:\\dir"`)) == [ "open", `C:\dir` ]);
+
+    // Single quotes are literal: not even a backslash is syntax inside
+    assert(texts(arguments(`find 'a\tb'`)) == [ "find", `a\tb` ]);
+    assert(texts(arguments(`find 's:C:\\Users'`)) == [ "find", `s:C:\\Users` ]);
+    assert(texts(arguments(`open 'C:\dir'`)) == [ "open", `C:\dir` ]);
+    assert(texts(arguments(`open 'C:\'`)) == [ "open", `C:\` ]);
+    assert(texts(arguments(`open C:\`)) == [ "open", `C:\` ]);
+    assert(texts(arguments(`'a "b" c'`)) == [ `a "b" c` ]);
+    assert(texts(arguments(`'a \"b\" c'`)) == [ `a \"b\" c` ]);
+
+    // A quote is written with the other kind of quote, there being nothing else
+    // to write it with. The POSIX `'\''` idiom does not apply here: outside of
+    // double quotes a backslash is data, so it leaves a dangling quote
+    assert(texts(arguments(`'it'"'"'s'`)) == [ `it's` ]);
+    assert(texts(arguments(`"it"'"'"s"`)) == [ `it"s` ]);
+    assert(texts(arguments(`say'"'hi'"'`)) == [ `say"hi"` ]);
+    test_throw(`'it'\''s'`);
+    test_throw(`\"a\"`);
+
+    // Adjacent spans concatenate into one argument, so a quote can cover part
+    // of an argument and the prefix can sit inside or outside it
+    assert(texts(arguments(`s:'a''b'`)) == [ `s:ab` ]);
+    assert(texts(arguments(`s:'a'"b"`)) == [ `s:ab` ]);
+    assert(texts(arguments(`'s:'abc`)) == [ `s:abc` ]);
+    assert(texts(arguments(`a'b'c`)) == [ `abc` ]);
 
     // Nested/mixed quotes
-    assert(arguments(`a "b 'c' d" e`) == [ "a", `b 'c' d`, "e" ]);
-    assert(arguments(`a 'b "c" d' e`) == [ "a", `b "c" d`, "e" ]);
-    
+    assert(texts(arguments(`a "b 'c' d" e`)) == [ "a", `b 'c' d`, "e" ]);
+    assert(texts(arguments(`a 'b "c" d' e`)) == [ "a", `b "c" d`, "e" ]);
+
+    // Empty quotes are not an empty argument, they are no argument: there is
+    // no command here that distinguishes "" from absent, and dropping keeps
+    // 'find ""' an obvious "Need search" rather than an obscure empty needle
+    assert(texts(arguments(`find ''`)) == [ "find" ]);
+    assert(texts(arguments(`find ""`)) == [ "find" ]);
+    assert(texts(arguments(`find '' x:00`)) == [ "find", "x:00" ]);
+
+    // Unterminated quotes are an error, not a line that ends where it stopped
+    test_throw(`find 'abc`);
+    test_throw(`find "abc`);
+    test_throw(`'`);
+    test_throw(`"`);
+    // A backslash covers the next character, so it cannot swallow the closing
+    // quote and a C string can end on one
+    assert(texts(arguments(`"test\\"`)) == [ `test\` ]);
+    assert(texts(arguments(`a "b\\" c`)) == [ "a", `b\`, "c" ]);
+    assert(texts(arguments(`"C:\\"`)) == [ `C:\` ]);
+    assert(texts(arguments(`"a\\\"b"`)) == [ `a\"b` ]);
+    test_throw(`"abc\"`);
+
+    // Quoting is what selects how a run is read, and unquoted and single quoted
+    // are the same raw thing: single quotes only hold an argument together
+    assert(arguments(`a`)     == [ Argument(`a`) ]);
+    assert(arguments(`'a'`)   == [ Argument(`a`) ]);
+    assert(arguments(`"a"`)   == [ Argument(`a`) ]);
+    assert(arguments(`s:"a"`) == [ Argument(`s:a`) ]);
+    assert(arguments(`"s:a"`) == [ Argument(`s:a`) ]);
+    assert(arguments(`a "b" c`) == [ Argument(`a`), Argument(`b`), Argument(`c`) ]);
+
+    // Mixing the two forms is a concatenation of literals, as in any language
+    // that has more than one kind, so each part keeps its own meaning: a raw
+    // path with a NUL stuck on the end
+    assert(arguments(`s:'C:\dir'"\0"`) ==
+        [ Argument(cast(immutable(ubyte)[])"s:C:\\dir\0") ]);
+    assert(arguments(`s:"a"b`)        == [ Argument(`s:ab`) ]);
+    assert(arguments(`s:C:\dir"a b"`) == [ Argument(`s:C:\dir` ~ `a b`) ]);
+    assert(arguments(`s:'a'b"c""d"`)  == [ Argument(`s:abcd`) ]);
+
+    // Bytes that no encoding claims are still an argument. That is the whole
+    // point of resolving escapes here: `"\xff"` used to be untypable outside
+    // of a pattern, and text was the wrong type for it everywhere
+    assert(arguments(`"\xff"`)  == [ Argument(cast(immutable(ubyte)[])[ 0xff ]) ]);
+    assert(arguments(`"a\0b"`)  == [ Argument(cast(immutable(ubyte)[])"a\0b") ]);
+    assert(arguments(`"\xff"a`) == [ Argument(cast(immutable(ubyte)[])[ 0xff, 'a' ]) ]);
+    // ...and only a command that wanted text says so
+    try
+    {
+        cast(void)texts(arguments(`open "\xff"`));
+        assert(false, "text() should have thrown");
+    }
+    catch (Exception) {}
+
     // space confusion, will need to figure out proper syntax later
     // TODO: Maybe rethink quotes
     //       (a) Double-quotes shouldn't be stripped
     //       (b) Make double-double quotes do this behaviour
-    assert(arguments(`find s:WARNING: %s`)   == [ "find", `s:WARNING:`, `%s` ]);
-    assert(arguments(`find s:"WARNING: %s"`) == [ "find", `s:WARNING: %s` ]);
-    assert(arguments(`find "WARNING: %s"`)   == [ "find", `WARNING: %s` ]);
-    assert(arguments(`find \"WARNING: %s\"`) == [ "find", `"WARNING:`, `%s"` ]);
+    assert(texts(arguments(`find s:WARNING: %s`)) == [ "find", `s:WARNING:`, `%s` ]);
+    assert(texts(arguments(`find s:"WARNING: %s"`)) == [ "find", `s:WARNING: %s` ]);
+    assert(texts(arguments(`find "WARNING: %s"`)) == [ "find", `WARNING: %s` ]);
 }
 
 /// Parse string as hexadecimal, decimal, or octal.

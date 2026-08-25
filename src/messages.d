@@ -92,6 +92,16 @@ static immutable string MSG_COLOR_EMPTY = "Color cannot be empty";
 static immutable string MSG_UNKNOWN_SCHEME = "Unknown scheme: ";
 static immutable string MSG_UNKNOWN_COLOR = "Unknown color: ";
 
+// Command line
+
+static immutable string MSG_UNTERMINATED_QUOTE = "Unterminated quote: ";
+static immutable string MSG_ARGUMENT_NOT_TEXT = "Argument is not text: ";
+static immutable string MSG_INCOMPLETE_ESCAPE = "Incomplete escape sequence, use \\\\ for a literal backslash";
+static immutable string MSG_UNKNOWN_ESCAPE = "Unknown escape sequence: ";
+static immutable string MSG_ESCAPE_RAW_HINT = ", use single quotes for raw text";
+static immutable string MSG_ESCAPE_OUT_OF_RANGE = "Escape sequence out of byte range: ";
+static immutable string MSG_ESCAPE_TOO_MANY_DIGITS = "Hex escape sequence takes at most two digits: ";
+
 // Patterns
 
 static immutable string MSG_MISSING_PATTERN_DATA = "Missing data for pattern";

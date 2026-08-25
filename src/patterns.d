@@ -11,6 +11,8 @@ import std.string : startsWith;
 
 import ddhx.transcoder : CharacterSet;
 
+import utils : Argument, printable;
+
 import messages;
 
 /// Pattern prefix type.
@@ -22,12 +24,12 @@ enum PatternType
     oct,
     string_,
 }
-private struct Prefix { string str; PatternType type; }
+private struct Prefix { const(char)[] str; PatternType type; }
 /// Detect pattern prefix.
-/// Params: input = String input. Sliced from prefix.
+/// Params: input = Argument bytes. Sliced from prefix.
 /// Returns: Pattern type, unknown if it can't be detected.
 private
-Prefix patternpfx(string input)
+Prefix patternpfx(const(char)[] input)
 {
     Prefix pfx;
     
@@ -68,14 +70,12 @@ Prefix patternpfx(string input)
         }
     }
     
-    // String quotes
-    if (input.length > 2 && input[0] == '"' && input[$-1] == '"')
-    {
-        pfx.str  = input[1..$-1];
-        pfx.type = PatternType.string_;
-        return pfx;
-    }
-    
+    // NOTE: There used to be a bare `"STRING"` alias for `s:STRING` here.
+    //       It never fired from a command line, because the shell strips
+    //       quotes before this sees them, and once quoting became meaningful
+    //       (see Argument) it could only fire on `'"quoted"'`, where taking
+    //       the quotes as syntax would contradict single quotes being literal.
+
     // Unknown, give as-is, maybe previous was correct
     pfx.str = input;
     
@@ -90,9 +90,9 @@ unittest
     assert(patternpfx("d:255") == Prefix("255", PatternType.dec));
     assert(patternpfx("o:377") == Prefix("377", PatternType.oct));
     assert(patternpfx("s:hello") == Prefix("hello", PatternType.string_));
-    assert(patternpfx(`"hello"`) == Prefix("hello", PatternType.string_));
     
-    // Missing end quotes
+    // Quotes are not a prefix, they are the shell's business
+    assert(patternpfx(`"hello"`) == Prefix(`"hello"`, PatternType.unknown));
     assert(patternpfx(`"a`) == Prefix(`"a`, PatternType.unknown));
     assert(patternpfx(`"`)  == Prefix(`"`, PatternType.unknown));
     
@@ -197,25 +197,46 @@ struct Pattern
     }
 }
 /// Transform a pattern into an array of bytes, useful as a needle.
-/// Throws: FormatException or Exception for unknown prefix, empty values, etc.
+///
+/// A string pattern is the argument bytes, whatever they are: quoting already
+/// decided which parts were raw and which were a C string literal, and escapes
+/// are resolved by then (see utils.arguments). Nothing here has to be text.
+///
+/// ---
+/// find s:C:\Users             raw, a path
+/// find s:'C:\Program Files'   raw, quoted only for the space
+/// find s:"\x1b[0m"            C string, an escape sequence
+/// find s:'C:\Users'"\0"       both, concatenated
+/// ---
+///
+/// A whole argument of `?` or `*` is a wildcard; anything with a prefix is
+/// data, so `s:*` is already the way to search for one.
+///
+/// Throws: FormatException or Exception for unknown prefix, empty values,
+///         invalid escape sequences, etc.
 /// Params:
 ///     charset = Current character set if string patterns used.
 ///     args... = Array of arguments (e.g., "x:00","00").
 /// Returns: Byte array.
-Pattern pattern(CharacterSet charset, string[] args...)
+Pattern pattern(CharacterSet charset, Argument[] args)
 {
     import std.conv : parse;
     Pattern pat;
     PatternType last;
-    foreach (string arg; args)
+    foreach (Argument arg; args)
     {
-        switch (arg) {
+        // Allow malformed text encodings in prefixes
+        const(char)[] input = cast(const(char)[])arg.data;
+
+        // A wildcard is a whole argument of its own, so a prefixed one is
+        // already data and needs no quoting: `s:*` is a one-byte needle.
+        switch (input) {
         case "?": pat.data ~= PATTERN_GLOB_ONE;  pat.flags |= PATTERN_HAS_GLOB; continue;
         case "*": pat.data ~= PATTERN_GLOB_MANY; pat.flags |= PATTERN_HAS_GLOB; continue;
         default:
         }
 
-        Prefix pfx = patternpfx(arg);
+        Prefix pfx = patternpfx(input);
         
         // Throwing (after slicing) here makes the behaviour consistent and
         // ensures there is at least one or more characters
@@ -266,7 +287,7 @@ Pattern pattern(CharacterSet charset, string[] args...)
             break;
         case PatternType.string_:
             // TODO: Possibly replace string pattern type for encoding-specific ones
-            foreach (v; pfx.str) pat.data ~= v;
+            foreach (char v; pfx.str) pat.data ~= cast(ubyte)v;
             break;
         case PatternType.unknown:
             // If last pattern is correct ("x:00"), retry with that pattern,
@@ -276,11 +297,18 @@ Pattern pattern(CharacterSet charset, string[] args...)
                 pfx.type = last;
                 goto Lretry;
             }
-            throw new Exception(text(MSG_UNKNOWN_PATTERN_PREFIX, arg));
+            throw new Exception(text(MSG_UNKNOWN_PATTERN_PREFIX, printable(arg.data)));
         }
         last = pfx.type;
     }
     return pat;
+}
+/// Ditto
+Pattern pattern(CharacterSet charset, string[] args...) // string to Argument
+{
+    Argument[] wrapped = new Argument[args.length];
+    foreach (i, arg; args) wrapped[i] = Argument(arg);
+    return pattern(charset, wrapped);
 }
 unittest
 {
@@ -299,8 +327,28 @@ unittest
     assert(pattern(CharacterSet.ascii, "0o0").data             == [ 0 ]);
     assert(pattern(CharacterSet.ascii, "0o00").data            == [ 0 ]);
     assert(pattern(CharacterSet.ascii, "0xff").data            == [ 0xff ]);
-    assert(pattern(CharacterSet.ascii, `"yes"`).data           == [ 'y', 'e', 's' ]);
-    
+
+    // Plain strings are raw, so a backslash is a backslash
+    assert(pattern(CharacterSet.ascii, `s:a\tb`).data          == [ 'a', '\\', 't', 'b' ]);
+    assert(pattern(CharacterSet.ascii, `s:C:\dir`).data        == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
+    assert(pattern(CharacterSet.ascii, `s:C:\\`).data          == [ 'C', ':', '\\', '\\' ]);
+
+    // ...and what an escape sequence produced is data like any other, since it
+    // arrives here already resolved. Bytes that are not text included: this is
+    // the layer that has no opinion on encodings
+    ubyte[] bytes(immutable(ubyte)[] data)
+    {
+        Argument[] argv = [ Argument(data) ];
+        ubyte[] result;
+        foreach (ushort v; pattern(CharacterSet.ascii, argv).data)
+            result ~= cast(ubyte)v;
+        return result;
+    }
+    assert(bytes(cast(immutable(ubyte)[])"s:\0")     == [ 0 ]);
+    assert(bytes(cast(immutable(ubyte)[])"s:a\tb")   == [ 'a', '\t', 'b' ]);
+    assert(bytes(cast(immutable(ubyte)[])"s:\x1b[0m") == [ 0x1b, '[', '0', 'm' ]);
+    assert(bytes(cast(immutable(ubyte)[])[ 's', ':', 0xff, 0xfe ]) == [ 0xff, 0xfe ]);
+
     // Non-string multibyte patterns
     assert(pattern(CharacterSet.ascii, "0x01").data            == [ 1 ]);
     assert(pattern(CharacterSet.ascii, "0x0101").data          == [ 1, 1 ]);
@@ -325,7 +373,9 @@ unittest
         // Missing prefix
         [""], ["00"], ["00", "0x00"],
         // Empty data
-        ["x:"], ["o:"], ["d:"], ["s:"], ["0x"], ["\""],
+        ["x:"], ["o:"], ["d:"], ["s:"], ["0x"],
+        // Quotes are no longer a prefix alias
+        ["\""], [`"yes"`],
         // Too long
         ["0x010101010101010101"], // 64+8 bits
         // Unknown prefixes
@@ -337,12 +387,153 @@ unittest
     ];
     foreach (inv; invalids)
         test_throw(inv);
-    
+
+    // Bad escapes are the command line's problem, not this layer's: by the
+    // time a pattern is built, a backslash is only ever a backslash
+    foreach (string bad; [ `s:\`, `s:\z`, `s:\x`, `s:\400` ])
+        assert(pattern(CharacterSet.ascii, bad).data.length);
+
     // Globbers
     assert(pattern(CharacterSet.ascii, "?")                 == [ PATTERN_GLOB_ONE ]);
     assert(pattern(CharacterSet.ascii, "*")                 == [ PATTERN_GLOB_MANY ]);
     assert(pattern(CharacterSet.ascii, "x:00", "?", "x:FF") == [ 0, PATTERN_GLOB_ONE,  0xff ]);
     assert(pattern(CharacterSet.ascii, "x:00", "*", "x:FF") == [ 0, PATTERN_GLOB_MANY, 0xff ]);
+    // A prefix already makes it data, no quoting involved
+    assert(pattern(CharacterSet.ascii, "s:*").data == [ '*' ]);
+    assert(pattern(CharacterSet.ascii, "s:?").data == [ '?' ]);
+    assert(bytes(cast(immutable(ubyte)[])"s:*") == [ '*' ]);
+}
+
+// Layer boundary between the command shell (utils.arguments) and pattern
+// parsing, pinned down here rather than left to be rediscovered.
+//
+// Shell  : word splitting, quoting, and escapes. Hands over bytes.
+// Pattern: prefixes and wildcards.
+//
+// Nothing but bytes crosses the boundary, and the two quotes buy two
+// independent things:
+//
+//                 protects whitespace    escape sequences
+//     s:text      no                     no
+//     s:'text'    yes                    no
+//     s:"text"    yes                    yes
+//
+// Which is the same deal a string literal offers in any language: the quoting
+// style says how to read the text. So a Windows path is a Windows path,
+//
+//      find s:C:\Users                  raw, nothing to escape
+//      find s:'C:\Example Space\2'      raw, quoted only for the space
+//      find s:"C:\\Example Space\\2"    C string, so the backslashes double
+//
+// and an escape sequence is something you opt into with double quotes. The two
+// forms concatenate, each keeping its own reading, the way string literals do:
+//
+//      find s:'C:\Users'"\0"            a path with a NUL after it
+@system unittest
+{
+    import utils : arguments;
+
+    // Compile a command line the way the prompt would, minus the command word
+    ushort[] compile(string line)
+    {
+        Argument[] argv = arguments(line);
+        return pattern(CharacterSet.ascii, argv[1..$]).data;
+    }
+    void test_throw(string line)
+    {
+        ushort[] r;
+        try { r = compile(line); } catch (Exception) { return; }
+
+        import std.stdio : stderr, writeln;
+        stderr.writeln("Failed to throw with: ", line, " it produced: ", r);
+        assert(false, "test_throw test failed");
+    }
+
+    static immutable ushort[] EXAMPLE = // C:\Example Space\2
+        [ 'C', ':', '\\', 'E', 'x', 'a', 'm', 'p', 'l', 'e', ' ',
+          'S', 'p', 'a', 'c', 'e', '\\', '2' ];
+    static immutable ushort[] USERS = // C:\Users
+        [ 'C', ':', '\\', 'U', 's', 'e', 'r', 's' ];
+
+    // The headline: a path is typed as a path, no quoting and no doubling
+    assert(compile(`find s:C:\Users`)    == USERS);
+    assert(compile(`find s:'C:\Users'`)  == USERS);
+    assert(compile(`find s:"C:\\Users"`) == USERS);
+
+    // ...and the space only costs quotes, not escapes
+    assert(compile(`find s:'C:\Example Space\2'`)   == EXAMPLE);
+    assert(compile(`find s:"C:\\Example Space\\2"`) == EXAMPLE);
+
+    // Unquoted and single quoted are both raw, so they behave identically and
+    // only differ on whitespace. Double quotes are the C string
+    assert(compile(`find s:a\tb`)     == [ 'a', '\\', 't', 'b' ]);
+    assert(compile(`find s:'a\tb'`)   == [ 'a', '\\', 't', 'b' ]);
+    assert(compile(`find s:"a\tb"`)   == [ 'a', '\t', 'b' ]);
+    assert(compile(`find s:\x1b[0m`)  == [ '\\', 'x', '1', 'b', '[', '0', 'm' ]);
+    assert(compile(`find s:"\x1b[0m"`) == [ 0x1b, '[', '0', 'm' ]);
+
+    // Raw means raw, so a backslash never has to be justified and a bad escape
+    // is only bad where escapes exist
+    assert(compile(`find s:C:\dir`)  == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
+    assert(compile(`find s:abc\`)    == [ 'a', 'b', 'c', '\\' ]);
+    test_throw(`find s:"C:\Users"`);
+    test_throw(`find s:"abc\"`);
+
+    // Nothing collapses backslashes on the way in, so what layer 2 sees is what
+    // was typed and only the C string form halves them
+    assert(compile(`find s:C:\\Users`)     == [ 'C', ':', '\\', '\\', 'U', 's', 'e', 'r', 's' ]);
+    assert(compile(`find s:"C:\\\\Users"`) == [ 'C', ':', '\\', '\\', 'U', 's', 'e', 'r', 's' ]);
+
+    // A needle ending on a backslash works in all three forms, since a
+    // backslash pair does not swallow the closing quote
+    assert(compile(`find s:C:\`)     == [ 'C', ':', '\\' ]);
+    assert(compile(`find s:'C:\'`)   == [ 'C', ':', '\\' ]);
+    assert(compile(`find s:"C:\\"`)  == [ 'C', ':', '\\' ]);
+
+    // Which form applies is per span, so the two concatenate and each part
+    // keeps its own reading. That is what makes a path with a terminator, or a
+    // path with a space in it, one argument and no doubling
+    assert(compile(`find s:'C:\Users'"\0"`) == USERS ~ cast(ushort)0);
+    assert(compile(`find s:C:\dir"a b"`)
+        == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
+    assert(compile(`find s:"a\tb"\x`)   == [ 'a', '\t', 'b', '\\', 'x' ]);
+    assert(compile(`find s:'C:\dir'"a b"`)
+        == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
+
+    // Whether the prefix sits inside or outside the quotes makes no difference
+    assert(compile(`find 's:C:\Users'`) == compile(`find s:'C:\Users'`));
+    assert(compile(`find "s:a\tb"`)     == compile(`find s:"a\tb"`));
+
+    // Quotes reaching a string pattern. Layer 1 has no escapes outside of
+    // double quotes, so a quote is written with the other kind of quote, and
+    // layer 2 still takes \' and \" inside a C string
+    assert(compile(`find s:'it'"'"'s'`) == [ 'i', 't', '\'', 's' ]);
+    assert(compile(`find s:"it's"`)     == [ 'i', 't', '\'', 's' ]);
+    assert(compile(`find s:"it\'s"`)    == [ 'i', 't', '\'', 's' ]);
+    assert(compile(`find s:say'"'hi'"'`) == [ 's', 'a', 'y', '"', 'h', 'i', '"' ]);
+    assert(compile(`find s:"say\"hi\""`) == [ 's', 'a', 'y', '"', 'h', 'i', '"' ]);
+    // ...and a raw backslash before a quote is just a backslash, so it ends
+    // the raw run instead of escaping anything
+    assert(compile(`find s:it\'s'`)     == [ 'i', 't', '\\', 's' ]);
+
+    // A prefix is mandatory: quotes are the shell's syntax, not a pattern type
+    test_throw(`find "quoted"`);
+    test_throw(`find 'quoted'`);
+
+    // A wildcard is a whole argument of its own, so a prefix is all it takes to
+    // ask for one as data. Quoting is not consulted and does not need to be
+    assert(compile(`find x:00 ? x:FF`)  == [ 0, PATTERN_GLOB_ONE, 0xff ]);
+    assert(compile(`find x:00 * x:FF`)  == [ 0, PATTERN_GLOB_MANY, 0xff ]);
+    assert(compile(`find s:"a\tb" * s:c`) == [ 'a', '\t', 'b', PATTERN_GLOB_MANY, 'c' ]);
+    assert(compile(`find s:*`)          == [ '*' ]);
+    assert(compile(`find s:?`)          == [ '?' ]);
+    assert(compile(`find s:'*'`)        == [ '*' ]);
+    assert(compile(`find s:"?"`)        == [ '?' ]);
+    assert(compile(`find '*'`)          == [ PATTERN_GLOB_MANY ]);
+
+    // An unterminated quote never reaches the pattern parser at all
+    test_throw(`find s:'C:\Users`);
+    test_throw(`find s:"C:\\Users`);
 }
 
 /// Match a pattern against haystack starting at hPos/nPos.

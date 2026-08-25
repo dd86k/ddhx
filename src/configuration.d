@@ -15,7 +15,7 @@ import os.terminal : terminalKeybind;
 
 import colors;
 import messages;
-import utils : arguments;
+import utils : arguments, Argument;
 
 import view : bindkey, setcolor, initdefaults, binded;
 
@@ -147,30 +147,30 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
         if (line.length == 0 || line[0] == '#')
             continue;
         
-        string[] args = arguments(line);
+        Argument[] args = arguments(line);
         if (args.length < 2)
             throw new Exception(MSG_MISSING_VALUE);
         
         // Special
-        switch (args[0]) {
+        switch (args[0].text) {
         case "bind": // bind KEY COMMAND [ARGS...]
             if (args.length < 3)
                 throw new Exception(MSG_MISSING_COMMAND);
             bindkey(
-                terminalKeybind( args[1] ),
-                args[2],
+                terminalKeybind( args[1].text ),
+                args[2].text,
                 args.length > 3 ? args[3..$] : null);
             continue;
         case "color": // color SCHEME COLOR
             if (args.length < 3)
                 throw new Exception(MSG_MISSING_COLOR);
             setcolor(
-                getScheme(args[1]),
-                ColorMap.parse(args[2])
+                getScheme(args[1].text),
+                ColorMap.parse(args[2].text)
             );
             continue;
         default:
-            configRC(rc, args[0], args[1], true);
+            configRC(rc, args[0].text, args[1].text, true);
         }
     }
 }
