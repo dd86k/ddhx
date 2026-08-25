@@ -6,6 +6,11 @@ Removed, and (where relevant) Docs.
 ////////////////////////////////////////////////////////////////////////////////
 // Upcoming
 
+- Command line overhaul: arguments are now split with single quotes (raw) and
+  double quotes (C string literals, with escape sequences), for every command
+  and in configuration files, not just for patterns. Warning: the bare
+  '"STRING"' alias for 's:STRING' is gone, so 'find "test"' is now an error;
+  use 'find s:test' or 'find s:"test"' instead.
 - Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}' /
   '{') jump between differing regions, with a cursor mirror and better
   alignment in the diff panel.
@@ -19,6 +24,10 @@ Removed, and (where relevant) Docs.
   width is fixed.
 
 // Added
+- Single quoting ('TEXT', raw) and double quoting ("TEXT", C string literal)
+  for command arguments (decc3ee)
+- C escape sequences inside double quotes: \a \b \e \f \n \r \t \v \\ \' \"
+  \?, octal (\0, \377), and hexadecimal (\x1b) (decc3ee)
 - '-W'/'--writable' flag (cb1c02d)
 - 'writemode' config option, enforced on fixed-size media (6fd3d7e)
 - 'diff-next' / 'diff-prev' commands mapped to '}' / '{' (73a5983)
@@ -26,6 +35,15 @@ Removed, and (where relevant) Docs.
 - 'Braces' and 'Pipe' terminal enum values (7d15f8b)
 
 // Changed
+- Quoting and escapes apply to every command and to configuration files, not
+  only to patterns: 'save-as "dump\x2Etxt"' saves dump.txt (decc3ee)
+- Arguments are bytes rather than text, so an escape may produce data that is
+  not valid UTF-8. Commands that need text ('save-as "\xff"') report it, and
+  commands that take data are unaffected (decc3ee)
+- Unquoted and single quoted text is raw, so a path needs no escaping:
+  'find s:C:\Users' and 'diff-file C:\dump.bin' work as typed (decc3ee)
+- An unknown escape, an unterminated quote, and a hex escape with a third
+  digit are errors instead of being guessed at (decc3ee)
 - Restricted mode split into its own variable, simplifying '-W' handling
   (0ae096e)
 - Diff panel alignment improved (391a387)
@@ -42,10 +60,18 @@ Removed, and (where relevant) Docs.
   - CJK width heuristic no longer fails to fire (byte vs char comparison
     bug)
 
+// Removed
+- Bare '"STRING"' pattern alias for 's:STRING'. Quotes are the prompt's
+  syntax, not a pattern type, so the 's:' prefix is always required (decc3ee)
+
 // Docs
 - README updated (700136c)
 - ddhx.1 manpage updated for writemode, -W, and diff-next/diff-prev
   (6fd3d7e, 0ae096e, cb1c02d, 73a5983)
+- ddhx.1: new Quoting subsection under COMMANDS, rewritten 's:' and wildcard
+  entries under PATTERNS (2f06c99)
+- src/README: new COMMAND LINE section covering the rules, the cases the
+  design is pinned to, and why each decision was made (aa9d503)
 
 ////////////////////////////////////////////////////////////////////////////////
 // v0.11.0
