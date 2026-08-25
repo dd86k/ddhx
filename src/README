@@ -54,6 +54,185 @@ The folder structure is pretty straight-forward:
     +~ ~ ~ ~ +
 
 ********************************************************************************
+* COMMAND LINE
+********************************************************************************
+
+This section is about typing commands at the ':' prompt and in .ddhxrc. The
+COMMANDS section further down is about the undo history, which is unrelated.
+
+A typed line goes through two steps:
+
+  utils.arguments()   Splits the line into arguments, applying quoting and C
+                      escapes.
+  patterns.pattern()  Turns one argument into a needle, applying prefixes and
+                      wildcards.
+
+*
+* RULES
+*
+
+Quoting style selects how the text is read, the same way it does in a
+programming language. The two quotes buy two independent things, and neither of
+them buys the other's:
+
+                    protects whitespace    escape sequences
+    text            no                     no
+    'text'          yes                    no
+    "text"          yes                    yes
+
+So text is raw unless it is double quoted, which makes it a C string literal:
+
+    find s:C:\Users                 a path, typed as a path
+    find s:'C:\Program Files'       a path with a space, quoted for the space
+    find s:"\x1b[0m"                an escape sequence, opted into
+
+From there:
+
+1. Adjacent runs concatenate, so the forms mix freely within one argument. That
+   is a plain concatenation of literals, as in any language that has more than
+   one kind of them:
+
+       find s:'C:\Users'"\0"       a raw path with a NUL after it
+       find s:'a'"\t"'b'           tab between two raw runs
+
+   A prefix may sit inside or outside the quotes: "s:abc" and s:"abc" are the
+   same thing.
+
+2. There is no escape outside of double quotes, not even \" and \'. A quote is
+   written by using the other kind: "'" for an apostrophe, '"' for a double
+   quote. The POSIX 'it'\''s' idiom does not apply, since the backslash is data
+   here; it is 'it'"'"'s' instead.
+
+3. An unknown escape is an error. "C:\dir" names \d and stops;
+   it is written 'C:\dir' or "C:\\dir".
+
+4. An unterminated quote is an error.
+
+5. Empty quotes produce no argument rather than an empty one. `find ''` sees
+   nothing at all.
+
+6. Wildcards are a product of their own and not part of the quoting process.
+
+Escapes are resolved where the quotes are read, in the same pass, so an
+argument is bytes rather than text:
+
+  utils.Argument    immutable(ubyte)[] data, quotes removed and escapes
+                    resolved, plus a .text() that validates UTF-8 and throws
+                    if the bytes are not.
+
+One pass also means the escape rules cannot differ per command, since they are
+applied before a command is chosen. "\xff" resolves to one byte for find and
+for diff-file alike, whether or not the command can do anything with it.
+
+*
+* EXPECTATIONS
+*
+
+These are the cases the design is pinned to. The executable copies live in the
+unittests of utils.d (splitting and escapes alone), patterns.d (prefixes alone),
+and the unittest at the end of patterns.d (both, by typed command line).
+
+  TYPED                            NEEDLE (or result)
+  find s:a\tb                      'a' 5C 't' 'b'      raw
+  find s:'a\tb'                    'a' 5C 't' 'b'      raw, quotes buy whitespace
+  find s:"a\tb"                    'a' 09 'b'          C string
+  find s:C:\Users                  C:\Users            no doubling, no quoting
+  find s:'C:\Example Space\2'      C:\Example Space\2  quoted only for the space
+  find s:"C:\\Example Space\\2"    C:\Example Space\2  C string, so doubled
+  find s:C:\                       C:\                 needle ending in backslash
+  find s:'C:\'                     C:\                 ...in any of the three
+  find s:"C:\\"                    C:\                    quoting forms
+  find s:C:\\Users                 C:\\Users           raw, so two is two
+  find s:\x1b[0m                   5C 'x' '1' 'b' ...  raw, so not an escape
+  find s:"\x1b[0m"                 1B '[' '0' 'm'      C string, so it is
+  find s:"C:\Users"                error, unknown escape \U
+  find s:"abc\"                    error, unterminated quote
+  find s:'C:\Users'"\0"            C:\Users 00         concatenated per run
+  find s:C:\dir"a b"               C:\dira b           ...same, no rule broken
+  find s:'it'"'"'s'                it's                a quote needs no escape
+  find x:00 * x:FF                 00 <any> FF
+  find s:*                         '*'                 prefixed, so data
+  find '*'                         <any run>           quoting does not matter
+  find "quoted"                    error, unknown prefix; quotes are not a type
+  find ''                          no argument at all, can't search nothing
+  find s:'abc                      error, unterminated quote
+  diff-file 'C:\dump.bin'          opens C:\dump.bin   raw, so no escaping
+  diff-file "C:\\dump.bin"         opens C:\dump.bin   C string, so doubled
+  diff-file "C:\dump.bin"          error, unknown escape \d
+  save-as "dump\x2Etxt"            saves dump.txt      escapes are not pattern-only
+  save-as "\xff"                   error, argument is not valid UTF-8 text
+
+*
+* RATIONALE
+*
+
+None of the above is forced. Why each of them, once:
+
+- An argument is bytes because escapes are resolved before a command sees it,
+  and resolving escapes rules out text as the type. "\0" and "\xff" are not
+  valid UTF-8, and an argument flows into every command, into status messages,
+  and into the logger. A command that wants text asks for it and takes the
+  exception; a command that wants bytes takes the bytes and never has to care.
+  Filenames on POSIX are byte strings anyway, so this is not only a pattern's
+  problem. This also allows for commands that work with data to see data as-is.
+
+- Escapes resolve in one pass, while the quotes are being read, because that is
+  the only place that still knows which quote a byte came out of. Carrying the
+  quoting onward instead was tried, first as one flag per argument, which has to
+  pick a meaning for s:C:\dir"a b" or refuse it, then as a flag per span, which
+  works but makes every consumer walk spans and offset around its own prefix.
+  Resolving on the spot deletes both and benefits all commands.
+
+- One pass is also why the escape rules cannot differ per command: the line is
+  read before a command is chosen. What that costs is diff-file "C:\dir", which
+  is an unknown escape rather than a path.
+
+- An unknown escape is an error. One pass means one policy for every command,
+  so it may as well be the obvious one. A compiler stops on invalid escapes,
+  because it's clear it's an invalid combination of text for the special
+  double-quote text.
+
+- Unquoted text is raw with no exceptions, not even \" and \'. That costs the
+  usual way of writing a quote without quoting, and buys back a rule with
+  nothing attached to it: outside of double quotes, a backslash is a byte. The
+  other kind of quote is how a quote is written, which only works because runs
+  concatenate. Otherwise, making all strings interpreted would lead to
+  frustration when looking for a single quote or backslash. Searching for '"',
+  "\"", '"', and "\'" is still viable.
+
+- An unterminated quote is an error. The line was not finished being typed, and
+  guessing where it ended would silently run half a command. Silently accepting
+  it would be costlier both in implementation and headaches/confusion.
+
+- Empty quotes produce no argument rather than an empty one. No command here
+  distinguishes "" from absent, and dropping keeps 'find ""' an obvious
+  "Need search" instead of an obscure empty needle. Not pure C string, so no
+  null termination.
+
+- Wildcards do not consult quoting at all, though they briefly did. They are
+  matched as whole arguments before prefixes, so anything with a prefix is
+  already data, and knowing how * had been quoted bought nothing but making
+  find '*' an error instead of a glob. Wildcards are a product of prefixes,
+  not quoting and escapes.
+
+- Inside double quotes, a backslash covers the character after it while the
+  closing quote is being looked for, before the escape itself is decoded. That
+  is what lets s:"C:\\" work: otherwise the second backslash escapes the closing
+  quote, eats its own terminator, and the argument runs to end of line as an
+  unterminated quote.
+
+- Argument does not implicitly convert to its text, and .text is a function that
+  can throw rather than a field. Bytes are not text here; an alias this would
+  let an argument decay into a string overload with the validation skipped, and
+  a command that only ever wanted bytes should not pay for a check it did not
+  ask for. utils.texts() is for unittests, where the check is the point.
+
+- Commands look their own name up as bytes (view.prompt_command). No command is
+  named something that is not text, so bytes that are not simply miss the
+  lookup, and "command not found" beats complaining about the encoding of
+  something that was only mistyped.
+
+********************************************************************************
 * DOCUMENT EDITOR
 ********************************************************************************
 
