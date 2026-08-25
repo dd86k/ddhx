@@ -371,6 +371,108 @@ or give it empty input.
 Some commands require arguments. If omitted, the editor will prompt for the
 missing arguments, or continue if there is an active selection.
 .
+.SS Quoting
+Command lines are split into arguments on whitespace. Quoting style then selects
+how the text is read, the same way it does in a programming language, and the
+two quotes buy two independent things:
+.TS
+l lb lb.
+	protects whitespace	escape sequences
+\fITEXT\fR	no	no
+\fB'\fITEXT\fB'\fR	yes	no
+\fB\(dq\fITEXT\fB\(dq\fR	yes	yes
+.TE
+.PP
+Text is therefore raw unless it is double quoted. This holds for every command
+and not only for patterns, so
+.B \(dq\ex1b\(dq
+is one byte wherever it is typed.
+.TP
+.BI ' TEXT '
+Every character up to the closing quote is taken as-is, backslashes and double
+quotes included. A single quote cannot be written inside. Concatenating
+different quote types is still allowed.
+.TP
+.BI \(dq TEXT \(dq
+Read as a C string, so escape sequences are interpreted and a literal backslash
+must be doubled. A backslash covers the character after it, so an argument may
+end on a backslash
+.RB ( "find s:\(dqC:\e\e\(dq" ).
+The sequences are
+.BR \ea ,
+.BR \eb ,
+.BR \ee ,
+.BR \ef ,
+.BR \en ,
+.BR \er ,
+.BR \et ,
+.BR \ev ,
+.BR \e\e ,
+.BR \e' ,
+.BR \e\(dq ,
+.BR \e? ,
+octal
+.RB ( \e0 ,
+.BR \e12 ,
+.BR \e377 ,
+up to three digits), and hexadecimal
+.RB ( \ex0 ,
+.BR \ex1b ,
+one or two digits).
+.IP
+A backslash followed by anything else is an error, as is a hexadecimal escape
+followed by a third hexadecimal digit, since
+.B \ex1bff
+would be ambiguous with literal text; use single quotes for text that is meant
+to keep its backslashes, and separate patterns
+.RB ( "s:\(dq\ex1b\(dq s:ff" )
+or the
+.B x:
+prefix for an exact byte. Neither applies to raw or single quoted text, where a
+backslash is data.
+.PP
+Adjacent sections join into one argument, each read on its own terms, so the
+forms may be mixed freely and
+.B "find s:'C:\eUsers'\(dq\e0\(dq"
+is a raw path with a NUL after it. A pattern prefix may therefore sit inside or
+outside the quotes.
+.PP
+There is no escape sequence outside of double quotes, so a quote is written by
+using the other kind of quote:
+.B "find s:'it'\(dq'\(dq's'"
+and
+.B "find s:say'\(dq'hi'\(dq'"
+each join into one argument. An unquoted backslash is data, so the shell idiom
+.B 'it'\e''s'
+does not apply here.
+.PP
+A path is therefore typed as a path, raw
+.RB ( "find s:C:\eUsers" ", " "diff\-file C:\edump.bin" )
+or single quoted if it contains a space
+.RB ( "find s:'C:\eExample Space\e2'" ", " "diff\-file 'C:\eMy Dumps\e1.bin'" ),
+while double quoting it asks for the backslashes to be doubled
+.RB ( "diff\-file \(dqC:\e\edump.bin\(dq" ).
+Escape sequences are opted into the same way
+.RB ( "find s:\(dq\ex1b[0m\(dq" ).
+.PP
+Quoting does not apply to the wildcards
+.B *
+and
+.BR ? ,
+which are matched as whole arguments, so a pattern prefix is all it takes to ask
+for one as data
+.RB ( "find s:*" ).
+.PP
+An argument is bytes, not text, so an escape may produce a byte that is not
+valid UTF-8. Commands that need text
+.RB ( "save\-as \(dq\exff\(dq" )
+report that the argument is not text; commands that take data are unaffected.
+.PP
+An unterminated quote is an error. Empty quotes produce no argument at all
+rather than an empty one, so
+.B find ''
+behaves as though no pattern were given.
+.
 .SS Navigation Commands
 .TP
 .BI goto " ADDRESS"
@@ -710,16 +812,45 @@ Octal unsigned integer.
 Example:
 .BR "o:377" ", " "0o377" .
 .TP
-.BI s: STRING "\fR, \fP \(dq" STRING \(dq
-String (currently ASCII only). Quoted strings need a terminator.
+.BI s: STRING
+String (currently UTF-8 only).
 Example:
-.BR "s:hello" ", " "\(dqtest\(dq" .
+.BR "s:hello" .
+.IP
+Quotes are the prompt's syntax, not a pattern type (see
+.BR Quoting ),
+so the
+.B s:
+prefix is always required:
+.B find \(dqtest\(dq
+is an error, while
+.BR "find s:\(dqtest\(dq" ,
+.BR "find s:'test'" ,
+and
+.B find s:test
+all search for that text.
+.IP
+The text is raw, taken byte for byte as typed, so
+.B find s:C:\eUsers
+needs no escaping. Double quoting it instead marks it as a C string and
+interprets escape sequences; see
+.B Quoting
+for the list and the rules. Quoting applies per section, so the two forms may be
+mixed in one pattern.
+Examples:
+.BR "s:\(dqend\e0\(dq" ", " "s:\(dq\er\en\(dq" ", " "s:\(dq\ex1b[0m\(dq" ", " "s:C:\eUsers" ", " "s:'C:\eUsers'\(dq\e0\(dq" .
 .TP
 .B ?
-Match any single byte (wildcard).
+Match any single byte (wildcard). Only a bare argument is a wildcard, so give
+it a prefix
+.RB ( "s:?" )
+to search for the character instead.
 .TP
 .B *
-Match zero or more bytes (wildcard).
+Match zero or more bytes (wildcard). Only a bare argument is a wildcard, so
+give it a prefix
+.RB ( "s:*" )
+to search for the character instead.
 .PP
 Supported commands:
 .BR find ,
