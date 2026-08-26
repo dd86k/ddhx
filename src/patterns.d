@@ -33,7 +33,7 @@ enum PatternType
     bytes,    /// Literal bytes, as written ("x:", "0x").
     text,     /// Literal bytes, subject to the character set ("s:").
     scalar,   /// An integer encoded into bytes ("u8:", "x16:", "i32:", ...).
-    floating, /// An IEEE-754 value encoded into bytes ("f32:", "f64:").
+    floating, /// A float encoded into bytes ("f32:", "f64:", "f80:").
 }
 
 /// Everything a prefix decides about its argument.
@@ -41,7 +41,7 @@ private struct PatternSpec
 {
     PatternType type;
     int radix;    /// Integer scalar radix: 16, 10, or 8. Floats parse their own literal.
-    size_t width; /// Scalar size in bytes: 1, 2, 4, or 8 (4 or 8 for floats).
+    size_t width; /// Scalar size in bytes: 1, 2, 4, or 8 (4, 8, or 10 for floats).
     bool signed;  /// Integer scalar takes a leading '-' and encodes two's complement.
 }
 private struct Prefix { const(char)[] str; PatternSpec spec; }
@@ -57,7 +57,7 @@ Prefix patternpfx(const(char)[] input)
         return pfx;
 
     // TODO: "re:" for Regular Expressions
-    // TODO: "f16:"/"bf16:"/"f80:" exotic IEEE-adjacent floats
+    // TODO: "f16:"/"bf16:" exotic IEEE-adjacent floats
     // TODO: "ibm32:"/"ibm64:" (System/360 hex floats, as in SEG-Y and SAS
     //       transport files) and "vax32:"/"vaxg64:" if anyone asks. These get
     //       prefixes rather than a setting: a format is what the file is, and
@@ -100,9 +100,10 @@ Prefix patternpfx(const(char)[] input)
         { "o16:", { PatternType.scalar, 8, 2 } },
         { "o32:", { PatternType.scalar, 8, 4 } },
         { "o64:", { PatternType.scalar, 8, 8 } },
-        // IEEE-754 binary floats
+        // IEEE-754 binary floats, plus x87's 80-bit (long double)
         { "f32:", { PatternType.floating, 10, 4 } },
         { "f64:", { PatternType.floating, 10, 8 } },
+        { "f80:", { PatternType.floating, 10, 10 } },
     ];
     foreach (prefix; prefixes)
     {
@@ -143,6 +144,7 @@ unittest
     assert(patternpfx("i64:-1")   == Prefix("-1",   PatternSpec(PatternType.scalar, 10, 8, true)));
     assert(patternpfx("f32:1.0")  == Prefix("1.0",  PatternSpec(PatternType.floating, 10, 4)));
     assert(patternpfx("f64:-1.0") == Prefix("-1.0", PatternSpec(PatternType.floating, 10, 8)));
+    assert(patternpfx("f80:1.0")  == Prefix("1.0",  PatternSpec(PatternType.floating, 10, 10)));
 
     // Quotes are not a prefix, they are the shell's business
     assert(patternpfx(`"hello"`) == Prefix(`"hello"`));
@@ -296,6 +298,18 @@ ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(u
     return encode(value, spec.width, endian);
 }
 
+/// An x87 80-bit extended value, split the way the format stores it.
+///
+/// The odd one out among the float formats: its significand carries the integer
+/// bit explicitly, where binary32 and binary64 leave it implied. So a normal has
+/// bit 63 set, and clearing it does not halve the value, it makes an "unnormal"
+/// the 387 and everything after it reject.
+private struct Ext80
+{
+    ulong  significand; /// 64 bits, integer bit (bit 63) included.
+    ushort signexp;     /// Sign in bit 15, biased exponent in bits 0-14.
+}
+
 /// A float constant named by its bits rather than by its value.
 ///
 /// The NaNs have to be named this way: a float holding a signaling NaN is not
@@ -307,6 +321,7 @@ private struct FloatBits
     string name;
     ulong  f32; /// The binary32 bit pattern.
     ulong  f64; /// The binary64 bit pattern.
+    Ext80  f80; /// The x87 extended bit pattern.
 }
 // IEEE-754 recommends the mantissa's top bit for quiet, which is what x86, ARM,
 // SPARC, POWER and RISC-V do; MIPS before r6 and PA-RISC invert it. ddhx spells
@@ -331,26 +346,38 @@ private struct FloatBits
 // spelling of "-qnan" rather than a fifth value, and it earns a name by being
 // the NaN most likely to be sitting in a dump: ARM defaults to the positive
 // one, so this is not a value everything produces, only one everything meets.
+//
+// The 80-bit column keeps its integer bit set throughout: an infinity or a NaN
+// without it is a "pseudo-infinity" or "pseudo-NaN", which the 8087 and 287
+// produced and every x87 since treats as invalid. The quiet bit is the one
+// below it, bit 62.
 private static immutable FloatBits[] FLOAT_BITS = [
-    { "inf",        0x7f80_0000, 0x7ff0_0000_0000_0000 },
-    { "nan",        0x7fc0_0000, 0x7ff8_0000_0000_0000 },
-    { "qnan",       0x7fc0_0000, 0x7ff8_0000_0000_0000 },
-    { "snan",       0x7f80_0001, 0x7ff0_0000_0000_0001 },
-    { "snan_hi",    0x7fa0_0000, 0x7ff4_0000_0000_0000 },
-    { "indefinite", 0xffc0_0000, 0xfff8_0000_0000_0000 },
+    { "inf",        0x7f80_0000, 0x7ff0_0000_0000_0000, { 0x8000_0000_0000_0000, 0x7fff } },
+    { "nan",        0x7fc0_0000, 0x7ff8_0000_0000_0000, { 0xc000_0000_0000_0000, 0x7fff } },
+    { "qnan",       0x7fc0_0000, 0x7ff8_0000_0000_0000, { 0xc000_0000_0000_0000, 0x7fff } },
+    { "snan",       0x7f80_0001, 0x7ff0_0000_0000_0001, { 0x8000_0000_0000_0001, 0x7fff } },
+    { "snan_hi",    0x7fa0_0000, 0x7ff4_0000_0000_0000, { 0xa000_0000_0000_0000, 0x7fff } },
+    { "indefinite", 0xffc0_0000, 0xfff8_0000_0000_0000, { 0xc000_0000_0000_0000, 0xffff } },
 ];
 
 /// A float constant a pattern can name instead of spelling out.
 ///
-/// Both widths are named because half of these are properties of the format
+/// Every width is named because half of these are properties of the format
 /// rather than numbers: binary32's largest value is not binary64's largest
 /// narrowed down, that one being infinity. The mathematical ones are the same
-/// number twice, narrowed once by the compiler.
+/// number at three precisions, the first two narrowed by the compiler.
+///
+/// The 80-bit column is bits rather than a value because there is no host type
+/// to hold it: D's `real` is x87 extended on x86 and a plain double on AArch64,
+/// so a value there would make "f80:pi" mean one thing on a laptop and another
+/// on a phone. These are written out instead, and the unittest below re-derives
+/// them from decimal digits so the table is checked rather than trusted.
 private struct FloatConstant
 {
     string name;
     float  f32; /// The value at binary32.
     double f64; /// The value at binary64.
+    Ext80  f80; /// The bit pattern at x87 extended.
 }
 // The constants worth a name are the ones nobody recognizes as hex: the maths
 // that gets compiled into binaries, and the edges of the format that get used
@@ -360,20 +387,369 @@ private struct FloatConstant
 // takes, and against the whole literal, so nothing here can shadow a number.
 private static immutable FloatConstant[] FLOAT_CONSTANTS = [
     // Maths. PHI is not in std.math, so it is written out to the digits a
-    // double holds; the rest are narrowed by the compiler, once
-    { "pi",    cast(float)PI,          PI },
-    { "e",     cast(float)E,           E },
-    { "tau",   cast(float)(2 * PI),    2 * PI },
-    { "sqrt2", cast(float)SQRT2,       SQRT2 },
-    { "phi",   1.6180339887498948482f, 1.6180339887498948482 },
+    // double holds; the rest are narrowed by the compiler, once. The 80-bit
+    // column is the same number rounded to a 64-bit significand, and "pi" there
+    // is the constant FLDPI loads, which is how one gets into a file this way
+    { "pi",    cast(float)PI,          PI,          { 0xc90f_daa2_2168_c235, 0x4000 } }, // 64-bit truncated, not 66-bit
+    { "e",     cast(float)E,           E,           { 0xadf8_5458_a2bb_4a9b, 0x4000 } },
+    { "tau",   cast(float)(2 * PI),    2 * PI,      { 0xc90f_daa2_2168_c235, 0x4001 } },
+    { "sqrt2", cast(float)SQRT2,       SQRT2,       { 0xb504_f333_f9de_6484, 0x3fff } },
+    { "phi",   1.6180339887498948482f, 1.6180339887498948482,
+                                                    { 0xcf1b_bcdc_bfa5_3e0b, 0x3fff } },
     // The format's own edges. "min" is the smallest normal, the C name for it
     // being FLT_MIN, and the subnormal below it is named in full
-    { "max",        float.max,                double.max },
-    { "min",        float.min_normal,         double.min_normal },
-    { "epsilon",    float.epsilon,            double.epsilon },
+    { "max",        float.max,                double.max, { 0xffff_ffff_ffff_ffff, 0x7ffe } },
+    { "min",        float.min_normal,         double.min_normal, { 0x8000_0000_0000_0000, 0x0001 } },
+    { "epsilon",    float.epsilon,            double.epsilon, { 0x8000_0000_0000_0000, 0x3fc0 } }, // 2^-63, one bit of 64
     { "denorm_min", float.min_normal * float.epsilon,
-                    double.min_normal * double.epsilon },
+                    double.min_normal * double.epsilon,
+                    { 0x0000_0000_0000_0001, 0x0000 } },
 ];
+
+// Lay out an x87 extended value: the significand, then the sign and exponent.
+//
+// Nothing but a little-endian machine has ever stored one natively, so big
+// endian here means what it means for every other scalar, the same ten bytes in
+// the other order. That is what a byte-swapped record holds, and it keeps the
+// `endian` setting meaning one thing across every prefix.
+private
+ubyte[] encode80(Ext80 value, Endian endian)
+{
+    return endian == Endian.littleEndian
+        ? encode(value.significand, 8, endian) ~ encode(value.signexp, 2, endian)
+        : encode(value.signexp, 2, endian) ~ encode(value.significand, 8, endian);
+}
+unittest
+{
+    with (Endian)
+    {
+        // 1.0 is the integer bit alone at the bias
+        assert(encode80(Ext80(0x8000_0000_0000_0000, 0x3fff), littleEndian)
+            == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x3f ]);
+        assert(encode80(Ext80(0x8000_0000_0000_0000, 0x3fff), bigEndian)
+            == [ 0x3f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        // ...and the whole object reverses, byte for byte
+        assert(encode80(Ext80(0x0123_4567_89ab_cdef, 0x1234), littleEndian)
+            == [ 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01, 0x34, 0x12 ]);
+        assert(encode80(Ext80(0x0123_4567_89ab_cdef, 0x1234), bigEndian)
+            == [ 0x12, 0x34, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef ]);
+        assert(encode80(Ext80.init, littleEndian).length == 10);
+    }
+}
+
+// Turn a decimal literal into the x87 extended value it names, exactly.
+//
+// This is integer arithmetic rather than a parse into a host float, because
+// there is no host float to parse into: D's `real` is x87 extended on x86 and a
+// plain double on AArch64, so std.conv would answer differently per machine.
+// Nor is a double good enough as a stepping stone, being eleven bits short of
+// the format: "3.14159265358979323846" widens to 4000 C90FDAA22168C000, where
+// the value it spells is 4000 C90FDAA22168C235, the one FLDPI loads. A needle
+// that misses by the last bits is a needle that finds nothing.
+//
+// A literal is an exact rational, digits times a power of ten, so it is built
+// as one: numerator over denominator, divided to a 64-bit significand, and
+// rounded to nearest with ties to even, which is the rounding IEEE-754 asks of
+// every conversion. Nothing is approximated on the way, so the same literal is
+// the same ten bytes on every host, and the format's full range comes with it
+// (f80:1e400 has no double to be a stepping stone anyway).
+private
+Ext80 decimal80(const(char)[] input, bool negative, immutable(ubyte)[] arg)
+{
+    import core.bitop : bsr;
+    import std.bigint : BigInt;
+
+    enum ushort SIGN      = 0x8000; // sign, which lives in the exponent word
+    enum int    BIAS      = 16383;  // what the exponent field is offset by
+    enum int    SUBNORMAL = 16445;  // exponent of a subnormal's last bit, 16382 + 63
+    // The magnitudes worth doing arithmetic for. The largest finite value is
+    // 1.19e4932 and the smallest subnormal 3.65e-4951, so a magnitude outside
+    // this cannot be represented and is answered without building a power of
+    // ten nobody could have meant (10^^1000000 is not a division to attempt)
+    enum long MAG_MAX = 4933;
+    enum long MAG_MIN = -4950;
+    enum int  EXP_LIMIT = 1_000_000; // where an exponent stops being counted
+
+    // A word out of a positive BigInt. std.bigint only grew getDigit in 2.087,
+    // which is newer than compilers still in service (GDC 11 carries the 2.076
+    // front-end), so the words are shifted out instead: toLong is as old as
+    // BigInt itself, and 32 bits at a time always fits in what it returns
+    static uint word(BigInt value, size_t index)
+    {
+        BigInt digit = value >> (index * 32);
+        digit -= (digit >> 32) << 32; // what is above the word saturates toLong
+        return cast(uint)digit.toLong();
+    }
+    // Low 64 bits of a positive BigInt, whose value fits in them at both uses.
+    static ulong low64(BigInt value)
+    {
+        return (cast(ulong)word(value, 1) << 32) | word(value, 0);
+    }
+
+    // Bit length of a positive BigInt, which is where the scaling starts below.
+    static size_t bitlength(BigInt value)
+    {
+        size_t words = value.uintLength();
+        if (words == 0)
+            return 0;
+        uint top = word(value, words - 1);
+        return top == 0 ? 0 : (words - 1) * 32 + bsr(top) + 1;
+    }
+
+    // The literal is digits and a point and an exponent, and nothing else.
+    // Names had their chance above, and std.conv's extras are not part of this
+    // grammar: "1_0" is two answers to one question, "0x1p3" is bytes said the
+    // long way, and "infinity" is spelled "inf" here
+    char[] digits;
+    size_t fraction; // how many of them fell after the point
+    size_t i;
+    bool point;
+    for (; i < input.length; ++i)
+    {
+        char c = input[i];
+        if (c >= '0' && c <= '9')
+        {
+            digits ~= c;
+            if (point)
+                ++fraction;
+            continue;
+        }
+        if (c == '.' && point == false)
+        {
+            point = true;
+            continue;
+        }
+        break;
+    }
+    if (digits.length == 0)
+        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+
+    int exponent;
+    if (i < input.length && (input[i] == 'e' || input[i] == 'E'))
+    {
+        bool exneg;
+        if (++i < input.length && (input[i] == '+' || input[i] == '-'))
+            exneg = input[i++] == '-';
+        if (i >= input.length || input[i] < '0' || input[i] > '9')
+            throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+        for (; i < input.length && input[i] >= '0' && input[i] <= '9'; ++i)
+            if (exponent < EXP_LIMIT) // ...past which it stops counting, rather
+                exponent = exponent * 10 + (input[i] - '0'); // than wrapping
+        if (exneg)
+            exponent = -exponent;
+    }
+    // Taking the part that parsed and leaving the rest is what every other type
+    // here refuses, so "f80:1.0f" is refused too
+    if (i != input.length)
+        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+
+    Ext80 result;
+    if (negative)
+        result.signexp = SIGN;
+
+    // Leading zeros are not significant digits, and dropping them is what makes
+    // the magnitude below a count rather than a guess
+    size_t lead;
+    while (lead < digits.length && digits[lead] == '0')
+        ++lead;
+    const(char)[] significant = digits[lead..$];
+    if (significant.length == 0) // a zero, however it was spelled, sign kept
+        return result;
+
+    // value = significant * 10^^power, and 10^^(magnitude-1) <= value < 10^^magnitude
+    int power = exponent - cast(int)fraction;
+    long magnitude = cast(long)significant.length + power;
+    if (magnitude > MAG_MAX)
+        throw new Exception(text(MSG_VALUE_OUT_OF_RANGE, printable(arg)));
+    if (magnitude < MAG_MIN) // under half the smallest subnormal, so it is zero,
+        return result;       // which is what it rounds to at the other widths too
+
+    BigInt numerator   = BigInt(significant);
+    BigInt denominator = BigInt(1);
+    if (power > 0)
+        numerator *= BigInt(10) ^^ power;
+    else if (power < 0)
+        denominator = BigInt(10) ^^ -power;
+
+    // Scale until the quotient is exactly 64 bits, which is the whole
+    // significand: x87 stores the integer bit, so there is nothing implied to
+    // put back afterwards. The first guess is off by at most a bit either way
+    int shift = 63 - (cast(int)bitlength(numerator) - cast(int)bitlength(denominator));
+    BigInt top    = shift > 0 ? numerator   << shift  : numerator;
+    BigInt bottom = shift < 0 ? denominator << -shift : denominator;
+    BigInt quotient = top / bottom;
+    while (bitlength(quotient) > 64)
+    {
+        bottom <<= 1;
+        --shift;
+        quotient = top / bottom;
+    }
+    while (bitlength(quotient) < 64)
+    {
+        top <<= 1;
+        ++shift;
+        quotient = top / bottom;
+    }
+
+    // value = quotient * 2^^-shift, with the quotient at 64 bits, so the
+    // unbiased exponent is what is left over
+    int biased = 63 - shift + BIAS;
+    if (biased > 0) // a normal, and the rounding is onto those 64 bits
+    {
+        ulong significand = low64(quotient);
+        BigInt twice = (top - quotient * bottom) << 1;
+        if (twice > bottom || (twice == bottom && (significand & 1)))
+        {
+            if (significand == ulong.max) // rounded up into a wider exponent
+            {
+                significand = 1UL << 63;
+                ++biased;
+            }
+            else
+                ++significand;
+        }
+        // The exponent field is full at 0x7FFF, and that encoding is spoken for
+        // by the infinities and the NaNs, so there is nothing above this
+        if (biased >= 0x7fff)
+            throw new Exception(text(MSG_VALUE_OUT_OF_RANGE, printable(arg)));
+        result.significand = significand;
+        result.signexp |= cast(ushort)biased;
+        return result;
+    }
+
+    // The exponent has bottomed out, so what is left is a subnormal: the value
+    // rounds onto the fixed grid of 2^^-16445 rather than onto 64 significant
+    // bits. It is rounded from the original ratio and not from the quotient
+    // above, since rounding a value twice is how it lands a unit from where it
+    // belongs (0.5 to even twice over, and 2.5 is 2 by way of 3)
+    BigInt scaled  = numerator << SUBNORMAL;
+    BigInt grid    = scaled / denominator;
+    ulong subnormal = low64(grid); // under 2^^63, the branch says so
+    BigInt over = (scaled - grid * denominator) << 1;
+    if (over > denominator || (over == denominator && (subnormal & 1)))
+        ++subnormal;
+
+    // Rounding up can land exactly on 2^^63, which is no longer a subnormal but
+    // the smallest normal. Its encoding is those same bits with the exponent
+    // field at one, so the integer bit says which of the two this became
+    result.significand = subnormal;
+    result.signexp |= cast(ushort)(subnormal >> 63);
+    return result;
+}
+unittest
+{
+    static Ext80 dec(const(char)[] literal, bool negative = false)
+    {
+        return decimal80(literal, negative, null);
+    }
+    static void invalid(string literal)
+    {
+        try
+            cast(void)decimal80(literal, false, null);
+        catch (Exception)
+            return;
+
+        import std.stdio : stderr, writeln;
+        stderr.writeln("Failed to throw with: ", literal);
+        assert(false, "decimal80 test failed");
+    }
+
+    // These are checked against what glibc's strtold makes of the same literal
+    // on an x86 host, which is a conversion done in exact arithmetic like this
+    // one and by someone else. Being right on this host is not the point; being
+    // right the same way everywhere is, and that is what doing it in integers
+    // rather than in a `real` buys
+    enum ulong ONE = 0x8000_0000_0000_0000; // the integer bit, nothing after it
+
+    // A power of two is the integer bit and an exponent
+    assert(dec("1")     == Ext80(ONE, 0x3fff));
+    assert(dec("1.0")   == Ext80(ONE, 0x3fff));
+    assert(dec("1.")    == Ext80(ONE, 0x3fff));
+    assert(dec("0001.000") == Ext80(ONE, 0x3fff));
+    assert(dec("2")     == Ext80(ONE, 0x4000));
+    assert(dec("0.5")   == Ext80(ONE, 0x3ffe));
+    assert(dec(".5")    == Ext80(ONE, 0x3ffe));
+    assert(dec("65536") == Ext80(ONE, 0x400f));
+    assert(dec("1.5")   == Ext80(0xc000_0000_0000_0000, 0x3fff));
+    assert(dec("100")   == Ext80(0xc800_0000_0000_0000, 0x4005));
+
+    // Zero keeps its sign and nothing else, however it was spelled
+    assert(dec("0")       == Ext80(0, 0));
+    assert(dec("0.0")     == Ext80(0, 0));
+    assert(dec("000.000") == Ext80(0, 0));
+    assert(dec("0e999")   == Ext80(0, 0));
+    assert(dec("0", true) == Ext80(0, 0x8000));
+
+    // The sign is a field of the exponent word here, not the top of the value
+    assert(dec("1.0", true) == Ext80(ONE, 0xbfff));
+    assert(dec("0.5", true) == Ext80(ONE, 0xbffe));
+
+    // The headline: 20 digits of pi land on the constant FLDPI loads, where the
+    // same literal through a double would stop eleven bits short at ...C000
+    assert(dec("3.14159265358979323846") == Ext80(0xc90f_daa2_2168_c235, 0x4000));
+
+    // ...and the significand really is 64 bits wide, not a double's 53
+    assert(dec("1.0000000000000000001") == Ext80(0x8000_0000_0000_0001, 0x3fff));
+    assert(dec("9007199254740993")      == Ext80(0x8000_0000_0000_0400, 0x4034)); // 2^53+1
+    assert(dec("18446744073709551615")  == Ext80(0xffff_ffff_ffff_ffff, 0x403e)); // 2^64-1
+    assert(dec("18446744073709551616")  == Ext80(ONE, 0x403f));
+
+    // Round to nearest, ties to even, as every other conversion does
+    assert(dec("0.1")  == Ext80(0xcccc_cccc_cccc_cccd, 0x3ffb));
+    assert(dec("1e-1") == Ext80(0xcccc_cccc_cccc_cccd, 0x3ffb));
+    assert(dec("0.30000000000000000000000000001")
+                       == Ext80(0x9999_9999_9999_999a, 0x3ffd));
+    // ...including when rounding up carries into the next exponent
+    assert(dec("1.99999999999999999999999999") == Ext80(ONE, 0x4000));
+
+    // The exponent reaches where no double goes, which is half of why a file
+    // holds one of these at all
+    assert(dec("1e400")  == Ext80(0xda76_3fc8_cb9f_f9e6, 0x452f));
+    assert(dec("1e-400") == Ext80(0x95fe_7e07_c91e_fafa, 0x3ace));
+    assert(dec("0.000000001e409") == dec("1e400")); // same value, said differently
+    assert(dec("1e4932") == Ext80(0xd72c_b2a9_5c7e_f6cd, 0x7ffe));
+    assert(dec("1e308")  == Ext80(0x8e67_9c2f_5e44_ff8f, 0x43fe));
+
+    // The format's own edges, by their digits rather than by name
+    assert(dec("1.1897314953572317650e4932")  == Ext80(0xffff_ffff_ffff_ffff, 0x7ffe));
+    assert(dec("3.36210314311209350626267781732175260259807934484647124E-4932")
+        == Ext80(ONE, 0x0001));
+    assert(dec("3.6451995318824746025e-4951") == Ext80(1, 0));
+
+    // Below the smallest normal the value rounds onto a fixed grid instead of
+    // onto 64 bits, which is what a subnormal is
+    assert(dec("1e-4950") == Ext80(3, 0));
+    assert(dec("1e-4951") == Ext80(0, 0)); // ...and under half a grid unit is zero
+    assert(dec("1e-4966") == Ext80(0, 0));
+    assert(dec("1e-4951", true) == Ext80(0, 0x8000)); // still signed
+    // ...and rounding up off the top of that grid is the smallest normal, which
+    // is the same bits with the exponent field at one
+    assert(dec("3.3621031431120935062626778173217526025980793448464712E-4932")
+        == Ext80(ONE, 0x0001));
+
+    // Past the top there is no encoding left: 0x7FFF is spoken for by the
+    // infinities and the NaNs, which have names of their own
+    invalid("1.2e4932");
+    invalid("1e4933");
+    invalid("1e99999");
+    invalid("1e999999999999999999"); // ...and an exponent nobody can mean is quick
+    assert(dec("1e-999999999999999999") == Ext80(0, 0));
+
+    // Digits, a point, and an exponent. Nothing else is a number here
+    invalid("");
+    invalid(".");
+    invalid("-1");   // the sign is the caller's, and it arrives separately
+    invalid("+1");
+    invalid("1.0f");
+    invalid("1.2.3");
+    invalid("1e");
+    invalid("1e+");
+    invalid("1e+x");
+    invalid("1 0");
+    invalid("abc");
+    invalid("inf");  // ...names are matched before this is ever called
+    invalid("0x1p3");
+}
 
 // Parse a float and encode its bit pattern, per what its prefix asked for.
 //
@@ -381,11 +757,13 @@ private static immutable FloatConstant[] FLOAT_CONSTANTS = [
 // lands in the needle is the bit pattern the value occupies in the file,
 // ordered by `endian`. So "f32:1.0" finds 00 00 80 3f, not the digits.
 //
-// "f32:" means IEEE-754 binary32 and "f64:" binary64, always, not "whatever
-// this host calls a float". A needle describes bytes in a file, and a file does
-// not change format because of the machine reading it, so the host is only the
-// courier: it is used to do the conversion because its floats happen to be that
-// format, and the static asserts below are what says so.
+// "f32:" means IEEE-754 binary32, "f64:" binary64, and "f80:" the 80-bit
+// extended x87 stores, always, not "whatever this host calls a float". A needle
+// describes bytes in a file, and a file does not change format because of the
+// machine reading it, so the host is only the courier: it is used to do the
+// binary32 and binary64 conversions because its floats happen to be those
+// formats, and the static asserts below are what says so. Nothing on the host
+// is that third format reliably, so f80: is done in integers (see decimal80).
 //
 // Machines that store floats some other way (VAX F/D/G, IBM System/360 hex
 // floating point, Cray) are not a reason to make "f32:" mean two things. They
@@ -406,7 +784,7 @@ ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable
     import std.math : isInfinity, isNaN;
     import std.string : icmp;
 
-    assert(spec.width == 4 || spec.width == 8);
+    assert(spec.width == 4 || spec.width == 8 || spec.width == 10);
 
     // If this ever fires, the host is one of the exotic machines above and the
     // unions below are converting to its format instead of to the file's. The
@@ -435,8 +813,10 @@ ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable
         return u.bits;
     }
 
-    enum ulong SIGN32 = 0x8000_0000;
-    enum ulong SIGN64 = 0x8000_0000_0000_0000;
+    enum ulong  SIGN32 = 0x8000_0000;
+    enum ulong  SIGN64 = 0x8000_0000_0000_0000;
+    enum ushort SIGN80 = 0x8000; // ...which lives in the exponent word, not the
+                                 // significand, x87 keeping the two apart
 
     // A constant is the whole literal, sign aside, so it can never be taken for
     // part of a number: the 'e' in "1e5" is an exponent, and "e" alone is not.
@@ -456,6 +836,13 @@ ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable
 
         // A sign can only add negativity here, never take it away, so
         // "-indefinite" agrees with what that name already is
+        if (spec.width == 10)
+        {
+            Ext80 value = special.f80;
+            if (negative)
+                value.signexp |= SIGN80;
+            return encode80(value, endian);
+        }
         ulong bits = spec.width == 8 ? special.f64 : special.f32;
         if (negative)
             bits |= spec.width == 8 ? SIGN64 : SIGN32;
@@ -469,6 +856,13 @@ ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable
         // Each width takes its own value, since half of these are properties of
         // the format rather than numbers: f32:max is the largest binary32,
         // which is not the largest binary64 narrowed (that one is infinity)
+        if (spec.width == 10)
+        {
+            Ext80 value = constant.f80;
+            if (negative)
+                value.signexp |= SIGN80;
+            return encode80(value, endian);
+        }
         return spec.width == 8
             ? encode(bits64(negative ? -constant.f64 : constant.f64), 8, endian)
             : encode(bits32(negative ? -constant.f32 : constant.f32), 4, endian);
@@ -480,9 +874,17 @@ ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable
     if (canFind(input, '_'))
         throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
 
+    // The 80-bit format has no host type to borrow, so its literal is converted
+    // in integers, exactly. The sign goes along separately, since it is a field
+    // of its own there rather than the top bit of the value
+    if (spec.width == 10)
+        return encode80(decimal80(name, negative, arg), endian);
+
     // NOTE: A value too large for a double comes back as a ConvException with
     //       no distinct type to catch, so it reads as an invalid number rather
-    //       than as an out of range one. Only f32 can tell the two apart.
+    //       than as an out of range one, on the older Phobos below as well.
+    //       Only f32 and f80 can tell the two apart, doing their own range
+    //       check.
     double value = void;
     try
         value = parse!double(input);
@@ -492,6 +894,14 @@ ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable
     // parse() stops at the first character it does not like and leaves the
     // rest behind, same as for integers ("f32:1.0f", "f64:infinity")
     if (input.length > 0)
+        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+
+    // ...and it is only recent Phobos that raises above: 2.100 and older, which
+    // is what GDC 12 ships, hand back an infinity for "1e999" instead. Every
+    // infinity ddhx spells is a name handled above ("infinity" is not one of
+    // them, and leaves "inity" for the check just made), so one arriving from a
+    // literal is a magnitude that did not fit, refused the same way on either
+    if (isInfinity(value))
         throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
 
     // Every NaN ddhx spells is in FLOAT_BITS above, sign included, so one
@@ -514,6 +924,7 @@ unittest
 {
     static immutable PatternSpec F32 = { PatternType.floating, 10, 4 };
     static immutable PatternSpec F64 = { PatternType.floating, 10, 8 };
+    static immutable PatternSpec F80 = { PatternType.floating, 10, 10 };
 
     // These are IEEE-754 encodings, spelled out because that is the contract:
     // they are what the needle is on any host, and a host whose floats are not
@@ -629,6 +1040,74 @@ unittest
         // The endian setting is not skipped on the way through the table
         assert(floating("pi",  F32, littleEndian, null) == [ 0xdb, 0x0f, 0x49, 0x40 ]);
         assert(floating("max", F32, littleEndian, null) == [ 0xff, 0xff, 0x7f, 0x7f ]);
+
+        // The 80-bit format is ten bytes and stores its integer bit, so a 1.0
+        // is that bit and an exponent rather than an exponent alone
+        assert(floating("1.0", F80, littleEndian, null)
+            == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x3f ]);
+        assert(floating("1.0", F80, bigEndian, null)
+            == [ 0x3f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("-1.0", F80, bigEndian, null)
+            == [ 0xbf, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("-0.0", F80, bigEndian, null)
+            == [ 0x80, 0x00, 0, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("1.0", F80, littleEndian, null).length == 10);
+
+        // The same names, on the same terms. An infinity or a NaN keeps the
+        // integer bit set, one without it being a pseudo-NaN the 387 rejects
+        assert(floating("inf",  F80, bigEndian, null)
+            == [ 0x7f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("-inf", F80, bigEndian, null)
+            == [ 0xff, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("nan",  F80, bigEndian, null)
+            == [ 0x7f, 0xff, 0xc0, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("qnan", F80, bigEndian, null) == floating("nan", F80, bigEndian, null));
+        assert(floating("snan", F80, bigEndian, null)
+            == [ 0x7f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0x01 ]);
+        assert(floating("snan_hi", F80, bigEndian, null)
+            == [ 0x7f, 0xff, 0xa0, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("indefinite", F80, bigEndian, null)
+            == [ 0xff, 0xff, 0xc0, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("indefinite", F80, littleEndian, null)
+            == floating("-nan", F80, littleEndian, null));
+        // ...and the quiet bit is bit 62, the one under the integer bit
+        assert((floating("snan",    F80, bigEndian, null)[2] & 0x40) == 0);
+        assert((floating("snan_hi", F80, bigEndian, null)[2] & 0x40) == 0);
+        assert((floating("qnan",    F80, bigEndian, null)[2] & 0x40) == 0x40);
+
+        // A constant at this width is 64 significant bits, so f80:pi is what
+        // FLDPI loads and not a double's pi with zeros after it
+        assert(floating("pi", F80, bigEndian, null)
+            == [ 0x40, 0x00, 0xc9, 0x0f, 0xda, 0xa2, 0x21, 0x68, 0xc2, 0x35 ]);
+        assert(floating("pi", F80, littleEndian, null)
+            == [ 0x35, 0xc2, 0x68, 0x21, 0xa2, 0xda, 0x0f, 0xc9, 0x00, 0x40 ]);
+        assert(floating("-pi", F80, bigEndian, null)
+            == [ 0xc0, 0x00, 0xc9, 0x0f, 0xda, 0xa2, 0x21, 0x68, 0xc2, 0x35 ]);
+        assert(floating("PI", F80, bigEndian, null) == floating("pi", F80, bigEndian, null));
+        // ...and a literal of the same digits agrees with the name, which is
+        // the whole reason the conversion is done in integers
+        assert(floating("3.14159265358979323846", F80, bigEndian, null)
+            == floating("pi", F80, bigEndian, null));
+        assert(floating("e", F80, bigEndian, null)
+            == [ 0x40, 0x00, 0xad, 0xf8, 0x54, 0x58, 0xa2, 0xbb, 0x4a, 0x9b ]);
+        assert(floating("tau", F80, bigEndian, null)
+            == [ 0x40, 0x01, 0xc9, 0x0f, 0xda, 0xa2, 0x21, 0x68, 0xc2, 0x35 ]);
+        assert(floating("sqrt2", F80, bigEndian, null)
+            == [ 0x3f, 0xff, 0xb5, 0x04, 0xf3, 0x33, 0xf9, 0xde, 0x64, 0x84 ]);
+        assert(floating("phi", F80, bigEndian, null)
+            == [ 0x3f, 0xff, 0xcf, 0x1b, 0xbc, 0xdc, 0xbf, 0xa5, 0x3e, 0x0b ]);
+
+        // The format's edges, which are its own and not a narrowing of anything
+        assert(floating("max", F80, bigEndian, null)
+            == [ 0x7f, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+        assert(floating("min", F80, bigEndian, null)
+            == [ 0x00, 0x01, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("epsilon", F80, bigEndian, null) // 2^-63, one bit in 64
+            == [ 0x3f, 0xc0, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("denorm_min", F80, bigEndian, null)
+            == [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01 ]);
+        assert(floating("-max", F80, bigEndian, null)
+            == [ 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
     }
 }
 
@@ -866,6 +1345,38 @@ unittest
     // Too large for a float, but not for the double it was parsed as
     assert(pat("f64:1e39").data.length   == 8);
 
+    // The 80-bit x87 extended, which is ten bytes and no host's float type
+    assert(pat("f80:1.0").data
+        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x3f ]);
+    assert(patbe("f80:1.0").data
+        == [ 0x3f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+    assert(pat("f80:-1.0").data
+        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0xbf ]);
+    assert(pat("f80:0.0").data           == [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]);
+    assert(pat("f80:-0.0").data          == [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80 ]);
+    assert(pat("f80:0.5").data
+        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xfe, 0x3f ]);
+    assert(pat("f80:1").data             == pat("f80:1.0").data);
+    assert(pat("f80:inf").data
+        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x7f ]);
+    assert(pat("f80:nan").data
+        == [ 0, 0, 0, 0, 0, 0, 0, 0xc0, 0xff, 0x7f ]);
+    assert(pat("f80:indefinite").data    == pat("f80:-nan").data);
+    assert(pat("f80:snan").data
+        == [ 0x01, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x7f ]);
+    assert(pat("f80:pi").data
+        == [ 0x35, 0xc2, 0x68, 0x21, 0xa2, 0xda, 0x0f, 0xc9, 0x00, 0x40 ]);
+    assert(pat("f80:max").data
+        == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x7f ]);
+
+    // Its literals carry 64 significant bits and its own exponent range, so
+    // neither the digits nor the magnitude have to fit in a double first
+    assert(pat("f80:3.14159265358979323846").data == pat("f80:pi").data);
+    assert(pat("f80:1e400").data
+        == [ 0xe6, 0xf9, 0x9f, 0xcb, 0xc8, 0x3f, 0x76, 0xda, 0x2f, 0x45 ]);
+    assert(pat("f80:1e-400").data.length == 10);
+    assert(pat("f80:1e4932").data.length == 10);
+
     // Named constants, for the values nobody recognizes as hex
     assert(pat("f32:pi").data            == [ 0xdb, 0x0f, 0x49, 0x40 ]);
     assert(patbe("f32:pi").data          == [ 0x40, 0x49, 0x0f, 0xdb ]);
@@ -884,6 +1395,8 @@ unittest
     assert(pat("i8:-1", "-2").data       == [ 0xff, 0xfe ]);
     assert(pat("f32:1.0", "2.0").data    == [ 0, 0, 0x80, 0x3f, 0, 0, 0, 0x40 ]);
     assert(pat("f64:1.0", "-1.0").data.length == 16);
+    assert(pat("f80:1.0", "-1.0").data.length == 20);
+    assert(pat("f80:pi", "e").data.length     == 20);
 
     // Which is how a needle of any length is built out of values, and it is
     // the carry-over that keeps it quick to type rather than the magnitude
@@ -944,7 +1457,7 @@ unittest
         ["\""], [`"yes"`],
         // Unknown prefixes, including widths that are not a type
         ["INVALID:ff"], ["INVALID:"], ["x24:00"], ["d128:1"], ["i:1"], ["u:1"],
-        ["f:1.0"], ["f8:1"], ["f16:1"], ["f80:1"], ["f128:1"],
+        ["f:1.0"], ["f8:1"], ["f16:1"], ["f128:1"],
         // Tests last known good prefix
         ["x:00", "INVALID:ff"],
         // Half a byte is a typo, not a byte
@@ -960,12 +1473,15 @@ unittest
         ["x:zz"], ["x:12zz"], ["u8:12zz"], ["o8:9"], ["o8:18"], ["u8:1_0"],
         ["f32:zz"], ["f32:12zz"], ["f32:1.0f"], ["f32:1_0"], ["f64:infinity"],
         ["f32:1.2.3"], ["f32:--1"],
+        ["f80:"], ["f80:-"], ["f80:."], ["f80:zz"], ["f80:12zz"], ["f80:1.0f"],
+        ["f80:1_0"], ["f80:1.2.3"], ["f80:--1"], ["f80:1e"], ["f80:infinity"],
         // A constant is the whole literal or it is nothing, so no prefix of a
         // name, no name with something after it, and no name that is not one
         ["f32:p"], ["f32:pie"], ["f32:2pi"], ["f32:pi2"], ["f32:pi."],
         ["f32:denorm"], ["f32:min_normal"], ["f32:tau2"], ["f32:-"],
         ["f32:nan2"], ["f32:sn"], ["f32:snan1"], ["f32:indef"], ["f32:nan(1)"],
         ["f32:snan_"], ["f32:snan_lo"], ["f32:hi"], ["f32:_hi"],
+        ["f80:p"], ["f80:pie"], ["f80:pi2"], ["f80:nan2"], ["f80:indef"],
         // ...and they belong to the float types only
         ["u8:pi"], ["i32:pi"], ["x16:pi"], ["u8:max"], ["o8:inf"],
         // Signs belong to the signed types only
@@ -975,8 +1491,10 @@ unittest
         ["i16:32768"], ["i16:-32769"], ["i32:2147483648"], ["x16:10000"],
         ["i64:9223372036854775808"], ["i64:-9223372036854775809"],
         ["f32:1e39"], ["f32:-1e39"], // rounds to infinity, so it was not the value
+        ["f80:1.2e4932"], ["f80:1e4933"], ["f80:-1e4933"],
         // Too large for anything
         ["u64:18446744073709551616"], ["f64:1e999"], ["f64:-1e999"],
+        ["f80:1e99999"], ["f80:1e999999999999999999"],
     ];
     foreach (inv; invalids)
         test_throw(inv);

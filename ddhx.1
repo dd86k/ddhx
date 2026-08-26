@@ -862,17 +862,39 @@ Example:
 A value that does not fit the width asked for is an error rather than a
 truncation.
 .TP
-.BR "f32:" ", " "f64:"
-IEEE\-754 binary32 (4 bytes) or binary64 (8 bytes) floating-point value. What is
-encoded is the bit pattern the value occupies in the file, not the digits it was
-typed as:
+.BR "f32:" ", " "f64:" ", " "f80:"
+IEEE\-754 binary32 (4 bytes) or binary64 (8 bytes), or the 80-bit extended
+format x87 uses (10 bytes). What is encoded is the bit pattern the value
+occupies in the file, not the digits it was typed as:
 .B f32:1.0
 is [ 0x00, 0x00, 0x80, 0x3f ] on little endian.
 .IP
-These are always those two formats, whatever the machine running
+These are always those three formats, whatever the machine running
 .B ddhx
 uses for its own floats, since the pattern describes the file rather than the
 machine.
+.IP
+.B f80:
+is what an x87 register holds and what
+.B long double
+is in the System V x86 ABI: ten bytes, a 64-bit significand followed by the sign
+and exponent. Unlike the other two it stores its integer bit rather than
+implying it, so
+.B f80:1.0
+is seven zero bytes followed by [ 0x80, 0xff, 0x3f ] on little endian. Its
+literals are converted
+in integer arithmetic instead of through one of the host's floats, since no host
+type is this format everywhere \(em D's
+.B real
+is 80-bit on x86 and 64-bit on AArch64 \(em which is what makes the same literal
+the same ten bytes anywhere, with all 64 bits of significand and the whole
+exponent range:
+.B f80:3.14159265358979323846
+is the constant
+.B FLDPI
+loads, and
+.B f80:1e400
+is a value rather than an error.
 .IP
 IEEE\-754 leaves a NaN as any nonzero mantissa, so each is named and spelled
 out (shown here at 4 bytes):
@@ -914,6 +936,25 @@ is
 .B 0xffc00000
 and not the positive one.
 .IP
+At
+.B f80:
+these keep the integer bit set as well, the quiet bit being the one below it. In
+that format's terms, all three have an exponent word of
+.B 0x7fff
+and a significand of
+.B 0xc000000000000000
+for
+.BR nan ,
+.B 0x8000000000000001
+for
+.BR snan ,
+and
+.B 0x8000000000000000
+for
+.BR inf .
+One of these without the integer bit is a pseudo-NaN or pseudo-infinity, which
+every x87 since the 387 treats as invalid.
+.IP
 A sign is part of the literal, as are exponents and the
 .B nan
 and
@@ -941,7 +982,13 @@ is the largest
 .BR binary32 ,
 [ 0xff, 0xff, 0x7f, 0x7f ] on little endian, and not the largest
 .B binary64
-narrowed down.
+narrowed down. At
+.B f80:
+the mathematical ones carry 64 significant bits, so
+.B f80:pi
+is the same ten bytes an x87
+.B FLDPI
+puts in a register.
 .IP
 Names are matched without regard to case and against the whole value, so
 .B f32:\-pi
