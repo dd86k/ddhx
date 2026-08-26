@@ -142,6 +142,7 @@ string versus scalar:
     o8: o16: o32: o64:    likewise, octal
     i8: i16: i32: i64:    likewise, signed, two's complement
     f32: f64:             likewise, IEEE-754, that many bytes
+    f80:                  likewise, x87's 80-bit extended, ten bytes
 
 Hexadecimal is the only radix on both sides, because two digits are exactly one
 byte. Decimal and octal do not tile bytes, so they are only ever scalars, and a
@@ -158,8 +159,14 @@ accepted since neither is memorable as hex. A literal that only fits once
 rounded to infinity (f32:1e39) is an error, the same as any other value too
 large for the width asked for.
 
-Both take named constants as well as digits, since the point of typing a float
-instead of its bytes is that its bytes are not recognizable:
+f80: is the odd one, being x87's 80-bit extended rather than an IEEE-754 binary
+format: ten bytes, a 64-bit significand and then the sign and exponent, with the
+integer bit stored rather than implied. It is named by width like the others
+even though its width is not a power of two, since that is what a file holds and
+what the x86 ABIs call long double.
+
+All three take named constants as well as digits, since the point of typing a
+float instead of its bytes is that its bytes are not recognizable:
 
     inf                           one encoding, the format says so
     nan qnan snan snan_hi         the NaNs, below
@@ -173,6 +180,12 @@ rather than half a match, and matching is case insensitive as std.conv already
 is for nan and inf. Each width gets its own value, which matters for the four
 that are properties of the format rather than numbers: f32:max is the largest
 binary32, not the largest binary64 narrowed down, which would be infinity.
+
+At f80: the constants are written out as bit patterns rather than computed,
+because there is no host type to compute them in (below), and the mathematical
+ones carry all 64 bits: f80:pi is the ten bytes FLDPI loads. The unittest
+re-derives every one of them from decimal digits, so the table is checked and
+not merely trusted.
 
 The NaNs are named in IEEE's own words, quiet and signaling, rather than in
 invented ones. A NaN is any nonzero mantissa, so which one is a choice:
@@ -219,6 +232,17 @@ because its floats happen to be that format, which a static assert in floating()
 checks rather than assumes, and the NaNs above are spelled out rather than
 borrowed, since IEEE-754 pins infinity exactly but allows any nonzero mantissa
 for a NaN and hosts disagree on which one they hand out.
+
+f80: has no host type to borrow at all: D's `real` is x87 extended on x86 and a
+plain double on AArch64, so std.conv would answer differently per machine, and a
+double parsed and widened is eleven bits short of the format (the twenty digits
+of pi widen to 4000 C90FDAA22168C000, where the value they spell is 4000
+C90FDAA22168C235, which is what FLDPI loads). So decimal80() does the conversion
+in integers instead: a literal is digits times a power of ten, which is an exact
+rational, so it is built as one and divided to a 64-bit significand, rounded to
+nearest with ties to even as IEEE-754 asks. That is worth the arithmetic twice
+over, since it also brings the format's own exponent range with it, and range is
+half of why a file holds one of these (f80:1e400 has no double to pass through).
 
 The rule underneath both sides is that the prefix decides the length and the
 value never does. A byte string is as long as what was typed, a scalar is as
@@ -277,6 +301,11 @@ and the unittest at the end of patterns.d (both, by typed command line).
   find f32:max                     FF FF 7F 7F         the format's own edge
   find f32:pi2                     error, a name is the whole literal
   find f32:1e39                    error, rounds to infinity at that width
+  find f80:1.0                     00 00 00 00 00 00 00 80 FF 3F    ten bytes
+  find f80:pi                      35 C2 68 21 A2 DA 0F C9 00 40    ditto
+  find f80:3.14159265358979323846  ...the same, all 64 bits of it.  bit and all
+  find f80:1e400                   E6 F9 9F CB C8 3F 76 DA 2F 45    no double
+  find f80:1e4933                  error, past the largest finite value
   find x:00 * x:FF                 00 <any> FF
   find u16:1 2                     01 00 02 00         prefix carries, width too
   find s:*                         '*'                 prefixed, so data

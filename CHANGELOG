@@ -7,47 +7,31 @@ Removed, and (when significant) Docs.
 // Upcoming
 
 Prompt and prefix overhauls, readline enhancements, diff pane navigation,
-write protection overhaul, terminal rendering fixes and performance
-improvement.
+write protection overhaul, terminal rendering fixes, and new prefixes.
 
 - Command line overhaul: Now with C string expressions.
-  Arguments are now split with single quotes (raw) and double quotes (C string
+  Arguments are split with single quotes (raw) and double quotes (C string
   literals with escape sequences), for every command and in configuration
   files, not just for patterns.
   WARNING: the bare `"STRING"` alias for `s:STRING` is gone, so `find "test"`
   is now an error; use `find s:test` or `find s:"test"` instead.
 - Pattern prefix overhaul: Fixed-width prefixes without surprises.
-  Because variable-width scalars (d:, o: and 0o) would introduce confusion
-  (notably when searching) on odd steppings (producing needles sometimes of 3,
-  5, and 7 bytes), they are now replaced with fixed-width scalars:
-  u8/u16/u32/u64, i8/i16/i32/i64, x8/x16/x32/x64, and o8/o16/o32/o64.
-  The x: prefix was repurposed as an array type: x:1122 produces [ 11, 22 ]
-  in order.
-  Cutting off the variable-length scalars also fixes a wrong byte count issue
-  on 32-bit big-endian platforms.
-- New float pattern prefixes: f32: and f64: for IEEE-754 binaries.
+  The variable-width scalars (d:, o:, and 0o), which produced needles of odd
+  lengths depending on the value written, are replaced by fixed-width ones:
+  u8/u16/u32/u64, i8/i16/i32/i64, x8/x16/x32/x64, and o8/o16/o32/o64. The x:
+  prefix is now a byte string, so x:1122 produces [ 11, 22 ] in order.
+- New float pattern prefixes: f32:, f64:, and f80: (x87 extended).
   They encode the bit pattern the value occupies in the file rather than the
-  digits typed, using the endian setting like every other scalar, so
+  digits typed, following the endian setting like every other scalar, so
   'find f32:1.0' searches for [ 00, 00, 80, 3F ] on little endian.
-  These are always binary32 and binary64, on every platform, because the
-  pattern describes the file and not the machine reading it. IEEE-754 allows
-  any nonzero mantissa for a NaN, so each one is named and spelled out rather
-  than taken from the host: 'nan' and 'qnan' are the quiet NaN (7FC00000),
-  'snan' the signaling one (7F800001), 'snan_hi' the signaling one carrying the
-  payload's high bit instead (7FA00000, what GCC and glibc's SNANF emit), and
-  'indefinite' the negative quiet NaN (FFC00000) that x87 and SSE produce for
-  0.0/0.0. A NaN keeps its sign, so 'f32:-nan' is the negative one and not the
-  positive.
-  Signs and exponents are part of the literal; a value that only fits once
-  rounded to infinity (f32:1e39) is an error.
-  Added `pi`, `e`, `tau`, `sqrt2`, `phi` constants and `max`, `min`, `epsilon`,
-  and `denorm_min` properties for these prefixes.
+  Each takes the `pi`, `e`, `tau`, `sqrt2`, `phi` constants, the `max`, `min`,
+  `epsilon`, `denorm_min` properties, and named NaNs ('nan'/'qnan', 'snan',
+  'snan_hi', 'indefinite') rather than whatever the host would produce.
 - Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}'
   and '{') jump between differing regions with a diff panel opened,
   with a cursor mirror and better alignment in the diff panel.
 - Write protection overhaul: new `-W`/`--writable` flag and `writemode`
-  config; write mode is now enforced on fixed-size media, with a dedicated
-  restricted-mode variable to back it.
+  config; write mode is now enforced on fixed-size media.
 
 // Added
 - Single quoting ('TEXT', raw) and double quoting ("TEXT", C string literal)
@@ -60,11 +44,28 @@ improvement.
 - Signed pattern values, encoded as two's complement: `find i16:-1`. Only the
   `i*` prefixes take a sign; a minus on an unsigned type is reported rather
   than wrapped
-- `-W`/`--writable` flag (cb1c02d)
-- `writemode` config option, enforced on fixed-size media (6fd3d7e)
-- `diff-next` / `diff-prev` commands mapped to `}` / `{` (73a5983)
-- Cursor mirror in the diff panel (e77bd04)
-- `Braces` and `Pipe` terminal enum values (7d15f8b)
+- Float pattern prefixes `f32:` and `f64:`, always binary32 and binary64 on
+  every platform.
+- Float pattern prefix `f80:` for x87's 80-bit extended (long double): ten
+  bytes, a 64-bit significand followed by the sign and exponent, with the
+  integer bit stored rather than implied, so 'find f80:1.0' searches for
+  [ 00, 00, 00, 00, 00, 00, 00, 80, FF, 3F ] on little endian. Literals are
+  converted with integer arithmetic instead of the host's `real`, so the
+  prefix works on hosts without an x87.
+- `pi`, `e`, `tau`, `sqrt2`, `phi` constants and `max`, `min`, `epsilon`,
+  `denorm_min` properties for the float prefixes, each at the width's
+  precision: 'f80:pi' is the ten bytes FLDPI loads.
+- Named NaNs, since IEEE-754 allows any nonzero mantissa for one: 'nan' and
+  'qnan' are the quiet NaN (7FC00000), 'snan' the signaling one (7F800001),
+  'snan_hi' the signaling one carrying the payload's high bit instead
+  (7FA00000, what GCC and glibc's SNANF emit), and 'indefinite' the negative
+  quiet NaN (FFC00000) that x87 and SSE produce for 0.0/0.0. A NaN keeps its
+  sign, so 'f32:-nan' is the negative one
+- `-W`/`--writable` flag. (cb1c02d)
+- `writemode` config option, enforced on fixed-size media. (6fd3d7e)
+- `diff-next` / `diff-prev` commands mapped to `}` / `{`. (73a5983)
+- Cursor mirror in the diff panel. (e77bd04)
+- `Braces` and `Pipe` terminal enum values. (7d15f8b)
 
 // Changed
 - Quoting and escapes apply to every command and to configuration files, not
@@ -95,6 +96,10 @@ improvement.
 // Fixed
 - Patterns no longer silently accept trailing garbage: `x16:12zz` was taken
   for 0x12, and is now an error.
+- Signs and exponents are part of a float literal, so a value that only fits
+  once rounded to infinity (`f32:1e39`) is an error instead of an infinity
+- Wrong byte count for scalar patterns on 32-bit big-endian platforms, a
+  consequence of the variable-length scalars that are now gone
 - Row drift when lines are truncated by terminal width (4bcb010)
 - Terminal partial rendering for readline (63cdbf7), with fixes:
   - cell count no longer relies on terminalWrite, counts using graphs
