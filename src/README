@@ -137,16 +137,88 @@ string versus scalar:
 
     x: 0x                 bytes, two hex digits each
     s:                    bytes, subject to the character set
-    x8: x16: x32: x64:    scalar, unsigned, that many bytes
+    x8: x16: x32: x64:    scalar, unsigned, that many bytes (bit indicator)
     u8: u16: u32: u64:    likewise, decimal
     o8: o16: o32: o64:    likewise, octal
     i8: i16: i32: i64:    likewise, signed, two's complement
+    f32: f64:             likewise, IEEE-754, that many bytes
 
 Hexadecimal is the only radix on both sides, because two digits are exactly one
 byte. Decimal and octal do not tile bytes, so they are only ever scalars, and a
 scalar always names its width: the bare d:, o:, and 0o are gone, decimal being
 u8:..u64: unsigned and i8:..i64: signed. 0x survives the same cut only because
 it is a byte string, like the x: it abbreviates.
+
+Floats are named by their width in bits like everything else, so f32: and f64:
+rather than float: and double:, and what they encode is the bit pattern the
+value occupies in the file, not the digits it was typed as. They are the one
+scalar whose sign is not the prefix's business: there is no unsigned float to
+tell them apart from, so the literal keeps its own '-', and "nan" and "inf" are
+accepted since neither is memorable as hex. A literal that only fits once
+rounded to infinity (f32:1e39) is an error, the same as any other value too
+large for the width asked for.
+
+Both take named constants as well as digits, since the point of typing a float
+instead of its bytes is that its bytes are not recognizable:
+
+    inf                           one encoding, the format says so
+    nan qnan snan snan_hi         the NaNs, below
+    indefinite                    ...including Intel's
+    pi e tau sqrt2 phi            maths, as compiled into binaries
+    max min epsilon denorm_min    the format's edges, as used for sentinels
+
+A name is the whole literal, sign aside, so nothing can shadow a number: the 'e'
+in "1e5" is an exponent and "e" alone is the constant, "f32:pi2" is an error
+rather than half a match, and matching is case insensitive as std.conv already
+is for nan and inf. Each width gets its own value, which matters for the four
+that are properties of the format rather than numbers: f32:max is the largest
+binary32, not the largest binary64 narrowed down, which would be infinity.
+
+The NaNs are named in IEEE's own words, quiet and signaling, rather than in
+invented ones. A NaN is any nonzero mantissa, so which one is a choice:
+
+    nan  qnan       7FC00000    quiet, the standard's recommended bit
+    snan            7F800001    signaling, so the quiet bit clear, payload 1
+    snan_hi         7FA00000    signaling, payload's high bit
+    indefinite      FFC00000    Intel's name for the negative quiet NaN
+
+The quiet bit is a recommendation of IEEE-754 rather than a rule, and one that
+x86, ARM, SPARC, POWER and RISC-V follow while MIPS before r6 and PA-RISC invert
+it. ddhx spells the recommended one everywhere, being the format's and not the
+host's:
+
+    binary32   0 11111111 1 0000000000000000000000    nan
+               0 11111111 0 1000000000000000000000    snan_hi
+               0 11111111 0 0000000000000000000001    snan
+                 exponent ^ quiet bit
+
+The "hi" in snan_hi is the high bit of the payload, which is the bit just under
+the quiet bit and so the highest one a signaling NaN may set without going
+quiet. It is named for that bit rather than for a toolchain, though it is what
+GCC and glibc's SNANF emit; they pick it because a payload there keeps its
+position relative to the quiet bit when the width changes, where a payload of 1
+does not. 7FA00000 widens to 7FFC000000000000 with its shape intact, while
+7F800001 widens to 7FF8000020000000. Any other payload is a byte string, which
+is what x32: is for.
+
+"indefinite" is a spelling of -qnan rather than a fifth value, and it earns a
+name by being the NaN most likely to be sitting in a file: x87 and SSE produce
+it for 0.0/0.0 and the other invalid operations, where ARM produces the positive
+one. Which is also why a NaN's sign is honoured here even though std.conv drops
+it: -nan and indefinite have to be sayable, or the common case is unreachable.
+
+These four are encoded as bit patterns and never as float values, deliberately.
+A float holding a signaling NaN is not safe to pass around, since x87 quiets one
+on the way through a register, so an snan carried as a value would arrive as a
+qnan on a 32-bit x86 build.
+
+f32: is IEEE-754 binary32 and f64: binary64, on every host. Not "whatever this
+machine calls a float": a needle describes bytes in a file, and a file does not
+change format because of the machine reading it. The host does the conversion
+because its floats happen to be that format, which a static assert in floating()
+checks rather than assumes, and the NaNs above are spelled out rather than
+borrowed, since IEEE-754 pins infinity exactly but allows any nonzero mantissa
+for a NaN and hosts disagree on which one they hand out.
 
 The rule underneath both sides is that the prefix decides the length and the
 value never does. A byte string is as long as what was typed, a scalar is as
@@ -194,6 +266,17 @@ and the unittest at the end of patterns.d (both, by typed command line).
   find d:255                       error, unknown prefix; d: named no width
   find i16:-1                      ff ff               two's complement
   find u16:-1                      error, only i* takes a sign
+  find f32:1.0                     00 00 80 3F         IEEE-754, not the digits
+  find f64:1.0                     00 00 00 00 00 00 F0 3F
+  find f32:nan                     00 00 C0 7F         the quiet one, always
+  find f32:-nan                    00 00 C0 FF         a NaN keeps its sign
+  find f32:indefinite              00 00 C0 FF         ...which x86 hands out
+  find f32:snan                    01 00 80 7F         signaling, payload 1
+  find f32:pi                      DB 0F 49 40         a name, not digits
+  find f32:-pi                     DB 0F 49 C0         ...and it takes a sign
+  find f32:max                     FF FF 7F 7F         the format's own edge
+  find f32:pi2                     error, a name is the whole literal
+  find f32:1e39                    error, rounds to infinity at that width
   find x:00 * x:FF                 00 <any> FF
   find u16:1 2                     01 00 02 00         prefix carries, width too
   find s:*                         '*'                 prefixed, so data

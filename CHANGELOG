@@ -25,6 +25,23 @@ improvement.
   in order.
   Cutting off the variable-length scalars also fixes a wrong byte count issue
   on 32-bit big-endian platforms.
+- New float pattern prefixes: f32: and f64: for IEEE-754 binaries.
+  They encode the bit pattern the value occupies in the file rather than the
+  digits typed, using the endian setting like every other scalar, so
+  'find f32:1.0' searches for [ 00, 00, 80, 3F ] on little endian.
+  These are always binary32 and binary64, on every platform, because the
+  pattern describes the file and not the machine reading it. IEEE-754 allows
+  any nonzero mantissa for a NaN, so each one is named and spelled out rather
+  than taken from the host: 'nan' and 'qnan' are the quiet NaN (7FC00000),
+  'snan' the signaling one (7F800001), 'snan_hi' the signaling one carrying the
+  payload's high bit instead (7FA00000, what GCC and glibc's SNANF emit), and
+  'indefinite' the negative quiet NaN (FFC00000) that x87 and SSE produce for
+  0.0/0.0. A NaN keeps its sign, so 'f32:-nan' is the negative one and not the
+  positive.
+  Signs and exponents are part of the literal; a value that only fits once
+  rounded to infinity (f32:1e39) is an error.
+  Added `pi`, `e`, `tau`, `sqrt2`, `phi` constants and `max`, `min`, `epsilon`,
+  and `denorm_min` properties for these prefixes.
 - Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}'
   and '{') jump between differing regions with a diff panel opened,
   with a cursor mirror and better alignment in the diff panel.

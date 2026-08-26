@@ -853,7 +853,7 @@ Octal unsigned integer of 1, 2, 4, or 8 bytes.
 .TP
 .BR "i8:" ", " "i16:" ", " "i32:" ", " "i64:"
 Decimal signed integer of 1, 2, 4, or 8 bytes, encoded as two's complement.
-These are the only prefixes that accept a leading
+These are the only integer prefixes that accept a leading
 .BR \- ,
 and a width is required, since a negative value has no natural size.
 Example:
@@ -861,6 +861,93 @@ Example:
 .IP
 A value that does not fit the width asked for is an error rather than a
 truncation.
+.TP
+.BR "f32:" ", " "f64:"
+IEEE\-754 binary32 (4 bytes) or binary64 (8 bytes) floating-point value. What is
+encoded is the bit pattern the value occupies in the file, not the digits it was
+typed as:
+.B f32:1.0
+is [ 0x00, 0x00, 0x80, 0x3f ] on little endian.
+.IP
+These are always those two formats, whatever the machine running
+.B ddhx
+uses for its own floats, since the pattern describes the file rather than the
+machine.
+.IP
+IEEE\-754 leaves a NaN as any nonzero mantissa, so each is named and spelled
+out (shown here at 4 bytes):
+.RS
+.TP 14
+.B nan
+Quiet NaN,
+.BR 0x7fc00000 .
+.TP
+.B qnan
+The same value, under IEEE's own name for it.
+.TP
+.B snan
+Signaling NaN,
+.BR 0x7f800001 :
+the quiet bit clear and a payload of 1.
+.TP
+.B snan_hi
+Signaling NaN with the payload's high bit instead,
+.BR 0x7fa00000 .
+That bit is the one just under the quiet bit, the highest a signaling NaN may
+set without becoming quiet, and it is what GCC and glibc's
+.B SNANF
+emit. Any other payload is a byte string, so
+.B x32:7f800042
+and the like.
+.TP
+.B indefinite
+The negative quiet NaN,
+.BR 0xffc00000 ,
+which is Intel's name for what x87 and SSE produce for 0.0/0.0 and the other
+invalid operations. Same as
+.BR \-nan .
+.RE
+.IP
+A NaN keeps its sign, so
+.B f32:\-nan
+is
+.B 0xffc00000
+and not the positive one.
+.IP
+A sign is part of the literal, as are exponents and the
+.B nan
+and
+.B inf
+spellings, so
+.BR "f32:\-1.0" ", " "f32:1e\-3" ", " "f64:inf"
+are all accepted. A literal that fits only once rounded to infinity, such as
+.BR f32:1e39 ,
+is an error, the same as any other value too large for its width.
+.IP
+A value may also be named instead of spelled out, the bytes of these being
+what nobody recognizes on sight:
+.BR pi ", " e ", " tau ", " sqrt2 ", " phi
+for the mathematical constants, the NaNs above, and
+.BR max ", " min ", " epsilon ", " denorm_min
+for the edges of the format itself
+.RB ( min
+being the smallest normal value, as
+.B FLT_MIN
+is in C, and
+.B denorm_min
+the smallest subnormal). Each is taken at the width its prefix names, so
+.B f32:max
+is the largest
+.BR binary32 ,
+[ 0xff, 0xff, 0x7f, 0x7f ] on little endian, and not the largest
+.B binary64
+narrowed down.
+.IP
+Names are matched without regard to case and against the whole value, so
+.B f32:\-pi
+is accepted, while
+.B f32:pi2
+is an error rather than half a match.
 .TP
 .BI s: STRING
 String (currently UTF-8 only).
