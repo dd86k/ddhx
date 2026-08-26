@@ -8,6 +8,7 @@ module patterns; // plural not to mess with pattern function
 
 import std.conv : text;
 import std.string : startsWith;
+import std.system : Endian;
 
 import ddhx.transcoder : CharacterSet;
 
@@ -15,19 +16,36 @@ import utils : Argument, printable;
 
 import messages;
 
-/// Pattern prefix type.
+/// What a prefix says its argument is.
+///
+/// The split that matters is byte string versus scalar. A byte string already
+/// *is* a sequence of bytes, so its order is the order it was written in, and
+/// neither a width nor an endian is a question that can be asked of it. A
+/// scalar is a value that still has to be encoded into bytes, so both are.
+///
+/// Hexadecimal is the only radix with a byte string reading, since two digits
+/// are exactly one byte. Decimal and octal do not tile bytes, so they are
+/// always scalars.
 enum PatternType
 {
     unknown,
-    hex,
-    dec,
-    oct,
-    string_,
+    bytes,  /// Literal bytes, as written ("x:", "0x").
+    text,   /// Literal bytes, subject to the character set ("s:").
+    scalar, /// A value encoded into bytes ("u8:", "x16:", "i32:", ...).
 }
-private struct Prefix { const(char)[] str; PatternType type; }
+
+/// Everything a prefix decides about its argument.
+private struct PatternSpec
+{
+    PatternType type;
+    int radix;    /// Scalar radix: 16, 10, or 8.
+    size_t width; /// Scalar size in bytes: 1, 2, 4, or 8.
+    bool signed;  /// Scalar takes a leading '-' and encodes two's complement.
+}
+private struct Prefix { const(char)[] str; PatternSpec spec; }
 /// Detect pattern prefix.
 /// Params: input = Argument bytes. Sliced from prefix.
-/// Returns: Pattern type, unknown if it can't be detected.
+/// Returns: Prefix, of unknown type if it can't be detected.
 private
 Prefix patternpfx(const(char)[] input)
 {
@@ -36,40 +54,57 @@ Prefix patternpfx(const(char)[] input)
     if (input is null || input.length == 0)
         return pfx;
 
-    // TODO: "xle:"/"xbe:" prefixes to force Little or Big Endianness
-    //       Or could be some form of modifier because otherwise that's
-    //       potentially adding one million types.
     // TODO: "re:" for Regular Expressions
-    // TODO: Scalar types (or just length delimiter)
-    //       Decimal: "u8:","u16:","u32:","u64:","f32:","f64:"
-    //       Hex    : "x8:","x16:","x32:","x64:"
-    //       Octal  : "o8:","o16:","o32:","o64:"
+    // TODO: Floats: At least "f32:" and "f64:"
+    // TODO: "f24:"/"f48:" exotic floats
     // TODO: String types: "ascii:", etc. Avoids implicit transcoding surprise
-    // TODO: Exotic types: "f24:", "f48:"
-    //       These will require reading a few file specs and see if they are
-    //       exact in value interpretation.
-    // TODO: Evaluate "0b" prefix
-    // Regular prefixes, in order of importance
-    // 1. test prefix
-    // 2. if prefix match, trim input by its length
+    //
+    // Endianness is deliberately absent: it is a property of the file being
+    // looked at, not of one needle, so scalars follow the `endian` setting
+    // (the same one the inspector uses) instead of doubling every prefix.
+    //
+    // Every scalar states a width, so there is no bare "d:", "o:", or "0o":
+    // those sized themselves to the value, which put a pattern's length at the
+    // mercy of the number written in it. See src/README for the full argument.
+    //
+    // Longest first: a bare prefix must not shadow its width forms.
     static immutable Prefix[] prefixes = [
-        { "x:", PatternType.hex },
-        { "0x", PatternType.hex },
-        { "d:", PatternType.dec },
-        { "o:", PatternType.oct },
-        { "0o", PatternType.oct },
-        { "s:", PatternType.string_ },
+        // Hexadecimal, as written
+        { "x:",   { PatternType.bytes } },
+        { "0x",   { PatternType.bytes } },
+        // Text
+        { "s:",   { PatternType.text } },
+        // Hexadecimal, as a value
+        { "x8:",  { PatternType.scalar, 16, 1 } },
+        { "x16:", { PatternType.scalar, 16, 2 } },
+        { "x32:", { PatternType.scalar, 16, 4 } },
+        { "x64:", { PatternType.scalar, 16, 8 } },
+        // Decimal, unsigned
+        { "u8:",  { PatternType.scalar, 10, 1 } },
+        { "u16:", { PatternType.scalar, 10, 2 } },
+        { "u32:", { PatternType.scalar, 10, 4 } },
+        { "u64:", { PatternType.scalar, 10, 8 } },
+        // Decimal, signed
+        { "i8:",  { PatternType.scalar, 10, 1, true } },
+        { "i16:", { PatternType.scalar, 10, 2, true } },
+        { "i32:", { PatternType.scalar, 10, 4, true } },
+        { "i64:", { PatternType.scalar, 10, 8, true } },
+        // Octal
+        { "o8:",  { PatternType.scalar, 8, 1 } },
+        { "o16:", { PatternType.scalar, 8, 2 } },
+        { "o32:", { PatternType.scalar, 8, 4 } },
+        { "o64:", { PatternType.scalar, 8, 8 } },
     ];
     foreach (prefix; prefixes)
     {
         if (startsWith(input, prefix.str))
         {
             pfx.str  = input[prefix.str.length..$];
-            pfx.type = prefix.type;
+            pfx.spec = prefix.spec;
             return pfx;
         }
     }
-    
+
     // NOTE: There used to be a bare `"STRING"` alias for `s:STRING` here.
     //       It never fired from a command line, because the shell strips
     //       quotes before this sees them, and once quoting became meaningful
@@ -78,92 +113,174 @@ Prefix patternpfx(const(char)[] input)
 
     // Unknown, give as-is, maybe previous was correct
     pfx.str = input;
-    
+
     return pfx;
 }
 unittest
 {
-    assert(patternpfx("0x00") == Prefix("00", PatternType.hex));
-    assert(patternpfx("0o00") == Prefix("00", PatternType.oct));
-    assert(patternpfx("x:00") == Prefix("00", PatternType.hex));
-    assert(patternpfx("x:ff") == Prefix("ff", PatternType.hex));
-    assert(patternpfx("d:255") == Prefix("255", PatternType.dec));
-    assert(patternpfx("o:377") == Prefix("377", PatternType.oct));
-    assert(patternpfx("s:hello") == Prefix("hello", PatternType.string_));
-    
+    static immutable PatternSpec BYTES  = { PatternType.bytes };
+    static immutable PatternSpec TEXT   = { PatternType.text };
+
+    assert(patternpfx("0x00")    == Prefix("00", BYTES));
+    assert(patternpfx("x:00")    == Prefix("00", BYTES));
+    assert(patternpfx("x:ff")    == Prefix("ff", BYTES));
+    assert(patternpfx("s:hello") == Prefix("hello", TEXT));
+
+    // Every scalar states a width
+    assert(patternpfx("x16:1122") == Prefix("1122", PatternSpec(PatternType.scalar, 16, 2)));
+    assert(patternpfx("u16:255")  == Prefix("255",  PatternSpec(PatternType.scalar, 10, 2)));
+    assert(patternpfx("o16:377")  == Prefix("377",  PatternSpec(PatternType.scalar,  8, 2)));
+    assert(patternpfx("i8:-1")    == Prefix("-1",   PatternSpec(PatternType.scalar, 10, 1, true)));
+    assert(patternpfx("i64:-1")   == Prefix("-1",   PatternSpec(PatternType.scalar, 10, 8, true)));
+
     // Quotes are not a prefix, they are the shell's business
-    assert(patternpfx(`"hello"`) == Prefix(`"hello"`, PatternType.unknown));
-    assert(patternpfx(`"a`) == Prefix(`"a`, PatternType.unknown));
-    assert(patternpfx(`"`)  == Prefix(`"`, PatternType.unknown));
-    
+    assert(patternpfx(`"hello"`) == Prefix(`"hello"`));
+    assert(patternpfx(`"a`) == Prefix(`"a`));
+    assert(patternpfx(`"`)  == Prefix(`"`));
+
     // Empty or null
-    assert(patternpfx("")   == Prefix("", PatternType.unknown));
-    assert(patternpfx(null) == Prefix(null, PatternType.unknown));
-    assert(patternpfx(`""`) == Prefix(`""`, PatternType.unknown));
-    
+    assert(patternpfx("")   == Prefix(""));
+    assert(patternpfx(null) == Prefix(null));
+    assert(patternpfx(`""`) == Prefix(`""`));
+
     // Invalid prefixes
-    assert(patternpfx("INVALID:") == Prefix("INVALID:", PatternType.unknown));
+    assert(patternpfx("INVALID:") == Prefix("INVALID:"));
+    assert(patternpfx("x24:00")   == Prefix("x24:00"));
+
+    // Removed: a scalar type with no width to encode into
+    assert(patternpfx("d:255")  == Prefix("d:255"));
+    assert(patternpfx("o:377")  == Prefix("o:377"));
+    assert(patternpfx("0o377")  == Prefix("0o377"));
+    assert(patternpfx("i:1")    == Prefix("i:1"));
+    assert(patternpfx("u:1")    == Prefix("u:1"));
 }
 
-// Slice up any integer pointer as a byte array.
-// The array will be sized depending on the number of populated bits.
-// For example, 0x01 will be [ 0x01 ], 0x0101 being [ 0x01, 0x01 ].
+// Turn hex digits into the bytes they spell, in the order they were written.
+//
+// An odd digit count is refused rather than padded: a byte string with half a
+// byte on the end is a typo, and guessing which end gains the zero is how "x:"
+// used to end up meaning something other than what was typed.
+//
+// Used to append to a ushort array.
 private
-ubyte[] sliceup(T)(T x)
+ubyte[] hexbytes(const(char)[] input, immutable(ubyte)[] arg)
 {
-    // std.conv.bitCast might be interesting, but shrug
-    import core.bitop : bsr;
-    
-    assert(x);
-    
-    if (*x == 0) return [ 0 ];
-    
-    enum S = cast(int) T.sizeof;
-    
-    int i = (bsr(*x) / S) + 1; // highest bit and round up to nearest byte
-    
-    version(LittleEndian)
-        return (cast(ubyte*)x)[0..i];
-    else // On big endian, we skip leading zeros
-        return (cast(ubyte*)x)[T.sizeof - i..T.sizeof];
+    static int digit(char c)
+    {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    }
+
+    if (input.length % 2)
+        throw new Exception(text(MSG_ODD_HEX_DIGITS, printable(arg)));
+
+    ubyte[] result = new ubyte[input.length / 2];
+    foreach (i, ref ubyte b; result)
+    {
+        int hi = digit(input[i * 2]);
+        int lo = digit(input[i * 2 + 1]);
+        if (hi < 0 || lo < 0)
+            throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+        b = cast(ubyte)((hi << 4) | lo);
+    }
+    return result;
+}
+
+// Encode a value into `width` bytes, ordered by `endian`.
+//
+// The width is always the caller's, never the value's: a needle whose length
+// depends on the number in it is a needle that overwrites a different amount
+// of file for "replace d:255" than for "replace d:256".
+//
+// Negative values arrive already wrapped, so truncating to `width` bytes is
+// the two's complement encoding.
+private
+ubyte[] encode(ulong value, size_t width, Endian endian)
+{
+    assert(width == 1 || width == 2 || width == 4 || width == 8);
+
+    ubyte[] result = new ubyte[width];
+    foreach (size_t i; 0..width)
+    {
+        ubyte b = cast(ubyte)(value >> (i * 8));
+        result[endian == Endian.littleEndian ? i : width - 1 - i] = b;
+    }
+    return result;
 }
 unittest
 {
-    ulong a;
-    assert(sliceup(&a) == [ 0 ]);
-    a = 1;
-    assert(sliceup(&a) == [ 1 ]);
-    a = 0xff;
-    assert(sliceup(&a) == [ 0xff ]);
-    a = 0xffff;
-    assert(sliceup(&a) == [ 0xff, 0xff ]);
-    a = 0xffff_ff;
-    assert(sliceup(&a) == [ 0xff, 0xff, 0xff ]);
-    a = 0xffff_ffff;
-    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff ]);
-    a = 0xffff_ffff_ff;
-    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff ]);
-    a = 0xffff_ffff_ffff;
-    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
-    a = 0xffff_ffff_ffff_ff;
-    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
-    a = 0xffff_ffff_ffff_ffff;
-    assert(sliceup(&a) == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
-    
-    a = 0x1122;
-    version (LittleEndian)
-        assert(sliceup(&a) == [ 0x22, 0x11 ]);
+    with (Endian)
+    {
+        assert(encode(0, 1, littleEndian)        == [ 0 ]);
+        assert(encode(0xff, 1, littleEndian)     == [ 0xff ]);
+        assert(encode(0x1122, 2, littleEndian)   == [ 0x22, 0x11 ]);
+        assert(encode(0x1122, 2, bigEndian)      == [ 0x11, 0x22 ]);
+        assert(encode(0x112233, 4, littleEndian) == [ 0x33, 0x22, 0x11, 0 ]);
+
+        // A width pads, host word size never enters into it
+        assert(encode(1, 1, littleEndian) == [ 1 ]);
+        assert(encode(1, 2, littleEndian) == [ 1, 0 ]);
+        assert(encode(1, 2, bigEndian)    == [ 0, 1 ]);
+        assert(encode(1, 4, littleEndian) == [ 1, 0, 0, 0 ]);
+        assert(encode(1, 8, bigEndian)    == [ 0, 0, 0, 0, 0, 0, 0, 1 ]);
+        assert(encode(ulong.max, 8, littleEndian) ==
+            [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+
+        // Two's complement, courtesy of the truncation
+        assert(encode(-1, 1, littleEndian) == [ 0xff ]);
+        assert(encode(-1, 2, bigEndian)    == [ 0xff, 0xff ]);
+        assert(encode(-2, 4, littleEndian) == [ 0xfe, 0xff, 0xff, 0xff ]);
+    }
+}
+
+// Parse a scalar and encode it, per what its prefix asked for.
+private
+ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
+{
+    import std.conv : ConvException, parse;
+
+    // Only the signed types take a sign, and parse() only understands one at
+    // radix 10 anyway, so it is taken off here and applied at the end
+    bool negative;
+    if (spec.signed && input[0] == '-')
+    {
+        negative = true;
+        input = input[1..$];
+        if (input.length == 0)
+            throw new Exception(MSG_MISSING_PATTERN_DATA);
+    }
+
+    ulong value = void;
+    try
+        value = parse!ulong(input, spec.radix);
+    catch (ConvException)
+        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+
+    // parse() stops at the first character it does not like and leaves the
+    // rest behind, which would quietly take "x16:12zz" for 0x12
+    if (input.length > 0)
+        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+
+    // Range check against the width asked for
+    ulong max = void; // largest magnitude this width holds, sign included
+    if (spec.signed == false)
+        max = spec.width >= 8 ? ulong.max : (1UL << (spec.width * 8)) - 1;
+    else if (spec.width >= 8)
+        max = negative ? cast(ulong)long.max + 1 : long.max;
     else
-        assert(sliceup(&a) == [ 0x11, 0x22 ]);
-    
-    ubyte b = 0xaa;
-    assert(sliceup(&b) == [ 0xaa ]);
-    
-    ushort c = 0xaaaa;
-    assert(sliceup(&c) == [ 0xaa, 0xaa ]);
-    
-    uint d = 0xaaaa_aaaa;
-    assert(sliceup(&d) == [ 0xaa, 0xaa, 0xaa, 0xaa ]);
+    {
+        ulong half = 1UL << (spec.width * 8 - 1);
+        max = negative ? half : half - 1; // -128 fits where 128 does not
+    }
+    if (value > max)
+        throw new Exception(text(MSG_VALUE_OUT_OF_RANGE, printable(arg)));
+
+    if (negative)
+        value = -value;
+
+    return encode(value, spec.width, endian);
 }
 
 enum
@@ -212,17 +329,29 @@ struct Pattern
 /// A whole argument of `?` or `*` is a wildcard; anything with a prefix is
 /// data, so `s:*` is already the way to search for one.
 ///
+/// A prefix says whether its argument is a byte string or a value. Byte
+/// strings are taken as written; values are encoded into the width their
+/// prefix names, using `endian`:
+///
+/// ---
+/// find x:1122         11 22       two bytes, as typed
+/// find x16:1122       22 11       a 16-bit value, little endian
+/// find d:255          ff          as many bytes as the value needs
+/// find u16:255        ff 00       ...or as many as asked for
+/// find i16:-1         ff ff       two's complement
+/// ---
+///
 /// Throws: FormatException or Exception for unknown prefix, empty values,
-///         invalid escape sequences, etc.
+///         values too large for their width, invalid escape sequences, etc.
 /// Params:
 ///     charset = Current character set if string patterns used.
+///     endian  = Byte order for scalar patterns.
 ///     args... = Array of arguments (e.g., "x:00","00").
 /// Returns: Byte array.
-Pattern pattern(CharacterSet charset, Argument[] args)
+Pattern pattern(CharacterSet charset, Endian endian, Argument[] args)
 {
-    import std.conv : parse;
     Pattern pat;
-    PatternType last;
+    PatternSpec last;
     foreach (Argument arg; args)
     {
         // Allow malformed text encodings in prefixes
@@ -237,101 +366,131 @@ Pattern pattern(CharacterSet charset, Argument[] args)
         }
 
         Prefix pfx = patternpfx(input);
-        
+
+        // If the last prefix was good ("x:00"), an argument without one
+        // continues it, since this could just be "00" for example.
+        if (pfx.spec.type == PatternType.unknown)
+        {
+            if (last.type == PatternType.unknown)
+                throw new Exception(text(MSG_UNKNOWN_PATTERN_PREFIX, printable(arg.data)));
+            pfx.spec = last;
+        }
+
         // Throwing (after slicing) here makes the behaviour consistent and
         // ensures there is at least one or more characters
         if (pfx.str.length == 0)
             throw new Exception(MSG_MISSING_PATTERN_DATA);
-        
-    Lretry:
-        final switch (pfx.type) {
-        case PatternType.hex:
-            // BUG: https://github.com/dlang/phobos/commit/088e55a56a4fd06067165f9a9d9eaf2173a93f73
-            static if (__VERSION__ < 2090)
-            {
-                import ddhx.platform : assertion;
-                assertion(
-                    (pfx.str[0] >= '0' && pfx.str[0] <= '9') ||
-                    (pfx.str[0] >= 'a' && pfx.str[0] <= 'f') ||
-                    (pfx.str[0] >= 'A' && pfx.str[0] <= 'F'),
-                    text("Not a hex number", pfx.str));
-            }
-            // NOTE: %x does not support negative numbers
-            ulong b = parse!ulong(pfx.str, 16);
-            foreach (v; sliceup(&b)) pat.data ~= v;
+
+        final switch (pfx.spec.type) {
+        case PatternType.bytes:
+            foreach (ubyte v; hexbytes(pfx.str, arg.data)) pat.data ~= v;
             break;
-        case PatternType.dec:
-            static if (__VERSION__ < 2090)
-            {
-                import ddhx.platform : assertion;
-                assertion(
-                    (pfx.str[0] >= '0' && pfx.str[0] <= '9'),
-                    text("Not a hex number", pfx.str));
-            }
-            // NOTE: We don't yet support negative numbers
-            //       But, parse!long does
-            ulong b = parse!ulong(pfx.str, 10);
-            foreach (v; sliceup(&b)) pat.data ~= v;
-            break;
-        case PatternType.oct:
-            static if (__VERSION__ < 2090)
-            {
-                import ddhx.platform : assertion;
-                assertion(
-                    (pfx.str[0] >= '0' && pfx.str[0] <= '7'),
-                    text("Not a hex number", pfx.str));
-            }
-            // NOTE: %o does not support negative numbers
-            ulong b = parse!ulong(pfx.str, 8);
-            foreach (v; sliceup(&b)) pat.data ~= v;
-            break;
-        case PatternType.string_:
+        case PatternType.text:
             // TODO: Possibly replace string pattern type for encoding-specific ones
             foreach (char v; pfx.str) pat.data ~= cast(ubyte)v;
             break;
+        case PatternType.scalar:
+            foreach (ubyte v; scalar(pfx.str, pfx.spec, endian, arg.data)) pat.data ~= v;
+            break;
         case PatternType.unknown:
-            // If last pattern is correct ("x:00"), retry with that pattern,
-            // since this pattern could just be "00" for example.
-            if (last)
-            {
-                pfx.type = last;
-                goto Lretry;
-            }
-            throw new Exception(text(MSG_UNKNOWN_PATTERN_PREFIX, printable(arg.data)));
+            assert(false, "Unknown prefixes are resolved or thrown above");
         }
-        last = pfx.type;
+        last = pfx.spec;
     }
     return pat;
 }
 /// Ditto
-Pattern pattern(CharacterSet charset, string[] args...) // string to Argument
+Pattern pattern(CharacterSet charset, Endian endian, string[] args...) // string to Argument
 {
     Argument[] wrapped = new Argument[args.length];
     foreach (i, arg; args) wrapped[i] = Argument(arg);
-    return pattern(charset, wrapped);
+    return pattern(charset, endian, wrapped);
 }
 unittest
 {
+    // Most of these do not care about endianness, so name the default once
+    Pattern pat(string[] args...)
+    {
+        return pattern(CharacterSet.ascii, Endian.littleEndian, args);
+    }
+    Pattern patbe(string[] args...)
+    {
+        return pattern(CharacterSet.ascii, Endian.bigEndian, args);
+    }
+
     // Official prefixes
-    assert(pattern(CharacterSet.ascii, "x:00").data          == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "d:255").data         == [ 0xff ]);
-    assert(pattern(CharacterSet.ascii, "o:377").data         == [ 0xff ]);
-    assert(pattern(CharacterSet.ascii, "x:00","00").data     == [ 0, 0 ]);
-    assert(pattern(CharacterSet.ascii, "s:test").data        == [ 't', 'e', 's', 't' ]);
-    assert(pattern(CharacterSet.ascii, "x:0","s:test").data  == [ 0, 't', 'e', 's', 't' ]);
-    assert(pattern(CharacterSet.ascii, "x:0","0","s:test").data == [ 0, 0, 't', 'e', 's', 't' ]);
-    
-    // Alias prefixes
-    assert(pattern(CharacterSet.ascii, "0x0").data             == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "0x00").data            == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "0o0").data             == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "0o00").data            == [ 0 ]);
-    assert(pattern(CharacterSet.ascii, "0xff").data            == [ 0xff ]);
+    assert(pat("x:00").data              == [ 0 ]);
+    assert(pat("u8:255").data            == [ 0xff ]);
+    assert(pat("o8:377").data            == [ 0xff ]);
+    assert(pat("x:00","00").data         == [ 0, 0 ]);
+    assert(pat("s:test").data            == [ 't', 'e', 's', 't' ]);
+    assert(pat("x:00","s:test").data     == [ 0, 't', 'e', 's', 't' ]);
+    assert(pat("x:00","00","s:test").data == [ 0, 0, 't', 'e', 's', 't' ]);
+
+    // Alias prefixes. "0x" survives because it is a byte string like "x:";
+    // "0o" did not, because it was an octal scalar with no width
+    assert(pat("0x00").data              == [ 0 ]);
+    assert(pat("0xff").data              == [ 0xff ]);
+
+    // Hex is a byte string: what is typed is what is searched for, in that
+    // order, whatever the host or the endian setting says
+    assert(pat("x:1122").data            == [ 0x11, 0x22 ]);
+    assert(patbe("x:1122").data          == [ 0x11, 0x22 ]);
+    assert(pat("x:0001").data            == [ 0x00, 0x01 ]); // no leading zero eaten
+    assert(pat("x:deadbeef").data        == [ 0xde, 0xad, 0xbe, 0xef ]);
+    assert(pat("x:DEADBEEF").data        == [ 0xde, 0xad, 0xbe, 0xef ]);
+    assert(pat("x:00112233445566778899").data // longer than any scalar
+        == [ 0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99 ]);
+
+    // ...and a width says the argument is a value instead, so it gets encoded
+    assert(pat("x16:1122").data          == [ 0x22, 0x11 ]);
+    assert(patbe("x16:1122").data        == [ 0x11, 0x22 ]);
+    assert(pat("x8:ff").data             == [ 0xff ]);
+    assert(pat("x32:1122").data          == [ 0x22, 0x11, 0, 0 ]);
+    assert(patbe("x32:1122").data        == [ 0, 0, 0x11, 0x22 ]);
+    assert(pat("x64:1").data             == [ 1, 0, 0, 0, 0, 0, 0, 0 ]);
+
+    // The width is the prefix's, never the value's, so 255 and 256 occupy the
+    // same two bytes and a replace overwrites the same amount either way
+    assert(pat("u16:255").data           == [ 0xff, 0x00 ]);
+    assert(pat("u16:256").data           == [ 0x00, 0x01 ]);
+    assert(patbe("u16:256").data         == [ 0x01, 0x00 ]);
+    assert(pat("u8:255").data            == [ 0xff ]);
+    assert(pat("u16:255").data           == [ 0xff, 0x00 ]); // the point of widths
+    assert(patbe("u16:255").data         == [ 0x00, 0xff ]);
+    assert(pat("u32:1").data             == [ 1, 0, 0, 0 ]);
+    assert(pat("u64:1").data             == [ 1, 0, 0, 0, 0, 0, 0, 0 ]);
+    assert(pat("o16:377").data           == [ 0xff, 0x00 ]);
+    assert(pat("u64:18446744073709551615").data
+        == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+
+    // Signed types take a sign and encode two's complement
+    assert(pat("i8:-1").data             == [ 0xff ]);
+    assert(pat("i8:127").data            == [ 0x7f ]);
+    assert(pat("i8:-128").data           == [ 0x80 ]);
+    assert(pat("i16:-1").data            == [ 0xff, 0xff ]);
+    assert(pat("i16:-2").data            == [ 0xfe, 0xff ]);
+    assert(patbe("i16:-2").data          == [ 0xff, 0xfe ]);
+    assert(pat("i32:-1").data            == [ 0xff, 0xff, 0xff, 0xff ]);
+    assert(pat("i64:-1").data            == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    assert(pat("i64:-9223372036854775808").data == [ 0, 0, 0, 0, 0, 0, 0, 0x80 ]);
+    assert(pat("i16:1").data             == [ 0x01, 0x00 ]);
+
+    // A width carries over the same way a bare prefix does
+    assert(pat("u16:1", "2").data        == [ 1, 0, 2, 0 ]);
+    assert(pat("i8:-1", "-2").data       == [ 0xff, 0xfe ]);
+
+    // Which is how a needle of any length is built out of values, and it is
+    // the carry-over that keeps it quick to type rather than the magnitude
+    assert(pat("u8:255", "255", "255", "255", "255").data
+        == [ 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    assert(pat("u8:1", "2", "3").data     == [ 1, 2, 3 ]);
+    assert(pat("i16:-1", "-1", "-1").data == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
 
     // Plain strings are raw, so a backslash is a backslash
-    assert(pattern(CharacterSet.ascii, `s:a\tb`).data          == [ 'a', '\\', 't', 'b' ]);
-    assert(pattern(CharacterSet.ascii, `s:C:\dir`).data        == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
-    assert(pattern(CharacterSet.ascii, `s:C:\\`).data          == [ 'C', ':', '\\', '\\' ]);
+    assert(pat(`s:a\tb`).data            == [ 'a', '\\', 't', 'b' ]);
+    assert(pat(`s:C:\dir`).data          == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
+    assert(pat(`s:C:\\`).data            == [ 'C', ':', '\\', '\\' ]);
 
     // ...and what an escape sequence produced is data like any other, since it
     // arrives here already resolved. Bytes that are not text included: this is
@@ -340,7 +499,7 @@ unittest
     {
         Argument[] argv = [ Argument(data) ];
         ubyte[] result;
-        foreach (ushort v; pattern(CharacterSet.ascii, argv).data)
+        foreach (ushort v; pattern(CharacterSet.ascii, Endian.littleEndian, argv).data)
             result ~= cast(ubyte)v;
         return result;
     }
@@ -350,21 +509,22 @@ unittest
     assert(bytes(cast(immutable(ubyte)[])[ 's', ':', 0xff, 0xfe ]) == [ 0xff, 0xfe ]);
 
     // Non-string multibyte patterns
-    assert(pattern(CharacterSet.ascii, "0x01").data            == [ 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x0101").data          == [ 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x010101").data        == [ 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x01010101").data      == [ 1, 1, 1, 1 ]); // 32bit
-    assert(pattern(CharacterSet.ascii, "0x0101010101").data      == [ 1, 1, 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x010101010101").data    == [ 1, 1, 1, 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x01010101010101").data  == [ 1, 1, 1, 1, 1, 1, 1 ]);
-    assert(pattern(CharacterSet.ascii, "0x0101010101010101").data== [ 1, 1, 1, 1, 1, 1, 1, 1 ]);
-    
+    assert(pat("0x01").data                == [ 1 ]);
+    assert(pat("0x0101").data              == [ 1, 1 ]);
+    assert(pat("0x010101").data            == [ 1, 1, 1 ]);
+    assert(pat("0x01010101").data          == [ 1, 1, 1, 1 ]); // 32bit
+    assert(pat("0x0101010101").data        == [ 1, 1, 1, 1, 1 ]);
+    assert(pat("0x010101010101").data      == [ 1, 1, 1, 1, 1, 1 ]);
+    assert(pat("0x01010101010101").data    == [ 1, 1, 1, 1, 1, 1, 1 ]);
+    assert(pat("0x0101010101010101").data  == [ 1, 1, 1, 1, 1, 1, 1, 1 ]);
+
     // Invalid tests that need to throw
     void test_throw(string[] input)
     {
         Pattern r;
-        try { r = pattern(CharacterSet.ascii, input); } catch (Exception) { return; }
-        
+        try { r = pattern(CharacterSet.ascii, Endian.littleEndian, input); }
+        catch (Exception) { return; }
+
         import std.stdio : stderr, writeln;
         stderr.writeln("Failed to throw with: ", input, " it produced: ", r.data);
         assert(false, "test_throw test failed");
@@ -373,34 +533,54 @@ unittest
         // Missing prefix
         [""], ["00"], ["00", "0x00"],
         // Empty data
-        ["x:"], ["o:"], ["d:"], ["s:"], ["0x"],
+        ["x:"], ["s:"], ["0x"], ["x16:"], ["i8:"], ["i8:-"], ["u8:"], ["o8:"],
         // Quotes are no longer a prefix alias
         ["\""], [`"yes"`],
-        // Too long
-        ["0x010101010101010101"], // 64+8 bits
-        // Unknown prefixes
-        ["INVALID:ff"], ["INVALID:"],
+        // Unknown prefixes, including widths that are not a type
+        ["INVALID:ff"], ["INVALID:"], ["x24:00"], ["d128:1"], ["i:1"], ["u:1"],
         // Tests last known good prefix
         ["x:00", "INVALID:ff"],
-        // Negative numbers not yet supported....... sorry
-        ["d:-1"], ["x:-1"], ["o:-1"],
+        // Half a byte is a typo, not a byte
+        ["x:0"], ["x:fff"], ["0x0"], ["0xfff"], ["x:00", "0"],
+        // A scalar type without a width, whatever it would have encoded to.
+        // "d:", "o:", and "0o" are the retired spellings people will still
+        // type; "u:" and "i:" never existed
+        ["u:"], ["u:0"], ["u:255"], ["u:256"], ["i:1"],
+        ["d:"], ["d:0"], ["d:255"], ["d:256"], ["d:65536"],
+        ["o:"], ["o:377"], ["0o0"], ["0o377"],
+        ["x:00", "u:1"], ["x:00", "d:1"], ["u8:1", "d:1"],
+        // Not digits, and no silently taking the part that was
+        ["x:zz"], ["x:12zz"], ["u8:12zz"], ["o8:9"], ["o8:18"], ["u8:1_0"],
+        // Signs belong to the signed types only
+        ["x:-1"], ["u16:-1"], ["x16:-1"], ["u8:+1"], ["o8:-1"],
+        // Too large for the width asked for
+        ["u8:256"], ["i8:128"], ["i8:-129"], ["u16:65536"], ["x8:100"],
+        ["i16:32768"], ["i16:-32769"], ["i32:2147483648"], ["x16:10000"],
+        ["i64:9223372036854775808"], ["i64:-9223372036854775809"],
+        // Too large for anything
+        ["u64:18446744073709551616"],
     ];
     foreach (inv; invalids)
         test_throw(inv);
 
+    // A byte string has no width to overflow, so what used to be "too long"
+    // is now just a longer needle
+    assert(pat("0x010101010101010101").data.length == 9); // 64+8 bits
+    assert(pat("0x0101010101010101010101").data.length == 11);
+
     // Bad escapes are the command line's problem, not this layer's: by the
     // time a pattern is built, a backslash is only ever a backslash
     foreach (string bad; [ `s:\`, `s:\z`, `s:\x`, `s:\400` ])
-        assert(pattern(CharacterSet.ascii, bad).data.length);
+        assert(pat(bad).data.length);
 
     // Globbers
-    assert(pattern(CharacterSet.ascii, "?")                 == [ PATTERN_GLOB_ONE ]);
-    assert(pattern(CharacterSet.ascii, "*")                 == [ PATTERN_GLOB_MANY ]);
-    assert(pattern(CharacterSet.ascii, "x:00", "?", "x:FF") == [ 0, PATTERN_GLOB_ONE,  0xff ]);
-    assert(pattern(CharacterSet.ascii, "x:00", "*", "x:FF") == [ 0, PATTERN_GLOB_MANY, 0xff ]);
+    assert(pat("?")                 == [ PATTERN_GLOB_ONE ]);
+    assert(pat("*")                 == [ PATTERN_GLOB_MANY ]);
+    assert(pat("x:00", "?", "x:FF") == [ 0, PATTERN_GLOB_ONE,  0xff ]);
+    assert(pat("x:00", "*", "x:FF") == [ 0, PATTERN_GLOB_MANY, 0xff ]);
     // A prefix already makes it data, no quoting involved
-    assert(pattern(CharacterSet.ascii, "s:*").data == [ '*' ]);
-    assert(pattern(CharacterSet.ascii, "s:?").data == [ '?' ]);
+    assert(pat("s:*").data == [ '*' ]);
+    assert(pat("s:?").data == [ '?' ]);
     assert(bytes(cast(immutable(ubyte)[])"s:*") == [ '*' ]);
 }
 
@@ -437,7 +617,7 @@ unittest
     ushort[] compile(string line)
     {
         Argument[] argv = arguments(line);
-        return pattern(CharacterSet.ascii, argv[1..$]).data;
+        return pattern(CharacterSet.ascii, Endian.littleEndian, argv[1..$]).data;
     }
     void test_throw(string line)
     {
@@ -599,34 +779,34 @@ unittest
 {
     ubyte[] hay = cast(ubyte[]) "ABCDEF";
 
-    Pattern p = pattern(CharacterSet.ascii, "s:ABC");
+    Pattern p = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ABC");
     assert(matchPattern(hay, p, 0, 0) == 3);
     assert(matchPattern(hay, p, 1, 0) == -1);
     assert(matchPattern(hay, p, 4, 0) == -1); // not enough room
 
     // ? matches exactly one byte
-    p = pattern(CharacterSet.ascii, "?", "s:BC");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "?", "s:BC");
     assert(matchPattern(hay, p, 0, 0) == 3); // A matches ?
     assert(matchPattern(hay, p, 2, 0) == -1); // CD != BC
 
     // * matches zero or more (minimal-match)
-    p = pattern(CharacterSet.ascii, "*", "s:EF");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "s:EF");
     assert(matchPattern(hay, p, 0, 0) == 6); // * eats ABCD, then EF
     assert(matchPattern(hay, p, 4, 0) == 2); // * matches empty, then EF
     assert(matchPattern(hay, p, 5, 0) == -1); // only F left
 
     // Literal on both sides of *: span is the full A..F
-    p = pattern(CharacterSet.ascii, "s:A", "*", "s:F");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "s:A", "*", "s:F");
     assert(matchPattern(hay, p, 0, 0) == 6);
     assert(matchPattern(hay, p, 1, 0) == -1);
 
     // Multiple stars must not exponentially backtrack
-    p = pattern(CharacterSet.ascii, "*", "?", "*", "s:F");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "?", "*", "s:F");
     assert(matchPattern(hay, p, 0, 0) == 6);
     assert(matchPattern(hay, p, 6, 0) == -1); // past end
 
     // Fixed-position match: matchPattern tests AT hPos, not starting from hPos
-    p = pattern(CharacterSet.ascii, "s:D", "?", "F");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "s:D", "?", "F");
     assert(matchPattern(hay, p, 3, 0) == 3);    // "DEF": D=D, E=?, F=F
     assert(matchPattern(hay, p, 0, 0) == -1);   // 'A' != 'D'
     assert(matchPattern(hay, p, 4, 0) == -1);   // not enough room

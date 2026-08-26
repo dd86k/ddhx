@@ -1,56 +1,83 @@
 Changelog for ddhx, newest first. See README for the roadmap.
 
 Categories are used consistently across releases: Added, Changed, Fixed,
-Removed, and (where relevant) Docs.
+Removed, and (when significant) Docs.
 
 ////////////////////////////////////////////////////////////////////////////////
 // Upcoming
 
-- Command line overhaul: arguments are now split with single quotes (raw) and
-  double quotes (C string literals, with escape sequences), for every command
-  and in configuration files, not just for patterns. Warning: the bare
-  '"STRING"' alias for 's:STRING' is gone, so 'find "test"' is now an error;
-  use 'find s:test' or 'find s:"test"' instead.
-- Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}' /
-  '{') jump between differing regions, with a cursor mirror and better
-  alignment in the diff panel.
-- Write protection overhaul: new '-W'/'--writable' flag and 'writemode'
+Prompt and prefix overhauls, readline enhancements, diff pane navigation,
+write protection overhaul, terminal rendering fixes and performance
+improvement.
+
+- Command line overhaul: Now with C string expressions.
+  Arguments are now split with single quotes (raw) and double quotes (C string
+  literals with escape sequences), for every command and in configuration
+  files, not just for patterns.
+  WARNING: the bare `"STRING"` alias for `s:STRING` is gone, so `find "test"`
+  is now an error; use `find s:test` or `find s:"test"` instead.
+- Pattern prefix overhaul: Fixed-width prefixes without surprises.
+  Because variable-width scalars (d:, o: and 0o) would introduce confusion
+  (notably when searching) on odd steppings (producing needles sometimes of 3,
+  5, and 7 bytes), they are now replaced with fixed-width scalars:
+  u8/u16/u32/u64, i8/i16/i32/i64, x8/x16/x32/x64, and o8/o16/o32/o64.
+  The x: prefix was repurposed as an array type: x:1122 produces [ 11, 22 ]
+  in order.
+  Cutting off the variable-length scalars also fixes a wrong byte count issue
+  on 32-bit big-endian platforms.
+- Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}'
+  and '{') jump between differing regions with a diff panel opened,
+  with a cursor mirror and better alignment in the diff panel.
+- Write protection overhaul: new `-W`/`--writable` flag and `writemode`
   config; write mode is now enforced on fixed-size media, with a dedicated
   restricted-mode variable to back it.
-- Terminal rendering fixes: partial rendering for readline, correct cell
-  counting/truncation on narrow terminals, and a fixed CJK width heuristic.
-  Tested on Linux (VTE, fbcon) and Windows (Terminal, conhost).
-- View/formatting fixes: row drift when lines are truncated by terminal
-  width is fixed.
 
 // Added
 - Single quoting ('TEXT', raw) and double quoting ("TEXT", C string literal)
   for command arguments (decc3ee)
 - C escape sequences inside double quotes: \a \b \e \f \n \r \t \v \\ \' \"
   \?, octal (\0, \377), and hexadecimal (\x1b) (decc3ee)
-- '-W'/'--writable' flag (cb1c02d)
-- 'writemode' config option, enforced on fixed-size media (6fd3d7e)
-- 'diff-next' / 'diff-prev' commands mapped to '}' / '{' (73a5983)
+- Fixed-width pattern prefixes: `x8:`/`x16:`/`x32:`/`x64:`, `u8:`..`u64:`,
+  `o8:`..`o64:`, and signed `i8:`..`i64:`. A value too large for its width is
+  an error rather than a truncation
+- Signed pattern values, encoded as two's complement: `find i16:-1`. Only the
+  `i*` prefixes take a sign; a minus on an unsigned type is reported rather
+  than wrapped
+- `-W`/`--writable` flag (cb1c02d)
+- `writemode` config option, enforced on fixed-size media (6fd3d7e)
+- `diff-next` / `diff-prev` commands mapped to `}` / `{` (73a5983)
 - Cursor mirror in the diff panel (e77bd04)
-- 'Braces' and 'Pipe' terminal enum values (7d15f8b)
+- `Braces` and `Pipe` terminal enum values (7d15f8b)
 
 // Changed
 - Quoting and escapes apply to every command and to configuration files, not
-  only to patterns: 'save-as "dump\x2Etxt"' saves dump.txt (decc3ee)
+  only to patterns: `save-as "dump\x2Etxt"` saves dump.txt (decc3ee)
 - Arguments are bytes rather than text, so an escape may produce data that is
-  not valid UTF-8. Commands that need text ('save-as "\xff"') report it, and
+  not valid UTF-8. Commands that need text (`save-as "\xff"`) report it, and
   commands that take data are unaffected (decc3ee)
 - Unquoted and single quoted text is raw, so a path needs no escaping:
-  'find s:C:\Users' and 'diff-file C:\dump.bin' work as typed (decc3ee)
+  `find s:C:\Users` and `diff-file C:\dump.bin` work as typed (decc3ee)
 - An unknown escape, an unterminated quote, and a hex escape with a third
   digit are errors instead of being guessed at (decc3ee)
-- Restricted mode split into its own variable, simplifying '-W' handling
+- `x:` and `0x` are byte strings rather than integers, so digits are taken in
+  the order written and the length is no longer capped at 64 bits. An odd
+  number of digits is an error instead of being padded: `x:0` is now `x:00`
+- The `endian` setting (and Alt+E) now applies to scalar patterns as well as
+  to the inspector, instead of scalars silently using the host`s endianness
+- Scalar patterns always state a width, so a pattern`s length no longer
+  depends on the value written in it. `d:255` becomes `u8:255` or `u16:255`,
+  `o:377` becomes `o8:377`. Patterns were 8-bit per prefix when they were
+  introduced in v0.6.0, so this restores the fixed width and adds the larger
+  ones by name rather than by magnitude
+- Restricted mode split into its own variable, simplifying `-W` handling
   (0ae096e)
 - Diff panel alignment improved (391a387)
 - Benchmark tool: fixed compile, uses default editor when run without args
   (3ffdac4)
 
 // Fixed
+- Patterns no longer silently accept trailing garbage: `x16:12zz` was taken
+  for 0x12, and is now an error.
 - Row drift when lines are truncated by terminal width (4bcb010)
 - Terminal partial rendering for readline (63cdbf7), with fixes:
   - cell count no longer relies on terminalWrite, counts using graphs
@@ -61,17 +88,25 @@ Removed, and (where relevant) Docs.
     bug)
 
 // Removed
-- Bare '"STRING"' pattern alias for 's:STRING'. Quotes are the prompt's
-  syntax, not a pattern type, so the 's:' prefix is always required (decc3ee)
+- Bare `"STRING"` pattern alias for `s:STRING`. Quotes are the prompt`s
+  syntax, not a pattern type, so the `s:` prefix is always required (decc3ee)
+- Bare `d:`, `o:`, and `0o` pattern prefixes. They named a type without a
+  size, so they are gone rather than defaulted, and are now unknown prefixes.
+  Decimal is `u8:`..`u64:` and `i8:`..`i64:`; octal is `o8:`..`o64:`. `0x` is
+  unaffected, being a byte string like the `x:` it abbreviates
 
 // Docs
-- README updated (700136c)
 - ddhx.1 manpage updated for writemode, -W, and diff-next/diff-prev
   (6fd3d7e, 0ae096e, cb1c02d, 73a5983)
-- ddhx.1: new Quoting subsection under COMMANDS, rewritten 's:' and wildcard
+- ddhx.1: new Quoting subsection under COMMANDS, rewritten `s:` and wildcard
   entries under PATTERNS (2f06c99)
 - src/README: new COMMAND LINE section covering the rules, the cases the
   design is pinned to, and why each decision was made (aa9d503)
+- src/README: PREFIXES subsection on the byte string versus scalar split, plus
+  the rationale for widths, for endianness being a setting, and for x: no
+  longer being a number
+- ddhx.1: PATTERNS rewritten for the width prefixes, and the `endian` setting
+  no longer described as inspector-only
 
 ////////////////////////////////////////////////////////////////////////////////
 // v0.11.0

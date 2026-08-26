@@ -325,7 +325,7 @@ Ctrl+R	Find and replace next (repeat last)
 lb l.
 Tab	Switch between data and text columns
 Alt+I	Toggle the data inspector panel
-Alt+E	Toggle inspector endian (little/big)
+Alt+E	Toggle endian (little/big)
 .TE
 .
 .SS Diff
@@ -559,7 +559,7 @@ Example: looking for
 .RS
 .nf
 find s:hi x:00 00
-find "hi" 0x0000
+find s:hi 0x0000
 find x:68 69 00 00
 .fi
 .RE
@@ -685,7 +685,8 @@ Show or hide the data inspector panel
 .RB ( Alt+I ).
 .TP
 .B toggle\-endian
-Toggle the inspector between little- and big-endian
+Toggle between little- and big-endian, for both the data inspector and
+scalar patterns
 .RB ( Alt+E ).
 .TP
 .BI diff\-file " [PATH]"
@@ -794,23 +795,72 @@ For example,
 will yield a pattern of [ 0x00, 0x01 ], and
 .B "s:hi x:ffff"
 a pattern of [ 0x68, 0x69, 0xff, 0xff ].
+An argument without a prefix of its own continues the previous one, which is
+why the second
+.B 01
+above needs no repeating of
+.BR x: .
+.PP
+A prefix says whether its argument is a sequence of bytes or a value. Bytes are
+taken as written; a value is encoded into the number of bytes its prefix names,
+using the byte order of the
+.B endian
+setting (see
+.BR CONFIGURATION ).
+.PP
+Either way the prefix decides how long the pattern is, never the value: both
+.B u16:255
+and
+.B u16:256
+are two bytes, so
+.B replace
+overwrites the same amount for either. A value type therefore always states a
+width, which is why the bare
+.BR d: ,
+.BR o: ,
+and
+.B 0o
+prefixes no longer exist. Decimal is
+.BR u8: \(en u64:
+unsigned and
+.BR i8: \(en i64:
+signed, named after the types the data inspector shows.
 .PP
 Supported prefixes:
 .TP
-.BI x: VALUE "\fR, \fP" 0x VALUE
-Hexadecimal unsigned integer.
+.BI x: BYTES "\fR, \fP" 0x BYTES
+Hexadecimal bytes, in the order written. Two digits per byte, so the number of
+digits must be even and the length is not limited to that of an integer.
 Example:
-.BR "x:00" ", " "0xff" ", " "x:0101" .
+.BR "x:00" ", " "0xff" ", " "x:1122" " (which is [ 0x11, 0x22 ])."
 .TP
-.BI d: VALUE
-Decimal unsigned integer.
-Example:
-.BR "d:255" .
+.BR "x8:" ", " "x16:" ", " "x32:" ", " "x64:"
+Hexadecimal unsigned integer of 1, 2, 4, or 8 bytes.
+Unlike
+.BR x: ,
+these are values, so they are encoded using the current endian:
+.B x16:1122
+is [ 0x22, 0x11 ] on little endian and [ 0x11, 0x22 ] on big endian.
 .TP
-.BI o: VALUE "\fR, \fP" 0o VALUE
-Octal unsigned integer.
+.BR "u8:" ", " "u16:" ", " "u32:" ", " "u64:"
+Decimal unsigned integer of 1, 2, 4, or 8 bytes.
 Example:
-.BR "o:377" ", " "0o377" .
+.B u16:255
+is [ 0xff, 0x00 ] on little endian.
+.TP
+.BR "o8:" ", " "o16:" ", " "o32:" ", " "o64:"
+Octal unsigned integer of 1, 2, 4, or 8 bytes.
+.TP
+.BR "i8:" ", " "i16:" ", " "i32:" ", " "i64:"
+Decimal signed integer of 1, 2, 4, or 8 bytes, encoded as two's complement.
+These are the only prefixes that accept a leading
+.BR \- ,
+and a width is required, since a negative value has no natural size.
+Example:
+.BR "i16:\-1" " (which is [ 0xff, 0xff ] on little endian)."
+.IP
+A value that does not fit the width asked for is an error rather than a
+truncation.
 .TP
 .BI s: STRING
 String (currently UTF-8 only).
@@ -1044,7 +1094,10 @@ Data display format. Default:
 .BR x8 .
 .TP
 .BR endian " \fRlittle\fP | big"
-Endian used by the data inspector for multi-byte values. Aliases
+Endian used for multi-byte values, both in the data inspector and when a
+scalar pattern is encoded (see
+.BR PATTERNS ).
+Aliases
 .B le
 and
 .B be

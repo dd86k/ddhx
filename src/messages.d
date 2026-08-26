@@ -106,6 +106,9 @@ static immutable string MSG_ESCAPE_TOO_MANY_DIGITS = "Hex escape sequence takes 
 
 static immutable string MSG_MISSING_PATTERN_DATA = "Missing data for pattern";
 static immutable string MSG_UNKNOWN_PATTERN_PREFIX = "Unknown pattern prefix: ";
+static immutable string MSG_ODD_HEX_DIGITS = "Hex bytes take an even number of digits: ";
+static immutable string MSG_INVALID_NUMBER = "Invalid number: ";
+static immutable string MSG_VALUE_OUT_OF_RANGE = "Value too large for its type: ";
 
 // Charsets / transcoding
 

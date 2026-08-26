@@ -68,7 +68,7 @@ A typed line goes through two steps:
                       wildcards.
 
 *
-* RULES
+* QUOTING RULES
 *
 
 Quoting style selects how the text is read, the same way it does in a
@@ -125,6 +125,40 @@ applied before a command is chosen. "\xff" resolves to one byte for find and
 for diff-file alike, whether or not the command can do anything with it.
 
 *
+* PREFIXES
+*
+
+Step 2 is prefixes. The split that organizes them is not the radix, it is byte
+string versus scalar:
+
+    BYTE STRING     already a sequence of bytes, so it is taken as written and
+                    has neither a width nor an endian to ask about
+    SCALAR          a value that still has to be encoded, so it has both
+
+    x: 0x                 bytes, two hex digits each
+    s:                    bytes, subject to the character set
+    x8: x16: x32: x64:    scalar, unsigned, that many bytes
+    u8: u16: u32: u64:    likewise, decimal
+    o8: o16: o32: o64:    likewise, octal
+    i8: i16: i32: i64:    likewise, signed, two's complement
+
+Hexadecimal is the only radix on both sides, because two digits are exactly one
+byte. Decimal and octal do not tile bytes, so they are only ever scalars, and a
+scalar always names its width: the bare d:, o:, and 0o are gone, decimal being
+u8:..u64: unsigned and i8:..i64: signed. 0x survives the same cut only because
+it is a byte string, like the x: it abbreviates.
+
+The rule underneath both sides is that the prefix decides the length and the
+value never does. A byte string is as long as what was typed, a scalar is as
+long as its width says, and nothing is measured by how large a number happens
+to be.
+
+Endianness is not in the prefix either. Scalars are encoded with the `endian`
+setting, the same one the inspector uses and Alt+E flips. An argument without a
+prefix continues the previous one, width included, so `find u16:1 2` is two
+16-bit values.
+
+*
 * EXPECTATIONS
 *
 
@@ -150,7 +184,18 @@ and the unittest at the end of patterns.d (both, by typed command line).
   find s:'C:\Users'"\0"            C:\Users 00         concatenated per run
   find s:C:\dir"a b"               C:\dira b           ...same, no rule broken
   find s:'it'"'"'s'                it's                a quote needs no escape
+  find x:1122                      11 22               bytes, as written
+  find x16:1122                    22 11               a value, so encoded
+  find x:0001                      00 01               no leading zero eaten
+  find x:fff                       error, half a byte on the end
+  find u16:255                     ff 00               length is the prefix's
+  find u16:256                     00 01                  ...not the value's
+  find u8:256                      error, too large for its width
+  find d:255                       error, unknown prefix; d: named no width
+  find i16:-1                      ff ff               two's complement
+  find u16:-1                      error, only i* takes a sign
   find x:00 * x:FF                 00 <any> FF
+  find u16:1 2                     01 00 02 00         prefix carries, width too
   find s:*                         '*'                 prefixed, so data
   find '*'                         <any run>           quoting does not matter
   find "quoted"                    error, unknown prefix; quotes are not a type
@@ -165,6 +210,9 @@ and the unittest at the end of patterns.d (both, by typed command line).
 *
 * RATIONALE
 *
+
+The core idea of a hex editor is to manipulate data with precision. For that,
+it needs to be precise, and it needs to be constant in this precision.
 
 None of the above is forced. Why each of them, once:
 
@@ -231,6 +279,49 @@ None of the above is forced. Why each of them, once:
   named something that is not text, so bytes that are not simply miss the
   lookup, and "command not found" beats complaining about the encoding of
   something that was only mistyped.
+
+- x: is a byte string and not a number, though it used to be one. Everything
+  went through parse!ulong and a byte slice of it, which made x:1122 depend on
+  the host's endianness (22 11 here, 11 22 elsewhere) and x:0001 one byte
+  instead of two. Both were invisible, since every test value was a palindrome.
+  A hex editor's own notation is the one place where the bytes are already
+  written out in order, so reading them in any other is indefensible.
+
+- An odd digit count is an error rather than a pad. Padding is guessing which
+  end gains the zero, and that guess is exactly what x: used to get wrong.
+
+- Every scalar names a width, and there is no bare d:, o:, or 0o. Those sized
+  themselves to the value, so d:255 was one byte, d:256 was two, and d:65536 was
+  three, a width no scalar type has. That is the same trap x: was in, one radix
+  over: the length of the needle decided by the number written in it rather than
+  by what was typed. It is worse than a surprising search, because the length is
+  destructive under replace and insert, where d:255 and d:256 overwrite
+  different amounts of the file. Dropping them costs the two-character spelling
+  and buys a rule with nothing attached: the prefix decides the length, the
+  value never does.
+
+- The width forms are named after types the program already shows rather than
+  as db/dw/dd for clarity. The assembler spelling would also have collided with
+  any letter suffix for endianness, back when that was still a candidate.
+  Additionally, u32 and i32 spellings are more popular spellings than d32.
+
+- 0x stayed while 0o went. They look like a matched pair of C-style aliases, but
+  only one of them survives the rule above: 0x is a byte string, so its length
+  is the digits, while 0o was an octal scalar with nowhere to put a width.
+
+- Endianness is a setting and not a prefix. It is a property of the file being
+  looked at, not of one needle, so the same answer applies to every scalar on
+  the line and to the inspector alongside them. In the prefix it would double
+  every type for something that changes once per file, and it would collide
+  with the width letters besides.
+
+- Only the i* types accept a sign at all. A minus on an unsigned type is a
+  mistake worth reporting, not a wrap to perform. There is no bare i: either,
+  for the same reason there is no bare u:.
+
+- A value too large for its width is an error rather than a truncation. The
+  bytes that would be searched for are not the ones that were asked for, and a
+  needle that quietly matches the wrong thing is the worst outcome available.
 
 ********************************************************************************
 * DOCUMENT EDITOR

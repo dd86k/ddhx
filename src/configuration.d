@@ -269,9 +269,8 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_inspector
     },
     {
-        //TODO: Shouldn't there be a "native" option?
-        "endian", "Endian used by the inspector for multi-byte values",
-        `"little" or "big" (aliases: "le", "be")`, `"little"`,
+        "endian", "Endian used for multi-byte values (inspector, scalar patterns)",
+        `"little" or "big" (aliases: "le", "be")`, `"little"`, // TODO: native option
         &configure_endian
     },
     {

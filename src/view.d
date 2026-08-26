@@ -340,7 +340,7 @@ immutable Command[] default_commands = [
         Key.Tab,                    &change_panel },
     { "toggle-inspector",           "Show or hide the data inspector panel",
         Mod.alt|Key.I,              &toggle_inspector },
-    { "toggle-endian",              "Toggle inspector endian (little/big)",
+    { "toggle-endian",              "Toggle endian (little/big)",
         Mod.alt|Key.E,              &toggle_endian },
     // Acting as a toggle (file opened + no args=close) is fine
     { "diff-file",                  "Diff a file against the current view (no path closes it)",
@@ -3118,13 +3118,14 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
 // Old bound (o < haystack.length) let the last comparison overread.
 unittest
 {
+    import std.system : Endian;
     import ddhx.editor.dummy : DummyDocumentEditor;
 
     // "AABBCC" - needle "CC" should be found at position 4.
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
-    Pattern needle = pattern(CharacterSet.ascii, "s:CC");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:CC");
     SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result.pos == 4, "forward aligned: expected 4");
     assert(result.len == 2, "forward aligned: len should equal needle length");
@@ -3133,12 +3134,13 @@ unittest
 // without reading past the buffer.
 unittest
 {
+    import std.system : Endian;
     import ddhx.editor.dummy : DummyDocumentEditor;
 
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, "s:ZZ");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
     SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
 }
@@ -3148,12 +3150,13 @@ unittest
 // counter hits 1 then would underflow with unsigned arithmetic.
 unittest
 {
+    import std.system : Endian;
     import ddhx.editor.dummy : DummyDocumentEditor;
 
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
 
-    Pattern needle = pattern(CharacterSet.ascii, "s:ZZ");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
     SearchResult result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
 }
@@ -3161,12 +3164,13 @@ unittest
 // and the match (not at offset 0) is still found.
 unittest
 {
+    import std.system : Endian;
     import ddhx.editor.dummy : DummyDocumentEditor;
 
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    Pattern needle = pattern(CharacterSet.ascii, "s:CD");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:CD");
     SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_DISALLOW_CANCEL, null);
     assert(result.pos == 2, "reverse from end: expected 2");
     assert(result.len == 2);
@@ -4624,7 +4628,7 @@ void replace_(Session *session, Argument[] args)
             message("Missing pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, args);
+        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4639,7 +4643,7 @@ void replace_(Session *session, Argument[] args)
         return;
     }
 
-    Pattern p = pattern(session.rc.charset, args);
+    Pattern p = pattern(session.rc.charset, session.rc.endian, args);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -4661,7 +4665,7 @@ void insert_(Session *session, Argument[] args)
             message("Need pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, args);
+        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4676,7 +4680,7 @@ void insert_(Session *session, Argument[] args)
         return;
     }
 
-    Pattern p = pattern(session.rc.charset, args);
+    Pattern p = pattern(session.rc.charset, session.rc.endian, args);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -4698,7 +4702,7 @@ void replace_range(Session *session, Argument[] args)
             message("Missing pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, args);
+        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4719,7 +4723,7 @@ void replace_range(Session *session, Argument[] args)
     }
 
     Range r = askrange(args, 0, "Range: ");
-    Pattern p = pattern(session.rc.charset, args[1..$]);
+    Pattern p = pattern(session.rc.charset, session.rc.endian, args[1..$]);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -4741,7 +4745,7 @@ void insert_range(Session *session, Argument[] args)
             message("Need pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, args);
+        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4762,7 +4766,7 @@ void insert_range(Session *session, Argument[] args)
     }
 
     Range r = askrange(args, 0, "Range: ");
-    Pattern p = pattern(session.rc.charset, args[1..$]);
+    Pattern p = pattern(session.rc.charset, session.rc.endian, args[1..$]);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -5156,7 +5160,7 @@ void find(Session *session, Argument[] args)
     // With arguments: Prioritize before selection
     if (args.length > 0)
     {
-        g_needle = pattern(session.rc.charset, args);
+        g_needle = pattern(session.rc.charset, session.rc.endian, args);
         sel.start = session.position_cursor + g_needle.data.length;
     }
     else if (sel.length) // search by selection
@@ -5204,7 +5208,7 @@ void find_back(Session *session, Argument[] args)
     // If arguments: Take those before selection
     if (args.length > 0)
     {
-        g_needle = pattern(session.rc.charset, args);
+        g_needle = pattern(session.rc.charset, session.rc.endian, args);
         sel.start = session.position_cursor - g_needle.data.length;
     }
     else if (sel.length) // selection
@@ -5338,11 +5342,11 @@ void find_replace(Session *session, Argument[] args)
         Argument[] needleArgs, replArgs;
         splitReplaceArgs(args, needleArgs, replArgs);
 
-        g_needle = pattern(session.rc.charset, needleArgs);
+        g_needle = pattern(session.rc.charset, session.rc.endian, needleArgs);
         if (g_needle.length == 0)
             throw new Exception(MSG_EMPTY_NEEDLE);
 
-        g_replacement = pattern(session.rc.charset, replArgs);
+        g_replacement = pattern(session.rc.charset, session.rc.endian, replArgs);
         if (g_replacement.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
@@ -5388,11 +5392,11 @@ void find_replace_all(Session *session, Argument[] args)
         Argument[] needleArgs, replArgs;
         splitReplaceArgs(args, needleArgs, replArgs);
 
-        g_needle = pattern(session.rc.charset, needleArgs);
+        g_needle = pattern(session.rc.charset, session.rc.endian, needleArgs);
         if (g_needle.length == 0)
             throw new Exception(MSG_EMPTY_NEEDLE);
 
-        g_replacement = pattern(session.rc.charset, replArgs);
+        g_replacement = pattern(session.rc.charset, session.rc.endian, replArgs);
         if (g_replacement.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
