@@ -360,6 +360,8 @@ immutable Command[] default_commands = [
         Mod.ctrl|Key.N,             &find_next },
     { "find-prev",                  "Repeat search backward",
         Mod.shift|Key.N,            &find_prev },
+    { "find-bookmark",              "Bookmark every match of a pattern in the document",
+        0,                          &find_bookmark },
     // Data manipulation
     { "replace",                    "Replace data using a pattern",
         0,                          &replace_ }, // avoid Phobos conflict
@@ -2978,10 +2980,10 @@ enum {
     SEARCH_ALIGNED  = 8,
     // Wrap search.
     //SEARCH_WRAP     = 16,
-    /// Unittests run in non-interactible environments, and for those,
-    /// this option avoids canceling, which requires an interactive terminal
-    /// (and terminalHasInput, which throws). Used in tests.
-    SEARCH_DISALLOW_CANCEL = 32,
+    /// Search without touching the terminal: no progress bar, and no
+    /// polling for a cancel key. Unittests run in non-interactible
+    /// environments, where terminalHasInput throws. Used in tests.
+    SEARCH_NON_INTERACTIVE = 32,
     
     /// Search result not found.
     SEARCH_RESULT_NOT_FOUND = -1,
@@ -2997,6 +2999,15 @@ struct SearchResult
     long len;
 }
 
+/// What the hit callback tells the search loop to do with a match.
+enum SearchAction
+{
+    /// Stop searching, search() returns this match.
+    stop,
+    /// Keep searching after (before, in reverse) this match.
+    next,
+}
+
 /// Search for data.
 ///
 /// This function does not rely on the cursor position nor does it change it,
@@ -3010,10 +3021,15 @@ struct SearchResult
 ///     needle = Data to compare against.
 ///     position = Starting position.
 ///     flags = Operation flags.
+///     onhit = Called for every match. Returning SearchAction.next resumes
+///             the scan past the match, so matches never overlap.
+///             A null callback stops at the first match.
 /// Returns: SearchResult with pos=SEARCH_RESULT_NOT_FOUND on no match.
 ///          SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND. On no-match
-///          (including LASTPOS), len is 0.
-SearchResult search(Session *session, Pattern needle, long position, int flags, void delegate(long, long) progress)
+///          (including LASTPOS), len is 0. When onhit consumed every match,
+///          the search ran to the end, so this is a no-match result.
+SearchResult search(Session *session, Pattern needle, long position, int flags,
+    SearchAction delegate(SearchResult) onhit = null)
 {
     assertion(needle, "Need needle");
     
@@ -3027,8 +3043,23 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
     
     int diff = flags & SEARCH_DIFF;
     size_t alignment = flags & SEARCH_ALIGNED ? needle.data.length : 1;
+    // Terminal work (progress bar, cancel key) is off in non-interactive
+    // searches, notably in tests, where terminalHasInput throws
+    bool interactive = (flags & SEARCH_NON_INTERACTIVE) == 0;
     
     long docsize = session.editor.size();
+
+    // Distance to skip on top of what the loop already advances, to resume
+    // scanning right after (or before) a match, so matches never overlap
+    // while staying on an alignment boundary.
+    long resume(long matchlen)
+    {
+        long step = matchlen > 0 ? matchlen : 1;
+        long align_ = cast(long)alignment;
+        if (align_ > 1) // round up to the next alignment boundary
+            step = ((step + align_ - 1) / align_) * align_;
+        return step - align_;
+    }
     
     debug import std.datetime.stopwatch : StopWatch;
     debug StopWatch sw;
@@ -3039,7 +3070,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
         long base = position;
         do
         {
-            if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
+            if (interactive && cancelling())
                 throw new Exception(MSG_CANCELED);
             
             base -= CONFIG_CHUNKSIZE;
@@ -3062,27 +3093,40 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
             }
             // Use signed long for o to avoid size_t underflow when
             // alignment > 1 and o < alignment.
-            for (; o > 0; o -= cast(long) alignment, position -= cast(long) alignment)
+            // Offset 0 is a candidate like any other: stopping above it made
+            // a needle sitting at the very start of the document unfindable.
+            for (; o >= 0; o -= cast(long) alignment, position -= cast(long) alignment)
             {
                 ptrdiff_t mlen = matchPattern(haystack, needle, cast(size_t) o, 0);
                 bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
-                return SearchResult(position, matched ? cast(long) mlen : cast(long) needle.data.length);
+                SearchResult hit = SearchResult(position,
+                    matched ? cast(long) mlen : cast(long) needle.data.length);
+                if (onhit is null || onhit(hit) == SearchAction.stop)
+                    return hit;
+                long skip = resume(hit.len);
+                o -= skip;
+                position -= skip;
             }
             
             // 1. After that loop to avoid flickerin between status-progress
             // 2. In reverse mode, it's towards zero, so base decrements
             //    If we wanted a reverse progress bar, just pass base, but would be confusing
-            if (progress) progress(docsize - base, docsize);
+            if (interactive) update_progress(session, docsize - base, docsize);
         }
         while (base > 0);
+
+        // The loop above walks past offset 0 before giving up, so keep
+        // SEARCH_LASTPOS on the document.
+        if (position < 0)
+            position = 0;
     }
     else // forward
     {
         do
         {
-            if ((flags & SEARCH_DISALLOW_CANCEL) == 0 && cancelling())
+            if (interactive && cancelling())
                 throw new Exception(MSG_CANCELED);
             
             ubyte[] haystack = session.editor.view(position, hay);
@@ -3098,13 +3142,20 @@ SearchResult search(Session *session, Pattern needle, long position, int flags, 
                 bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
-                return SearchResult(position, matched ? cast(long) mlen : cast(long) needle.data.length);
+                SearchResult hit = SearchResult(position,
+                    matched ? cast(long) mlen : cast(long) needle.data.length);
+                if (onhit is null || onhit(hit) == SearchAction.stop)
+                    return hit;
+                size_t skip = cast(size_t) resume(hit.len);
+                o += skip;
+                position += skip;
             }
             
             // Same as other remark for this
             // Clamp: with PATTERN_HAS_GLOB, bound==haystack.length lets
             // position overshoot docsize near EOF.
-            if (progress) progress(position > docsize ? docsize : position, docsize);
+            if (interactive)
+                update_progress(session, position > docsize ? docsize : position, docsize);
         }
         while (position < docsize);
     }
@@ -3126,7 +3177,7 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
     Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:CC");
-    SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
+    SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 4, "forward aligned: expected 4");
     assert(result.len == 2, "forward aligned: len should equal needle length");
 }
@@ -3141,7 +3192,7 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
 
     Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
-    SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
+    SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
 }
 // Reverse search with alignment > 1: the loop must terminate without
@@ -3157,7 +3208,7 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
 
     Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
-    SearchResult result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_DISALLOW_CANCEL, null);
+    SearchResult result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
 }
 // Reverse search: initial offset is clamped so memcmp stays in bounds,
@@ -3171,9 +3222,104 @@ unittest
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
     Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:CD");
-    SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_DISALLOW_CANCEL, null);
+    SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 2, "reverse from end: expected 2");
     assert(result.len == 2);
+}
+
+// Reverse search: a match at the very start of the document is found.
+// The old loop bound (o > 0) never tested offset 0.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
+
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AB");
+    SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE);
+    assert(result.pos == 0, "reverse to start: expected 0");
+    assert(result.len == 2);
+}
+// Reverse search: no match, and SEARCH_LASTPOS stays on the document.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
+
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
+    SearchResult result = search(&session, needle, 5,
+        SEARCH_REVERSE | SEARCH_LASTPOS | SEARCH_NON_INTERACTIVE);
+    assert(result.pos == 0, "reverse lastpos: expected 0");
+}
+// Hit callback: every occurrence is reported, in order, and the search
+// concludes as a no-match once the callback consumed them all.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
+
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    SearchResult[] hits;
+    SearchResult result = search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
+        (SearchResult r) { hits ~= r; return SearchAction.next; });
+    assert(result.pos == SEARCH_RESULT_NOT_FOUND, "scan must run to the end");
+    assert(hits.length == 2, "expected two matches");
+    assert(hits[0].pos == 0 && hits[0].len == 2);
+    assert(hits[1].pos == 4 && hits[1].len == 2);
+}
+// Hit callback: matches never overlap, the scan resumes past the match.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAA");
+
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    long[] positions;
+    search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
+        (SearchResult r) { positions ~= r.pos; return SearchAction.next; });
+    assert(positions == [ 0L, 2L ], "expected non-overlapping matches");
+}
+// Hit callback: stopping returns that match, like a callback-less search.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
+
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    int calls;
+    SearchResult result = search(&session, needle, 1, SEARCH_NON_INTERACTIVE,
+        (SearchResult r) { ++calls; return SearchAction.stop; });
+    assert(calls == 1);
+    assert(result.pos == 4 && result.len == 2);
+}
+// Hit callback: reverse direction reports matches from the end backward.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
+
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    long[] positions;
+    search(&session, needle, 7, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE,
+        (SearchResult r) { positions ~= r.pos; return SearchAction.next; });
+    assert(positions == [ 4L, 0L ], "expected matches in reverse order");
 }
 
 //
@@ -3369,8 +3515,7 @@ void move_skip_backward(Session *session, Argument[] args)
     Pattern pneedle = Pattern.fromBytes(needle);
     moveabs(session,
         search(session, pneedle, sel.start - needle.length,
-            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED,
-            (pos, total){ update_progress(session, pos, total); }).pos);
+            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_REVERSE|SEARCH_ALIGNED).pos);
 }
 
 // Move to different element forward
@@ -3413,8 +3558,7 @@ void move_skip_forward(Session *session, Argument[] args)
     Pattern pneedle = Pattern.fromBytes(needle);
     moveabs(session,
         search(session, pneedle, sel.start + needle.length,
-            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED,
-            (pos, total){ update_progress(session, pos, total); }).pos);
+            SEARCH_LASTPOS|SEARCH_DIFF|SEARCH_ALIGNED).pos);
 }
 
 // Move view up
@@ -3782,6 +3926,86 @@ void bookmark_insert(Session *session, Bookmark b)
         return;
 
     session.bookmarks.insertInPlace(i, b);
+}
+
+// Merge an address-sorted list of bookmarks into the session list, in one
+// pass. Inserting them one by one costs a scan plus a move each, which turns
+// quadratic on commands that add matches in bulk (find-bookmark), and a
+// search has no upper bound on how many matches it reports.
+// Exact duplicates (same address and length) are skipped, as with
+// bookmark_insert.
+// Returns: Number of bookmarks added.
+size_t bookmark_merge(Session *session, const(Bookmark)[] news)
+{
+    if (news.length == 0)
+        return 0;
+
+    const(Bookmark)[] olds = session.bookmarks;
+
+    Bookmark[] merged;
+    merged.reserve(olds.length + news.length);
+
+    size_t added;
+    while (olds.length || news.length)
+    {
+        // Existing entries go first on equal addresses, so the duplicate
+        // check below only has to look at what was just emitted.
+        if (news.length == 0 || (olds.length && olds[0].address <= news[0].address))
+        {
+            merged ~= olds[0];
+            olds = olds[1..$];
+            continue;
+        }
+
+        Bookmark b = news[0];
+        news = news[1..$];
+
+        // Skip exact duplicates, be they already in the list or repeated
+        // within the new list
+        bool dupe;
+        foreach_reverse (ref const(Bookmark) m; merged)
+        {
+            if (m.address != b.address)
+                break;
+            if (m.length == b.length)
+            {
+                dupe = true;
+                break;
+            }
+        }
+        if (dupe)
+            continue;
+
+        merged ~= b;
+        ++added;
+    }
+
+    session.bookmarks = merged;
+    return added;
+}
+unittest
+{
+    Session session;
+
+    // Into an empty list
+    assert(bookmark_merge(&session, [ Bookmark(0x10, 2), Bookmark(0x20, 2) ]) == 2);
+    assert(session.bookmarks == [ Bookmark(0x10, 2), Bookmark(0x20, 2) ]);
+
+    // Interleaved, and sorted by address afterwards
+    assert(bookmark_merge(&session, [ Bookmark(0x08, 1), Bookmark(0x18, 1), Bookmark(0x28, 1) ]) == 3);
+    assert(session.bookmarks == [
+        Bookmark(0x08, 1), Bookmark(0x10, 2), Bookmark(0x18, 1),
+        Bookmark(0x20, 2), Bookmark(0x28, 1) ]);
+
+    // Exact duplicates skipped, same address with another length kept
+    assert(bookmark_merge(&session, [ Bookmark(0x10, 2), Bookmark(0x10, 4) ]) == 1);
+    assert(session.bookmarks == [
+        Bookmark(0x08, 1), Bookmark(0x10, 2), Bookmark(0x10, 4), Bookmark(0x18, 1),
+        Bookmark(0x20, 2), Bookmark(0x28, 1) ]);
+
+    // Nothing to merge
+    assert(bookmark_merge(&session, null) == 0);
+    assert(session.bookmarks.length == 6);
 }
 
 // Add a bookmark covering args/selection/cursor.
@@ -5184,9 +5408,7 @@ void find(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
     
-    SearchResult r =
-        search(session, g_needle, sel.start, 0,
-        (pos, total){ update_progress(session, pos, total); });
+    SearchResult r = search(session, g_needle, sel.start, 0);
     if (r.pos < 0)
     {
         message("Not found");
@@ -5229,9 +5451,7 @@ void find_back(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
     
-    SearchResult r =
-        search(session, g_needle, sel.start, SEARCH_REVERSE,
-        (pos, total){ update_progress(session, pos, total); });
+    SearchResult r = search(session, g_needle, sel.start, SEARCH_REVERSE);
     if (r.pos < 0)
     {
         message("Not found");
@@ -5262,9 +5482,7 @@ void find_next(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
 
-    SearchResult r =
-        search(session, g_needle, start, 0,
-        (pos, total){ update_progress(session, pos, total); });
+    SearchResult r = search(session, g_needle, start, 0);
     if (r.pos < 0)
     {
         message("Not found");
@@ -5295,9 +5513,7 @@ void find_prev(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
 
-    SearchResult r =
-        search(session, g_needle, start, SEARCH_REVERSE,
-        (pos, total){ update_progress(session, pos, total); });
+    SearchResult r = search(session, g_needle, start, SEARCH_REVERSE);
     if (r.pos < 0)
     {
         message("Not found");
@@ -5309,6 +5525,69 @@ void find_prev(Session *session, Argument[] args)
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
     message("Found at %s", addr.textual(buf, r.pos, 1));
+}
+
+// Find every occurrence of a pattern and bookmark each match.
+//
+// Unlike the other find commands, this one scans the whole document rather
+// than starting at the cursor, and leaves the cursor where it is: the result
+// is the bookmark list, navigable with bookmark-next/bookmark-prev.
+void find_bookmark(Session *session, Argument[] args)
+{
+    Selection sel = selection(session);
+
+    // With arguments: Prioritize before selection
+    if (args.length > 0)
+    {
+        g_needle = pattern(session.rc.charset, session.rc.endian, args);
+    }
+    else if (sel.length) // search by selection
+    {
+        if (sel.length > CONFIG_NEEDLE_LIMIT)
+            throw new Exception(MSG_SELECTION_TOO_BIG);
+        ubyte[] buf = new ubyte[cast(size_t)sel.length];
+        g_needle = Pattern.fromBytes( session.editor.view(sel.start, buf) );
+        if (g_needle.length < sel.length)
+            return; // Nothing to do, couldn't read all of needle
+    }
+    else
+        throw new Exception(MSG_NEED_SEARCH);
+
+    if (g_needle.length == 0)
+        return;
+
+    unselect(session);
+
+    message("Searching...");
+    update_status(session);
+
+    // Matches come in ascending order, so they are collected and merged in
+    // one pass: a sorted insert each would turn quadratic, and like the
+    // search itself, the match count has no upper limit.
+    Bookmark[] found;
+    size_t count;
+    try
+    {
+        search(session, g_needle, 0, 0,
+            (SearchResult r) {
+                found ~= Bookmark(r.pos, r.len);
+                return SearchAction.next;
+            });
+    }
+    finally // A canceled search keeps whatever it found until then
+    {
+        count = bookmark_merge(session, found);
+        if (count)
+            g_status |= UVIEW | USTATUS;
+    }
+
+    if (count == 0)
+    {
+        message("Not found");
+        return;
+    }
+
+    message("Bookmarked %d match%s", count, count == 1 ? "" : "es");
 }
 
 // Split find-replace args around the "--" separator into needle and
@@ -5361,9 +5640,7 @@ void find_replace(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
 
-    SearchResult r =
-        search(session, g_needle, start, 0,
-        (pos, total){ update_progress(session, pos, total); });
+    SearchResult r = search(session, g_needle, start, 0);
     if (r.pos < 0)
     {
         message("Not found");
@@ -5417,9 +5694,7 @@ void find_replace_all(Session *session, Argument[] args)
     for (;;)
     {
         // search already checks for cancellation
-        SearchResult r =
-            search(session, g_needle, start, 0,
-            (pos, total){ update_progress(session, pos, total); });
+        SearchResult r = search(session, g_needle, start, 0);
         if (r.pos < 0)
             break;
 

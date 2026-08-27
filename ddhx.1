@@ -524,6 +524,22 @@ Repeat the last search forward.
 .B find\-prev
 Repeat the last search backward.
 .TP
+.BI find\-bookmark " [PATTERN]"
+Bookmark every occurrence of
+.IR PATTERN .
+Unlike the other find commands, the whole document is scanned rather than
+starting at the cursor, and the cursor is left where it is: results are
+navigated with
+.B bookmark\-next
+.RB ( ] )
+and
+.B bookmark\-prev
+.RB ( [ ).
+With an active selection and no pattern, the selected bytes are the needle.
+Canceling the search
+.RB ( Escape )
+keeps the matches found until then.
+.TP
 .BI find\-replace " [NEEDLE \fR\-\-\fP REPLACEMENT]"
 Find the next occurrence of
 .I NEEDLE
@@ -1112,6 +1128,13 @@ Press
 .RB ( bookmark\-toggle )
 to set a bookmark over the current selection or cursor, or to remove any
 bookmarks overlapping it.
+.PP
+.B find\-bookmark
+bookmarks every match of a pattern in the document at once, turning a search
+into a list of positions to walk through. See the
+.SM
+.B COMMANDS
+section.
 .PP
 Bookmarks can be written to a file with
 .B bookmark\-save
