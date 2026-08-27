@@ -611,37 +611,75 @@ unittest
     }
 }
 
-// Turn a decimal literal into the x87 extended value it names, exactly.
+/// A binary floating-point format, described by what converting into it needs.
+///
+/// The three formats ddhx spells differ only in these numbers, so the
+/// conversion below is written once. Whether the leading significand bit is
+/// stored or implied is not among them: that is a packing question, answered by
+/// `ieeebits` and `Ext80` respectively.
+private struct FloatFormat
+{
+    size_t width; /// Size in bytes: 4, 8, or 10.
+    int significand; /// Bits of significand, the leading one included.
+    int bias;     /// What the exponent field is offset by.
+    int maxexp;   /// The all-ones exponent field, spoken for by inf and the NaNs.
+    // The magnitudes worth doing arithmetic for, a magnitude being the count of
+    // digits before the point: outside them a value cannot be represented, and
+    // is answered without building a power of ten nobody could have meant
+    // (10^^1000000 is not a division to attempt). Both are deliberately one
+    // past what the format reaches, since the rounding below decides the edges
+    long magmax;  /// Above this there is no finite value left.
+    long magmin;  /// Below this there is not half of the smallest subnormal.
+}
+private static immutable FloatFormat BINARY32 = {  4, 24,   127,   0xff,   39,   -45 };
+private static immutable FloatFormat BINARY64 = {  8, 53,  1023,  0x7ff,  309,  -324 };
+private static immutable FloatFormat EXTENDED = { 10, 64, 16383, 0x7fff, 4933, -4951 };
+
+/// A converted value, before it is packed into the bits of its format.
+private struct Converted
+{
+    /// The significand, `FloatFormat.significand` bits with the leading one
+    /// included, or a subnormal's own bits when `exponent` is zero.
+    ulong significand;
+    /// The biased exponent, or zero for a subnormal or a zero.
+    int exponent;
+}
+
+// Turn a decimal literal into the value it names in `fmt`, exactly.
 //
 // This is integer arithmetic rather than a parse into a host float, because
-// there is no host float to parse into: D's `real` is x87 extended on x86 and a
-// plain double on AArch64, so std.conv would answer differently per machine.
-// Nor is a double good enough as a stepping stone, being eleven bits short of
-// the format: "3.14159265358979323846" widens to 4000 C90FDAA22168C000, where
-// the value it spells is 4000 C90FDAA22168C235, the one FLDPI loads. A needle
-// that misses by the last bits is a needle that finds nothing.
+// there is no host float to parse into. D's `real` is x87 extended on x86 and a
+// plain double on AArch64, and that is not only f80:'s problem: std.conv parses
+// every width through a `real` accumulator, so on a host where it is a double
+// the intermediate rounding survives into the answer and
+// "3.14159265358979323846" lands on a different f64 than it does on x86. A
+// needle whose bytes depend on the machine that typed it is not a needle.
+//
+// Nor is a wider float a stepping stone to a narrower one, which is the same
+// bug wearing a hat: rounding a literal to 64 significant bits and then to 53
+// is not rounding it to 53, and the case where the two disagree is exactly the
+// case that was hard to type. Every width converts from the digits, once.
 //
 // A literal is an exact rational, digits times a power of ten, so it is built
-// as one: numerator over denominator, divided to a 64-bit significand, and
-// rounded to nearest with ties to even, which is the rounding IEEE-754 asks of
-// every conversion. Nothing is approximated on the way, so the same literal is
-// the same ten bytes on every host, and the format's full range comes with it
-// (f80:1e400 has no double to be a stepping stone anyway).
+// as one: numerator over denominator, divided to a significand of the width
+// asked for, and rounded to nearest with ties to even, which is the rounding
+// IEEE-754 asks of every conversion. Nothing is approximated on the way, so the
+// same literal is the same bytes on every host, and each format's full range
+// comes with it (f80:1e400 has no double to be a stepping stone anyway).
 private
-Ext80 decimal80(const(char)[] input, bool negative, immutable(ubyte)[] arg)
+Converted decimal(const(char)[] input, FloatFormat fmt, immutable(ubyte)[] arg)
 {
     import core.bitop : bsr;
     import std.bigint : BigInt;
 
-    enum ushort SIGN      = 0x8000; // sign, which lives in the exponent word
-    enum int    BIAS      = 16383;  // what the exponent field is offset by
-    enum int    SUBNORMAL = 16445;  // exponent of a subnormal's last bit, 16382 + 63
-    // The magnitudes worth doing arithmetic for. The largest finite value is
-    // 1.19e4932 and the smallest subnormal 3.65e-4951, so a magnitude outside
-    // this cannot be represented and is answered without building a power of
-    // ten nobody could have meant (10^^1000000 is not a division to attempt)
-    enum long MAG_MAX = 4933;
-    enum long MAG_MIN = -4950;
+    // Bits of significand, and the exponent of a subnormal's last bit: the
+    // smallest exponent is 1 - bias, and the significand reaches that many
+    // places past it (16382 + 63 for x87, 1022 + 52 for a double)
+    const int P         = fmt.significand;
+    const int SUBNORMAL = fmt.bias + P - 2;
+    // The largest significand, which is where rounding up carries into the
+    // exponent. Written this way because 1UL << 64 is not zero, it is undefined
+    const ulong FULL    = P >= 64 ? ulong.max : (1UL << P) - 1;
     enum int  EXP_LIMIT = 1_000_000; // where an exponent stops being counted
 
     // A word out of a positive BigInt. std.bigint only grew getDigit in 2.087,
@@ -717,9 +755,7 @@ Ext80 decimal80(const(char)[] input, bool negative, immutable(ubyte)[] arg)
     if (i != input.length)
         throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
 
-    Ext80 result;
-    if (negative)
-        result.signexp = SIGN;
+    Converted result;
 
     // Leading zeros are not significant digits, and dropping them is what makes
     // the magnitude below a count rather than a guess
@@ -727,16 +763,16 @@ Ext80 decimal80(const(char)[] input, bool negative, immutable(ubyte)[] arg)
     while (lead < digits.length && digits[lead] == '0')
         ++lead;
     const(char)[] significant = digits[lead..$];
-    if (significant.length == 0) // a zero, however it was spelled, sign kept
+    if (significant.length == 0) // a zero, however it was spelled
         return result;
 
     // value = significant * 10^^power, and 10^^(magnitude-1) <= value < 10^^magnitude
     int power = exponent - cast(int)fraction;
     long magnitude = cast(long)significant.length + power;
-    if (magnitude > MAG_MAX)
+    if (magnitude > fmt.magmax)
         throw new Exception(text(MSG_VALUE_OUT_OF_RANGE, printable(arg)));
-    if (magnitude < MAG_MIN) // under half the smallest subnormal, so it is zero,
-        return result;       // which is what it rounds to at the other widths too
+    if (magnitude < fmt.magmin) // under half the smallest subnormal, so it is
+        return result;          // zero, which is what it rounds to anyway
 
     BigInt numerator   = BigInt(significant);
     BigInt denominator = BigInt(1);
@@ -745,87 +781,114 @@ Ext80 decimal80(const(char)[] input, bool negative, immutable(ubyte)[] arg)
     else if (power < 0)
         denominator = BigInt(10) ^^ -power;
 
-    // Scale until the quotient is exactly 64 bits, which is the whole
-    // significand: x87 stores the integer bit, so there is nothing implied to
-    // put back afterwards. The first guess is off by at most a bit either way
-    int shift = 63 - (cast(int)bitlength(numerator) - cast(int)bitlength(denominator));
+    // Scale until the quotient is exactly P bits, which is the whole
+    // significand, leading bit and all: whether that bit is stored or implied
+    // is settled when it is packed, not here. The first guess is off by at most
+    // a bit either way
+    int shift = (P - 1) - (cast(int)bitlength(numerator) - cast(int)bitlength(denominator));
     BigInt top    = shift > 0 ? numerator   << shift  : numerator;
     BigInt bottom = shift < 0 ? denominator << -shift : denominator;
     BigInt quotient = top / bottom;
-    while (bitlength(quotient) > 64)
+    while (bitlength(quotient) > P)
     {
         bottom <<= 1;
         --shift;
         quotient = top / bottom;
     }
-    while (bitlength(quotient) < 64)
+    while (bitlength(quotient) < P)
     {
         top <<= 1;
         ++shift;
         quotient = top / bottom;
     }
 
-    // value = quotient * 2^^-shift, with the quotient at 64 bits, so the
+    // value = quotient * 2^^-shift, with the quotient at P bits, so the
     // unbiased exponent is what is left over
-    int biased = 63 - shift + BIAS;
-    if (biased > 0) // a normal, and the rounding is onto those 64 bits
+    int biased = (P - 1) - shift + fmt.bias;
+    if (biased > 0) // a normal, and the rounding is onto those P bits
     {
         ulong significand = low64(quotient);
         BigInt twice = (top - quotient * bottom) << 1;
         if (twice > bottom || (twice == bottom && (significand & 1)))
         {
-            if (significand == ulong.max) // rounded up into a wider exponent
+            if (significand == FULL) // rounded up into a wider exponent
             {
-                significand = 1UL << 63;
+                significand = 1UL << (P - 1);
                 ++biased;
             }
             else
                 ++significand;
         }
-        // The exponent field is full at 0x7FFF, and that encoding is spoken for
-        // by the infinities and the NaNs, so there is nothing above this
-        if (biased >= 0x7fff)
+        // The exponent field is full at 0x7FFF for x87 and 0xFF or 0x7FF for
+        // the IEEE pair, and that encoding is spoken for by the infinities and
+        // the NaNs, so there is nothing above this
+        if (biased >= fmt.maxexp)
             throw new Exception(text(MSG_VALUE_OUT_OF_RANGE, printable(arg)));
         result.significand = significand;
-        result.signexp |= cast(ushort)biased;
+        result.exponent    = biased;
         return result;
     }
 
     // The exponent has bottomed out, so what is left is a subnormal: the value
-    // rounds onto the fixed grid of 2^^-16445 rather than onto 64 significant
+    // rounds onto the fixed grid of 2^^-SUBNORMAL rather than onto P significant
     // bits. It is rounded from the original ratio and not from the quotient
     // above, since rounding a value twice is how it lands a unit from where it
     // belongs (0.5 to even twice over, and 2.5 is 2 by way of 3)
     BigInt scaled  = numerator << SUBNORMAL;
     BigInt grid    = scaled / denominator;
-    ulong subnormal = low64(grid); // under 2^^63, the branch says so
+    ulong subnormal = low64(grid); // under 2^^(P-1), the branch says so
     BigInt over = (scaled - grid * denominator) << 1;
     if (over > denominator || (over == denominator && (subnormal & 1)))
         ++subnormal;
 
-    // Rounding up can land exactly on 2^^63, which is no longer a subnormal but
-    // the smallest normal. Its encoding is those same bits with the exponent
-    // field at one, so the integer bit says which of the two this became
+    // Rounding up can land exactly on 2^^(P-1), which is no longer a subnormal
+    // but the smallest normal. Its encoding is those same bits with the exponent
+    // field at one, so the leading bit says which of the two this became, and it
+    // says so in either packing: x87 stores that bit, and where it is implied
+    // the bit lands in the exponent field by carrying out of the mantissa
     result.significand = subnormal;
-    result.signexp |= cast(ushort)(subnormal >> 63);
+    result.exponent    = cast(int)(subnormal >> (P - 1));
     return result;
+}
+
+// Pack a converted value into the bits of an IEEE-754 binary format.
+//
+// The leading significand bit is implied there rather than stored, so it is
+// masked off: a normal has it set by construction, and a subnormal, whose
+// exponent field is zero, does not have it to lose. The one crossing case is
+// the subnormal that rounded up into the smallest normal, which arrives with
+// the bit set and an exponent of one, and masking it off is what makes that
+// encoding come out right.
+private
+ulong ieeebits(Converted value, bool negative, FloatFormat fmt)
+{
+    int mantissa = fmt.significand - 1;
+    ulong bits = (cast(ulong)value.exponent << mantissa) | (value.significand & ((1UL << mantissa) - 1));
+    if (negative)
+        bits |= 1UL << (fmt.width * 8 - 1);
+    return bits;
 }
 unittest
 {
+    // The x87 packing, which stores the leading bit rather than implying it
     static Ext80 dec(const(char)[] literal, bool negative = false)
     {
-        return decimal80(literal, negative, null);
+        Converted value = decimal(literal, EXTENDED, null);
+        Ext80 result = { value.significand, cast(ushort)value.exponent };
+        if (negative)
+            result.signexp |= 0x8000;
+        return result;
     }
     static void invalid(string literal)
     {
         try
-            cast(void)decimal80(literal, false, null);
+            cast(void)decimal(literal, EXTENDED, null);
         catch (Exception)
             return;
 
         import std.stdio : stderr, writeln;
         stderr.writeln("Failed to throw with: ", literal);
-        assert(false, "decimal80 test failed");
+        assert(false, "decimal test failed");
     }
 
     // These are checked against what glibc's strtold makes of the same literal
@@ -935,9 +998,10 @@ unittest
 // extended x87 stores, always, not "whatever this host calls a float". A needle
 // describes bytes in a file, and a file does not change format because of the
 // machine reading it, so the host is only the courier: it is used to do the
-// binary32 and binary64 conversions because its floats happen to be those
-// formats, and the static asserts below are what says so. Nothing on the host
-// is that third format reliably, so f80: is done in integers (see decimal80).
+// named constants below because its floats happen to be those formats, and the
+// static asserts below are what says so. Literals do not touch it at all: they
+// are converted from their digits in integer arithmetic (see decimal), which is
+// the only way the same literal is the same bytes on every machine.
 //
 // Machines that store floats some other way (VAX F/D/G, IBM System/360 hex
 // floating point, Cray) are not a reason to make "f32:" mean two things. They
@@ -953,16 +1017,15 @@ unittest
 private
 ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
 {
-    import std.algorithm.searching : canFind;
-    import std.conv : ConvException, parse;
-    import std.math : isInfinity, isNaN;
     import std.string : icmp;
 
     assert(spec.width == 4 || spec.width == 8 || spec.width == 10);
 
-    // If this ever fires, the host is one of the exotic machines above and the
-    // unions below are converting to its format instead of to the file's. The
-    // fix is an explicit encoder here, never a silently different needle.
+    // Literals no longer go through a host float at all (see decimal), but the
+    // constant table below still holds host values for the two widths that have
+    // one. If this ever fires, the host is one of the exotic machines above and
+    // the unions below are converting to its format instead of to the file's.
+    // The fix is an explicit encoder here, never a silently different needle.
     static assert(float.sizeof == 4 && float.mant_dig == 24 && float.max_exp == 128,
         "host float is not IEEE-754 binary32, f32: needs an explicit encoder");
     static assert(double.sizeof == 8 && double.mant_dig == 53 && double.max_exp == 1024,
@@ -1042,57 +1105,25 @@ ubyte[] floating(const(char)[] input, PatternSpec spec, Endian endian, immutable
             : encode(bits32(negative ? -constant.f32 : constant.f32), 4, endian);
     }
 
-    // From here it is a number, so digits only: std.conv reads "1_0" as 10,
-    // which the integer types refuse, and a needle is no place for two answers
-    // to the same question. Names got their chance above, underscores included
-    if (canFind(input, '_'))
-        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+    // From here it is a number, and every width converts the same way: from the
+    // digits, in integer arithmetic, once. std.conv is not used for any of them
+    // because it accumulates in `real`, which is 80-bit on x86 and a double
+    // elsewhere, so the f64 it returns for "3.14159265358979323846" depends on
+    // the machine; nor is a double narrowed to a float, which rounds twice. See
+    // decimal(). What is left for this function is the sign, which is a field
+    // rather than part of the value in both packings.
+    FloatFormat fmt = spec.width == 4 ? BINARY32
+                    : spec.width == 8 ? BINARY64 : EXTENDED;
+    Converted value = decimal(name, fmt, arg);
 
-    // The 80-bit format has no host type to borrow, so its literal is converted
-    // in integers, exactly. The sign goes along separately, since it is a field
-    // of its own there rather than the top bit of the value
     if (spec.width == 10)
-        return encode80(decimal80(name, negative, arg), endian);
-
-    // NOTE: A value too large for a double comes back as a ConvException with
-    //       no distinct type to catch, so it reads as an invalid number rather
-    //       than as an out of range one, on the older Phobos below as well.
-    //       Only f32 and f80 can tell the two apart, doing their own range
-    //       check.
-    double value = void;
-    try
-        value = parse!double(input);
-    catch (ConvException)
-        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
-
-    // parse() stops at the first character it does not like and leaves the
-    // rest behind, same as for integers ("f32:1.0f", "f64:infinity")
-    if (input.length > 0)
-        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
-
-    // ...and it is only recent Phobos that raises above: 2.100 and older, which
-    // is what GDC 12 ships, hand back an infinity for "1e999" instead. Every
-    // infinity ddhx spells is a name handled above ("infinity" is not one of
-    // them, and leaves "inity" for the check just made), so one arriving from a
-    // literal is a magnitude that did not fit, refused the same way on either
-    if (isInfinity(value))
-        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
-
-    // Every NaN ddhx spells is in FLOAT_BITS above, sign included, so one
-    // arriving from std.conv is a spelling nothing here sanctioned. Refusing it
-    // is what keeps a NaN from ever being encoded out of host bits, and out of
-    // a sign std.conv drops on the way ("-nan" parses to a positive one).
-    if (isNaN(value))
-        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
-
-    if (spec.width == 8)
-        return encode(bits64(value), 8, endian);
-
-    float narrowed = cast(float)value;
-    // Rounding to infinity means the number typed was not the number encoded
-    if (isInfinity(narrowed) && isInfinity(value) == false)
-        throw new Exception(text(MSG_VALUE_OUT_OF_RANGE, printable(arg)));
-    return encode(bits32(narrowed), 4, endian);
+    {
+        Ext80 ext = { value.significand, cast(ushort)value.exponent };
+        if (negative)
+            ext.signexp |= SIGN80;
+        return encode80(ext, endian);
+    }
+    return encode(ieeebits(value, negative, fmt), spec.width, endian);
 }
 unittest
 {
@@ -1248,10 +1279,35 @@ unittest
             == [ 0xc0, 0x00, 0xc9, 0x0f, 0xda, 0xa2, 0x21, 0x68, 0xc2, 0x35 ]);
         assert(floating("PI", F80, bigEndian, null) == floating("pi", F80, bigEndian, null));
         // ...and a literal of the same digits agrees with the name, which is
-        // the whole reason the conversion is done in integers
+        // the whole reason the conversion is done in integers. This is the one
+        // that used to fail on AArch64: std.conv accumulated in `real`, which
+        // is a double there, so the f64 came back an ULP off the constant
         assert(floating("3.14159265358979323846", F32, bigEndian, null) == floating("pi", F32, bigEndian, null));
         assert(floating("3.14159265358979323846", F64, bigEndian, null) == floating("pi", F64, bigEndian, null));
         assert(floating("3.14159265358979323846", F80, bigEndian, null) == floating("pi", F80, bigEndian, null));
+
+        // Literals whose correctly rounded value is known, checked against
+        // glibc's strtod and strtof rather than against Phobos. They are here
+        // because each is a conversion that something gets wrong: a host float
+        // is not in the loop for any of them, so these bytes are the same on
+        // every machine ddhx builds for
+        assert(floating("0.1",  F64, bigEndian, null) == [ 0x3f, 0xb9, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a ]);
+        assert(floating("0.1",  F32, bigEndian, null) == [ 0x3d, 0xcc, 0xcc, 0xcd ]);
+        assert(floating("1e23", F64, bigEndian, null) == [ 0x44, 0xb5, 0x2d, 0x02, 0xc7, 0xe1, 0x4a, 0xf6 ]);
+        assert(floating("2.2250738585072011e-308", F64, bigEndian, null)
+            == [ 0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+
+        // A float is converted from its digits and not from a double, since
+        // rounding twice is not rounding once: this one is a hair above the tie
+        // between 1.0 and the float after it, so it rounds up, where a double
+        // stepping stone lands exactly on the tie and takes the even one
+        assert(floating("1.0000000596046447753906250000000001", F32, bigEndian, null)
+            == [ 0x3f, 0x80, 0x00, 0x01 ]);
+        assert(floating("1.0000000596046447753906250000000001", F64, bigEndian, null)
+            == [ 0x3f, 0xf0, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 ]);
+        // ...while the tie itself does take the even one, at either width
+        assert(floating("1.000000059604644775390625", F32, bigEndian, null)
+            == [ 0x3f, 0x80, 0x00, 0x00 ]);
         assert(floating("e", F80, bigEndian, null)
             == [ 0x40, 0x00, 0xad, 0xf8, 0x54, 0x58, 0xa2, 0xbb, 0x4a, 0x9b ]);
         assert(floating("tau", F80, bigEndian, null)

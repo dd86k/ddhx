@@ -255,22 +255,42 @@ qnan on a 32-bit x86 build.
 
 f32: is IEEE-754 binary32 and f64: binary64, on every host. Not "whatever this
 machine calls a float": a needle describes bytes in a file, and a file does not
-change format because of the machine reading it. The host does the conversion
-because its floats happen to be that format, which a static assert in floating()
-checks rather than assumes, and the NaNs above are spelled out rather than
-borrowed, since IEEE-754 pins infinity exactly but allows any nonzero mantissa
-for a NaN and hosts disagree on which one they hand out.
+change format because of the machine reading it. The named constants are taken
+from host floats, which happen to be those formats, and a static assert in
+floating() checks that rather than assuming it; the NaNs above are spelled out
+rather than borrowed, since IEEE-754 pins infinity exactly but allows any
+nonzero mantissa for a NaN and hosts disagree on which one they hand out.
 
-f80: has no host type to borrow at all: D's `real` is x87 extended on x86 and a
-plain double on AArch64, so std.conv would answer differently per machine, and a
-double parsed and widened is eleven bits short of the format (the twenty digits
-of pi widen to 4000 C90FDAA22168C000, where the value they spell is 4000
-C90FDAA22168C235, which is what FLDPI loads). So decimal80() does the conversion
-in integers instead: a literal is digits times a power of ten, which is an exact
-rational, so it is built as one and divided to a 64-bit significand, rounded to
-nearest with ties to even as IEEE-754 asks. That is worth the arithmetic twice
-over, since it also brings the format's own exponent range with it, and range is
-half of why a file holds one of these (f80:1e400 has no double to pass through).
+Literals do not touch a host float at any width. decimal() converts them in
+integer arithmetic: a literal is digits times a power of ten, which is an exact
+rational, so it is built as one and divided to a significand of the width asked
+for, rounded to nearest with ties to even as IEEE-754 asks. Three things make
+that worth the arithmetic:
+
+  - std.conv accumulates in `real`, which is x87 extended on x86 and a plain
+    double on AArch64. On the second kind of host the intermediate rounding
+    survives into the answer, so "3.14159265358979323846" parsed as an f64
+    landed an ULP off the pi constant. A needle whose bytes depend on the
+    machine that typed it is not a needle, and this one shipped: it was an
+    aarch64 CI failure, not a hypothetical.
+  - Rounding to a wide format and then to a narrow one is not rounding to the
+    narrow one. f32: used to convert through a double, so a literal a hair
+    above the tie between 1.0 and the float after it rounded up on the way to
+    the double, landed exactly on the tie, and then took the even neighbour:
+    3F800000 where the digits say 3F800001.
+  - f80: has no host type to borrow in the first place, and a double is eleven
+    bits short of it besides (the twenty digits of pi widen to 4000
+    C90FDAA22168C000, where the value they spell is 4000 C90FDAA22168C235,
+    which is what FLDPI loads). Doing it exactly also brings the format's own
+    exponent range along, and range is half of why a file holds one of these
+    (f80:1e400 has no double to pass through).
+
+The three formats differ only in significand bits, bias, and exponent range, so
+they share one conversion and differ at packing time, where binary32 and
+binary64 imply the leading significand bit and x87 stores it. The unittests pin
+literals whose correctly rounded values are known from glibc's strtod and
+strtof, including both textbook hard cases (1e23 and 2.2250738585072011e-308)
+and the double-rounding one above.
 
 The rule underneath both sides is that the prefix decides the length and the
 value never does. A byte string is as long as what was typed, a scalar is as
