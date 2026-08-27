@@ -14,12 +14,14 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
   literals with escape sequences), for every command and in configuration
   files, not just for patterns.
   WARNING: the bare `"STRING"` alias for `s:STRING` is gone, so `find "test"`
-  is now an error; use `find s:test` or `find s:"test"` instead.
+  is now an error; use `find utf8:test` or `find utf8:"test"` instead.
 - Pattern prefix overhaul: Fixed-width prefixes without surprises.
   The variable-width scalars (d:, o:, and 0o), which produced needles of odd
   lengths depending on the value written, are replaced by fixed-width ones:
   u8/u16/u32/u64, i8/i16/i32/i64, x8/x16/x32/x64, and o8/o16/o32/o64. The x:
   prefix is now a byte string, so x:1122 produces [ 11, 22 ] in order.
+  WARNING: the string prefix `s:` is now `utf8:`, naming its encoding the way
+  a scalar names its width, so `find s:test` is now an error.
 - New float pattern prefixes: f32:, f64:, and f80: (x87 extended).
   They encode the bit pattern the value occupies in the file rather than the
   digits typed, following the endian setting like every other scalar, so
@@ -82,12 +84,16 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
   not valid UTF-8. Commands that need text (`save-as "\xff"`) report it, and
   commands that take data are unaffected (decc3ee)
 - Unquoted and single quoted text is raw, so a path needs no escaping:
-  `find s:C:\Users` and `diff-file C:\dump.bin` work as typed (decc3ee)
+  `find utf8:C:\Users` and `diff-file C:\dump.bin` work as typed (decc3ee)
 - An unknown escape, an unterminated quote, and a hex escape with a third
   digit are errors instead of being guessed at (decc3ee)
 - `x:` and `0x` are byte strings rather than integers, so digits are taken in
   the order written and the length is no longer capped at 64 bits. An odd
   number of digits is an error instead of being padded: `x:0` is now `x:00`
+- The `s:` string pattern prefix is now `utf8:`, since a text prefix names the
+  encoding its bytes come out in the same way a scalar prefix names its width.
+  `s:` is an unknown prefix rather than an alias, and the encodings to come
+  (`utf16:`, `utf32:`, ...) are prefixes of their own rather than a setting
 - The `endian` setting (and Alt+E) now applies to scalar patterns as well as
   to the inspector, instead of scalars silently using the host`s endianness
 - Scalar patterns always state a width, so a pattern`s length no longer
@@ -120,8 +126,9 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
     bug)
 
 // Removed
-- Bare `"STRING"` pattern alias for `s:STRING`. Quotes are the prompt`s
-  syntax, not a pattern type, so the `s:` prefix is always required (decc3ee)
+- Bare `"STRING"` pattern alias for `utf8:STRING`. Quotes are the prompt`s
+  syntax, not a pattern type, so the `utf8:` prefix is always required
+  (decc3ee)
 - Bare `d:`, `o:`, and `0o` pattern prefixes. They named a type without a
   size, so they are gone rather than defaulted, and are now unknown prefixes.
   Decimal is `u8:`..`u64:` and `i8:`..`i64:`; octal is `o8:`..`o64:`. `0x` is
@@ -130,7 +137,7 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
 // Docs
 - ddhx.1 manpage updated for writemode, -W, and diff-next/diff-prev
   (6fd3d7e, 0ae096e, cb1c02d, 73a5983)
-- ddhx.1: new Quoting subsection under COMMANDS, rewritten `s:` and wildcard
+- ddhx.1: new Quoting subsection under COMMANDS, rewritten `utf8:` and wildcard
   entries under PATTERNS (2f06c99)
 - src/README: new COMMAND LINE section covering the rules, the cases the
   design is pinned to, and why each decision was made (aa9d503)

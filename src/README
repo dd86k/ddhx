@@ -82,9 +82,9 @@ them buys the other's:
 
 So text is raw unless it is double quoted, which makes it a C string literal:
 
-    find s:C:\Users                 a path, typed as a path
-    find s:'C:\Program Files'       a path with a space, quoted for the space
-    find s:"\x1b[0m"                an escape sequence, opted into
+    find utf8:C:\Users              a path, typed as a path
+    find utf8:'C:\Program Files'    a path with a space, quoted for the space
+    find utf8:"\x1b[0m"             an escape sequence, opted into
 
 From there:
 
@@ -92,11 +92,11 @@ From there:
    is a plain concatenation of literals, as in any language that has more than
    one kind of them:
 
-       find s:'C:\Users'"\0"       a raw path with a NUL after it
-       find s:'a'"\t"'b'           tab between two raw runs
+       find utf8:'C:\Users'"\0"    a raw path with a NUL after it
+       find utf8:'a'"\t"'b'        tab between two raw runs
 
-   A prefix may sit inside or outside the quotes: "s:abc" and s:"abc" are the
-   same thing.
+   A prefix may sit inside or outside the quotes: "utf8:abc" and utf8:"abc"
+   are the same thing.
 
 2. There is no escape outside of double quotes, not even \" and \'. A quote is
    written by using the other kind: "'" for an apostrophe, '"' for a double
@@ -136,7 +136,7 @@ string versus scalar:
     SCALAR          a value that still has to be encoded, so it has both
 
     x: 0x                 bytes, two hex digits each
-    s:                    bytes, subject to the character set
+    utf8:                 bytes, text as typed
     x8: x16: x32: x64:    scalar, unsigned, that many bytes (bit indicator)
     u8: u16: u32: u64:    likewise, decimal
     o8: o16: o32: o64:    likewise, octal
@@ -149,6 +149,13 @@ byte. Decimal and octal do not tile bytes, so they are only ever scalars, and a
 scalar always names its width: the bare d:, o:, and 0o are gone, decimal being
 u8:..u64: unsigned and i8:..i64: signed. 0x survives the same cut only because
 it is a byte string, like the x: it abbreviates.
+
+Text names its encoding for the same reason a scalar names its width, which is
+why it is utf8: and not the old s:. A string prefix that says nothing about its
+encoding leaves the bytes it produces up to the character set setting, and an
+encoding is a property of the file being looked at, like a format: it belongs on
+the needle. utf16: and utf32: follow when they land, and neither changes what
+utf8: means. string/wstring/dstring terms only used in D.
 
 Floats are named by their width in bits like everything else, so f32: and f64:
 rather than float: and double:, and what they encode is the bit pattern the
@@ -262,62 +269,62 @@ These are the cases the design is pinned to. The executable copies live in the
 unittests of utils.d (splitting and escapes alone), patterns.d (prefixes alone),
 and the unittest at the end of patterns.d (both, by typed command line).
 
-  TYPED                            NEEDLE (or result)
-  find s:a\tb                      'a' 5C 't' 'b'      raw
-  find s:'a\tb'                    'a' 5C 't' 'b'      raw, quotes buy whitespace
-  find s:"a\tb"                    'a' 09 'b'          C string
-  find s:C:\Users                  C:\Users            no doubling, no quoting
-  find s:'C:\Example Space\2'      C:\Example Space\2  quoted only for the space
-  find s:"C:\\Example Space\\2"    C:\Example Space\2  C string, so doubled
-  find s:C:\                       C:\                 needle ending in backslash
-  find s:'C:\'                     C:\                 ...in any of the three
-  find s:"C:\\"                    C:\                    quoting forms
-  find s:C:\\Users                 C:\\Users           raw, so two is two
-  find s:\x1b[0m                   5C 'x' '1' 'b' ...  raw, so not an escape
-  find s:"\x1b[0m"                 1B '[' '0' 'm'      C string, so it is
-  find s:"C:\Users"                error, unknown escape \U
-  find s:"abc\"                    error, unterminated quote
-  find s:'C:\Users'"\0"            C:\Users 00         concatenated per run
-  find s:C:\dir"a b"               C:\dira b           ...same, no rule broken
-  find s:'it'"'"'s'                it's                a quote needs no escape
-  find x:1122                      11 22               bytes, as written
-  find x16:1122                    22 11               a value, so encoded
-  find x:0001                      00 01               no leading zero eaten
-  find x:fff                       error, half a byte on the end
-  find u16:255                     ff 00               length is the prefix's
-  find u16:256                     00 01                  ...not the value's
-  find u8:256                      error, too large for its width
-  find d:255                       error, unknown prefix; d: named no width
-  find i16:-1                      ff ff               two's complement
-  find u16:-1                      error, only i* takes a sign
-  find f32:1.0                     00 00 80 3F         IEEE-754, not the digits
-  find f64:1.0                     00 00 00 00 00 00 F0 3F
-  find f32:nan                     00 00 C0 7F         the quiet one, always
-  find f32:-nan                    00 00 C0 FF         a NaN keeps its sign
-  find f32:indefinite              00 00 C0 FF         ...which x86 hands out
-  find f32:snan                    01 00 80 7F         signaling, payload 1
-  find f32:pi                      DB 0F 49 40         a name, not digits
-  find f32:-pi                     DB 0F 49 C0         ...and it takes a sign
-  find f32:max                     FF FF 7F 7F         the format's own edge
-  find f32:pi2                     error, a name is the whole literal
-  find f32:1e39                    error, rounds to infinity at that width
-  find f80:1.0                     00 00 00 00 00 00 00 80 FF 3F    ten bytes
-  find f80:pi                      35 C2 68 21 A2 DA 0F C9 00 40    ditto
-  find f80:3.14159265358979323846  ...the same, all 64 bits of it.  bit and all
-  find f80:1e400                   E6 F9 9F CB C8 3F 76 DA 2F 45    no double
-  find f80:1e4933                  error, past the largest finite value
-  find x:00 * x:FF                 00 <any> FF
-  find u16:1 2                     01 00 02 00         prefix carries, width too
-  find s:*                         '*'                 prefixed, so data
-  find '*'                         <any run>           quoting does not matter
-  find "quoted"                    error, unknown prefix; quotes are not a type
-  find ''                          no argument at all, can't search nothing
-  find s:'abc                      error, unterminated quote
-  diff-file 'C:\dump.bin'          opens C:\dump.bin   raw, so no escaping
-  diff-file "C:\\dump.bin"         opens C:\dump.bin   C string, so doubled
-  diff-file "C:\dump.bin"          error, unknown escape \d
-  save-as "dump\x2Etxt"            saves dump.txt      escapes are not pattern-only
-  save-as "\xff"                   error, argument is not valid UTF-8 text
+  TYPED                             NEEDLE (or result)
+  find utf8:a\tb                    'a' 5C 't' 'b'      raw
+  find utf8:'a\tb'                  'a' 5C 't' 'b'      raw, quotes buy whitespace
+  find utf8:"a\tb"                  'a' 09 'b'          C string
+  find utf8:C:\Users                C:\Users            no doubling, no quoting
+  find utf8:'C:\Example Space\2'    C:\Example Space\2  quoted only for the space
+  find utf8:"C:\\Example Space\\2"  C:\Example Space\2  C string, so doubled
+  find utf8:C:\                     C:\                 needle ending in backslash
+  find utf8:'C:\'                   C:\                 ...in any of the three
+  find utf8:"C:\\"                  C:\                    quoting forms
+  find utf8:C:\\Users               C:\\Users           raw, so two is two
+  find utf8:\x1b[0m                 5C 'x' '1' 'b' ...  raw, so not an escape
+  find utf8:"\x1b[0m"               1B '[' '0' 'm'      C string, so it is
+  find utf8:"C:\Users"              error, unknown escape \U
+  find utf8:"abc\"                  error, unterminated quote
+  find utf8:'C:\Users'"\0"          C:\Users 00         concatenated per run
+  find utf8:C:\dir"a b"             C:\dira b           ...same, no rule broken
+  find utf8:'it'"'"'s'              it's                a quote needs no escape
+  find x:1122                       11 22               bytes, as written
+  find x16:1122                     22 11               a value, so encoded
+  find x:0001                       00 01               no leading zero eaten
+  find x:fff                        error, half a byte on the end
+  find u16:255                      ff 00               length is the prefix's
+  find u16:256                      00 01                  ...not the value's
+  find u8:256                       error, too large for its width
+  find d:255                        error, unknown prefix; d: named no width
+  find i16:-1                       ff ff               two's complement
+  find u16:-1                       error, only i* takes a sign
+  find f32:1.0                      00 00 80 3F         IEEE-754, not the digits
+  find f64:1.0                      00 00 00 00 00 00 F0 3F
+  find f32:nan                      00 00 C0 7F         the quiet one, always
+  find f32:-nan                     00 00 C0 FF         a NaN keeps its sign
+  find f32:indefinite               00 00 C0 FF         ...which x86 hands out
+  find f32:snan                     01 00 80 7F         signaling, payload 1
+  find f32:pi                       DB 0F 49 40         a name, not digits
+  find f32:-pi                      DB 0F 49 C0         ...and it takes a sign
+  find f32:max                      FF FF 7F 7F         the format's own edge
+  find f32:pi2                      error, a name is the whole literal
+  find f32:1e39                     error, rounds to infinity at that width
+  find f80:1.0                      00 00 00 00 00 00 00 80 FF 3F    ten bytes
+  find f80:pi                       35 C2 68 21 A2 DA 0F C9 00 40    ditto
+  find f80:3.14159265358979323846   ...the same, all 64 bits of it.  bit and all
+  find f80:1e400                    E6 F9 9F CB C8 3F 76 DA 2F 45    no double
+  find f80:1e4933                   error, past the largest finite value
+  find x:00 * x:FF                  00 <any> FF
+  find u16:1 2                      01 00 02 00         prefix carries, width too
+  find utf8:*                       '*'                 prefixed, so data
+  find '*'                          <any run>           quoting does not matter
+  find "quoted"                     error, unknown prefix; quotes are not a type
+  find ''                           no argument at all, can't search nothing
+  find utf8:'abc                    error, unterminated quote
+  diff-file 'C:\dump.bin'           opens C:\dump.bin   raw, so no escaping
+  diff-file "C:\\dump.bin"          opens C:\dump.bin   C string, so doubled
+  diff-file "C:\dump.bin"           error, unknown escape \d
+  save-as "dump\x2Etxt"             saves dump.txt      escapes are not pattern-only
+  save-as "\xff"                    error, argument is not valid UTF-8 text
 
 *
 * RATIONALE
@@ -339,8 +346,8 @@ None of the above is forced. Why each of them, once:
 - Escapes resolve in one pass, while the quotes are being read, because that is
   the only place that still knows which quote a byte came out of. Carrying the
   quoting onward instead was tried, first as one flag per argument, which has to
-  pick a meaning for s:C:\dir"a b" or refuse it, then as a flag per span, which
-  works but makes every consumer walk spans and offset around its own prefix.
+  pick a meaning for utf8:C:\dir"a b" or refuse it, then as a flag per span,
+  which works but makes every consumer walk spans and offset around its prefix.
   Resolving on the spot deletes both and benefits all commands.
 
 - One pass is also why the escape rules cannot differ per command: the line is
@@ -377,9 +384,9 @@ None of the above is forced. Why each of them, once:
 
 - Inside double quotes, a backslash covers the character after it while the
   closing quote is being looked for, before the escape itself is decoded. That
-  is what lets s:"C:\\" work: otherwise the second backslash escapes the closing
-  quote, eats its own terminator, and the argument runs to end of line as an
-  unterminated quote.
+  is what lets utf8:"C:\\" work: otherwise the second backslash escapes the
+  closing quote, eats its own terminator, and the argument runs to end of line
+  as an unterminated quote.
 
 - Argument does not implicitly convert to its text, and .text is a function that
   can throw rather than a field. Bytes are not text here; an alias this would

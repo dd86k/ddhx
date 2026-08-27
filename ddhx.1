@@ -397,7 +397,7 @@ different quote types is still allowed.
 Read as a C string, so escape sequences are interpreted and a literal backslash
 must be doubled. A backslash covers the character after it, so an argument may
 end on a backslash
-.RB ( "find s:\(dqC:\e\e\(dq" ).
+.RB ( "find utf8:\(dqC:\e\e\(dq" ).
 The sequences are
 .BR \ea ,
 .BR \eb ,
@@ -425,7 +425,7 @@ followed by a third hexadecimal digit, since
 .B \ex1bff
 would be ambiguous with literal text; use single quotes for text that is meant
 to keep its backslashes, and separate patterns
-.RB ( "s:\(dq\ex1b\(dq s:ff" )
+.RB ( "utf8:\(dq\ex1b\(dq utf8:ff" )
 or the
 .B x:
 prefix for an exact byte. Neither applies to raw or single quoted text, where a
@@ -433,27 +433,27 @@ backslash is data.
 .PP
 Adjacent sections join into one argument, each read on its own terms, so the
 forms may be mixed freely and
-.B "find s:'C:\eUsers'\(dq\e0\(dq"
+.B "find utf8:'C:\eUsers'\(dq\e0\(dq"
 is a raw path with a NUL after it. A pattern prefix may therefore sit inside or
 outside the quotes.
 .PP
 There is no escape sequence outside of double quotes, so a quote is written by
 using the other kind of quote:
-.B "find s:'it'\(dq'\(dq's'"
+.B "find utf8:'it'\(dq'\(dq's'"
 and
-.B "find s:say'\(dq'hi'\(dq'"
+.B "find utf8:say'\(dq'hi'\(dq'"
 each join into one argument. An unquoted backslash is data, so the shell idiom
 .B 'it'\e''s'
 does not apply here.
 .PP
 A path is therefore typed as a path, raw
-.RB ( "find s:C:\eUsers" ", " "diff\-file C:\edump.bin" )
+.RB ( "find utf8:C:\eUsers" ", " "diff\-file C:\edump.bin" )
 or single quoted if it contains a space
-.RB ( "find s:'C:\eExample Space\e2'" ", " "diff\-file 'C:\eMy Dumps\e1.bin'" ),
+.RB ( "find utf8:'C:\eExample Space\e2'" ", " "diff\-file 'C:\eMy Dumps\e1.bin'" ),
 while double quoting it asks for the backslashes to be doubled
 .RB ( "diff\-file \(dqC:\e\edump.bin\(dq" ).
 Escape sequences are opted into the same way
-.RB ( "find s:\(dq\ex1b[0m\(dq" ).
+.RB ( "find utf8:\(dq\ex1b[0m\(dq" ).
 .PP
 Quoting does not apply to the wildcards
 .B *
@@ -461,7 +461,7 @@ and
 .BR ? ,
 which are matched as whole arguments, so a pattern prefix is all it takes to ask
 for one as data
-.RB ( "find s:*" ).
+.RB ( "find utf8:*" ).
 .PP
 An argument is bytes, not text, so an escape may produce a byte that is not
 valid UTF-8. Commands that need text
@@ -562,7 +562,7 @@ With an active selection, only that range is searched.
 Example: replace the string "foo" with "bar":
 .RS
 .nf
-find\-replace s:foo \-\- s:bar
+find\-replace utf8:foo \-\- utf8:bar
 find\-replace\-all x:00 \-\- x:ff
 .fi
 .RE
@@ -579,14 +579,14 @@ Example: looking for
 (these are all equivalent):
 .RS
 .nf
-find s:hi x:00 00
-find s:hi 0x0000
+find utf8:hi x:00 00
+find utf8:hi 0x0000
 find x:68 69 00 00
 .fi
 .RE
 .PP
 Practical example for PDF files: use
-.B find s:endstream
+.B find utf8:endstream
 to search for the string "endstream", then hit
 .B Ctrl+N
 to go to the next result or
@@ -814,7 +814,7 @@ matched in order (left to right).
 For example,
 .B "x:00 01"
 will yield a pattern of [ 0x00, 0x01 ], and
-.B "s:hi x:ffff"
+.B "utf8:hi x:ffff"
 a pattern of [ 0x68, 0x69, 0xff, 0xff ].
 An argument without a prefix of its own continues the previous one, which is
 why the second
@@ -1017,44 +1017,44 @@ is accepted, while
 .B f32:pi2
 is an error rather than half a match.
 .TP
-.BI s: STRING
-String (currently UTF-8 only).
+.BI utf8: STRING
+UTF\-8 text.
 Example:
-.BR "s:hello" .
+.BR "utf8:hello" .
 .IP
 Quotes are the prompt's syntax, not a pattern type (see
 .BR Quoting ),
 so the
-.B s:
+.B utf8:
 prefix is always required:
 .B find \(dqtest\(dq
 is an error, while
-.BR "find s:\(dqtest\(dq" ,
-.BR "find s:'test'" ,
+.BR "find utf8:\(dqtest\(dq" ,
+.BR "find utf8:'test'" ,
 and
-.B find s:test
+.B find utf8:test
 all search for that text.
 .IP
 The text is raw, taken byte for byte as typed, so
-.B find s:C:\eUsers
+.B find utf8:C:\eUsers
 needs no escaping. Double quoting it instead marks it as a C string and
 interprets escape sequences; see
 .B Quoting
 for the list and the rules. Quoting applies per section, so the two forms may be
 mixed in one pattern.
 Examples:
-.BR "s:\(dqend\e0\(dq" ", " "s:\(dq\er\en\(dq" ", " "s:\(dq\ex1b[0m\(dq" ", " "s:C:\eUsers" ", " "s:'C:\eUsers'\(dq\e0\(dq" .
+.BR "utf8:\(dqend\e0\(dq" ", " "utf8:\(dq\er\en\(dq" ", " "utf8:\(dq\ex1b[0m\(dq" ", " "utf8:C:\eUsers" ", " "utf8:'C:\eUsers'\(dq\e0\(dq" .
 .TP
 .B ?
 Match any single byte (wildcard). Only a bare argument is a wildcard, so give
 it a prefix
-.RB ( "s:?" )
+.RB ( "utf8:?" )
 to search for the character instead.
 .TP
 .B *
 Match zero or more bytes (wildcard). Only a bare argument is a wildcard, so
 give it a prefix
-.RB ( "s:*" )
+.RB ( "utf8:*" )
 to search for the character instead.
 .PP
 Supported commands:

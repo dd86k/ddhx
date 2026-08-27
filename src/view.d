@@ -3176,7 +3176,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:CC");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:CC");
     SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 4, "forward aligned: expected 4");
     assert(result.len == 2, "forward aligned: len should equal needle length");
@@ -3191,7 +3191,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ZZ");
     SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
 }
@@ -3207,7 +3207,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ZZ");
     SearchResult result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
 }
@@ -3221,7 +3221,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:CD");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:CD");
     SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 2, "reverse from end: expected 2");
     assert(result.len == 2);
@@ -3237,7 +3237,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AB");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AB");
     SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 0, "reverse to start: expected 0");
     assert(result.len == 2);
@@ -3251,7 +3251,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ZZ");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ZZ");
     SearchResult result = search(&session, needle, 5,
         SEARCH_REVERSE | SEARCH_LASTPOS | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 0, "reverse lastpos: expected 0");
@@ -3266,7 +3266,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
     SearchResult[] hits;
     SearchResult result = search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
         (SearchResult r) { hits ~= r; return SearchAction.next; });
@@ -3284,7 +3284,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAA");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
     long[] positions;
     search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
         (SearchResult r) { positions ~= r.pos; return SearchAction.next; });
@@ -3299,7 +3299,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
     int calls;
     SearchResult result = search(&session, needle, 1, SEARCH_NON_INTERACTIVE,
         (SearchResult r) { ++calls; return SearchAction.stop; });
@@ -3315,7 +3315,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "s:AA");
+    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
     long[] positions;
     search(&session, needle, 7, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE,
         (SearchResult r) { positions ~= r.pos; return SearchAction.next; });

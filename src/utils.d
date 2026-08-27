@@ -32,7 +32,7 @@ struct Argument
     /// An argument out of raw text, for callers that are not the command line.
     ///
     /// Taken as typed. D source has already resolved its own escapes, so
-    /// `Argument("s:\t")` holds a real tab and has nothing left to interpret.
+    /// `Argument("utf8:\t")` holds a real tab and has nothing left to interpret.
     /// Params: text = Argument text.
     this(string text)
     {
@@ -67,8 +67,8 @@ struct Argument
 }
 unittest
 {
-    assert(Argument("s:ab").data == cast(immutable(ubyte)[])"s:ab");
-    assert(Argument("s:ab").text == "s:ab");
+    assert(Argument("utf8:ab").data == cast(immutable(ubyte)[])"utf8:ab");
+    assert(Argument("utf8:ab").text == "utf8:ab");
     assert(Argument("héllo").text == "héllo");
 
     // Bytes that are not text are an argument all the same, they are just not
@@ -270,13 +270,13 @@ unittest
 ///
 /// ---
 ///              protects whitespace    escape sequences
-///  s:text             no                   no
-///  s:'text'           yes                  no
-///  s:"text"           yes                  yes
+///  utf8:text          no                   no
+///  utf8:'text'        yes                  no
+///  utf8:"text"        yes                  yes
 /// ---
 ///
-/// So `s:C:\Users` and `s:'C:\Program Files'` are paths as typed, while
-/// `s:"\x1b[0m"` is an escape sequence:
+/// So `utf8:C:\Users` and `utf8:'C:\Program Files'` are paths as typed, while
+/// `utf8:"\x1b[0m"` is an escape sequence:
 ///
 /// $(UL
 /// $(LI Unquoted and `'single quoted'` text is raw. Every byte up to the end of
@@ -288,7 +288,7 @@ unittest
 /// )
 ///
 /// Adjacent runs concatenate into one argument, each read its own way, so
-/// `s:'C:\Users'"\0"` is a raw path followed by a NUL. That is a plain
+/// `utf8:'C:\Users'"\0"` is a raw path followed by a NUL. That is a plain
 /// concatenation of literals, as in any language that has more than one kind.
 ///
 /// A quote is written by using the other kind (`"'"`, `'"'`), which is the only
@@ -413,10 +413,10 @@ Argument[] arguments(const(char)[] buffer)
 
     // Double quotes are the C string literal, so that is the one place a
     // backslash is syntax. Everywhere else it is data and costs nothing
-    assert(texts(arguments(`find s:a\tb`)) == [ "find", `s:a\tb` ]);
+    assert(texts(arguments(`find utf8:a\tb`)) == [ "find", `utf8:a\tb` ]);
     assert(texts(arguments(`find "a\tb"`)) == [ "find", "a\tb" ]);
-    assert(texts(arguments(`find s:C:\\Users`)) == [ "find", `s:C:\\Users` ]);
-    assert(texts(arguments(`find "s:C:\\Users"`)) == [ "find", `s:C:\Users` ]);
+    assert(texts(arguments(`find utf8:C:\\Users`)) == [ "find", `utf8:C:\\Users` ]);
+    assert(texts(arguments(`find "utf8:C:\\Users"`)) == [ "find", `utf8:C:\Users` ]);
     assert(texts(arguments(`test\\ value`)) == [ `test\\`, "value" ]);
     assert(texts(arguments(`test\\value`)) == [ `test\\value` ]);
     assert(texts(arguments(`"a\\ b"`)) == [ `a\ b` ]);
@@ -432,7 +432,7 @@ Argument[] arguments(const(char)[] buffer)
 
     // Single quotes are literal: not even a backslash is syntax inside
     assert(texts(arguments(`find 'a\tb'`)) == [ "find", `a\tb` ]);
-    assert(texts(arguments(`find 's:C:\\Users'`)) == [ "find", `s:C:\\Users` ]);
+    assert(texts(arguments(`find 'utf8:C:\\Users'`)) == [ "find", `utf8:C:\\Users` ]);
     assert(texts(arguments(`open 'C:\dir'`)) == [ "open", `C:\dir` ]);
     assert(texts(arguments(`open 'C:\'`)) == [ "open", `C:\` ]);
     assert(texts(arguments(`open C:\`)) == [ "open", `C:\` ]);
@@ -450,9 +450,9 @@ Argument[] arguments(const(char)[] buffer)
 
     // Adjacent spans concatenate into one argument, so a quote can cover part
     // of an argument and the prefix can sit inside or outside it
-    assert(texts(arguments(`s:'a''b'`)) == [ `s:ab` ]);
-    assert(texts(arguments(`s:'a'"b"`)) == [ `s:ab` ]);
-    assert(texts(arguments(`'s:'abc`)) == [ `s:abc` ]);
+    assert(texts(arguments(`utf8:'a''b'`)) == [ `utf8:ab` ]);
+    assert(texts(arguments(`utf8:'a'"b"`)) == [ `utf8:ab` ]);
+    assert(texts(arguments(`'utf8:'abc`)) == [ `utf8:abc` ]);
     assert(texts(arguments(`a'b'c`)) == [ `abc` ]);
 
     // Nested/mixed quotes
@@ -481,21 +481,20 @@ Argument[] arguments(const(char)[] buffer)
 
     // Quoting is what selects how a run is read, and unquoted and single quoted
     // are the same raw thing: single quotes only hold an argument together
-    assert(arguments(`a`)     == [ Argument(`a`) ]);
-    assert(arguments(`'a'`)   == [ Argument(`a`) ]);
-    assert(arguments(`"a"`)   == [ Argument(`a`) ]);
-    assert(arguments(`s:"a"`) == [ Argument(`s:a`) ]);
-    assert(arguments(`"s:a"`) == [ Argument(`s:a`) ]);
+    assert(arguments(`a`)        == [ Argument(`a`) ]);
+    assert(arguments(`'a'`)      == [ Argument(`a`) ]);
+    assert(arguments(`"a"`)      == [ Argument(`a`) ]);
+    assert(arguments(`utf8:"a"`) == [ Argument(`utf8:a`) ]);
+    assert(arguments(`"utf8:a"`) == [ Argument(`utf8:a`) ]);
     assert(arguments(`a "b" c`) == [ Argument(`a`), Argument(`b`), Argument(`c`) ]);
 
     // Mixing the two forms is a concatenation of literals, as in any language
     // that has more than one kind, so each part keeps its own meaning: a raw
     // path with a NUL stuck on the end
-    assert(arguments(`s:'C:\dir'"\0"`) ==
-        [ Argument(cast(immutable(ubyte)[])"s:C:\\dir\0") ]);
-    assert(arguments(`s:"a"b`)        == [ Argument(`s:ab`) ]);
-    assert(arguments(`s:C:\dir"a b"`) == [ Argument(`s:C:\dir` ~ `a b`) ]);
-    assert(arguments(`s:'a'b"c""d"`)  == [ Argument(`s:abcd`) ]);
+    assert(arguments(`utf8:'C:\dir'"\0"`) == [ Argument(cast(immutable(ubyte)[])"utf8:C:\\dir\0") ]);
+    assert(arguments(`utf8:"a"b`)         == [ Argument(`utf8:ab`) ]);
+    assert(arguments(`utf8:C:\dir"a b"`)  == [ Argument(`utf8:C:\dir` ~ `a b`) ]);
+    assert(arguments(`utf8:'a'b"c""d"`)   == [ Argument(`utf8:abcd`) ]);
 
     // Bytes that no encoding claims are still an argument. That is the whole
     // point of resolving escapes here: `"\xff"` used to be untypable outside
@@ -511,12 +510,8 @@ Argument[] arguments(const(char)[] buffer)
     }
     catch (Exception) {}
 
-    // space confusion, will need to figure out proper syntax later
-    // TODO: Maybe rethink quotes
-    //       (a) Double-quotes shouldn't be stripped
-    //       (b) Make double-double quotes do this behaviour
-    assert(texts(arguments(`find s:WARNING: %s`)) == [ "find", `s:WARNING:`, `%s` ]);
-    assert(texts(arguments(`find s:"WARNING: %s"`)) == [ "find", `s:WARNING: %s` ]);
+    assert(texts(arguments(`find utf8:WARNING: %s`)) == [ "find", `utf8:WARNING:`, `%s` ]);
+    assert(texts(arguments(`find utf8:"WARNING: %s"`)) == [ "find", `utf8:WARNING: %s` ]);
     assert(texts(arguments(`find "WARNING: %s"`)) == [ "find", `WARNING: %s` ]);
 }
 

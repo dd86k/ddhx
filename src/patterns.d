@@ -31,7 +31,7 @@ enum PatternType
 {
     unknown,
     bytes,    /// Literal bytes, as written ("x:", "0x").
-    text,     /// Literal bytes, subject to the character set ("s:").
+    text,     /// Text encoded into bytes ("utf8:").
     scalar,   /// An integer encoded into bytes ("u8:", "x16:", "i32:", ...).
     floating, /// A float encoded into bytes ("f32:", "f64:", "f80:").
 }
@@ -63,7 +63,12 @@ Prefix patternpfx(const(char)[] input)
     //       prefixes rather than a setting: a format is what the file is, and
     //       "f32:" already means binary32 everywhere, so nothing changes
     //       meaning behind a setting nobody remembers flipping
-    // TODO: String types: "ascii:", etc. Avoids implicit transcoding surprise
+    // TODO: More text encodings: "utf16:", "utf32:", "ascii:", ...
+    //
+    // Text names its encoding for the same reason a scalar names its width:
+    // "utf8:" says what bytes come out, where the old "s:" left it to whatever
+    // the character set setting happened to be. An encoding is what the file
+    // is, so it belongs on the needle, not behind a setting.
     //
     // Endianness is deliberately absent: it is a property of the file being
     // looked at, not of one needle, so scalars follow the `endian` setting
@@ -79,7 +84,7 @@ Prefix patternpfx(const(char)[] input)
         { "x:",   { PatternType.bytes } },
         { "0x",   { PatternType.bytes } },
         // Text
-        { "s:",   { PatternType.text } },
+        { "utf8:", { PatternType.text } },
         // Hexadecimal, as a value
         { "x8:",  { PatternType.scalar, 16, 1 } },
         { "x16:", { PatternType.scalar, 16, 2 } },
@@ -115,7 +120,7 @@ Prefix patternpfx(const(char)[] input)
         }
     }
 
-    // NOTE: There used to be a bare `"STRING"` alias for `s:STRING` here.
+    // NOTE: There used to be a bare `"STRING"` alias for `utf8:STRING` here.
     //       It never fired from a command line, because the shell strips
     //       quotes before this sees them, and once quoting became meaningful
     //       (see Argument) it could only fire on `'"quoted"'`, where taking
@@ -134,7 +139,7 @@ unittest
     assert(patternpfx("0x00")    == Prefix("00", BYTES));
     assert(patternpfx("x:00")    == Prefix("00", BYTES));
     assert(patternpfx("x:ff")    == Prefix("ff", BYTES));
-    assert(patternpfx("s:hello") == Prefix("hello", TEXT));
+    assert(patternpfx("utf8:hello") == Prefix("hello", TEXT));
 
     // Every scalar states a width
     assert(patternpfx("x16:1122") == Prefix("1122", PatternSpec(PatternType.scalar, 16, 2)));
@@ -1148,14 +1153,14 @@ struct Pattern
 /// are resolved by then (see utils.arguments). Nothing here has to be text.
 ///
 /// ---
-/// find s:C:\Users             raw, a path
-/// find s:'C:\Program Files'   raw, quoted only for the space
-/// find s:"\x1b[0m"            C string, an escape sequence
-/// find s:'C:\Users'"\0"       both, concatenated
+/// find utf8:C:\Users             raw, a path
+/// find utf8:'C:\Program Files'   raw, quoted only for the space
+/// find utf8:"\x1b[0m"            C string, an escape sequence
+/// find utf8:'C:\Users'"\0"       both, concatenated
 /// ---
 ///
 /// A whole argument of `?` or `*` is a wildcard; anything with a prefix is
-/// data, so `s:*` is already the way to search for one.
+/// data, so `utf8:*` is already the way to search for one.
 ///
 /// A prefix says whether its argument is a byte string or a value. Byte
 /// strings are taken as written; values are encoded into the width their
@@ -1172,7 +1177,8 @@ struct Pattern
 /// Throws: FormatException or Exception for unknown prefix, empty values,
 ///         values too large for their width, invalid escape sequences, etc.
 /// Params:
-///     charset = Current character set if string patterns used.
+///     charset = Current character set. Text prefixes name their own encoding,
+///               so this is currently unused.
 ///     endian  = Byte order for scalar patterns.
 ///     args... = Array of arguments (e.g., "x:00","00").
 /// Returns: Byte array.
@@ -1186,7 +1192,7 @@ Pattern pattern(CharacterSet charset, Endian endian, Argument[] args)
         const(char)[] input = cast(const(char)[])arg.data;
 
         // A wildcard is a whole argument of its own, so a prefixed one is
-        // already data and needs no quoting: `s:*` is a one-byte needle.
+        // already data and needs no quoting: `utf8:*` is a one-byte needle.
         switch (input) {
         case "?": pat.data ~= PATTERN_GLOB_ONE;  pat.flags |= PATTERN_HAS_GLOB; continue;
         case "*": pat.data ~= PATTERN_GLOB_MANY; pat.flags |= PATTERN_HAS_GLOB; continue;
@@ -1214,7 +1220,9 @@ Pattern pattern(CharacterSet charset, Endian endian, Argument[] args)
             foreach (ubyte v; hexbytes(pfx.str, arg.data)) pat.data ~= v;
             break;
         case PatternType.text:
-            // TODO: Possibly replace string pattern type for encoding-specific ones
+            // "utf8:" is the only encoding so far, and the command line already
+            // hands it UTF-8, so its bytes are its bytes. Other encodings will
+            // transcode here, per prefix, never per setting.
             foreach (char v; pfx.str) pat.data ~= cast(ubyte)v;
             break;
         case PatternType.scalar:
@@ -1254,9 +1262,9 @@ unittest
     assert(pat("u8:255").data            == [ 0xff ]);
     assert(pat("o8:377").data            == [ 0xff ]);
     assert(pat("x:00","00").data         == [ 0, 0 ]);
-    assert(pat("s:test").data            == [ 't', 'e', 's', 't' ]);
-    assert(pat("x:00","s:test").data     == [ 0, 't', 'e', 's', 't' ]);
-    assert(pat("x:00","00","s:test").data == [ 0, 0, 't', 'e', 's', 't' ]);
+    assert(pat("utf8:test").data         == [ 't', 'e', 's', 't' ]);
+    assert(pat("x:00","utf8:test").data  == [ 0, 't', 'e', 's', 't' ]);
+    assert(pat("x:00","00","utf8:test").data == [ 0, 0, 't', 'e', 's', 't' ]);
 
     // Alias prefixes. "0x" survives because it is a byte string like "x:";
     // "0o" did not, because it was an octal scalar with no width
@@ -1346,49 +1354,37 @@ unittest
     assert(pat("f64:1e39").data.length   == 8);
 
     // The 80-bit x87 extended, which is ten bytes and no host's float type
-    assert(pat("f80:1.0").data
-        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x3f ]);
-    assert(patbe("f80:1.0").data
-        == [ 0x3f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
-    assert(pat("f80:-1.0").data
-        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0xbf ]);
-    assert(pat("f80:0.0").data           == [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]);
-    assert(pat("f80:-0.0").data          == [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80 ]);
-    assert(pat("f80:0.5").data
-        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xfe, 0x3f ]);
-    assert(pat("f80:1").data             == pat("f80:1.0").data);
-    assert(pat("f80:inf").data
-        == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x7f ]);
-    assert(pat("f80:nan").data
-        == [ 0, 0, 0, 0, 0, 0, 0, 0xc0, 0xff, 0x7f ]);
-    assert(pat("f80:indefinite").data    == pat("f80:-nan").data);
-    assert(pat("f80:snan").data
-        == [ 0x01, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x7f ]);
-    assert(pat("f80:pi").data
-        == [ 0x35, 0xc2, 0x68, 0x21, 0xa2, 0xda, 0x0f, 0xc9, 0x00, 0x40 ]);
-    assert(pat("f80:max").data
-        == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x7f ]);
+    assert(pat("f80:1.0").data          == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x3f ]);
+    assert(patbe("f80:1.0").data        == [ 0x3f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+    assert(pat("f80:-1.0").data         == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0xbf ]);
+    assert(pat("f80:0.0").data          == [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]);
+    assert(pat("f80:-0.0").data         == [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80 ]);
+    assert(pat("f80:0.5").data          == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xfe, 0x3f ]);
+    assert(pat("f80:1").data            == pat("f80:1.0").data);
+    assert(pat("f80:inf").data          == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x7f ]);
+    assert(pat("f80:nan").data          == [ 0, 0, 0, 0, 0, 0, 0, 0xc0, 0xff, 0x7f ]);
+    assert(pat("f80:indefinite").data   == pat("f80:-nan").data);
+    assert(pat("f80:snan").data         == [ 0x01, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x7f ]);
+    assert(pat("f80:pi").data           == [ 0x35, 0xc2, 0x68, 0x21, 0xa2, 0xda, 0x0f, 0xc9, 0x00, 0x40 ]);
+    assert(pat("f80:max").data          == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x7f ]);
 
     // Its literals carry 64 significant bits and its own exponent range, so
     // neither the digits nor the magnitude have to fit in a double first
     assert(pat("f80:3.14159265358979323846").data == pat("f80:pi").data);
-    assert(pat("f80:1e400").data
-        == [ 0xe6, 0xf9, 0x9f, 0xcb, 0xc8, 0x3f, 0x76, 0xda, 0x2f, 0x45 ]);
+    assert(pat("f80:1e400").data         == [ 0xe6, 0xf9, 0x9f, 0xcb, 0xc8, 0x3f, 0x76, 0xda, 0x2f, 0x45 ]);
     assert(pat("f80:1e-400").data.length == 10);
     assert(pat("f80:1e4932").data.length == 10);
 
     // Named constants, for the values nobody recognizes as hex
-    assert(pat("f32:pi").data            == [ 0xdb, 0x0f, 0x49, 0x40 ]);
-    assert(patbe("f32:pi").data          == [ 0x40, 0x49, 0x0f, 0xdb ]);
-    assert(pat("f32:-pi").data           == [ 0xdb, 0x0f, 0x49, 0xc0 ]);
-    assert(pat("f32:max").data           == [ 0xff, 0xff, 0x7f, 0x7f ]);
-    assert(pat("f64:pi").data            == [ 0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40 ]);
-    assert(pat("f32:PI").data            == pat("f32:pi").data); // as with "nan"
+    assert(pat("f32:pi").data           == [ 0xdb, 0x0f, 0x49, 0x40 ]);
+    assert(patbe("f32:pi").data         == [ 0x40, 0x49, 0x0f, 0xdb ]);
+    assert(pat("f32:-pi").data          == [ 0xdb, 0x0f, 0x49, 0xc0 ]);
+    assert(pat("f32:max").data          == [ 0xff, 0xff, 0x7f, 0x7f ]);
+    assert(pat("f64:pi").data           == [ 0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40 ]);
+    assert(pat("f32:PI").data           == pat("f32:pi").data); // as with "nan"
     // A constant carries over like anything else, and a needle can mix the two
-    assert(pat("f32:pi", "e").data
-        == [ 0xdb, 0x0f, 0x49, 0x40, 0x54, 0xf8, 0x2d, 0x40 ]);
-    assert(pat("f32:1.0", "pi").data
-        == [ 0, 0, 0x80, 0x3f, 0xdb, 0x0f, 0x49, 0x40 ]);
+    assert(pat("f32:pi", "e").data      == [ 0xdb, 0x0f, 0x49, 0x40, 0x54, 0xf8, 0x2d, 0x40 ]);
+    assert(pat("f32:1.0", "pi").data    == [ 0, 0, 0x80, 0x3f, 0xdb, 0x0f, 0x49, 0x40 ]);
 
     // A width carries over the same way a bare prefix does
     assert(pat("u16:1", "2").data        == [ 1, 0, 2, 0 ]);
@@ -1400,15 +1396,14 @@ unittest
 
     // Which is how a needle of any length is built out of values, and it is
     // the carry-over that keeps it quick to type rather than the magnitude
-    assert(pat("u8:255", "255", "255", "255", "255").data
-        == [ 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    assert(pat("u8:255", "255", "255", "255", "255").data == [ 0xff, 0xff, 0xff, 0xff, 0xff ]);
     assert(pat("u8:1", "2", "3").data     == [ 1, 2, 3 ]);
     assert(pat("i16:-1", "-1", "-1").data == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
 
     // Plain strings are raw, so a backslash is a backslash
-    assert(pat(`s:a\tb`).data            == [ 'a', '\\', 't', 'b' ]);
-    assert(pat(`s:C:\dir`).data          == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
-    assert(pat(`s:C:\\`).data            == [ 'C', ':', '\\', '\\' ]);
+    assert(pat(`utf8:a\tb`).data      == [ 'a', '\\', 't', 'b' ]);
+    assert(pat(`utf8:C:\dir`).data    == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
+    assert(pat(`utf8:C:\\`).data      == [ 'C', ':', '\\', '\\' ]);
 
     // ...and what an escape sequence produced is data like any other, since it
     // arrives here already resolved. Bytes that are not text included: this is
@@ -1421,10 +1416,11 @@ unittest
             result ~= cast(ubyte)v;
         return result;
     }
-    assert(bytes(cast(immutable(ubyte)[])"s:\0")     == [ 0 ]);
-    assert(bytes(cast(immutable(ubyte)[])"s:a\tb")   == [ 'a', '\t', 'b' ]);
-    assert(bytes(cast(immutable(ubyte)[])"s:\x1b[0m") == [ 0x1b, '[', '0', 'm' ]);
-    assert(bytes(cast(immutable(ubyte)[])[ 's', ':', 0xff, 0xfe ]) == [ 0xff, 0xfe ]);
+    assert(bytes(cast(immutable(ubyte)[])"utf8:\0")   == [ 0 ]);
+    assert(bytes(cast(immutable(ubyte)[])"utf8:a\tb") == [ 'a', '\t', 'b' ]);
+    assert(bytes(cast(immutable(ubyte)[])"utf8:\x1b[0m") == [ 0x1b, '[', '0', 'm' ]);
+    assert(bytes(cast(immutable(ubyte)[])[ 'u', 't', 'f', '8', ':', 0xff, 0xfe ])
+        == [ 0xff, 0xfe ]);
 
     // Non-string multibyte patterns
     assert(pat("0x01").data                == [ 1 ]);
@@ -1451,7 +1447,7 @@ unittest
         // Missing prefix
         [""], ["00"], ["00", "0x00"],
         // Empty data
-        ["x:"], ["s:"], ["0x"], ["x16:"], ["i8:"], ["i8:-"], ["u8:"], ["o8:"],
+        ["x:"], ["utf8:"], ["0x"], ["x16:"], ["i8:"], ["i8:-"], ["u8:"], ["o8:"],
         ["f32:"], ["f64:"], ["f32:-"], ["f32:."],
         // Quotes are no longer a prefix alias
         ["\""], [`"yes"`],
@@ -1460,6 +1456,8 @@ unittest
         ["f:1.0"], ["f8:1"], ["f16:1"], ["f128:1"],
         // Tests last known good prefix
         ["x:00", "INVALID:ff"],
+        // "s:" is the retired spelling of "utf8:", which people will still type
+        ["s:"], ["s:hi"], ["x:00", "s:hi"],
         // Half a byte is a typo, not a byte
         ["x:0"], ["x:fff"], ["0x0"], ["0xfff"], ["x:00", "0"],
         // A scalar type without a width, whatever it would have encoded to.
@@ -1506,7 +1504,7 @@ unittest
 
     // Bad escapes are the command line's problem, not this layer's: by the
     // time a pattern is built, a backslash is only ever a backslash
-    foreach (string bad; [ `s:\`, `s:\z`, `s:\x`, `s:\400` ])
+    foreach (string bad; [ `utf8:\`, `utf8:\z`, `utf8:\x`, `utf8:\400` ])
         assert(pat(bad).data.length);
 
     // Globbers
@@ -1515,9 +1513,9 @@ unittest
     assert(pat("x:00", "?", "x:FF") == [ 0, PATTERN_GLOB_ONE,  0xff ]);
     assert(pat("x:00", "*", "x:FF") == [ 0, PATTERN_GLOB_MANY, 0xff ]);
     // A prefix already makes it data, no quoting involved
-    assert(pat("s:*").data == [ '*' ]);
-    assert(pat("s:?").data == [ '?' ]);
-    assert(bytes(cast(immutable(ubyte)[])"s:*") == [ '*' ]);
+    assert(pat("utf8:*").data == [ '*' ]);
+    assert(pat("utf8:?").data == [ '?' ]);
+    assert(bytes(cast(immutable(ubyte)[])"utf8:*") == [ '*' ]);
 }
 
 // Layer boundary between the command shell (utils.arguments) and pattern
@@ -1530,21 +1528,21 @@ unittest
 // independent things:
 //
 //                 protects whitespace    escape sequences
-//     s:text      no                     no
-//     s:'text'    yes                    no
-//     s:"text"    yes                    yes
+//     utf8:text   no                     no
+//     utf8:'text' yes                    no
+//     utf8:"text" yes                    yes
 //
 // Which is the same deal a string literal offers in any language: the quoting
 // style says how to read the text. So a Windows path is a Windows path,
 //
-//      find s:C:\Users                  raw, nothing to escape
-//      find s:'C:\Example Space\2'      raw, quoted only for the space
-//      find s:"C:\\Example Space\\2"    C string, so the backslashes double
+//      find utf8:C:\Users                  raw, nothing to escape
+//      find utf8:'C:\Example Space\2'      raw, quoted only for the space
+//      find utf8:"C:\\Example Space\\2"    C string, so the backslashes double
 //
 // and an escape sequence is something you opt into with double quotes. The two
 // forms concatenate, each keeping its own reading, the way string literals do:
 //
-//      find s:'C:\Users'"\0"            a path with a NUL after it
+//      find utf8:'C:\Users'"\0"            a path with a NUL after it
 @system unittest
 {
     import utils : arguments;
@@ -1572,65 +1570,65 @@ unittest
         [ 'C', ':', '\\', 'U', 's', 'e', 'r', 's' ];
 
     // The headline: a path is typed as a path, no quoting and no doubling
-    assert(compile(`find s:C:\Users`)    == USERS);
-    assert(compile(`find s:'C:\Users'`)  == USERS);
-    assert(compile(`find s:"C:\\Users"`) == USERS);
+    assert(compile(`find utf8:C:\Users`)    == USERS);
+    assert(compile(`find utf8:'C:\Users'`)  == USERS);
+    assert(compile(`find utf8:"C:\\Users"`) == USERS);
 
     // ...and the space only costs quotes, not escapes
-    assert(compile(`find s:'C:\Example Space\2'`)   == EXAMPLE);
-    assert(compile(`find s:"C:\\Example Space\\2"`) == EXAMPLE);
+    assert(compile(`find utf8:'C:\Example Space\2'`)   == EXAMPLE);
+    assert(compile(`find utf8:"C:\\Example Space\\2"`) == EXAMPLE);
 
     // Unquoted and single quoted are both raw, so they behave identically and
     // only differ on whitespace. Double quotes are the C string
-    assert(compile(`find s:a\tb`)     == [ 'a', '\\', 't', 'b' ]);
-    assert(compile(`find s:'a\tb'`)   == [ 'a', '\\', 't', 'b' ]);
-    assert(compile(`find s:"a\tb"`)   == [ 'a', '\t', 'b' ]);
-    assert(compile(`find s:\x1b[0m`)  == [ '\\', 'x', '1', 'b', '[', '0', 'm' ]);
-    assert(compile(`find s:"\x1b[0m"`) == [ 0x1b, '[', '0', 'm' ]);
+    assert(compile(`find utf8:a\tb`)      == [ 'a', '\\', 't', 'b' ]);
+    assert(compile(`find utf8:'a\tb'`)    == [ 'a', '\\', 't', 'b' ]);
+    assert(compile(`find utf8:"a\tb"`)    == [ 'a', '\t', 'b' ]);
+    assert(compile(`find utf8:\x1b[0m`)   == [ '\\', 'x', '1', 'b', '[', '0', 'm' ]);
+    assert(compile(`find utf8:"\x1b[0m"`) == [ 0x1b, '[', '0', 'm' ]);
 
     // Raw means raw, so a backslash never has to be justified and a bad escape
     // is only bad where escapes exist
-    assert(compile(`find s:C:\dir`)  == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
-    assert(compile(`find s:abc\`)    == [ 'a', 'b', 'c', '\\' ]);
-    test_throw(`find s:"C:\Users"`);
-    test_throw(`find s:"abc\"`);
+    assert(compile(`find utf8:C:\dir`) == [ 'C', ':', '\\', 'd', 'i', 'r' ]);
+    assert(compile(`find utf8:abc\`)   == [ 'a', 'b', 'c', '\\' ]);
+    test_throw(`find utf8:"C:\Users"`);
+    test_throw(`find utf8:"abc\"`);
 
     // Nothing collapses backslashes on the way in, so what layer 2 sees is what
     // was typed and only the C string form halves them
-    assert(compile(`find s:C:\\Users`)     == [ 'C', ':', '\\', '\\', 'U', 's', 'e', 'r', 's' ]);
-    assert(compile(`find s:"C:\\\\Users"`) == [ 'C', ':', '\\', '\\', 'U', 's', 'e', 'r', 's' ]);
+    assert(compile(`find utf8:C:\\Users`)     == [ 'C', ':', '\\', '\\', 'U', 's', 'e', 'r', 's' ]);
+    assert(compile(`find utf8:"C:\\\\Users"`) == [ 'C', ':', '\\', '\\', 'U', 's', 'e', 'r', 's' ]);
 
     // A needle ending on a backslash works in all three forms, since a
     // backslash pair does not swallow the closing quote
-    assert(compile(`find s:C:\`)     == [ 'C', ':', '\\' ]);
-    assert(compile(`find s:'C:\'`)   == [ 'C', ':', '\\' ]);
-    assert(compile(`find s:"C:\\"`)  == [ 'C', ':', '\\' ]);
+    assert(compile(`find utf8:C:\`)    == [ 'C', ':', '\\' ]);
+    assert(compile(`find utf8:'C:\'`)  == [ 'C', ':', '\\' ]);
+    assert(compile(`find utf8:"C:\\"`) == [ 'C', ':', '\\' ]);
 
     // Which form applies is per span, so the two concatenate and each part
     // keeps its own reading. That is what makes a path with a terminator, or a
     // path with a space in it, one argument and no doubling
-    assert(compile(`find s:'C:\Users'"\0"`) == USERS ~ cast(ushort)0);
-    assert(compile(`find s:C:\dir"a b"`)
+    assert(compile(`find utf8:'C:\Users'"\0"`) == USERS ~ cast(ushort)0);
+    assert(compile(`find utf8:C:\dir"a b"`)
         == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
-    assert(compile(`find s:"a\tb"\x`)   == [ 'a', '\t', 'b', '\\', 'x' ]);
-    assert(compile(`find s:'C:\dir'"a b"`)
+    assert(compile(`find utf8:"a\tb"\x`)   == [ 'a', '\t', 'b', '\\', 'x' ]);
+    assert(compile(`find utf8:'C:\dir'"a b"`)
         == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
 
     // Whether the prefix sits inside or outside the quotes makes no difference
-    assert(compile(`find 's:C:\Users'`) == compile(`find s:'C:\Users'`));
-    assert(compile(`find "s:a\tb"`)     == compile(`find s:"a\tb"`));
+    assert(compile(`find 'utf8:C:\Users'`) == compile(`find utf8:'C:\Users'`));
+    assert(compile(`find "utf8:a\tb"`)     == compile(`find utf8:"a\tb"`));
 
     // Quotes reaching a string pattern. Layer 1 has no escapes outside of
     // double quotes, so a quote is written with the other kind of quote, and
     // layer 2 still takes \' and \" inside a C string
-    assert(compile(`find s:'it'"'"'s'`) == [ 'i', 't', '\'', 's' ]);
-    assert(compile(`find s:"it's"`)     == [ 'i', 't', '\'', 's' ]);
-    assert(compile(`find s:"it\'s"`)    == [ 'i', 't', '\'', 's' ]);
-    assert(compile(`find s:say'"'hi'"'`) == [ 's', 'a', 'y', '"', 'h', 'i', '"' ]);
-    assert(compile(`find s:"say\"hi\""`) == [ 's', 'a', 'y', '"', 'h', 'i', '"' ]);
+    assert(compile(`find utf8:'it'"'"'s'`) == [ 'i', 't', '\'', 's' ]);
+    assert(compile(`find utf8:"it's"`)     == [ 'i', 't', '\'', 's' ]);
+    assert(compile(`find utf8:"it\'s"`)    == [ 'i', 't', '\'', 's' ]);
+    assert(compile(`find utf8:say'"'hi'"'`) == [ 's', 'a', 'y', '"', 'h', 'i', '"' ]);
+    assert(compile(`find utf8:"say\"hi\""`) == [ 's', 'a', 'y', '"', 'h', 'i', '"' ]);
     // ...and a raw backslash before a quote is just a backslash, so it ends
     // the raw run instead of escaping anything
-    assert(compile(`find s:it\'s'`)     == [ 'i', 't', '\\', 's' ]);
+    assert(compile(`find utf8:it\'s'`)     == [ 'i', 't', '\\', 's' ]);
 
     // A prefix is mandatory: quotes are the shell's syntax, not a pattern type
     test_throw(`find "quoted"`);
@@ -1638,18 +1636,18 @@ unittest
 
     // A wildcard is a whole argument of its own, so a prefix is all it takes to
     // ask for one as data. Quoting is not consulted and does not need to be
-    assert(compile(`find x:00 ? x:FF`)  == [ 0, PATTERN_GLOB_ONE, 0xff ]);
-    assert(compile(`find x:00 * x:FF`)  == [ 0, PATTERN_GLOB_MANY, 0xff ]);
-    assert(compile(`find s:"a\tb" * s:c`) == [ 'a', '\t', 'b', PATTERN_GLOB_MANY, 'c' ]);
-    assert(compile(`find s:*`)          == [ '*' ]);
-    assert(compile(`find s:?`)          == [ '?' ]);
-    assert(compile(`find s:'*'`)        == [ '*' ]);
-    assert(compile(`find s:"?"`)        == [ '?' ]);
-    assert(compile(`find '*'`)          == [ PATTERN_GLOB_MANY ]);
+    assert(compile(`find x:00 ? x:FF`) == [ 0, PATTERN_GLOB_ONE, 0xff ]);
+    assert(compile(`find x:00 * x:FF`) == [ 0, PATTERN_GLOB_MANY, 0xff ]);
+    assert(compile(`find utf8:"a\tb" * utf8:c`) == [ 'a', '\t', 'b', PATTERN_GLOB_MANY, 'c' ]);
+    assert(compile(`find utf8:*`)      == [ '*' ]);
+    assert(compile(`find utf8:?`)      == [ '?' ]);
+    assert(compile(`find utf8:'*'`)    == [ '*' ]);
+    assert(compile(`find utf8:"?"`)    == [ '?' ]);
+    assert(compile(`find '*'`)         == [ PATTERN_GLOB_MANY ]);
 
     // An unterminated quote never reaches the pattern parser at all
-    test_throw(`find s:'C:\Users`);
-    test_throw(`find s:"C:\\Users`);
+    test_throw(`find utf8:'C:\Users`);
+    test_throw(`find utf8:"C:\\Users`);
 }
 
 /// Match a pattern against haystack starting at hPos/nPos.
@@ -1715,34 +1713,34 @@ unittest
 {
     ubyte[] hay = cast(ubyte[]) "ABCDEF";
 
-    Pattern p = pattern(CharacterSet.ascii, Endian.littleEndian, "s:ABC");
+    Pattern p = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ABC");
     assert(matchPattern(hay, p, 0, 0) == 3);
     assert(matchPattern(hay, p, 1, 0) == -1);
     assert(matchPattern(hay, p, 4, 0) == -1); // not enough room
 
     // ? matches exactly one byte
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "?", "s:BC");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "?", "utf8:BC");
     assert(matchPattern(hay, p, 0, 0) == 3); // A matches ?
     assert(matchPattern(hay, p, 2, 0) == -1); // CD != BC
 
     // * matches zero or more (minimal-match)
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "s:EF");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "utf8:EF");
     assert(matchPattern(hay, p, 0, 0) == 6); // * eats ABCD, then EF
     assert(matchPattern(hay, p, 4, 0) == 2); // * matches empty, then EF
     assert(matchPattern(hay, p, 5, 0) == -1); // only F left
 
     // Literal on both sides of *: span is the full A..F
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "s:A", "*", "s:F");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:A", "*", "utf8:F");
     assert(matchPattern(hay, p, 0, 0) == 6);
     assert(matchPattern(hay, p, 1, 0) == -1);
 
     // Multiple stars must not exponentially backtrack
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "?", "*", "s:F");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "?", "*", "utf8:F");
     assert(matchPattern(hay, p, 0, 0) == 6);
     assert(matchPattern(hay, p, 6, 0) == -1); // past end
 
     // Fixed-position match: matchPattern tests AT hPos, not starting from hPos
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "s:D", "?", "F");
+    p = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:D", "?", "F");
     assert(matchPattern(hay, p, 3, 0) == 3);    // "DEF": D=D, E=?, F=F
     assert(matchPattern(hay, p, 0, 0) == -1);   // 'A' != 'D'
     assert(matchPattern(hay, p, 4, 0) == -1);   // not enough room
