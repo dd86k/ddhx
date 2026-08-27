@@ -63,6 +63,8 @@ static immutable string MSG_BOOKMARK_LENGTH_MUST_BE_POSITIVE = "Bookmark length 
 static immutable string MSG_NO_BOOKMARKS = "No bookmarks";
 static immutable string MSG_NO_BOOKMARKS_TO_SAVE = "No bookmarks to save";
 static immutable string MSG_BOOKMARK_LINE_PREFIX = "Bookmark: line ";
+static immutable string MSG_BOOKMARK_LIMIT_INVALID =
+    `Bookmark limit must be positive, or "none" for no limit`;
 
 // Find / replace
 

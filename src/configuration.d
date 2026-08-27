@@ -22,6 +22,9 @@ import view : bindkey, setcolor, initdefaults, binded;
 /// Special value for RC.columns to autoresize.
 enum COLUMNS_AUTO = 0;
 
+/// Special value for RC.find_bookmark_limit, for no limit at all.
+enum BOOKMARK_LIMIT_NONE = -1;
+
 /// Editor configuration
 struct RC
 {
@@ -72,6 +75,15 @@ struct RC
     /// Endian used by the inspector for multi-byte interpretations.
     Endian endian = Endian.littleEndian;
 
+    /// Maximum number of bookmarks the find-bookmark command adds in one run,
+    /// or BOOKMARK_LIMIT_NONE for no limit.
+    ///
+    /// A search reports as many matches as the document holds, and every
+    /// bookmark costs memory and view rendering time, so a one-byte needle
+    /// over a large file is capped rather than left to bring the editor
+    /// down. The command says when it stops early.
+    int find_bookmark_limit = 4096;
+
     /// Format string for the normal status bar.
     string status_fmt_normal = "%e %m | %t | %c | %8p";
 
@@ -96,6 +108,7 @@ private:
     bool coalescing_set;
     bool inspector_set;
     bool endian_set;
+    bool find_bookmark_limit_set;
     bool status_fmt_normal_set;
     bool status_fmt_selection_set;
     bool status_fmt_report_set;
@@ -274,6 +287,11 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
         &configure_endian
     },
     {
+        "find-bookmark-limit", "Maximum matches the find-bookmark command bookmarks in one run",
+        `Number, or "none" for no limit`, "4096",
+        &configure_find_bookmark_limit
+    },
+    {
         "status-format", "Normal status bar format string",
         "Format string", `"%e %m | %t | %c | %p"`,
         &configure_status_fmt_normal
@@ -415,6 +433,59 @@ void configure_columns(ref RC rc, string value, bool conf = false)
         throw new Exception(MSG_NEGATIVE_COLUMNS);
     rc.columns = cols;
     rc.columns_set = true;
+}
+
+void configure_find_bookmark_limit(ref RC rc, string value, bool conf = false)
+{
+    if (conf && rc.find_bookmark_limit_set)
+        return;
+
+    // Alias, because "-1" reads like a typo in a configuration file
+    if (value == "none")
+    {
+        rc.find_bookmark_limit = BOOKMARK_LIMIT_NONE;
+        rc.find_bookmark_limit_set = true;
+        return;
+    }
+
+    int limit = to!int(value);
+    // Zero means bookmarking nothing, which is not something to ask of a
+    // command that exists to add bookmarks
+    if (limit == 0)
+        throw new Exception(MSG_BOOKMARK_LIMIT_INVALID);
+    if (limit < 0) // any negative reads as "no limit"
+        limit = BOOKMARK_LIMIT_NONE;
+    rc.find_bookmark_limit = limit;
+    rc.find_bookmark_limit_set = true;
+}
+unittest
+{
+    RC rc;
+    assert(rc.find_bookmark_limit == 4096); // default
+
+    configRC(rc, "find-bookmark-limit", "10");
+    assert(rc.find_bookmark_limit == 10);
+
+    configRC(rc, "find-bookmark-limit", "none");
+    assert(rc.find_bookmark_limit == BOOKMARK_LIMIT_NONE);
+
+    configRC(rc, "find-bookmark-limit", "-1");
+    assert(rc.find_bookmark_limit == BOOKMARK_LIMIT_NONE);
+
+    // Zero, and anything that is not a number, are refused
+    try
+    {
+        configRC(rc, "find-bookmark-limit", "0");
+        assert(false);
+    }
+    catch (Exception ex) {}
+    try
+    {
+        configRC(rc, "find-bookmark-limit", "many");
+        assert(false);
+    }
+    catch (Exception ex) {}
+    assert(rc.find_bookmark_limit == BOOKMARK_LIMIT_NONE); // untouched
 }
 
 void configure_address(ref RC rc, string value, bool conf = false)

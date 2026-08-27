@@ -5561,9 +5561,13 @@ void find_bookmark(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
 
+    // A one-byte needle over a large document matches more times than there
+    // is memory (or patience) for, so the scan stops at the configured
+    // number of matches, which can be lifted entirely.
+    int limit = session.rc.find_bookmark_limit;
+
     // Matches come in ascending order, so they are collected and merged in
-    // one pass: a sorted insert each would turn quadratic, and like the
-    // search itself, the match count has no upper limit.
+    // one pass: a sorted insert each would turn quadratic.
     Bookmark[] found;
     size_t count;
     try
@@ -5571,7 +5575,9 @@ void find_bookmark(Session *session, Argument[] args)
         search(session, g_needle, 0, 0,
             (SearchResult r) {
                 found ~= Bookmark(r.pos, r.len);
-                return SearchAction.next;
+                // Continues if limit is set and not reached
+                return limit == BOOKMARK_LIMIT_NONE || found.length < cast(size_t)limit ?
+                    SearchAction.next : SearchAction.stop;
             });
     }
     finally // A canceled search keeps whatever it found until then
@@ -5581,13 +5587,26 @@ void find_bookmark(Session *session, Argument[] args)
             g_status |= UVIEW | USTATUS;
     }
 
-    if (count == 0)
+    if (found.length == 0)
     {
         message("Not found");
         return;
     }
 
-    message("Bookmarked %d match%s", count, count == 1 ? "" : "es");
+    // Matches can all be bookmarked already, from an earlier run
+    if (count == 0)
+    {
+        message("All matches already bookmarked");
+        return;
+    }
+
+    if (limit != BOOKMARK_LIMIT_NONE && found.length >= cast(size_t)limit)
+    {
+        message("%d bookmarked (limit reached)", count);
+        return;
+    }
+
+    message("%d bookmarked");
 }
 
 // Split find-replace args around the "--" separator into needle and

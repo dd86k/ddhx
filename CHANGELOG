@@ -65,6 +65,10 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
   It scans the whole document instead of starting at the cursor, leaves the
   cursor alone, and keeps what it found if the search is canceled, so the
   results are walked with `]` and `[` rather than by repeating a search.
+- `find-bookmark-limit` config option: how many matches `find-bookmark` takes
+  before it stops and says so. Defaults to 4096, since a one-byte needle over
+  a large document matches more times than there is memory for; `none` (or
+  -1) lifts the limit.
 - `-W`/`--writable` flag. (cb1c02d)
 - `writemode` config option, enforced on fixed-size media. (6fd3d7e)
 - `diff-next` / `diff-prev` commands mapped to `}` / `{`. (73a5983)

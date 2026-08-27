@@ -538,7 +538,12 @@ and
 With an active selection and no pattern, the selected bytes are the needle.
 Canceling the search
 .RB ( Escape )
-keeps the matches found until then.
+keeps the matches found until then. At most
+.B find\-bookmark\-limit
+matches are bookmarked (4096 by default); see the
+.SM
+.B CONFIGURATION
+section.
 .TP
 .BI find\-replace " [NEEDLE \fR\-\-\fP REPLACEMENT]"
 Find the next occurrence of
@@ -1260,6 +1265,17 @@ and
 .B be
 are accepted. Default:
 .BR little .
+.TP
+.BI find\-bookmark\-limit " N \fR|\fP none"
+Maximum number of matches the
+.B find\-bookmark
+command bookmarks in one run. A search reports as many matches as the
+document holds, and every bookmark costs memory and rendering time, so the
+command stops at this many and says so. Set it to
+.B none
+.RB ( \-1
+is accepted too) for no limit. Default:
+.BR 4096 .
 .TP
 .BR inspector " on | \fRoff\fP"
 Show the data inspector panel below the view. Default:
