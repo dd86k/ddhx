@@ -303,6 +303,14 @@ and the unittest at the end of patterns.d (both, by typed command line).
   find d:255                        error, unknown prefix; d: named no width
   find i16:-1                       ff ff               two's complement
   find u16:-1                       error, only i* takes a sign
+  find u8:max                       ff                  the width's own edge
+  find i8:max                       7f                  ...per signedness
+  find i8:min                       80                     ...and it is signed
+  find u8:min                       00                  unsigned starts at zero
+  find i8:-max                      81                  a name takes a sign
+  find i8:-min                      error, +128 is the value the width lacks
+  find u64:max                      ff ff ff ff ff ff ff ff   beats retyping it
+  find u8:maximum                   error, a name is the whole literal
   find f32:1.0                      00 00 80 3F         IEEE-754, not the digits
   find f64:1.0                      00 00 00 00 00 00 F0 3F
   find f32:nan                      00 00 C0 7F         the quiet one, always

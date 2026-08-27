@@ -29,6 +29,7 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
   Each takes the `pi`, `e`, `tau`, `sqrt2`, `phi` constants, the `max`, `min`,
   `epsilon`, `denorm_min` properties, and named NaNs ('nan'/'qnan', 'snan',
   'snan_hi', 'indefinite') rather than whatever the host would produce.
+  The integer prefixes take `max` and `min` too, per width and signedness.
 - Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}'
   and '{') jump between differing regions with a diff panel opened,
   with a cursor mirror and better alignment in the diff panel.
@@ -57,6 +58,11 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
 - `pi`, `e`, `tau`, `sqrt2`, `phi` constants and `max`, `min`, `epsilon`,
   `denorm_min` properties for the float prefixes, each at the width's
   precision: 'f80:pi' is the ten bytes FLDPI loads.
+- `max` and `min` properties for the integer prefixes, answered per width and
+  signedness rather than per radix: 'u8:max' is FF, 'i8:max' is 7F, 'i8:min'
+  is 80, and 'u64:max' saves typing 18446744073709551615. Unsigned `min` is
+  zero, and a sign applies to a name like it does to digits, so 'i8:-max' is
+  81 and 'i8:-min' is the one magnitude the width does not hold
 - Named NaNs, since IEEE-754 allows any nonzero mantissa for one: 'nan' and
   'qnan' are the quiet NaN (7FC00000), 'snan' the signaling one (7F800001),
   'snan_hi' the signaling one carrying the payload's high bit instead

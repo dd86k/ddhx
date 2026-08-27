@@ -254,10 +254,17 @@ unittest
 }
 
 // Parse a scalar and encode it, per what its prefix asked for.
+//
+// "min" and "max" are named here for the reason the floats name theirs: an
+// edge is what a sentinel is written as, and 18446744073709551615 is neither
+// recognizable on sight nor pleasant to retype. They are properties of the
+// width and the signedness rather than of the radix, so every scalar prefix
+// takes them and each answers for itself: u8:max is FF, i8:max is 7F.
 private
 ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
 {
     import std.conv : ConvException, parse;
+    import std.string : icmp;
 
     // Only the signed types take a sign, and parse() only understands one at
     // radix 10 anyway, so it is taken off here and applied at the end
@@ -270,16 +277,43 @@ ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(u
             throw new Exception(MSG_MISSING_PATTERN_DATA);
     }
 
+    // A name is the whole literal and matches case insensitively, same as the
+    // float constants, and nothing here can shadow a number: "min" and "max"
+    // are not digits in any radix these prefixes take, hexadecimal included.
     ulong value = void;
-    try
-        value = parse!ulong(input, spec.radix);
-    catch (ConvException)
-        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+    if (icmp(input, "max") == 0)
+    {
+        value = spec.signed
+            ? (spec.width >= 8 ? long.max : (1UL << (spec.width * 8 - 1)) - 1)
+            : (spec.width >= 8 ? ulong.max : (1UL << (spec.width * 8)) - 1);
+    }
+    else if (icmp(input, "min") == 0)
+    {
+        // Unsigned starts at zero, so both signednesses answer the same
+        // question rather than one of them refusing to be asked
+        if (spec.signed == false)
+            value = 0;
+        else
+        {
+            // The one edge that carries a sign of its own, so a leading '-'
+            // flips it rather than adds to it: "i8:-min" is +128, which is the
+            // single value the width does not hold, and the check below says so
+            value = spec.width >= 8 ? cast(ulong)long.max + 1 : 1UL << (spec.width * 8 - 1);
+            negative = !negative;
+        }
+    }
+    else
+    {
+        try
+            value = parse!ulong(input, spec.radix);
+        catch (ConvException)
+            throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
 
-    // parse() stops at the first character it does not like and leaves the
-    // rest behind, which would quietly take "x16:12zz" for 0x12
-    if (input.length > 0)
-        throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+        // parse() stops at the first character it does not like and leaves the
+        // rest behind, which would quietly take "x16:12zz" for 0x12
+        if (input.length > 0)
+            throw new Exception(text(MSG_INVALID_NUMBER, printable(arg)));
+    }
 
     // Range check against the width asked for
     ulong max = void; // largest magnitude this width holds, sign included
@@ -1019,12 +1053,9 @@ unittest
         assert(floating("min",        F32, bigEndian, null) == [ 0x00, 0x80, 0x00, 0x00 ]);
         assert(floating("epsilon",    F32, bigEndian, null) == [ 0x34, 0x00, 0x00, 0x00 ]);
         assert(floating("denorm_min", F32, bigEndian, null) == [ 0x00, 0x00, 0x00, 0x01 ]);
-        assert(floating("max",        F64, bigEndian, null)
-            == [ 0x7f, 0xef, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
-        assert(floating("min",        F64, bigEndian, null)
-            == [ 0x00, 0x10, 0, 0, 0, 0, 0, 0 ]);
-        assert(floating("epsilon",    F64, bigEndian, null)
-            == [ 0x3c, 0xb0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("max",        F64, bigEndian, null) == [ 0x7f, 0xef, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+        assert(floating("min",        F64, bigEndian, null) == [ 0x00, 0x10, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("epsilon",    F64, bigEndian, null) == [ 0x3c, 0xb0, 0, 0, 0, 0, 0, 0 ]);
         assert(floating("denorm_min", F64, bigEndian, null) == [ 0, 0, 0, 0, 0, 0, 0, 1 ]);
 
         // A sign applies to a constant the way it does to a literal, and only
@@ -1046,14 +1077,10 @@ unittest
 
         // The 80-bit format is ten bytes and stores its integer bit, so a 1.0
         // is that bit and an exponent rather than an exponent alone
-        assert(floating("1.0", F80, littleEndian, null)
-            == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x3f ]);
-        assert(floating("1.0", F80, bigEndian, null)
-            == [ 0x3f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
-        assert(floating("-1.0", F80, bigEndian, null)
-            == [ 0xbf, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
-        assert(floating("-0.0", F80, bigEndian, null)
-            == [ 0x80, 0x00, 0, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("1.0", F80, littleEndian, null) == [ 0, 0, 0, 0, 0, 0, 0, 0x80, 0xff, 0x3f ]);
+        assert(floating("1.0", F80, bigEndian, null)    == [ 0x3f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("-1.0", F80, bigEndian, null)   == [ 0xbf, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("-0.0", F80, bigEndian, null)   == [ 0x80, 0x00, 0, 0, 0, 0, 0, 0, 0, 0 ]);
         assert(floating("1.0", F80, littleEndian, null).length == 10);
 
         // The same names, on the same terms. An infinity or a NaN keeps the
@@ -1065,14 +1092,10 @@ unittest
         assert(floating("nan",  F80, bigEndian, null)
             == [ 0x7f, 0xff, 0xc0, 0, 0, 0, 0, 0, 0, 0 ]);
         assert(floating("qnan", F80, bigEndian, null) == floating("nan", F80, bigEndian, null));
-        assert(floating("snan", F80, bigEndian, null)
-            == [ 0x7f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0x01 ]);
-        assert(floating("snan_hi", F80, bigEndian, null)
-            == [ 0x7f, 0xff, 0xa0, 0, 0, 0, 0, 0, 0, 0 ]);
-        assert(floating("indefinite", F80, bigEndian, null)
-            == [ 0xff, 0xff, 0xc0, 0, 0, 0, 0, 0, 0, 0 ]);
-        assert(floating("indefinite", F80, littleEndian, null)
-            == floating("-nan", F80, littleEndian, null));
+        assert(floating("snan", F80, bigEndian, null) == [ 0x7f, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0x01 ]);
+        assert(floating("snan_hi", F80, bigEndian, null) == [ 0x7f, 0xff, 0xa0, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("indefinite", F80, bigEndian, null) == [ 0xff, 0xff, 0xc0, 0, 0, 0, 0, 0, 0, 0 ]);
+        assert(floating("indefinite", F80, littleEndian, null) == floating("-nan", F80, littleEndian, null));
         // ...and the quiet bit is bit 62, the one under the integer bit
         assert((floating("snan",    F80, bigEndian, null)[2] & 0x40) == 0);
         assert((floating("snan_hi", F80, bigEndian, null)[2] & 0x40) == 0);
@@ -1089,8 +1112,9 @@ unittest
         assert(floating("PI", F80, bigEndian, null) == floating("pi", F80, bigEndian, null));
         // ...and a literal of the same digits agrees with the name, which is
         // the whole reason the conversion is done in integers
-        assert(floating("3.14159265358979323846", F80, bigEndian, null)
-            == floating("pi", F80, bigEndian, null));
+        assert(floating("3.14159265358979323846", F32, bigEndian, null) == floating("pi", F32, bigEndian, null));
+        assert(floating("3.14159265358979323846", F64, bigEndian, null) == floating("pi", F64, bigEndian, null));
+        assert(floating("3.14159265358979323846", F80, bigEndian, null) == floating("pi", F80, bigEndian, null));
         assert(floating("e", F80, bigEndian, null)
             == [ 0x40, 0x00, 0xad, 0xf8, 0x54, 0x58, 0xa2, 0xbb, 0x4a, 0x9b ]);
         assert(floating("tau", F80, bigEndian, null)
@@ -1169,6 +1193,7 @@ struct Pattern
 /// find x16:1122       22 11       a 16-bit value, little endian
 /// find u16:255        ff 00       as many bytes as the width asked for
 /// find i16:-1         ff ff       two's complement
+/// find i8:min         80          the width's own edge, by name
 /// find f32:1.0        00 00 80 3f IEEE-754, the bits a float occupies
 /// ---
 ///
@@ -1296,8 +1321,7 @@ unittest
     assert(pat("u32:1").data             == [ 1, 0, 0, 0 ]);
     assert(pat("u64:1").data             == [ 1, 0, 0, 0, 0, 0, 0, 0 ]);
     assert(pat("o16:377").data           == [ 0xff, 0x00 ]);
-    assert(pat("u64:18446744073709551615").data
-        == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    assert(pat("u64:18446744073709551615").data == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
 
     // Signed types take a sign and encode two's complement
     assert(pat("i8:-1").data             == [ 0xff ]);
@@ -1310,6 +1334,37 @@ unittest
     assert(pat("i64:-1").data            == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
     assert(pat("i64:-9223372036854775808").data == [ 0, 0, 0, 0, 0, 0, 0, 0x80 ]);
     assert(pat("i16:1").data             == [ 0x01, 0x00 ]);
+
+    // The width's own edges by name, since that is what a sentinel is written
+    // as. Signedness picks the value, the radix does not enter into it
+    assert(pat("u8:max").data            == [ 0xff ]);
+    assert(pat("u8:min").data            == [ 0x00 ]);
+    assert(pat("i8:max").data            == [ 0x7f ]);
+    assert(pat("i8:min").data            == [ 0x80 ]);
+    assert(pat("i8:-max").data           == [ 0x81 ]); // a name takes a sign
+    assert(pat("x8:max").data            == [ 0xff ]);
+    assert(pat("o8:max").data            == [ 0xff ]);
+    assert(pat("u16:max").data           == [ 0xff, 0xff ]);
+    assert(pat("i16:max").data           == [ 0xff, 0x7f ]);
+    assert(patbe("i16:max").data         == [ 0x7f, 0xff ]);
+    assert(pat("i16:min").data           == [ 0x00, 0x80 ]);
+    assert(patbe("i16:min").data         == [ 0x80, 0x00 ]);
+    assert(pat("u32:max").data           == [ 0xff, 0xff, 0xff, 0xff ]);
+    assert(pat("i32:max").data           == [ 0xff, 0xff, 0xff, 0x7f ]);
+    assert(pat("i32:min").data           == [ 0, 0, 0, 0x80 ]);
+    assert(pat("u64:max").data           == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ]);
+    assert(pat("i64:max").data           == [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f ]);
+    assert(pat("i64:min").data           == [ 0, 0, 0, 0, 0, 0, 0, 0x80 ]);
+    assert(pat("u64:min").data           == [ 0, 0, 0, 0, 0, 0, 0, 0 ]);
+    // ...and they spell what the digits do, which is the point of naming them
+    assert(pat("u64:max").data           == pat("u64:18446744073709551615").data);
+    assert(pat("i64:min").data           == pat("i64:-9223372036854775808").data);
+    assert(pat("x32:max").data           == pat("x32:ffffffff").data);
+    // Case insensitive, like the float constants
+    assert(pat("u8:MAX").data            == [ 0xff ]);
+    assert(pat("i16:Min").data           == [ 0x00, 0x80 ]);
+    // A prefix carries to the next argument, name and all
+    assert(pat("u8:max", "min").data     == [ 0xff, 0x00 ]);
 
     // Floats encode the bits they occupy, not the digits they were typed as
     assert(pat("f32:1.0").data           == [ 0, 0, 0x80, 0x3f ]);
@@ -1476,14 +1531,24 @@ unittest
         ["f32:nan2"], ["f32:sn"], ["f32:snan1"], ["f32:indef"], ["f32:nan(1)"],
         ["f32:snan_"], ["f32:snan_lo"], ["f32:hi"], ["f32:_hi"],
         ["f80:p"], ["f80:pie"], ["f80:pi2"], ["f80:nan2"], ["f80:indef"],
-        // ...and they belong to the float types only
-        ["u8:pi"], ["i32:pi"], ["x16:pi"], ["u8:max"], ["o8:inf"],
+        // ...and the mathematical ones belong to the float types only, where
+        // the edges are named by every scalar (below)
+        ["u8:pi"], ["i32:pi"], ["x16:pi"], ["o8:inf"], ["u8:epsilon"],
+        ["u8:denorm_min"], ["i8:nan"],
+        // An integer edge is the whole literal too
+        ["u8:m"], ["u8:ma"], ["u8:max2"], ["u8:maximum"], ["u8:2max"],
+        ["u8:min_"], ["u8:minimum"], ["x16:maxi"], ["i32:max."],
+        // ...and an unsigned type has no sign to put on one
+        ["u8:-max"], ["u8:-min"], ["x16:-max"], ["o8:-min"],
         // Signs belong to the signed types only
         ["x:-1"], ["u16:-1"], ["x16:-1"], ["u8:+1"], ["o8:-1"],
         // Too large for the width asked for
         ["u8:256"], ["i8:128"], ["i8:-129"], ["u16:65536"], ["x8:100"],
         ["i16:32768"], ["i16:-32769"], ["i32:2147483648"], ["x16:10000"],
         ["i64:9223372036854775808"], ["i64:-9223372036854775809"],
+        // "-min" negates a value that is already negative, landing on the one
+        // magnitude the width does not hold
+        ["i8:-min"], ["i16:-min"], ["i32:-min"], ["i64:-min"],
         ["f32:1e39"], ["f32:-1e39"], // rounds to infinity, so it was not the value
         ["f80:1.2e4932"], ["f80:1e4933"], ["f80:-1e4933"],
         // Too large for anything
@@ -1604,11 +1669,9 @@ unittest
     // keeps its own reading. That is what makes a path with a terminator, or a
     // path with a space in it, one argument and no doubling
     assert(compile(`find utf8:'C:\Users'"\0"`) == USERS ~ cast(ushort)0);
-    assert(compile(`find utf8:C:\dir"a b"`)
-        == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
+    assert(compile(`find utf8:C:\dir"a b"`) == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
     assert(compile(`find utf8:"a\tb"\x`)   == [ 'a', '\t', 'b', '\\', 'x' ]);
-    assert(compile(`find utf8:'C:\dir'"a b"`)
-        == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
+    assert(compile(`find utf8:'C:\dir'"a b"`) == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
 
     // Whether the prefix sits inside or outside the quotes makes no difference
     assert(compile(`find 'utf8:C:\Users'`) == compile(`find utf8:'C:\Users'`));
