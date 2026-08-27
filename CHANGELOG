@@ -21,7 +21,8 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
   u8/u16/u32/u64, i8/i16/i32/i64, x8/x16/x32/x64, and o8/o16/o32/o64. The x:
   prefix is now a byte string, so x:1122 produces [ 11, 22 ] in order.
   WARNING: the string prefix `s:` is now `utf8:`, naming its encoding the way
-  a scalar names its width, so `find s:test` is now an error.
+  a scalar names its width, so `find s:test` is now an error. `utf16:` and
+  `utf32:` join it, transcoding into code units ordered by the endian setting.
 - New float pattern prefixes: f32:, f64:, and f80: (x87 extended).
   They encode the bit pattern the value occupies in the file rather than the
   digits typed, following the endian setting like every other scalar, so
@@ -47,6 +48,15 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
 - Signed pattern values, encoded as two's complement: `find i16:-1`. Only the
   `i*` prefixes take a sign; a minus on an unsigned type is reported rather
   than wrapped
+- Text pattern prefixes `utf16:` and `utf32:`, alongside `utf8:`. The needle
+  is typed as UTF-8 like everything else on the line and transcoded into code
+  units of 2 or 4 bytes, so 'find utf16:hi' searches for [ 68, 00, 69, 00 ] on
+  little endian. A code unit is a value, so it follows the `endian` setting and
+  there is no `utf16le:`/`utf16be:` pair; a surrogate pair is ordered a half at
+  a time. Unlike `utf8:`, which is byte transparent, these need text: a byte
+  that is not part of a character or an unpaired surrogate is an error rather
+  than a byte widened into a code unit (`x16:d800` is how one is searched for).
+  No BOM is emitted, the needle for one being `x16:feff`.
 - Float pattern prefixes `f32:` and `f64:`, always binary32 and binary64 on
   every platform.
 - Float pattern prefix `f80:` for x87's 80-bit extended (long double): ten

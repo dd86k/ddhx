@@ -29,7 +29,7 @@ enum PatternType
 {
     unknown,
     bytes,    /// Literal bytes, as written ("x:", "0x").
-    text,     /// Text encoded into bytes ("utf8:").
+    text,     /// Text encoded into bytes ("utf8:", "utf16:", "utf32:").
     scalar,   /// An integer encoded into bytes ("u8:", "x16:", "i32:", ...).
     floating, /// A float encoded into bytes ("f32:", "f64:", "f80:").
 }
@@ -39,7 +39,8 @@ private struct PatternSpec
 {
     PatternType type;
     int radix;    /// Integer scalar radix: 16, 10, or 8. Floats parse their own literal.
-    size_t width; /// Scalar size in bytes: 1, 2, 4, or 8 (4, 8, or 10 for floats).
+    size_t width; /// Scalar size in bytes: 1, 2, 4, or 8 (4, 8, or 10 for floats,
+                  /// and the code unit size for text).
     bool signed;  /// Integer scalar takes a leading '-' and encodes two's complement.
 }
 private struct Prefix { const(char)[] str; PatternSpec spec; }
@@ -61,7 +62,7 @@ Prefix patternpfx(const(char)[] input)
     //       prefixes rather than a setting: a format is what the file is, and
     //       "f32:" already means binary32 everywhere, so nothing changes
     //       meaning behind a setting nobody remembers flipping
-    // TODO: More text encodings: "utf16:", "utf32:", "ascii:", ...
+    // TODO: More text encodings: "ascii:", "latin1:", "ebcdic:", ...
     //
     // Text names its encoding for the same reason a scalar names its width:
     // "utf8:" says what bytes come out, where the old "s:" left it to whatever
@@ -70,19 +71,19 @@ Prefix patternpfx(const(char)[] input)
     //
     // Endianness is deliberately absent: it is a property of the file being
     // looked at, not of one needle, so scalars follow the `endian` setting
-    // (the same one the inspector uses) instead of doubling every prefix.
-    //
-    // Every scalar states a width, so there is no bare "d:", "o:", or "0o":
-    // those sized themselves to the value, which put a pattern's length at the
-    // mercy of the number written in it. See src/README for the full argument.
+    // (the same one the inspector uses) instead of doubling every prefix. That
+    // covers the wide encodings too, a code unit being a scalar like any other,
+    // so there is no "utf16le:"/"utf16be:" pair to keep in step with it.
     //
     // Longest first: a bare prefix must not shadow its width forms.
     static immutable Prefix[] prefixes = [
         // Hexadecimal, as written
         { "x:",   { PatternType.bytes } },
         { "0x",   { PatternType.bytes } },
-        // Text
-        { "utf8:", { PatternType.text } },
+        // Text, the width being the code unit's
+        { "utf8:",  { PatternType.text, 0, 1 } },
+        { "utf16:", { PatternType.text, 0, 2 } },
+        { "utf32:", { PatternType.text, 0, 4 } },
         // Hexadecimal, as a value
         { "x8:",  { PatternType.scalar, 16, 1 } },
         { "x16:", { PatternType.scalar, 16, 2 } },
@@ -132,12 +133,18 @@ Prefix patternpfx(const(char)[] input)
 unittest
 {
     static immutable PatternSpec BYTES  = { PatternType.bytes };
-    static immutable PatternSpec TEXT   = { PatternType.text };
+    static immutable PatternSpec UTF8   = { PatternType.text, 0, 1 };
+    static immutable PatternSpec UTF16  = { PatternType.text, 0, 2 };
+    static immutable PatternSpec UTF32  = { PatternType.text, 0, 4 };
 
     assert(patternpfx("0x00")    == Prefix("00", BYTES));
     assert(patternpfx("x:00")    == Prefix("00", BYTES));
     assert(patternpfx("x:ff")    == Prefix("ff", BYTES));
-    assert(patternpfx("utf8:hello") == Prefix("hello", TEXT));
+
+    // Every text prefix states an encoding, the way a scalar states a width
+    assert(patternpfx("utf8:hello")  == Prefix("hello", UTF8));
+    assert(patternpfx("utf16:hello") == Prefix("hello", UTF16));
+    assert(patternpfx("utf32:hello") == Prefix("hello", UTF32));
 
     // Every scalar states a width
     assert(patternpfx("x16:1122") == Prefix("1122", PatternSpec(PatternType.scalar, 16, 2)));
@@ -171,6 +178,12 @@ unittest
     assert(patternpfx("u:1")    == Prefix("u:1"));
     assert(patternpfx("f:1.0")  == Prefix("f:1.0"));
     assert(patternpfx("f16:1")  == Prefix("f16:1"));
+
+    // ...and a text type with no encoding to produce
+    assert(patternpfx("s:hi")     == Prefix("s:hi"));
+    assert(patternpfx("utf:hi")   == Prefix("utf:hi"));
+    assert(patternpfx("utf7:hi")  == Prefix("utf7:hi"));
+    assert(patternpfx("utf16le:hi") == Prefix("utf16le:hi"));
 }
 
 // Turn hex digits into the bytes they spell, in the order they were written.
@@ -250,6 +263,130 @@ unittest
         assert(encode(-1, 1, littleEndian) == [ 0xff ]);
         assert(encode(-1, 2, bigEndian)    == [ 0xff, 0xff ]);
         assert(encode(-2, 4, littleEndian) == [ 0xfe, 0xff, 0xff, 0xff ]);
+    }
+}
+
+// Turn text into the code units its prefix asked for, ordered by `endian`.
+//
+// The command line hands over UTF-8 (see utils.arguments), so "utf8:" is the
+// pass-through case: its bytes are already the encoding asked for and go out
+// untouched, well-formed or not. That is deliberate, and it is why the escapes
+// are worth having: `utf8:"\xff"` is a byte nobody claimed was a character, and
+// this layer has no opinion on it.
+//
+// "utf16:" and "utf32:" transcode, so they do have an opinion: the argument has
+// to be UTF-8, since a byte that is not part of a character is not a character
+// to re-encode. Those are refused rather than widened one byte to a code unit,
+// which would be Latin-1 wearing a UTF-16 name. Lone surrogates are refused on
+// the way in for the same reason (no well-formed UTF-8 spells one), and the way
+// to put one in a needle is "x16:d800", which is what a byte string is for.
+//
+// A code unit is a scalar like any other, so it follows `endian` on its own:
+// U+10000 is a surrogate pair and lands as 00 D8 00 DC little endian, not as
+// one four-byte value reversed.
+//
+// No BOM is emitted. It is a character, not a property of the needle, and a
+// file that has one has it at the front rather than before every match; the
+// needle for it is "x16:feff", ordered by the same setting as everything else.
+private
+ubyte[] textbytes(const(char)[] input, PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
+{
+    import std.utf : decode, UTFException;
+
+    assert(spec.width == 1 || spec.width == 2 || spec.width == 4);
+
+    if (spec.width == 1)
+        return cast(ubyte[])input.dup;
+
+    // NOTE: decode() is what refuses malformed input; toUTF16 and toUTF32 would
+    //       have substituted U+FFFD for it, which is a needle that finds
+    //       something other than what was typed.
+    ubyte[] result;
+    size_t i;
+    while (i < input.length)
+    {
+        dchar c = void;
+        try c = decode(input, i);
+        catch (UTFException)
+            throw new Exception(text(MSG_ARGUMENT_NOT_TEXT, printable(arg)));
+
+        if (spec.width == 4)
+        {
+            result ~= encode(c, 4, endian);
+            continue;
+        }
+
+        if (c < 0x1_0000)
+        {
+            result ~= encode(c, 2, endian);
+            continue;
+        }
+
+        // Above the BMP it takes a surrogate pair, and each half is a code unit
+        // ordered on its own rather than the four bytes being one value
+        uint pair = c - 0x1_0000;
+        result ~= encode(0xd800 | (pair >> 10),   2, endian);
+        result ~= encode(0xdc00 | (pair & 0x3ff), 2, endian);
+    }
+    return result;
+}
+unittest
+{
+    static immutable PatternSpec UTF8  = { PatternType.text, 0, 1 };
+    static immutable PatternSpec UTF16 = { PatternType.text, 0, 2 };
+    static immutable PatternSpec UTF32 = { PatternType.text, 0, 4 };
+
+    with (Endian)
+    {
+        // ASCII is one code unit per character in all three, so the difference
+        // is padding, and the padding is where the endian setting shows up
+        assert(textbytes("AB", UTF8,  littleEndian, null) == [ 'A', 'B' ]);
+        assert(textbytes("AB", UTF8,  bigEndian,    null) == [ 'A', 'B' ]);
+        assert(textbytes("AB", UTF16, littleEndian, null) == [ 'A', 0, 'B', 0 ]);
+        assert(textbytes("AB", UTF16, bigEndian,    null) == [ 0, 'A', 0, 'B' ]);
+        assert(textbytes("AB", UTF32, littleEndian, null) == [ 'A', 0, 0, 0, 'B', 0, 0, 0 ]);
+        assert(textbytes("AB", UTF32, bigEndian,    null) == [ 0, 0, 0, 'A', 0, 0, 0, 'B' ]);
+
+        // ...and past ASCII the widths stop agreeing on the count as well
+        assert(textbytes("é", UTF8,  littleEndian, null) == [ 0xc3, 0xa9 ]);
+        assert(textbytes("é", UTF16, littleEndian, null) == [ 0xe9, 0 ]);
+        assert(textbytes("é", UTF32, bigEndian,    null) == [ 0, 0, 0, 0xe9 ]);
+        assert(textbytes("€", UTF8,  littleEndian, null) == [ 0xe2, 0x82, 0xac ]);
+        assert(textbytes("€", UTF16, bigEndian,    null) == [ 0x20, 0xac ]);
+        assert(textbytes("€", UTF32, littleEndian, null) == [ 0xac, 0x20, 0, 0 ]);
+
+        // Above the BMP, UTF-16 takes a surrogate pair, and each half is a
+        // scalar of its own rather than the four bytes being one value
+        assert(textbytes("\U00010000", UTF16, littleEndian, null) == [ 0x00, 0xd8, 0x00, 0xdc ]);
+        assert(textbytes("\U00010000", UTF16, bigEndian,    null) == [ 0xd8, 0x00, 0xdc, 0x00 ]);
+        assert(textbytes("\U0001f600", UTF16, bigEndian,    null) == [ 0xd8, 0x3d, 0xde, 0x00 ]);
+        assert(textbytes("\U0001f600", UTF32, bigEndian,    null) == [ 0, 0x01, 0xf6, 0x00 ]);
+        assert(textbytes("\U0001f600", UTF32, littleEndian, null) == [ 0x00, 0xf6, 0x01, 0 ]);
+
+        // "utf8:" is byte transparent, since the line already hands it UTF-8
+        // and an escape sequence is how a byte that is not text gets into a
+        // needle at all
+        assert(textbytes("\xff\xfe", UTF8, littleEndian, null) == [ 0xff, 0xfe ]);
+        assert(textbytes("\x80",     UTF8, bigEndian,    null) == [ 0x80 ]);
+
+        // ...where transcoding has nothing to transcode, so it says so
+        void test_throw(string input, PatternSpec spec)
+        {
+            ubyte[] r;
+            try { r = textbytes(input, spec, littleEndian, null); }
+            catch (Exception) { return; }
+
+            import std.stdio : stderr, writeln;
+            stderr.writeln("Failed to throw with: ", input, " it produced: ", r);
+            assert(false, "textbytes test failed");
+        }
+        test_throw("\xff\xfe", UTF16);
+        test_throw("\xff\xfe", UTF32);
+        test_throw("\x80", UTF16);        // a continuation byte with no lead
+        test_throw("\xc3", UTF16);        // ...and a lead with no continuation
+        test_throw("a\xc3", UTF32);
+        test_throw("\xed\xa0\x80", UTF16); // a lone surrogate, U+D800 encoded
+        test_throw("\xed\xa0\x80", UTF32);
     }
 }
 
@@ -1197,6 +1334,15 @@ struct Pattern
 /// find f32:1.0        00 00 80 3f IEEE-754, the bits a float occupies
 /// ---
 ///
+/// Text names its encoding the same way, and a code unit is a scalar like any
+/// other, so the wide ones follow `endian` too:
+///
+/// ---
+/// find utf8:hi        68 69                   the bytes the line handed over
+/// find utf16:hi       68 00 69 00             code units, little endian
+/// find utf32:hi       68 00 00 00 69 00 00 00
+/// ---
+///
 /// Throws: FormatException or Exception for unknown prefix, empty values,
 ///         values too large for their width, invalid escape sequences, etc.
 /// Params:
@@ -1241,10 +1387,11 @@ Pattern pattern(Endian endian, Argument[] args)
             foreach (ubyte v; hexbytes(pfx.str, arg.data)) pat.data ~= v;
             break;
         case PatternType.text:
-            // "utf8:" is the only encoding so far, and the command line already
-            // hands it UTF-8, so its bytes are its bytes. Other encodings will
-            // transcode here, per prefix, never per setting.
-            foreach (char v; pfx.str) pat.data ~= cast(ubyte)v;
+            // The command line hands over UTF-8, so "utf8:" passes its bytes
+            // through and the wider encodings transcode. Per prefix, never per
+            // setting: only the byte order is the file's business, and that is
+            // the one thing already answered elsewhere.
+            foreach (ubyte v; textbytes(pfx.str, pfx.spec, endian, arg.data)) pat.data ~= v;
             break;
         case PatternType.scalar:
             foreach (ubyte v; scalar(pfx.str, pfx.spec, endian, arg.data)) pat.data ~= v;
@@ -1286,6 +1433,25 @@ unittest
     assert(pat("utf8:test").data         == [ 't', 'e', 's', 't' ]);
     assert(pat("x:00","utf8:test").data  == [ 0, 't', 'e', 's', 't' ]);
     assert(pat("x:00","00","utf8:test").data == [ 0, 0, 't', 'e', 's', 't' ]);
+
+    // The wide encodings, which are code units and so follow the endian
+    // setting, the same as any other scalar on the line
+    assert(pat("utf16:hi").data          == [ 'h', 0, 'i', 0 ]);
+    assert(patbe("utf16:hi").data        == [ 0, 'h', 0, 'i' ]);
+    assert(pat("utf32:hi").data          == [ 'h', 0, 0, 0, 'i', 0, 0, 0 ]);
+    assert(patbe("utf32:hi").data        == [ 0, 0, 0, 'h', 0, 0, 0, 'i' ]);
+    assert(pat("utf8:hi").data           == [ 'h', 'i' ]); // ...and utf8: has none to follow
+    assert(patbe("utf8:hi").data         == [ 'h', 'i' ]);
+    // An encoding is per prefix, so a needle may hold more than one
+    assert(pat("utf16:hi", "utf8:!").data == [ 'h', 0, 'i', 0, '!' ]);
+    assert(pat("x:00", "utf16:a").data    == [ 0, 'a', 0 ]);
+    // ...and it carries to the next argument like every other prefix
+    assert(pat("utf16:a", "b").data       == [ 'a', 0, 'b', 0 ]);
+    assert(pat("utf32:a", "b").data       == [ 'a', 0, 0, 0, 'b', 0, 0, 0 ]);
+    // Above the BMP, UTF-16 spends two code units where UTF-32 spends one
+    assert(pat("utf16:\U0001f600").data   == [ 0x3d, 0xd8, 0x00, 0xde ]);
+    assert(patbe("utf16:\U0001f600").data == [ 0xd8, 0x3d, 0xde, 0x00 ]);
+    assert(pat("utf32:\U0001f600").data   == [ 0x00, 0xf6, 0x01, 0 ]);
 
     // Alias prefixes. "0x" survives because it is a byte string like "x:";
     // "0o" did not, because it was an octal scalar with no width
@@ -1498,7 +1664,8 @@ unittest
         // Missing prefix
         [""], ["00"], ["00", "0x00"],
         // Empty data
-        ["x:"], ["utf8:"], ["0x"], ["x16:"], ["i8:"], ["i8:-"], ["u8:"], ["o8:"],
+        ["x:"], ["utf8:"], ["utf16:"], ["utf32:"], ["0x"], ["x16:"], ["i8:"],
+        ["i8:-"], ["u8:"], ["o8:"],
         ["f32:"], ["f64:"], ["f32:-"], ["f32:."],
         // Quotes are no longer a prefix alias
         ["\""], [`"yes"`],
@@ -1509,6 +1676,14 @@ unittest
         ["x:00", "INVALID:ff"],
         // "s:" is the retired spelling of "utf8:", which people will still type
         ["s:"], ["s:hi"], ["x:00", "s:hi"],
+        // A text type without an encoding, or with one nothing here speaks.
+        // The byte order is the endian setting's, so it is not a prefix either
+        ["utf:hi"], ["utf7:hi"], ["utf16le:hi"], ["utf16be:hi"], ["utf9:hi"],
+        // ...and transcoding needs something to transcode, where "utf8:" is
+        // byte transparent and takes whatever an escape sequence produced
+        ["utf16:\xff\xfe"], ["utf32:\xff\xfe"], ["utf16:a\xc3"],
+        ["utf16:\xed\xa0\x80"], // a lone surrogate, spelled as "x16:d800"
+        ["utf16:a", "\xff"],    // ...including where the prefix carried over
         // Half a byte is a typo, not a byte
         ["x:0"], ["x:fff"], ["0x0"], ["0xfff"], ["x:00", "0"],
         // A scalar type without a width, whatever it would have encoded to.
@@ -1672,6 +1847,31 @@ unittest
     assert(compile(`find utf8:C:\dir"a b"`) == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
     assert(compile(`find utf8:"a\tb"\x`)   == [ 'a', '\t', 'b', '\\', 'x' ]);
     assert(compile(`find utf8:'C:\dir'"a b"`) == [ 'C', ':', '\\', 'd', 'i', 'r', 'a', ' ', 'b' ]);
+
+    // Quoting is the shell's business and the encoding is the prefix's, so the
+    // two do not interact: an escape resolves to UTF-8 either way, and what the
+    // prefix names is what it comes out as
+    assert(compile(`find utf16:a\tb`)   == [ 'a', 0, '\\', 0, 't', 0, 'b', 0 ]);
+    assert(compile(`find utf16:"a\tb"`) == [ 'a', 0, '\t', 0, 'b', 0 ]);
+    assert(compile(`find utf32:"a\0"`)  == [ 'a', 0, 0, 0, 0, 0, 0, 0 ]);
+    // ...but an escape can produce a byte that is not a character, which only
+    // the encoding that transcodes has to care about
+    assert(compile(`find utf8:"\xff"`)  == [ 0xff ]);
+    test_throw(`find utf16:"\xff"`);
+    test_throw(`find utf32:"\xff"`);
+
+    // An escape is a way to spell bytes, so under a transcoding prefix it has
+    // to spell characters, and then it is only longhand: these are é and an
+    // emoji, and they encode the same as typing them would
+    assert(compile(`find utf16:"\xc3\xa9"`) == [ 0xe9, 0 ]);
+    assert(compile(`find utf32:"\xc3\xa9"`) == [ 0xe9, 0, 0, 0 ]);
+    assert(compile(`find utf16:"\xf0\x9f\x98\x80"`) == [ 0x3d, 0xd8, 0x00, 0xde ]);
+    assert(compile(`find utf16:"\xc3\xa9"`) == compile("find utf16:é"));
+    // ...so no escape reaches a code unit the text did not spell. A truncated
+    // character is not one, and neither is a surrogate written out in WTF-8
+    test_throw(`find utf16:"\xc3"`);
+    test_throw(`find utf16:"\xed\xa0\x80"`);
+    test_throw(`find utf32:"\xed\xa0\x80"`);
 
     // Whether the prefix sits inside or outside the quotes makes no difference
     assert(compile(`find 'utf8:C:\Users'`) == compile(`find utf8:'C:\Users'`));
