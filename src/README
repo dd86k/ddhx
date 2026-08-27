@@ -150,15 +150,21 @@ scalar always names its width: the bare d:, o:, and 0o are gone, decimal being
 u8:..u64: unsigned and i8:..i64: signed. 0x survives the same cut only because
 it is a byte string, like the x: it abbreviates.
 
-Text names its encoding for the same reason a scalar names its width, which is
-why it is utf8: and not the old s:. A string prefix that says nothing about its
-encoding leaves the bytes it produces up to the character set setting, and an
-encoding is a property of the file being looked at, like a format: it belongs on
-the needle. utf16: and utf32: follow when they land, and neither changes what
-utf8: means. string/wstring/dstring terms only used in D.
+Text names its encoding rather than taking the charset setting, which is
+what 's:' was going to do. Endian works as a setting because a file picks one
+and the toggle is cheap; a character set is the text column's setting, so a
+needle sourced from it changes meaning with state that is not in the line and
+searching EBCDIC while reading ASCII would mean flipping it twice per search.
+
+Additionally, a s: string prefix says nothing about its encoding leaves the
+bytes it produces up to the character set setting, and an encoding is a
+property of the file being looked at. That's why 'utf8:' was chosen over 's:':
+It is both D's native format and what the readline implementation returns.
+It belongs on the needle. utf16: and utf32: follow when they land, and neither
+changes what utf8: means. string/wstring/dstring terms only used in D.
 
 Floats are named by their width in bits like everything else, so f32: and f64:
-rather than float: and double:, and what they encode is the bit pattern the
+rather than 'float:' and 'double:', and what they encode is the bit pattern the
 value occupies in the file, not the digits it was typed as. They are the one
 scalar whose sign is not the prefix's business: there is no unsigned float to
 tell them apart from, so the literal keeps its own '-', and "nan" and "inf" are
@@ -166,11 +172,11 @@ accepted since neither is memorable as hex. A literal that only fits once
 rounded to infinity (f32:1e39) is an error, the same as any other value too
 large for the width asked for.
 
-f80: is the odd one, being x87's 80-bit extended rather than an IEEE-754 binary
-format: ten bytes, a 64-bit significand and then the sign and exponent, with the
-integer bit stored rather than implied. It is named by width like the others
-even though its width is not a power of two, since that is what a file holds and
-what the x86 ABIs call long double.
+'f80:' is the odd one, being x87's 80-bit extended rather than an IEEE-754
+binary format: ten bytes, a 64-bit significand and then the sign and exponent,
+with the integer bit stored rather than implied. It is named by width like the
+others even though its width is not a power of two, since that is what a file
+holds and what the x86 ABIs call long double.
 
 All three take named constants as well as digits, since the point of typing a
 float instead of its bytes is that its bytes are not recognizable:

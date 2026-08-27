@@ -11,8 +11,6 @@ import std.math : E, PI, SQRT2;
 import std.string : startsWith;
 import std.system : Endian;
 
-import ddhx.transcoder : CharacterSet;
-
 import utils : Argument, printable;
 
 import messages;
@@ -1177,12 +1175,10 @@ struct Pattern
 /// Throws: FormatException or Exception for unknown prefix, empty values,
 ///         values too large for their width, invalid escape sequences, etc.
 /// Params:
-///     charset = Current character set. Text prefixes name their own encoding,
-///               so this is currently unused.
 ///     endian  = Byte order for scalar patterns.
 ///     args... = Array of arguments (e.g., "x:00","00").
 /// Returns: Byte array.
-Pattern pattern(CharacterSet charset, Endian endian, Argument[] args)
+Pattern pattern(Endian endian, Argument[] args)
 {
     Pattern pat;
     PatternSpec last;
@@ -1239,22 +1235,22 @@ Pattern pattern(CharacterSet charset, Endian endian, Argument[] args)
     return pat;
 }
 /// Ditto
-Pattern pattern(CharacterSet charset, Endian endian, string[] args...) // string to Argument
+Pattern pattern(Endian endian, string[] args...) // string to Argument
 {
     Argument[] wrapped = new Argument[args.length];
     foreach (i, arg; args) wrapped[i] = Argument(arg);
-    return pattern(charset, endian, wrapped);
+    return pattern(endian, wrapped);
 }
 unittest
 {
     // Most of these do not care about endianness, so name the default once
     Pattern pat(string[] args...)
     {
-        return pattern(CharacterSet.ascii, Endian.littleEndian, args);
+        return pattern(Endian.littleEndian, args);
     }
     Pattern patbe(string[] args...)
     {
-        return pattern(CharacterSet.ascii, Endian.bigEndian, args);
+        return pattern(Endian.bigEndian, args);
     }
 
     // Official prefixes
@@ -1412,7 +1408,7 @@ unittest
     {
         Argument[] argv = [ Argument(data) ];
         ubyte[] result;
-        foreach (ushort v; pattern(CharacterSet.ascii, Endian.littleEndian, argv).data)
+        foreach (ushort v; pattern(Endian.littleEndian, argv).data)
             result ~= cast(ubyte)v;
         return result;
     }
@@ -1436,7 +1432,7 @@ unittest
     void test_throw(string[] input)
     {
         Pattern r;
-        try { r = pattern(CharacterSet.ascii, Endian.littleEndian, input); }
+        try { r = pattern(Endian.littleEndian, input); }
         catch (Exception) { return; }
 
         import std.stdio : stderr, writeln;
@@ -1551,7 +1547,7 @@ unittest
     ushort[] compile(string line)
     {
         Argument[] argv = arguments(line);
-        return pattern(CharacterSet.ascii, Endian.littleEndian, argv[1..$]).data;
+        return pattern(Endian.littleEndian, argv[1..$]).data;
     }
     void test_throw(string line)
     {
@@ -1713,34 +1709,34 @@ unittest
 {
     ubyte[] hay = cast(ubyte[]) "ABCDEF";
 
-    Pattern p = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ABC");
+    Pattern p = pattern(Endian.littleEndian, "utf8:ABC");
     assert(matchPattern(hay, p, 0, 0) == 3);
     assert(matchPattern(hay, p, 1, 0) == -1);
     assert(matchPattern(hay, p, 4, 0) == -1); // not enough room
 
     // ? matches exactly one byte
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "?", "utf8:BC");
+    p = pattern(Endian.littleEndian, "?", "utf8:BC");
     assert(matchPattern(hay, p, 0, 0) == 3); // A matches ?
     assert(matchPattern(hay, p, 2, 0) == -1); // CD != BC
 
     // * matches zero or more (minimal-match)
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "utf8:EF");
+    p = pattern(Endian.littleEndian, "*", "utf8:EF");
     assert(matchPattern(hay, p, 0, 0) == 6); // * eats ABCD, then EF
     assert(matchPattern(hay, p, 4, 0) == 2); // * matches empty, then EF
     assert(matchPattern(hay, p, 5, 0) == -1); // only F left
 
     // Literal on both sides of *: span is the full A..F
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:A", "*", "utf8:F");
+    p = pattern(Endian.littleEndian, "utf8:A", "*", "utf8:F");
     assert(matchPattern(hay, p, 0, 0) == 6);
     assert(matchPattern(hay, p, 1, 0) == -1);
 
     // Multiple stars must not exponentially backtrack
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "*", "?", "*", "utf8:F");
+    p = pattern(Endian.littleEndian, "*", "?", "*", "utf8:F");
     assert(matchPattern(hay, p, 0, 0) == 6);
     assert(matchPattern(hay, p, 6, 0) == -1); // past end
 
     // Fixed-position match: matchPattern tests AT hPos, not starting from hPos
-    p = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:D", "?", "F");
+    p = pattern(Endian.littleEndian, "utf8:D", "?", "F");
     assert(matchPattern(hay, p, 3, 0) == 3);    // "DEF": D=D, E=?, F=F
     assert(matchPattern(hay, p, 0, 0) == -1);   // 'A' != 'D'
     assert(matchPattern(hay, p, 4, 0) == -1);   // not enough room

@@ -3176,7 +3176,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBCC");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:CC");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:CC");
     SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 4, "forward aligned: expected 4");
     assert(result.len == 2, "forward aligned: len should equal needle length");
@@ -3191,7 +3191,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ZZ");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:ZZ");
     SearchResult result = search(&session, needle, 0, SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "forward aligned not-found");
 }
@@ -3207,7 +3207,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEFG");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ZZ");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:ZZ");
     SearchResult result = search(&session, needle, 6, SEARCH_REVERSE | SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE);
     assert(result.pos == SEARCH_RESULT_NOT_FOUND, "reverse aligned underflow");
 }
@@ -3221,7 +3221,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:CD");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:CD");
     SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 2, "reverse from end: expected 2");
     assert(result.len == 2);
@@ -3237,7 +3237,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AB");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:AB");
     SearchResult result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 0, "reverse to start: expected 0");
     assert(result.len == 2);
@@ -3251,7 +3251,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCDEF");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:ZZ");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:ZZ");
     SearchResult result = search(&session, needle, 5,
         SEARCH_REVERSE | SEARCH_LASTPOS | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 0, "reverse lastpos: expected 0");
@@ -3266,7 +3266,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:AA");
     SearchResult[] hits;
     SearchResult result = search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
         (SearchResult r) { hits ~= r; return SearchAction.next; });
@@ -3284,7 +3284,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAA");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:AA");
     long[] positions;
     search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
         (SearchResult r) { positions ~= r.pos; return SearchAction.next; });
@@ -3299,7 +3299,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:AA");
     int calls;
     SearchResult result = search(&session, needle, 1, SEARCH_NON_INTERACTIVE,
         (SearchResult r) { ++calls; return SearchAction.stop; });
@@ -3315,7 +3315,7 @@ unittest
     Session session;
     session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABBAABB");
 
-    Pattern needle = pattern(CharacterSet.ascii, Endian.littleEndian, "utf8:AA");
+    Pattern needle = pattern(Endian.littleEndian, "utf8:AA");
     long[] positions;
     search(&session, needle, 7, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE,
         (SearchResult r) { positions ~= r.pos; return SearchAction.next; });
@@ -4852,7 +4852,7 @@ void replace_(Session *session, Argument[] args)
             message("Missing pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
+        Pattern p = pattern(session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4867,7 +4867,7 @@ void replace_(Session *session, Argument[] args)
         return;
     }
 
-    Pattern p = pattern(session.rc.charset, session.rc.endian, args);
+    Pattern p = pattern(session.rc.endian, args);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -4889,7 +4889,7 @@ void insert_(Session *session, Argument[] args)
             message("Need pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
+        Pattern p = pattern(session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4904,7 +4904,7 @@ void insert_(Session *session, Argument[] args)
         return;
     }
 
-    Pattern p = pattern(session.rc.charset, session.rc.endian, args);
+    Pattern p = pattern(session.rc.endian, args);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -4926,7 +4926,7 @@ void replace_range(Session *session, Argument[] args)
             message("Missing pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
+        Pattern p = pattern(session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4947,7 +4947,7 @@ void replace_range(Session *session, Argument[] args)
     }
 
     Range r = askrange(args, 0, "Range: ");
-    Pattern p = pattern(session.rc.charset, session.rc.endian, args[1..$]);
+    Pattern p = pattern(session.rc.endian, args[1..$]);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -4969,7 +4969,7 @@ void insert_range(Session *session, Argument[] args)
             message("Need pattern");
             return;
         }
-        Pattern p = pattern(session.rc.charset, session.rc.endian, args);
+        Pattern p = pattern(session.rc.endian, args);
         if (p.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
@@ -4990,7 +4990,7 @@ void insert_range(Session *session, Argument[] args)
     }
 
     Range r = askrange(args, 0, "Range: ");
-    Pattern p = pattern(session.rc.charset, session.rc.endian, args[1..$]);
+    Pattern p = pattern(session.rc.endian, args[1..$]);
     if (p.flags & PATTERN_HAS_GLOB)
         throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
@@ -5384,7 +5384,7 @@ void find(Session *session, Argument[] args)
     // With arguments: Prioritize before selection
     if (args.length > 0)
     {
-        g_needle = pattern(session.rc.charset, session.rc.endian, args);
+        g_needle = pattern(session.rc.endian, args);
         sel.start = session.position_cursor + g_needle.data.length;
     }
     else if (sel.length) // search by selection
@@ -5430,7 +5430,7 @@ void find_back(Session *session, Argument[] args)
     // If arguments: Take those before selection
     if (args.length > 0)
     {
-        g_needle = pattern(session.rc.charset, session.rc.endian, args);
+        g_needle = pattern(session.rc.endian, args);
         sel.start = session.position_cursor - g_needle.data.length;
     }
     else if (sel.length) // selection
@@ -5539,7 +5539,7 @@ void find_bookmark(Session *session, Argument[] args)
     // With arguments: Prioritize before selection
     if (args.length > 0)
     {
-        g_needle = pattern(session.rc.charset, session.rc.endian, args);
+        g_needle = pattern(session.rc.endian, args);
     }
     else if (sel.length) // search by selection
     {
@@ -5640,11 +5640,11 @@ void find_replace(Session *session, Argument[] args)
         Argument[] needleArgs, replArgs;
         splitReplaceArgs(args, needleArgs, replArgs);
 
-        g_needle = pattern(session.rc.charset, session.rc.endian, needleArgs);
+        g_needle = pattern(session.rc.endian, needleArgs);
         if (g_needle.length == 0)
             throw new Exception(MSG_EMPTY_NEEDLE);
 
-        g_replacement = pattern(session.rc.charset, session.rc.endian, replArgs);
+        g_replacement = pattern(session.rc.endian, replArgs);
         if (g_replacement.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
@@ -5688,11 +5688,11 @@ void find_replace_all(Session *session, Argument[] args)
         Argument[] needleArgs, replArgs;
         splitReplaceArgs(args, needleArgs, replArgs);
 
-        g_needle = pattern(session.rc.charset, session.rc.endian, needleArgs);
+        g_needle = pattern(session.rc.endian, needleArgs);
         if (g_needle.length == 0)
             throw new Exception(MSG_EMPTY_NEEDLE);
 
-        g_replacement = pattern(session.rc.charset, session.rc.endian, replArgs);
+        g_replacement = pattern(session.rc.endian, replArgs);
         if (g_replacement.flags & PATTERN_HAS_GLOB)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
