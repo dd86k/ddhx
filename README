@@ -74,12 +74,13 @@ This list may change at any given time without notice.
 0.11 featured important stability bugfixes and QOL improvements.
 
 0.12: WIP
-- [x] String expressions (allow escapes like \t)
-- [x] Find-and-bookmark (find-bookmark)
-- [x] Overhaul prefixes (fixed-width)
-- [x] C-string escapes (for double-quoted strings)
+- [x] String expressions (allow escapes like \t) with double-quote strings
+- [x] Overhaul prefixes (fixed-width prefixes)
+- [x] find-bookmark commmand: Find and create bookmarks
 
 0.13:
+- [ ] Improve tab-completion
+- [ ] open/close commands
 - [ ] Document: Disk
 - [ ] Document: Process memory
 - [ ] Charset-specific pattern prefixes (e.g., ebcdic:)

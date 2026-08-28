@@ -407,10 +407,15 @@ immutable Command[] default_commands = [
     // Reports
     { "report",                     "Report position, document size, and % in bytes",
         Mod.ctrl|Key.P,             &report },
+    // TODO: Deprecate report-name (pollutes command list), replaced by show
     { "report-name",                "Report document name on screen",
         0,                          &report_name },
+    // TODO: Deprecate report-version (pollutes command list), replaced by show
     { "report-version",             "Report ddhx version on screen",
         0,                          &report_version },
+    // Show information command 
+    { "show",                       "Show information",
+        0,                          &show },
     // Exports
     { "export-range",               "Export selected range to file",
         0,                          &export_range },
@@ -4719,15 +4724,13 @@ void goto_(Session *session, Argument[] args)
     g_digitpos = 0;
 
     // Let's fucking go!
-    if (absolute)
-        moveabs(session, position);
-    else
-        moverel(session, position);
+    absolute ? moveabs(session, position) : moverel(session, position);
 }
 
-// Report alternative status bar
+// Report alternative statusbar using statusbar formatting
 void report(Session *session, Argument[] args)
 {
+    // TODO: Consider taking argument for statusbar format
     Selection sel = selection(session);
     SliceWriter sw = SliceWriter(g_messagebuf); // uses message buffer
     formatStatus(sw, session.rc.status_fmt_report, session, sel, g_cols);
@@ -4736,6 +4739,7 @@ void report(Session *session, Argument[] args)
 }
 
 // Report document name on screen (as a reminder)
+// Deprecated
 void report_name(Session *session, Argument[] args)
 {
     import std.path : baseName;
@@ -4743,9 +4747,40 @@ void report_name(Session *session, Argument[] args)
 }
 
 // Report program version on screen
+// Deprecated
 void report_version(Session *session, Argument[] args)
 {
     message( DDHX_VERSION );
+}
+
+// Show single information, specified by argument
+// Contrasts with report command (easier to remember)
+void show(Session *session, Argument[] args)
+{
+    if (args.length < 1)
+    {
+        message( "Need argument" );
+        return;
+    }
+    
+    string arg = args[0].text; // used by default error
+    switch (arg) {
+    case "name":
+        import std.path : baseName;
+        message( session.target is null ? "(new buffer)" : baseName(session.target) );
+        break;
+    case "path":
+        message( session.target is null ? "(new buffer)" : session.target );
+        break;
+    case "size":
+        message( "%d", session.editor.size() );
+        break;
+    case "version":
+        message( DDHX_VERSION );
+        break;
+    default:
+        message( "Unknown show arg: %s", arg );
+    }
 }
 
 // Given parameters, suggest a number of columns that can fit in terminal.
