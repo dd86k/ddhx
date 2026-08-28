@@ -95,6 +95,7 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
 - `Braces` and `Pipe` terminal enum values. (7d15f8b)
 - `show` command with `name`, `path`, `size`, and `version` arguments.
   Easier to remember than `report` command.
+- Add statusbar format optional argument to `report` command.
 
 // Changed
 - Quoting and escapes apply to every command and to configuration files, not

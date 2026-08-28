@@ -4730,10 +4730,10 @@ void goto_(Session *session, Argument[] args)
 // Report alternative statusbar using statusbar formatting
 void report(Session *session, Argument[] args)
 {
-    // TODO: Consider taking argument for statusbar format
+    string fmt = args.length > 0 ? args[0].text : session.rc.status_fmt_report;
     Selection sel = selection(session);
     SliceWriter sw = SliceWriter(g_messagebuf); // uses message buffer
-    formatStatus(sw, session.rc.status_fmt_report, session, sel, g_cols);
+    formatStatus(sw, fmt, session, sel, g_cols);
     g_message = cast(string)g_messagebuf[0 .. sw.pos];
     g_status |= UMESSAGE | USTATUS;
 }
