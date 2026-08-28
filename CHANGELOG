@@ -13,16 +13,16 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
   Arguments are split with single quotes (raw) and double quotes (C string
   literals with escape sequences), for every command and in configuration
   files, not just for patterns.
-  WARNING: the bare `"STRING"` alias for `s:STRING` is gone, so `find "test"`
-  is now an error; use `find utf8:test` or `find utf8:"test"` instead.
+  WARNING: `s:` and `"string"` prefixes are gone, so `find s:test` and
+  `find "test"` are now errors; use `find utf8:test` or `find utf8:"test"`
+  instead.
 - Pattern prefix overhaul: Fixed-width prefixes without surprises.
   The variable-width scalars (d:, o:, and 0o), which produced needles of odd
-  lengths depending on the value written, are replaced by fixed-width ones:
-  u8/u16/u32/u64, i8/i16/i32/i64, x8/x16/x32/x64, and o8/o16/o32/o64. The x:
-  prefix is now a byte string, so x:1122 produces [ 11, 22 ] in order.
-  WARNING: the string prefix `s:` is now `utf8:`, naming its encoding the way
-  a scalar names its width, so `find s:test` is now an error. `utf16:` and
-  `utf32:` join it, transcoding into code units ordered by the endian setting.
+  lengths depending on the value written. They are now replaced by fixed-width
+  ones: u8/u16/u32/u64, i8/i16/i32/i64, x8/x16/x32/x64, and o8/o16/o32/o64.
+  The x: prefix is now a byte string, so x:1122 produces [ 11, 22 ] in order.
+- New text patterns: `utf8:`, `utf16:`, and `utf32:`
+  These transcode text from UTF-8 (the readline implementation).
 - New float pattern prefixes: f32:, f64:, and f80: (x87 extended).
   They encode the bit pattern the value occupies in the file rather than the
   digits typed, following the endian setting like every other scalar, so
@@ -31,6 +31,7 @@ write protection overhaul, terminal rendering fixes, and new prefixes.
   `epsilon`, `denorm_min` properties, and named NaNs ('nan'/'qnan', 'snan',
   'snan_hi', 'indefinite') rather than whatever the host would produce.
   The integer prefixes take `max` and `min` too, per width and signedness.
+  Examples: `f32:pi`, `u16:max`
 - Diff mode navigation: new 'diff-next' / 'diff-prev' commands (bound to '}'
   and '{') jump between differing regions with a diff panel opened,
   with a cursor mirror and better alignment in the diff panel.

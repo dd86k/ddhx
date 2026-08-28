@@ -76,13 +76,13 @@ This list may change at any given time without notice.
 0.12: WIP
 - [x] String expressions (allow escapes like \t)
 - [x] Find-and-bookmark (find-bookmark)
-- [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
-- [ ] Endian-specific pattern prefixes (e.g., u32le:)
+- [x] Overhaul prefixes (fixed-width)
+- [x] C-string escapes (for double-quoted strings)
 
-1.0: TBD
+0.13:
 - [ ] Document: Disk
 - [ ] Document: Process memory
-- [ ] Layout system
+- [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Getting Started
