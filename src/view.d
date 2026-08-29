@@ -2104,8 +2104,29 @@ void message(A...)(string fmt, A args)
     catch (Exception ex)
     {
         log("%s", ex);
-        message(ex.msg);
+        // Re-formatting through message() would recurse until the stack
+        // overflows, because the error itself carries a format specifier
+        // (e.g. "Orphan format specifier: %d"), so it's copied in verbatim.
+        size_t len = min(ex.msg.length, g_messagebuf.length);
+        g_messagebuf[0..len] = ex.msg[0..len];
+        g_message = cast(string)g_messagebuf[0..len];
+        g_status |= UMESSAGE | USTATUS;
     }
+}
+// A format string with more specifiers than arguments must report the error
+// instead of recursing on it.
+unittest
+{
+    g_messagebuf.length = 4096;
+
+    message("%d bookmarked", 3);
+    assert(g_message == "3 bookmarked");
+
+    // Wording is Phobos', what matters is that this returns at all
+    string fmt = "%d bookmarked"; // runtime string: checked when formatted
+    message(fmt);
+    assert(g_message.length);
+    assert(g_message != "%d bookmarked");
 }
 
 // Render header bar on screen
