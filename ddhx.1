@@ -751,20 +751,44 @@ Export the specified range to a file.
 .
 .SS Reporting Commands
 .TP
-.B report
+.BI report " [FORMAT]"
 Report the cursor position, document size, and percentage
 .RB ( Ctrl+P ).
 The report format is customizable using the
 .B status-report
-configuration property.
+configuration property, or overridden for one call by passing
+.I FORMAT
+directly, using the same specifiers as
+.SM
+.BR "STATUS BAR FORMAT" .
 .TP
 .B report\-name
 Report the current document name on screen.
+.RB ( Deprecated ,
+use
+.BR "show name" .)
 .TP
 .B report\-version
 Report the
 .B ddhx
 version on screen.
+.RB ( Deprecated ,
+use
+.BR "show version" .)
+.TP
+.BI show " ITEM"
+Show a single piece of information on screen.
+.I ITEM
+is one of:
+.BR name
+(document basename),
+.BR path
+(full document path),
+.BR size
+(document size in bytes), or
+.BR version
+.RB ( ddhx
+version).
 .
 .SS Configuration Commands
 .TP
