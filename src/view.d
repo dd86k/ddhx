@@ -5641,7 +5641,7 @@ void find_bookmark(Session *session, Argument[] args)
         return;
     }
 
-    message("%d bookmarked");
+    message("%d bookmarked", count);
 }
 
 // Split find-replace args around the "--" separator into needle and
