@@ -1,6 +1,5 @@
 module ddhx.tests.color;
 
-import std.stdio;
 import os.terminal;
 
 void termColor(TermColor c, string text)

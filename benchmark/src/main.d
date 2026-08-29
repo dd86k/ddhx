@@ -1,7 +1,6 @@
 module ddhx.benchmark.src.main;
 
 import core.memory : GC;
-import std.getopt;
 import std.stdio;
 import std.datetime.stopwatch;
 import ddhx.editor;
