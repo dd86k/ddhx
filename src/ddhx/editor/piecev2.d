@@ -1604,8 +1604,6 @@ unittest
 // Add data on empty doc, undo, and insert pattern
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0011");
     
     scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();
@@ -1625,8 +1623,6 @@ unittest
 // Add enormous pattern of 10 GiB and edit into it
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0012");
     
     scope PieceV2DocumentEditor e = new PieceV2DocumentEditor();

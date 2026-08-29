@@ -17,7 +17,7 @@ version (Windows)
 }
 else version (Posix)
 {
-    import core.sys.posix.unistd : getuid, uid_t;
+    import core.sys.posix.unistd : getuid;
     import core.sys.posix.pwd : getpwuid, passwd;
     import core.stdc.string : strlen;
 }

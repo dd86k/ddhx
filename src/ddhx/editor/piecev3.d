@@ -1554,8 +1554,6 @@ unittest
 /// Insert with document
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0002");
     
     static immutable string data = "hello";
@@ -1609,8 +1607,6 @@ unittest
 /// Replace with document
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0003");
     
     static immutable string data = "very good string!";
@@ -1630,8 +1626,6 @@ unittest
 /// Remove with document
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0004");
     
     static immutable string data = "very good string!";
@@ -1650,8 +1644,6 @@ unittest
 /// Offset view
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     static immutable ubyte[] data = [
     //  0   1   2   3   4  5  6   7   8   9
         4,  7,  9, 13, 17, 3, 4,  5, 13, 15, // 0
@@ -1696,8 +1688,6 @@ unittest
 /// Mix replace, insert, and deletions
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0006");
     
     static immutable ubyte[] data = [
@@ -1796,8 +1786,6 @@ unittest
 /// Delete multiple pieces
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0007");
     
     static immutable ubyte[] data = [
@@ -1838,8 +1826,6 @@ unittest
 // Delete+Overwrite
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0008");
     
     static immutable ubyte[] data = [
@@ -1865,8 +1851,6 @@ unittest
 // Patterns
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0009");
     
     static immutable ubyte[] data = [
@@ -1937,8 +1921,6 @@ unittest
 // Files
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0010");
     
     static immutable ubyte[] data = [
@@ -1997,8 +1979,6 @@ unittest
 // Add data on empty doc, undo, and insert pattern
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0011");
     
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
@@ -2018,8 +1998,6 @@ unittest
 // Add enormous pattern of 10 GiB and edit into it
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    
     log("TEST-0012");
     
     scope PieceV3DocumentEditor e = new PieceV3DocumentEditor();
@@ -2070,8 +2048,6 @@ unittest
 /// Coalescing: consecutive forward inserts
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0013");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2100,8 +2076,6 @@ unittest
 /// Coalescing: consecutive forward replaces
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0014");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2130,8 +2104,6 @@ unittest
 /// Coalescing: forward delete
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0015");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2157,8 +2129,6 @@ unittest
 /// Coalescing: backward delete
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0016");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2184,8 +2154,6 @@ unittest
 /// Coalescing: non-adjacent breaks coalescing
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0017");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2213,8 +2181,6 @@ unittest
 /// Coalescing: type change breaks coalescing
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0018");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2244,8 +2210,6 @@ unittest
 /// Coalescing: undo/redo breaks coalescing
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0019");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2275,8 +2239,6 @@ unittest
 /// Coalescing: save point prevents coalescing
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0020");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2309,8 +2271,6 @@ unittest
 /// Coalescing: multi-step coalesce (typing "hello" char-by-char)
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0021");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2340,8 +2300,6 @@ unittest
 /// Close-open test
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0022");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2362,9 +2320,6 @@ unittest
 /// dirtyRegions: replace produces correct dirty regions  
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    import ddhx.editor.base : IDirtyRange, DirtyRegion;
-
     log("TEST-0023");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2387,9 +2342,6 @@ unittest
 /// Test empty document
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-    import ddhx.editor.base : IDirtyRange, DirtyRegion;
-
     log("TEST-0024");
 
     static immutable ubyte[] data = [];
@@ -2408,8 +2360,6 @@ unittest
 /// History branching: a new edit after undo discards the stale redo tail
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0025");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2442,8 +2392,6 @@ unittest
 /// History branching: save point in discarded redo tail stays dirty
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
-
     log("TEST-0026");
 
     static immutable ubyte[] data = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ];
@@ -2567,7 +2515,6 @@ unittest
 /// Replacing past EOF is rejected (would leave a hole in the document)
 unittest
 {
-    import ddhx.document.memory : MemoryDocument;
     import ddhx.platform : Assertion;
 
     log("TEST-0031");

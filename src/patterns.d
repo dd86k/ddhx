@@ -376,7 +376,7 @@ unittest
             try { r = textbytes(input, spec, littleEndian, null); }
             catch (Exception) { return; }
 
-            import std.stdio : stderr, writeln;
+            import std.stdio : stderr;
             stderr.writeln("Failed to throw with: ", input, " it produced: ", r);
             assert(false, "textbytes test failed");
         }
@@ -886,7 +886,7 @@ unittest
         catch (Exception)
             return;
 
-        import std.stdio : stderr, writeln;
+        import std.stdio : stderr;
         stderr.writeln("Failed to throw with: ", literal);
         assert(false, "decimal test failed");
     }
@@ -1712,7 +1712,7 @@ unittest
         try { r = pattern(Endian.littleEndian, input); }
         catch (Exception) { return; }
 
-        import std.stdio : stderr, writeln;
+        import std.stdio : stderr;
         stderr.writeln("Failed to throw with: ", input, " it produced: ", r.data);
         assert(false, "test_throw test failed");
     }
@@ -1850,7 +1850,7 @@ unittest
         ushort[] r;
         try { r = compile(line); } catch (Exception) { return; }
 
-        import std.stdio : stderr, writeln;
+        import std.stdio : stderr;
         stderr.writeln("Failed to throw with: ", line, " it produced: ", r);
         assert(false, "test_throw test failed");
     }

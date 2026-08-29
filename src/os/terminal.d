@@ -20,7 +20,7 @@ module os.terminal;
 // https://man7.org/linux/man-pages/man3/tcsetattr.3.html
 // https://man7.org/linux/man-pages/man4/console_codes.4.html
 
-import std.stdio : _IONBF, _IOLBF, _IOFBF, stdin, stdout;
+import std.stdio : _IONBF, stdin, stdout;
 
 import core.stdc.stdlib : system;
 import core.stdc.string : memmove, memset;
@@ -55,8 +55,6 @@ else version (Posix)
     import core.sys.posix.unistd;
     import core.sys.posix.termios;
     import core.sys.posix.signal;
-    import core.sys.posix.unistd : write, STDOUT_FILENO;
-    import core.sys.posix.sys.types : ssize_t;
     
     private enum NULL_SIGACTION = cast(sigaction_t*)0;
     private enum SIGWINCH = 28; // Window resize signal
@@ -1298,7 +1296,7 @@ Lread:
 
         version (unittest)
         {
-            import std.stdio : write, writef, writeln, writefln;
+            import std.stdio : write, writef, writefln;
             write("stdin: ");
             for (size_t i; i < r; ++i)
             {
@@ -2545,8 +2543,6 @@ int _keyCodepoint(const(char)[] buf)
 /// Returns: Keys.
 int terminalKeybind(string value)
 {
-    import std.string : startsWith;
-    
     if (value.length == 0)
         throw new Exception("Expected key, got empty");
     

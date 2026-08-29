@@ -8,7 +8,6 @@ module os.error;
 version (Windows)
 {
     import core.sys.windows.winbase;
-    import std.format;
     private alias systemerr = GetLastError;
 }
 else

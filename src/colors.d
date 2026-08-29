@@ -63,7 +63,7 @@ unittest
 // Color mapping mechanics
 //
 
-import std.typecons : Nullable, nullable;
+import std.typecons : Nullable;
 enum
 {
     COLORMAP_INVERTED    = 1,    /// 

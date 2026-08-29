@@ -27,11 +27,10 @@ else version (Posix)
 {
     import core.sys.posix.unistd : lseek, read, write, fsync, close;
     import core.sys.posix.fcntl;
-    import core.stdc.errno;
     import core.stdc.stdio : SEEK_SET, SEEK_CUR, SEEK_END;
     import std.string : toStringz;
     
-    import core.stdc.config : c_long, c_ulong;
+    import core.stdc.config : c_ulong;
     
     // NOTE: ioctl(3)
     //       Bionic actually used int at some point.
@@ -392,8 +391,6 @@ ulong availableDiskSpace(string path)
     
 version (Windows)
 {
-    import core.sys.windows.winbase : GetDiskFreeSpaceExW;
-    import core.sys.windows.winnt : ULARGE_INTEGER, BOOL, TRUE, FALSE;
     import std.internal.cstring : tempCStringW;
     
     ULARGE_INTEGER avail;

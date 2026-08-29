@@ -10,7 +10,7 @@ module ddhx.list;
 // Using this over GC guarantees memory will be freed instead of
 // "when pressured" (which is never).
 
-import core.stdc.stdlib : malloc, calloc, realloc, free;
+import core.stdc.stdlib : realloc, free;
 
 struct List(T)
 {

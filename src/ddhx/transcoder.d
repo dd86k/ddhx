@@ -8,7 +8,7 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx.transcoder;
 
-import std.encoding : codeUnits, CodeUnits;
+import std.encoding : codeUnits;
 import std.conv : text;
 
 import messages;

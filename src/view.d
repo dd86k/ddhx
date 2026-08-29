@@ -16,7 +16,7 @@ import std.conv : text, to;
 import std.file : exists;
 import std.process : environment;
 import std.stdio : File;
-import std.format : format, sformat;
+import std.format : sformat;
 
 import os.terminal;
 
@@ -979,7 +979,7 @@ void save_to_file(IDocumentEditor editor, string target)
     assertion(target.length > 0, "target is EMPTY");
     
     import std.path : baseName, dirName, buildPath;
-    import std.file : rename, exists, getAttributes, setAttributes, remove;
+    import std.file : rename, getAttributes, setAttributes, remove;
     import os.file : availableDiskSpace;
     
     long docsize = editor.size();
@@ -1064,7 +1064,7 @@ void save_to_file(IDocumentEditor editor, string target)
 unittest
 {
     import ddhx.editor.dummy : DummyDocumentEditor;
-    import std.file : remove, readText, exists;
+    import std.file : remove, readText;
     
     static immutable path = "tmp_save_test";
     

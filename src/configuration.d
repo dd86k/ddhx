@@ -189,8 +189,6 @@ void loadRC(ref RC rc, string text) // @suppress(dscanner.style.doc_missing_thro
 }
 unittest
 {
-    import os.terminal : terminalKeybind;
-    
     initdefaults(); // bindkey depends on g_commands (command names)
     
     // Check defaults

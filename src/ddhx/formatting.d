@@ -9,12 +9,9 @@ import core.stdc.string : memcpy;
 
 import std.conv : text, to; // lazy, but convenient
 import std.format;
-import std.path;
 import std.string : strip;
-import std.traits : EnumMembers;
 
 import ddhx.platform : assertion;
-import ddhx.transcoder : CharacterSet;
 
 import messages : MSG_UNKNOWN_WRITEMODE;
 

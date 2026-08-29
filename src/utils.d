@@ -246,7 +246,7 @@ unittest
     {
         try { cast(void)unescape(input); } catch (Exception) { return; }
 
-        import std.stdio : stderr, writeln;
+        import std.stdio : stderr;
         stderr.writeln("Failed to throw with: ", input);
         assert(false, "test_throw test failed");
     }
@@ -388,7 +388,7 @@ Argument[] arguments(const(char)[] buffer)
         Argument[] r;
         try { r = arguments(input); } catch (Exception) { return; }
 
-        import std.stdio : stderr, writeln;
+        import std.stdio : stderr;
         stderr.writeln("Failed to throw with: ", input, " it produced: ", r);
         assert(false, "test_throw test failed");
     }
@@ -522,7 +522,7 @@ Argument[] arguments(const(char)[] buffer)
 long scan(scope string input)
 {
     import std.conv : parse;
-    import std.string : indexOf, strip, startsWith;
+    import std.string : strip, startsWith;
     
     // Imitate stroll a little by ignoring whitespace
     input = strip(input);
