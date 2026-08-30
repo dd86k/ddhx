@@ -30,7 +30,7 @@ else version (Posix)
     import core.stdc.stdio : SEEK_SET, SEEK_CUR, SEEK_END;
     import std.string : toStringz;
     
-    import core.stdc.config : c_ulong;
+    import core.stdc.config : c_long, c_ulong; // do not remove
     
     // NOTE: ioctl(3)
     //       Bionic actually used int at some point.
