@@ -5,6 +5,8 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module utils;
 
+import messages;
+
 /// Template to get binary size in mebibytes (base-1024)
 /// Params: base = Base unit.
 template MiB(int base)
@@ -54,7 +56,6 @@ struct Argument
     {
         import std.utf : validate, UTFException;
         import std.conv : text;
-        import messages : MSG_ARGUMENT_NOT_TEXT;
 
         string result = cast(string)data;
 
@@ -135,7 +136,6 @@ ubyte[] unescape(const(char)[] input)
 {
     import std.ascii : isHexDigit, isOctalDigit;
     import std.conv : text;
-    import messages;
 
     ubyte[] result;
 
@@ -270,9 +270,9 @@ unittest
 ///
 /// ---
 ///              protects whitespace    escape sequences
-///  utf8:text          no                   no
-///  utf8:'text'        yes                  no
-///  utf8:"text"        yes                  yes
+///  utf8:text   no                     no
+///  utf8:'text' yes                    no
+///  utf8:"text" yes                    yes
 /// ---
 ///
 /// So `utf8:C:\Users` and `utf8:'C:\Program Files'` are paths as typed, while
@@ -306,7 +306,6 @@ Argument[] arguments(const(char)[] buffer)
     import std.string : strip;
     import std.ascii : isControl, isWhite;
     import std.conv : text;
-    import messages : MSG_UNTERMINATED_QUOTE;
     
     buffer = strip(buffer);
     
