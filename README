@@ -51,20 +51,13 @@ Title font: Shaded Blocky (FIGlet)
   * Customizable with configuration file
   * Copy, Cut, and Paste data at will
   * Bookmarks with navigation, save/load/clear operations
-  * Data inspector panel
-  * Find-and-replace, including replacing all occurrences
-  * Diff panel
+  * Data inspector, file diff panels
+  * Find & replace, find & bookmark commands
 
 ////////////////////////////////////////////////////////////////////////////////
 // Roadmap
 
 This list may change at any given time without notice.
-
-0.9: Released!
-- [x] Color theming
-- [x] In-place saving (Fast Save Optimization)
-- [x] Piece Coalescing
-- [x] View: Other data types (d8, o8, d16, f32, etc.)
 
 0.10: Released!
 - [x] Diff view (vs. opened document)
@@ -73,7 +66,7 @@ This list may change at any given time without notice.
 
 0.11 featured important stability bugfixes and QOL improvements.
 
-0.12: WIP
+0.12: Released!
 - [x] String expressions (allow escapes like \t) with double-quote strings
 - [x] Overhaul prefixes (fixed-width prefixes)
 - [x] find-bookmark commmand: Find and create bookmarks
