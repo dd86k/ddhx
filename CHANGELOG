@@ -4,7 +4,7 @@ Categories are used consistently across releases: Added, Changed, Fixed,
 Removed, and (when significant) Docs.
 
 ////////////////////////////////////////////////////////////////////////////////
-// Upcoming
+// 0.12
 
 Prompt and prefix overhauls, readline enhancements, diff pane navigation,
 write protection overhaul, terminal rendering fixes, and new prefixes.
