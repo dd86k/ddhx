@@ -2656,7 +2656,7 @@ void update(Session *session)
     update_view(session);
     
     if (ins_h)
-        update_inspector(session, ins_h);
+        update_inspector(session);
     
     if (diff_h)
     {
@@ -2671,8 +2671,8 @@ void update(Session *session)
 }
 
 // Render the inspector below the data view, terminal-wide.
-// Reserved height is `height` rows: one separator line + one row per type.
-void update_inspector(Session *session, int height)
+// Occupies inspectorHeight() rows: one separator line + one row per type.
+void update_inspector(Session *session)
 {
     int rowdisp = session.rc.header ? 1 : 0;
     int top = rowdisp + g_viewrows;
