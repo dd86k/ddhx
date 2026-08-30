@@ -34,8 +34,9 @@ enum PatternType
     floating, /// A float encoded into bytes ("f32:", "f64:", "f80:").
 }
 
+// NOTE: pattern stuff is now public for other projects, like vddhx.
 /// Everything a prefix decides about its argument.
-private struct PatternSpec
+struct PatternSpec
 {
     PatternType type;
     int radix;    /// Integer scalar radix: 16, 10, or 8. Floats parse their own literal.
@@ -43,11 +44,10 @@ private struct PatternSpec
                   /// and the code unit size for text).
     bool signed;  /// Integer scalar takes a leading '-' and encodes two's complement.
 }
-private struct Prefix { const(char)[] str; PatternSpec spec; }
+struct Prefix { const(char)[] str; PatternSpec spec; }
 /// Detect pattern prefix.
 /// Params: input = Argument bytes. Sliced from prefix.
 /// Returns: Prefix, of unknown type if it can't be detected.
-private
 Prefix patternpfx(const(char)[] input)
 {
     Prefix pfx;
