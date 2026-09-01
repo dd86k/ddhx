@@ -58,11 +58,6 @@ Copy, Cut, and Paste data at will
 .
 .SS Configuration
 .TP
-.BI "\-c, \-\-columns=" N
-Set the number of columns per row. Use
-.B auto
-to fit the terminal width. Default: 16.
-.TP
 .BI "\-A, \-\-address=" MODE
 Set address display mode:
 .BR hex ,
@@ -71,6 +66,34 @@ or
 .BR oct .
 Default:
 .BR hex .
+.TP
+.BI \-\-address\-spacing= N
+Set the address column width in characters. Default: 11.
+.TP
+.B \-\-autoresize
+Automatically resize the number of columns to fit the terminal width on
+dimension change. Equivalent to
+.BR "\-\-columns=auto" .
+.TP
+.BI "-B, \-\-bookmarks=" PATH
+Load bookmarks from the specified file on startup. See the
+.B BOOKMARKS
+section for the file format.
+.TP
+.BI "\-C, \-\-charset=" CHARSET
+Set character translation:
+.BR ascii ,
+.BR cp437 ,
+.BR mac ,
+or
+.BR ebcdic .
+Default:
+.BR ascii .
+.TP
+.BI "\-c, \-\-columns=" N
+Set the number of columns per row. Use
+.B auto
+to fit the terminal width. Default: 16.
 .TP
 .BI "\-D, \-\-data=" MODE
 Set data display mode:
@@ -87,23 +110,14 @@ or
 Default:
 .BR x8 .
 .TP
-.BI \-\-address\-spacing= N
-Set the address column width in characters. Default: 11.
+.BI "-d, \-\-diff-file=" PATH
+Use this file with the diff panel.
 .TP
-.B \-\-autoresize
-Automatically resize the number of columns to fit the terminal width on
-dimension change. Equivalent to
-.BR "\-\-columns=auto" .
+.B \-I, \-\-norc
+Ignore user configuration files and use defaults.
 .TP
-.BI "\-C, \-\-charset=" CHARSET
-Set character translation:
-.BR ascii ,
-.BR cp437 ,
-.BR mac ,
-or
-.BR ebcdic .
-Default:
-.BR ascii .
+.BI "\-f, \-\-rcfile=" PATH
+Use the specified file for configuration instead of the default locations.
 .TP
 .B \-R, \-\-restrict
 Restrict document editing for the whole session. This starts in the
@@ -118,18 +132,8 @@ Allow document editing, ignoring the
 setting from configuration files. Lifts
 .BR \-R / \-\-restrict
 when given after it, the last of the two options wins.
-.TP
-.B \-I, \-\-norc
-Ignore user configuration files and use defaults.
-.TP
-.BI "\-f, \-\-rcfile=" PATH
-Use the specified file for configuration instead of the default locations.
-.TP
-.BI "-B, \-\-bookmarks=" PATH
-Load bookmarks from the specified file on startup. See the
 .SM
-.B BOOKMARKS
-section for the file format.
+.TOP
 .
 .SS Information
 .TP
