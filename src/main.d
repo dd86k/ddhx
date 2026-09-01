@@ -217,11 +217,11 @@ void main(string[] args)
         //
         // Informational pages
         //
-        "version",      "Print the version page and exit", &printpage,
-        "ver",          "Print only the version and exit", &printpage,
-        "help-keys",    "Print default shortcuts and exit", &printpage,
         "help-commands","Print commands page and exit", &printpage,
         "help-config",  "Print configuration page and exit", &printpage,
+        "help-keys",    "Print default shortcuts and exit", &printpage,
+        "ver",          "Print only the version and exit", &printpage,
+        "version",      "Print the version page and exit", &printpage,
         );
     }
     catch (Exception ex)
