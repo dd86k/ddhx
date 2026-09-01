@@ -161,6 +161,7 @@ void main(string[] args)
     GetoptResult res = void;
     try
     {
+        // NOTE: Keep this in ascending order! (except for info switches)
         // TODO: --color/--no-color: Force color option (overrides rc)
         res = getopt(args, config.caseSensitive,
         // Secret options
@@ -168,41 +169,41 @@ void main(string[] args)
         //
         // Configuration
         //
-        "autoresize",   "Automatically resize columns on dimension change",
-            ()
-            {
-                // I've decided this switch can stay because whatever
-                rc.columns = COLUMNS_AUTO;
-            },
-        "c|columns",    "Set columns per row (default: 16)",
-            (string _, string val)
-            {
-                configure_columns(rc, val);
-            },
         "A|address", `Set address mode ("hex"/"dec"/"oct", default: "hex")`,
             (string _, string val)
             {
                 configure_address(rc, val);
-            },
-        "D|data", `Set data mode ("x8","x16",etc., default: "x8")`,
-            (string _, string val)
-            {
-                configure_data(rc, val);
             },
         "address-spacing", "Set address spacing in characters (default: 11)",
             (string _, string val)
             {
                 configure_address_spacing(rc, val);
             },
-        //"filler",       "Set non-printable default character (default='.')", &cliOption,
+        "autoresize",   "Automatically resize columns on dimension change",
+            ()
+            {
+                // I've decided this switch can stay because whatever
+                rc.columns = COLUMNS_AUTO;
+            },
+        "B|bookmarks",  "Load bookmarks from a file on startup", &bookmarks_file,
         "C|charset",    `Set character translation (default="ascii")`,
             (string _, string val)
             {
                 configure_charset(rc, val);
             },
-        //
-        // Misc
-        //
+        "c|columns",    "Set columns per row (default: 16)",
+            (string _, string val)
+            {
+                configure_columns(rc, val);
+            },
+        "D|data", `Set data mode ("x8","x16",etc., default: "x8")`,
+            (string _, string val)
+            {
+                configure_data(rc, val);
+            },
+        "d|diff-file",  "Diff the document against a file on startup", &diff_file,
+        "I|norc",       "Use defaults and ignore user configuration files", &onorc,
+        "f|rcfile",     "Use supplied file for options", &orc,
         "R|restrict",   `Restrict document editing (same as "writemode readonly")`,
             ()
             {
@@ -213,12 +214,8 @@ void main(string[] args)
             {
                 unrestrictRC(rc);
             },
-        "I|norc",       "Use defaults and ignore user configuration files", &onorc,
-        "f|rcfile",     "Use supplied file for options", &orc,
-        "B|bookmarks",  "Load bookmarks from a file on startup", &bookmarks_file,
-        "d|diff-file",  "Diff the document against a file on startup", &diff_file,
         //
-        // Pages
+        // Informational pages
         //
         "version",      "Print the version page and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
