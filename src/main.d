@@ -49,7 +49,10 @@ SECRET";
 // print a line with spaces for field and value
 void printfield(string field, string line, int spacing = -12)
 {
-    writefln("%*s %s", spacing, field ? field : "", line);
+    // Thought of adding periods between fields, but there are other ways
+    // to read fields (like more.1/less.1). Best we can do is at least
+    // make that spacing distance shorter for now (for each pages)
+    writefln("%*s%s", spacing, field ? field : "", line);
 }
 
 void printpage(string opt)
@@ -75,19 +78,27 @@ void printpage(string opt)
         writeln(DDHX_VERSION);
         break;
     case "help-keys":
-        enum SPACING = -25;
-        printfield("COMMAND", "KEYS", SPACING);
+        enum SPACING = -20;
+        printfield("KEYS", "COMMANDS", SPACING);
         foreach (command; default_commands)
         {
-            if (command.key == 0) // no keys set
+            if (command.key == 0) // no keys set for command
                 continue;
             
-            writef("%*s ", SPACING, command.name);
+            // Keys (ascii utf-8 range is 1 byte, 1 cell...)
+            // First column, used as a lookup
             import os.terminal : Key, Mod;
-            if (command.key & Mod.ctrl)  write("Ctrl+");
-            if (command.key & Mod.alt)   write("Alt+");
-            if (command.key & Mod.shift) write("Shift+");
-            writeln(cast(Key)(command.key & 0xff_ffff));
+            static immutable string Ctrl = "Ctrl+";
+            static immutable string Alt = "Alt+";
+            static immutable string Shift = "Shift+";
+            int spacing = SPACING;
+            if (command.key & Mod.ctrl)  { spacing += Ctrl.length; write(Ctrl); }
+            if (command.key & Mod.alt)   { spacing += Alt.length; write(Alt); }
+            if (command.key & Mod.shift) { spacing += Shift.length; write(Shift); }
+            writef("%*s", spacing, cast(Key)(command.key & 0xff_ffff));
+            
+            // Command
+            writeln(command.name);
         }
         break;
     case "help-commands":
