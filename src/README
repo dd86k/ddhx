@@ -138,6 +138,8 @@ string versus scalar:
     x: 0x                 bytes, two hex digits each
     utf8:                 bytes, text as typed
     utf16: utf32:         text, transcoded, one scalar per code unit
+    utf8bom: utf16bom:    likewise, preceded by a byte order mark
+    utf32bom:
     x8: x16: x32: x64:    scalar, unsigned, that many bytes (bit indicator)
     u8: u16: u32: u64:    likewise, decimal
     o8: o16: o32: o64:    likewise, octal
@@ -174,9 +176,29 @@ wearing a UTF-16 name). x16: is how an unpaired D800 is searched for.
 A code unit is a scalar like any other, so it is ordered by the endian setting
 and there is no utf16le:/utf16be: pair to keep in step with it. The pair is
 ordered a half at a time, so U+10000 is 00 D8 00 DC little endian and not four
-bytes reversed, which is what a file holds. No BOM is emitted either: it is a
-character and belongs at the front of a file, not before every match, and the
-needle for one is x16:feff.
+bytes reversed, which is what a file holds.
+
+No mark is emitted unless one is asked for by name, since a marked file has it
+at the front and not before every match. The '*bom:' forms are what asks: they
+are the mark plus the text, which is what the front of such a file holds, so
+utf8bom:hi is EF BB BF 68 69 and utf16bom:hi is FF FE 68 00 69 00. The mark is
+U+FEFF in the encoding named, so the wide two are ordered by the endian setting
+along with the text behind them, and nothing else about the argument changes:
+utf8bom: is still byte transparent and utf16bom: still refuses what is not text.
+
+None of the three reach anywhere the line could not already reach, and each
+earns its place anyway, a prefix being cheap next to what it can save someone
+typing. utf8bom: saves recognizing EF BB BF, the only mark that does not read
+as U+FEFF on sight. utf16bom: and utf32bom: save more than that: spelled by
+hand a mark is a byte string, x:fffe, and a byte string does not follow the
+endian setting, so it is on the reader to pick FF FE or FE FF and to pick again
+whenever the setting moves. x16:feff is the spelling that does follow, which is
+one more thing to know rather than fewer. The prefix cannot get it wrong: the
+mark is U+FEFF in the encoding named, ordered by the same setting as the text
+behind it, so utf16bom:hi is right in both orders and stays right.
+
+A mark alone is still x:efbbbf or x16:feff, since a prefix with nothing after
+it is a typo here as everywhere else.
 
 Floats are named by their width in bits like everything else, so f32: and f64:
 rather than 'float:' and 'double:', and what they encode is the bit pattern the
@@ -334,6 +356,10 @@ and the unittest at the end of patterns.d (both, by typed command line).
   find utf8:"\xff"                  FF                  transparent, so a byte
   find utf16:"\xff"                 error, nothing to transcode
   find utf16le:hi                   error, byte order is the endian setting's
+  find utf8bom:hi                   EF BB BF 68 69      the mark, then the text
+  find utf16bom:hi                  FF FE 68 00 69 00   ...ordered like the text
+  find utf16bom:a b                 FF FE 61 00 62 00   one needle, one mark
+  find utf8bom:                     error, a mark alone is x:efbbbf
   find x:1122                       11 22               bytes, as written
   find x16:1122                     22 11               a value, so encoded
   find x:0001                       00 01               no leading zero eaten
@@ -489,7 +515,24 @@ None of the above is forced. Why each of them, once:
   every type for something that changes once per file, and it would collide
   with the width letters besides. That is what keeps utf16: one prefix rather
   than the utf16le:/utf16be: pair every other tool carries: a code unit is a
-  scalar, so it is already answered.
+  scalar, so it is already answered. A byte order mark is a code unit too, so
+  utf16bom: is one prefix for the same reason, and the setting orders the mark
+  and the text behind it together.
+
+- A mark is a flag on the prefix, never bytes in the prefix table. The bytes it
+  produces are not known until the endian setting is, so a table of literals
+  would have to carry both orders of two of them and would be the endian back
+  in the prefix in another spelling. The flag says a mark was asked for; the
+  encoder answers with what U+FEFF is at that width and order, which is the
+  same code path the text takes.
+
+- A prefix is cheap, so "the line can already spell that" does not settle
+  whether one is worth adding. It costs a row in a table and a line of
+  documentation; what it buys is a thing the person typing no longer has to
+  remember correctly under time pressure. The '*bom:' family is the case in
+  point: every needle it produces was already spellable, and none of them were
+  spellable without knowing both the mark's bytes and how the endian setting
+  orders them. `find text:utf16bom utf16:hello` feels too verbose in a pinch.
 
 - Only the i* types accept a sign at all. A minus on an unsigned type is a
   mistake worth reporting, not a wrap to perform. There is no bare i: either,

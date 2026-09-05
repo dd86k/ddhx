@@ -4,6 +4,14 @@ Categories are used consistently across releases: Added, Changed, Fixed,
 Removed, and (when significant) Docs.
 
 ////////////////////////////////////////////////////////////////////////////////
+// Upcoming
+
+// Added
+- `utf8bom:`, `utf16bom:`, and `utf32bom:` prefixes
+  To avoid having to remember byte marks per endian, these prefixes include
+  BOM, following the current `endian` setting.
+
+////////////////////////////////////////////////////////////////////////////////
 // 0.12
 
 Prompt and prefix overhauls, readline enhancements, diff pane navigation,

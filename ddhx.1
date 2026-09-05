@@ -1110,7 +1110,36 @@ unit. Those are byte strings, so
 .B x16:d800
 is how one is searched for. No byte order mark is emitted either, a mark being
 a character at the front of a file rather than one before every match; the
-needle for it is
+.B utf8bom:
+family below is how one is asked for.
+.TP
+.BI utf8bom: STRING "\fR, \fP" utf16bom: STRING "\fR, \fP" utf32bom: STRING
+The same as
+.BR utf8: ,
+.BR utf16: ,
+and
+.BR utf32: ,
+preceded by a byte order mark. The mark is U+FEFF in the encoding named, so
+.B utf8bom:hi
+is [ 0xef, 0xbb, 0xbf, 0x68, 0x69 ] and
+.B utf16bom:hi
+is [ 0xff, 0xfe, 0x68, 0x00, 0x69, 0x00 ] on little endian, the mark following
+the
+.B endian
+setting along with the text behind it. Nothing else about the argument changes:
+.B utf8bom:
+is byte transparent and the wide two transcode, exactly as their unmarked
+forms do.
+.IP
+The mark belongs to the pattern rather than to each argument, so an argument
+that continues one of these prefixes continues the encoding alone:
+.B find utf16bom:a b
+emits one mark. A mark with no text after it
+.RB ( utf8bom: )
+is an error like any other prefix with nothing after it; the needle for a mark
+alone is
+.B x:efbbbf
+or
 .BR x16:feff .
 .TP
 .B ?

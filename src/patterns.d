@@ -29,11 +29,21 @@ enum PatternType
 {
     unknown,
     bytes,    /// Literal bytes, as written ("x:", "0x").
-    text,     /// Text encoded into bytes ("utf8:", "utf16:", "utf32:").
+    text,     /// Text encoded into bytes ("utf8:", "utf16:", "utf32:", "*bom:").
     scalar,   /// An integer encoded into bytes ("u8:", "x16:", "i32:", ...).
     floating, /// A float encoded into bytes ("f32:", "f64:", "f80:").
 }
 
+/// What a prefix decides that is neither a type, a radix, nor a width.
+///
+/// A mark is spelled as a flag rather than as bytes in the table, because the
+/// bytes are not known until the endian setting is: a BOM is U+FEFF, a code
+/// unit like any other, so it is encoded where every other code unit is.
+enum
+{
+    SPEC_SIGNED = 1, /// Integer scalar takes a leading '-' and encodes two's complement.
+    SPEC_BOM    = 2, /// Text is preceded by U+FEFF, in the encoding it names.
+}
 // NOTE: pattern stuff is now public for other projects, like vddhx.
 /// Everything a prefix decides about its argument.
 struct PatternSpec
@@ -42,7 +52,7 @@ struct PatternSpec
     int radix;    /// Integer scalar radix: 16, 10, or 8. Floats parse their own literal.
     size_t width; /// Scalar size in bytes: 1, 2, 4, or 8 (4, 8, or 10 for floats,
                   /// and the code unit size for text).
-    bool signed;  /// Integer scalar takes a leading '-' and encodes two's complement.
+    int flags;    /// SPEC_* bits.
 }
 struct Prefix { const(char)[] str; PatternSpec spec; }
 /// Detect pattern prefix.
@@ -75,6 +85,11 @@ Prefix patternpfx(const(char)[] input)
     // covers the wide encodings too, a code unit being a scalar like any other,
     // so there is no "utf16le:"/"utf16be:" pair to keep in step with it.
     //
+    // The "*bom:" forms are the mark plus the text, which is what the front of
+    // a marked file holds. Spelled by hand a mark is a byte string ("x:fffe"),
+    // and a byte string does not follow the endian setting, so the prefix is
+    // what keeps the mark and the text it precedes in the same order.
+    //
     // Longest first: a bare prefix must not shadow its width forms.
     static immutable Prefix[] prefixes = [
         // Hexadecimal, as written
@@ -84,6 +99,10 @@ Prefix patternpfx(const(char)[] input)
         { "utf8:",  { PatternType.text, 0, 1 } },
         { "utf16:", { PatternType.text, 0, 2 } },
         { "utf32:", { PatternType.text, 0, 4 } },
+        // ...and the same, preceded by a byte order mark
+        { "utf8bom:",  { PatternType.text, 0, 1, SPEC_BOM } },
+        { "utf16bom:", { PatternType.text, 0, 2, SPEC_BOM } },
+        { "utf32bom:", { PatternType.text, 0, 4, SPEC_BOM } },
         // Hexadecimal, as a value
         { "x8:",  { PatternType.scalar, 16, 1 } },
         { "x16:", { PatternType.scalar, 16, 2 } },
@@ -95,10 +114,10 @@ Prefix patternpfx(const(char)[] input)
         { "u32:", { PatternType.scalar, 10, 4 } },
         { "u64:", { PatternType.scalar, 10, 8 } },
         // Decimal, signed
-        { "i8:",  { PatternType.scalar, 10, 1, true } },
-        { "i16:", { PatternType.scalar, 10, 2, true } },
-        { "i32:", { PatternType.scalar, 10, 4, true } },
-        { "i64:", { PatternType.scalar, 10, 8, true } },
+        { "i8:",  { PatternType.scalar, 10, 1, SPEC_SIGNED } },
+        { "i16:", { PatternType.scalar, 10, 2, SPEC_SIGNED } },
+        { "i32:", { PatternType.scalar, 10, 4, SPEC_SIGNED } },
+        { "i64:", { PatternType.scalar, 10, 8, SPEC_SIGNED } },
         // Octal
         { "o8:",  { PatternType.scalar, 8, 1 } },
         { "o16:", { PatternType.scalar, 8, 2 } },
@@ -136,6 +155,9 @@ unittest
     static immutable PatternSpec UTF8   = { PatternType.text, 0, 1 };
     static immutable PatternSpec UTF16  = { PatternType.text, 0, 2 };
     static immutable PatternSpec UTF32  = { PatternType.text, 0, 4 };
+    static immutable PatternSpec UTF8B  = { PatternType.text, 0, 1, SPEC_BOM };
+    static immutable PatternSpec UTF16B = { PatternType.text, 0, 2, SPEC_BOM };
+    static immutable PatternSpec UTF32B = { PatternType.text, 0, 4, SPEC_BOM };
 
     assert(patternpfx("0x00")    == Prefix("00", BYTES));
     assert(patternpfx("x:00")    == Prefix("00", BYTES));
@@ -146,12 +168,20 @@ unittest
     assert(patternpfx("utf16:hello") == Prefix("hello", UTF16));
     assert(patternpfx("utf32:hello") == Prefix("hello", UTF32));
 
+    // A mark is asked for by name, and the encoding is still the prefix's
+    assert(patternpfx("utf8bom:hello")  == Prefix("hello", UTF8B));
+    assert(patternpfx("utf16bom:hello") == Prefix("hello", UTF16B));
+    assert(patternpfx("utf32bom:hello") == Prefix("hello", UTF32B));
+    // ...and the marked forms do not shadow the bare ones, in either direction
+    assert(patternpfx("utf8:bom:x")  == Prefix("bom:x", UTF8));
+    assert(patternpfx("utf16bom")    == Prefix("utf16bom"));
+
     // Every scalar states a width
     assert(patternpfx("x16:1122") == Prefix("1122", PatternSpec(PatternType.scalar, 16, 2)));
     assert(patternpfx("u16:255")  == Prefix("255",  PatternSpec(PatternType.scalar, 10, 2)));
     assert(patternpfx("o16:377")  == Prefix("377",  PatternSpec(PatternType.scalar,  8, 2)));
-    assert(patternpfx("i8:-1")    == Prefix("-1",   PatternSpec(PatternType.scalar, 10, 1, true)));
-    assert(patternpfx("i64:-1")   == Prefix("-1",   PatternSpec(PatternType.scalar, 10, 8, true)));
+    assert(patternpfx("i8:-1")    == Prefix("-1",   PatternSpec(PatternType.scalar, 10, 1, SPEC_SIGNED)));
+    assert(patternpfx("i64:-1")   == Prefix("-1",   PatternSpec(PatternType.scalar, 10, 8, SPEC_SIGNED)));
     assert(patternpfx("f32:1.0")  == Prefix("1.0",  PatternSpec(PatternType.floating, 10, 4)));
     assert(patternpfx("f64:-1.0") == Prefix("-1.0", PatternSpec(PatternType.floating, 10, 8)));
     assert(patternpfx("f80:1.0")  == Prefix("1.0",  PatternSpec(PatternType.floating, 10, 10)));
@@ -285,9 +315,11 @@ unittest
 // U+10000 is a surrogate pair and lands as 00 D8 00 DC little endian, not as
 // one four-byte value reversed.
 //
-// No BOM is emitted. It is a character, not a property of the needle, and a
-// file that has one has it at the front rather than before every match; the
-// needle for it is "x16:feff", ordered by the same setting as everything else.
+// A mark is emitted only when the prefix asked for one ("utf8bom:" and friends),
+// since a file that has one has it at the front and not before every match. It
+// is U+FEFF spelled in the encoding named, so the wide ones go through the same
+// encoder as their text and answer to `endian` with it; UTF-8 has a fixed
+// spelling instead, that path having nothing to encode with.
 private
 ubyte[] textbytes(const(char)[] input, PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
 {
@@ -295,13 +327,22 @@ ubyte[] textbytes(const(char)[] input, PatternSpec spec, Endian endian, immutabl
 
     assert(spec.width == 1 || spec.width == 2 || spec.width == 4);
 
+    ubyte[] mark;
+    if (spec.flags & SPEC_BOM)
+    {
+        if (spec.width == 1)
+            mark = [ 0xef, 0xbb, 0xbf ];
+        else
+            mark = encode(0xfeff, spec.width, endian);
+    }
+
     if (spec.width == 1)
-        return cast(ubyte[])input.dup;
+        return mark ~ cast(ubyte[])input.dup;
 
     // NOTE: decode() is what refuses malformed input; toUTF16 and toUTF32 would
     //       have substituted U+FFFD for it, which is a needle that finds
     //       something other than what was typed.
-    ubyte[] result;
+    ubyte[] result = mark;
     size_t i;
     while (i < input.length)
     {
@@ -335,6 +376,9 @@ unittest
     static immutable PatternSpec UTF8  = { PatternType.text, 0, 1 };
     static immutable PatternSpec UTF16 = { PatternType.text, 0, 2 };
     static immutable PatternSpec UTF32 = { PatternType.text, 0, 4 };
+    static immutable PatternSpec UTF8B  = { PatternType.text, 0, 1, SPEC_BOM };
+    static immutable PatternSpec UTF16B = { PatternType.text, 0, 2, SPEC_BOM };
+    static immutable PatternSpec UTF32B = { PatternType.text, 0, 4, SPEC_BOM };
 
     with (Endian)
     {
@@ -369,6 +413,21 @@ unittest
         assert(textbytes("\xff\xfe", UTF8, littleEndian, null) == [ 0xff, 0xfe ]);
         assert(textbytes("\x80",     UTF8, bigEndian,    null) == [ 0x80 ]);
 
+        // A mark is U+FEFF in the encoding named, so the wide ones order it
+        // with the text that follows and UTF-8 has the one spelling
+        assert(textbytes("A", UTF8B,  littleEndian, null) == [ 0xef, 0xbb, 0xbf, 'A' ]);
+        assert(textbytes("A", UTF8B,  bigEndian,    null) == [ 0xef, 0xbb, 0xbf, 'A' ]);
+        assert(textbytes("A", UTF16B, littleEndian, null) == [ 0xff, 0xfe, 'A', 0 ]);
+        assert(textbytes("A", UTF16B, bigEndian,    null) == [ 0xfe, 0xff, 0, 'A' ]);
+        assert(textbytes("A", UTF32B, littleEndian, null) == [ 0xff, 0xfe, 0, 0, 'A', 0, 0, 0 ]);
+        assert(textbytes("A", UTF32B, bigEndian,    null) == [ 0, 0, 0xfe, 0xff, 0, 0, 0, 'A' ]);
+
+        // ...and it is the only thing the marked forms add: the text behind it
+        // transcodes, passes bytes through, and refuses, exactly as before
+        assert(textbytes("\U0001f600", UTF16B, bigEndian, null)
+            == [ 0xfe, 0xff, 0xd8, 0x3d, 0xde, 0x00 ]);
+        assert(textbytes("\xff", UTF8B, littleEndian, null) == [ 0xef, 0xbb, 0xbf, 0xff ]);
+
         // ...where transcoding has nothing to transcode, so it says so
         void test_throw(string input, PatternSpec spec)
         {
@@ -387,6 +446,8 @@ unittest
         test_throw("a\xc3", UTF32);
         test_throw("\xed\xa0\x80", UTF16); // a lone surrogate, U+D800 encoded
         test_throw("\xed\xa0\x80", UTF32);
+        test_throw("\xff\xfe", UTF16B);   // ...a mark buying no leniency
+        test_throw("\xed\xa0\x80", UTF32B);
     }
 }
 
@@ -403,10 +464,12 @@ ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(u
     import std.conv : ConvException, parse;
     import std.string : icmp;
 
+    const bool signed = (spec.flags & SPEC_SIGNED) != 0;
+
     // Only the signed types take a sign, and parse() only understands one at
     // radix 10 anyway, so it is taken off here and applied at the end
     bool negative;
-    if (spec.signed && input[0] == '-')
+    if (signed && input[0] == '-')
     {
         negative = true;
         input = input[1..$];
@@ -420,7 +483,7 @@ ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(u
     ulong value = void;
     if (icmp(input, "max") == 0)
     {
-        value = spec.signed
+        value = signed
             ? (spec.width >= 8 ? long.max : (1UL << (spec.width * 8 - 1)) - 1)
             : (spec.width >= 8 ? ulong.max : (1UL << (spec.width * 8)) - 1);
     }
@@ -428,7 +491,7 @@ ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(u
     {
         // Unsigned starts at zero, so both signednesses answer the same
         // question rather than one of them refusing to be asked
-        if (spec.signed == false)
+        if (signed == false)
             value = 0;
         else
         {
@@ -454,7 +517,7 @@ ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(u
 
     // Range check against the width asked for
     ulong max = void; // largest magnitude this width holds, sign included
-    if (spec.signed == false)
+    if (signed == false)
         max = spec.width >= 8 ? ulong.max : (1UL << (spec.width * 8)) - 1;
     else if (spec.width >= 8)
         max = negative ? cast(ulong)long.max + 1 : long.max;
@@ -1397,6 +1460,8 @@ struct Pattern
 /// find utf8:hi        68 69                   the bytes the line handed over
 /// find utf16:hi       68 00 69 00             code units, little endian
 /// find utf32:hi       68 00 00 00 69 00 00 00
+/// find utf8bom:hi     ef bb bf 68 69          a mark, where a file has one
+/// find utf16bom:hi    ff fe 68 00 69 00       ...ordered like the text is
 /// ---
 ///
 /// Throws: FormatException or Exception for unknown prefix, empty values,
@@ -1458,7 +1523,11 @@ Pattern pattern(Endian endian, Argument[] args)
         case PatternType.unknown:
             assert(false, "Unknown prefixes are resolved or thrown above");
         }
+        // A mark belongs to the needle, not to each argument continuing it, so
+        // an argument that inherits this prefix inherits the encoding alone.
+        // Typing "utf16bom:" twice is another matter: that was asked for.
         last = pfx.spec;
+        last.flags &= ~SPEC_BOM;
     }
     return pat;
 }
@@ -1504,6 +1573,26 @@ unittest
     // ...and it carries to the next argument like every other prefix
     assert(pat("utf16:a", "b").data       == [ 'a', 0, 'b', 0 ]);
     assert(pat("utf32:a", "b").data       == [ 'a', 0, 0, 0, 'b', 0, 0, 0 ]);
+    // A mark is the front of a marked file, so it comes with the text rather
+    // than instead of it, and it is ordered by the same setting
+    assert(pat("utf8bom:hi").data         == [ 0xef, 0xbb, 0xbf, 'h', 'i' ]);
+    assert(patbe("utf8bom:hi").data       == [ 0xef, 0xbb, 0xbf, 'h', 'i' ]);
+    assert(pat("utf16bom:hi").data        == [ 0xff, 0xfe, 'h', 0, 'i', 0 ]);
+    assert(patbe("utf16bom:hi").data      == [ 0xfe, 0xff, 0, 'h', 0, 'i' ]);
+    assert(pat("utf32bom:h").data         == [ 0xff, 0xfe, 0, 0, 'h', 0, 0, 0 ]);
+    // ...and it belongs to the needle, so an argument that continues the
+    // prefix continues the encoding alone
+    assert(pat("utf16bom:a", "b").data    == [ 0xff, 0xfe, 'a', 0, 'b', 0 ]);
+    assert(pat("utf8bom:a", "b").data     == [ 0xef, 0xbb, 0xbf, 'a', 'b' ]);
+    // Typing it twice is another matter, that being what was asked for
+    assert(pat("utf8bom:a", "utf8bom:b").data
+        == [ 0xef, 0xbb, 0xbf, 'a', 0xef, 0xbb, 0xbf, 'b' ]);
+    // The marked and bare forms are the same needle otherwise, and either is
+    // still spellable as the byte string it produces
+    assert(pat("utf16bom:hi").data == pat("x:fffe", "utf16:hi").data);
+    assert(pat("utf8bom:hi").data  == pat("x:efbbbf", "utf8:hi").data);
+    assert(patbe("utf16bom:hi").data == patbe("x:feff", "utf16:hi").data);
+
     // Above the BMP, UTF-16 spends two code units where UTF-32 spends one
     assert(pat("utf16:\U0001f600").data   == [ 0x3d, 0xd8, 0x00, 0xde ]);
     assert(patbe("utf16:\U0001f600").data == [ 0xd8, 0x3d, 0xde, 0x00 ]);
@@ -1719,8 +1808,9 @@ unittest
     string[][] invalids = [
         // Missing prefix
         [""], ["00"], ["00", "0x00"],
-        // Empty data
+        // Empty data (a mark is not data either: the needle for one alone is "x:efbbbf")
         ["x:"], ["utf8:"], ["utf16:"], ["utf32:"], ["0x"], ["x16:"], ["i8:"],
+        ["utf8bom:"], ["utf16bom:"], ["utf32bom:"],
         ["i8:-"], ["u8:"], ["o8:"],
         ["f32:"], ["f64:"], ["f32:-"], ["f32:."],
         // Quotes are no longer a prefix alias
@@ -1740,6 +1830,8 @@ unittest
         ["utf16:\xff\xfe"], ["utf32:\xff\xfe"], ["utf16:a\xc3"],
         ["utf16:\xed\xa0\x80"], // a lone surrogate, spelled as "x16:d800"
         ["utf16:a", "\xff"],    // ...including where the prefix carried over
+        ["utf16bom:\xff\xfe"],  // ...and a mark buys no leniency for the text
+        ["utf16bom:a", "\xc3"],
         // Half a byte is a typo, not a byte
         ["x:0"], ["x:fff"], ["0x0"], ["0xfff"], ["x:00", "0"],
         // A scalar type without a width, whatever it would have encoded to.
