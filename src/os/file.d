@@ -13,6 +13,7 @@ version (Windows)
 {
     import core.sys.windows.winnt;
     import core.sys.windows.winbase;
+    import core.sys.windows.winerror : ERROR_HANDLE_EOF;
     import std.utf : toUTF16z;
     
     private alias OSHANDLE = HANDLE;
@@ -25,7 +26,7 @@ version (Windows)
 }
 else version (Posix)
 {
-    import core.sys.posix.unistd : lseek, read, write, fsync, close;
+    import core.sys.posix.unistd : read, write, fsync, close;
     import core.sys.posix.fcntl;
     import core.stdc.stdio : SEEK_SET, SEEK_CUR, SEEK_END;
     import std.string : toStringz;
@@ -73,10 +74,38 @@ else version (Posix)
     private enum BLKGETSIZE64 = cast(IOCTL_TYPE)_IOR!(0x12,114,size_t.sizeof);
     private alias BLOCKSIZE = BLKGETSIZE64;
     
-    // NOTE: lseek64
-    //       Most Linux system modules have been updated since the last time I had
-    //       to force myself using lseek64 definitions.
-    
+    // NOTE: Every call taking a file offset
+    //       Two runtimes hand us a 32-bit off_t on 32-bit targets, which
+    //       caps files at 2 GiB (and makes druntime's declarations outright
+    //       uncallable with a long), so declare them with the offset the
+    //       platform really takes:
+    //       - Musl: off_t is 64-bit on every target, but druntime keys it off
+    //         __USE_FILE_OFFSET64, which it sets to false. It also declares
+    //         no pread/pwrite at all.
+    //       - Bionic: Android pins off_t to 32-bit on 32-bit targets by
+    //         design (see its 32-bit ABI doc) and offers explicit 64-bit
+    //         entry points for exactly this.
+    version (CRuntime_Musl)
+    {
+        private extern (C) long    lseek(int, long, int);
+        private extern (C) int     ftruncate(int, long);
+        private extern (C) ssize_t pread(int, void*, size_t, long);
+        private extern (C) ssize_t pwrite(int, const scope void*, size_t, long);
+    }
+    else version (CRuntime_Bionic)
+    {
+        private extern (C) long    lseek64(int, long, int);
+        private extern (C) int     ftruncate64(int, long);
+        private extern (C) ssize_t pread64(int, void*, size_t, long);
+        private extern (C) ssize_t pwrite64(int, const scope void*, size_t, long);
+        private alias lseek     = lseek64;
+        private alias ftruncate = ftruncate64;
+        private alias pread     = pread64;
+        private alias pwrite    = pwrite64;
+    }
+    else
+        import core.sys.posix.unistd : lseek, ftruncate, pread, pwrite;
+
     private alias OSHANDLE = int;
     private enum INVALID_OSHANDLE = -1;
 }
@@ -139,6 +168,9 @@ struct OSFile
             //       to issues because ddhx uses a live file to fill data into view.
             uint dwShare = flags & OFlags.share ? FILE_SHARE_READ | FILE_SHARE_WRITE : 0;
 
+            // NOTE: FILE_FLAG_OVERLAPPED
+            //       Only worth if massive parallelism is done on Windows
+            //       Otherwise comes at a great cost to handle ERROR_IO_PENDING everywhere
             handle = CreateFileW(
                 path.toUTF16z,  // lpFileName
                 dwAccess,       // dwDesiredAccess
@@ -281,6 +313,104 @@ struct OSFile
         }
     }
     
+    /// Read file at this position.
+    ///
+    /// Unlike seek+read, this does not depend on the file position, so
+    /// several threads may read one file instance at once.
+    /// Params:
+    ///     position = File position.
+    ///     buffer = Byte buffer.
+    /// Returns: Slice.
+    ubyte[] readAt(long position, ubyte[] buffer)
+    {
+        return readAt(position, buffer.ptr, buffer.length);
+    }
+
+    /// Read file at this position.
+    /// Params:
+    ///     position = File position.
+    ///     buffer = Buffer pointer.
+    ///     size = Buffer size.
+    /// Returns: Slice.
+    /// Throws: OSException.
+    ubyte[] readAt(long position, void *buffer, size_t size)
+    {
+        version (Windows)
+        {
+            // NOTE: OVERLAPPED on a synchronous handle
+            //       Without FILE_FLAG_OVERLAPPED, ReadFile still completes
+            //       before returning, and reads from the given offset instead
+            //       of the file position. It does move the file position
+            //       afterwards, so this must not be mixed with read(), and
+            //       maintaining that position makes the I/O manager take the
+            //       file object lock: correct under concurrent readers, but
+            //       they convoy rather than overlap (see FileDocument.caps).
+            OVERLAPPED overlap; // .init
+            overlap.Offset     = cast(uint)position;
+            overlap.OffsetHigh = cast(uint)(position >>> 32);
+
+            uint len = cast(uint)size;
+            if (ReadFile(handle, buffer, len, &len, &overlap) == FALSE)
+            {
+                // Reading past EOF fills nothing, like a short read
+                if (GetLastError() == ERROR_HANDLE_EOF)
+                    return (cast(ubyte*)buffer)[0..0];
+                throw new OSException("ReadFile");
+            }
+            return (cast(ubyte*)buffer)[0..len];
+        }
+        else version (Posix)
+        {
+            ssize_t len = pread(handle, buffer, size, position);
+            if (len < 0)
+                throw new OSException("pread");
+            return (cast(ubyte*)buffer)[0..len];
+        }
+        else static assert(0, "Implement OSFile.readAt");
+    }
+
+    /// Write file at this position.
+    ///
+    /// Ditto readAt: independent of the file position.
+    /// Params:
+    ///     position = File position.
+    ///     data = Byte buffer.
+    /// Returns: Amount written.
+    size_t writeAt(long position, inout(ubyte)[] data)
+    {
+        return writeAt(position, data.ptr, data.length);
+    }
+
+    /// Write file at this position.
+    /// Params:
+    ///     position = File position.
+    ///     data = Buffer pointer.
+    ///     size = Buffer size.
+    /// Returns: Amount written.
+    /// Throws: OSException.
+    size_t writeAt(long position, inout(ubyte) *data, size_t size)
+    {
+        version (Windows)
+        {
+            OVERLAPPED overlap; // .init
+            overlap.Offset     = cast(uint)position;
+            overlap.OffsetHigh = cast(uint)(position >>> 32);
+
+            uint len = cast(uint)size;
+            if (WriteFile(handle, data, len, &len, &overlap) == FALSE)
+                throw new OSException("WriteFile");
+            return len; // 0 on error anyway
+        }
+        else version (Posix)
+        {
+            ssize_t len = pwrite(handle, data, size, position);
+            if (len < 0)
+                throw new OSException("pwrite");
+            return len;
+        }
+        else static assert(0, "Implement OSFile.writeAt");
+    }
+
     /// Write file at current position.
     /// Params: data = Byte buffer.
     /// Returns: Amount written.
@@ -322,12 +452,13 @@ struct OSFile
             i.QuadPart = size;
             if (SetFilePointerEx(handle, i, null, FILE_BEGIN) == FALSE)
                 throw new OSException("SetFilePointerEx");
+            // NOTE: Vista+ is SetFileInformationByHandle/FileEndOfFileInfo
+            //       Worth if doing concurrent/OVERLAP stuff
             if (SetEndOfFile(handle) == FALSE)
                 throw new OSException("SetEndOfFile");
         }
         else version (Posix)
         {
-            import core.sys.posix.unistd : ftruncate;
             if (ftruncate(handle, size) < 0)
                 throw new OSException("ftruncate");
         }
@@ -367,6 +498,85 @@ struct OSFile
             }
         }
     }
+}
+
+/// Positional I/O ignores the file position, and short reads at EOF
+unittest
+{
+    import std.file : remove, tempDir, write;
+    import std.path : buildPath;
+
+    string path = buildPath(tempDir(), "osfile_readat.tmp");
+    ubyte[256] content;
+    foreach (i, ref ubyte b; content)
+        b = cast(ubyte)i;
+    write(path, content[]);
+
+    OSFile file;
+    file.open(path, OFlags.readWrite | OFlags.exists);
+    scope(exit) { file.close(); remove(path); }
+
+    ubyte[16] buffer;
+    assert(file.readAt(0, buffer) == content[0..16]);
+    assert(file.readAt(200, buffer) == content[200..216]);
+
+    // Seeking must not influence it, nor it the other way around
+    file.seek(Seek.start, 100);
+    assert(file.readAt(8, buffer) == content[8..24]);
+
+    // Reads clamp at EOF
+    assert(file.readAt(250, buffer) == content[250..256]);
+    assert(file.readAt(256, buffer).length == 0);
+
+    // Writes land where told
+    ubyte[4] patch = [ 0xde, 0xad, 0xbe, 0xef ];
+    assert(file.writeAt(64, patch[]) == patch.length);
+    assert(file.readAt(62, buffer[0..8]) == [ 62, 63, 0xde, 0xad, 0xbe, 0xef, 68, 69 ]);
+}
+
+/// Concurrent readers do not steal each other's position
+unittest
+{
+    import core.thread : Thread;
+    import std.file : remove, tempDir, write;
+    import std.path : buildPath;
+
+    enum SIZE    = 4096;
+    enum READERS = 4;
+    enum ROUNDS  = 128;
+    enum WINDOW  = 64;
+
+    string path = buildPath(tempDir(), "osfile_concurrent.tmp");
+    ubyte[SIZE] content;
+    foreach (i, ref ubyte b; content)
+        b = cast(ubyte)i;
+    write(path, content[]);
+
+    OSFile file;
+    file.open(path, OFlags.read | OFlags.exists);
+    scope(exit) { file.close(); remove(path); }
+
+    // Each reader needs its own closure frame, hence the maker function
+    Thread reader(long seed)
+    {
+        return new Thread({
+            ubyte[WINDOW] buffer;
+            foreach (round; 0 .. ROUNDS)
+            {
+                long pos = (seed * (round + 1)) % (SIZE - WINDOW);
+                ubyte[] got = file.readAt(pos, buffer);
+                assert(got.length == WINDOW);
+                foreach (i, ubyte b; got)
+                    assert(b == cast(ubyte)(pos + i));
+            }
+        });
+    }
+
+    Thread[READERS] readers;
+    foreach (i, ref Thread t; readers)
+        t = reader((cast(long)i + 1) * 37);
+    foreach (Thread t; readers) t.start();
+    foreach (Thread t; readers) t.join();
 }
 
 /// Replacement for std.file.getAvailableDiskSpace since gdc-11 (FE: 2.076),
