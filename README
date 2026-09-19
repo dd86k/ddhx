@@ -166,7 +166,7 @@ Environment variables:
   - Forces BACKEND to be selected.
   - Version: Since 0.7
   - Default: "piecev3" (since 0.9)
-  - Backends: "piecev3" (>=0.9), "piecev2" (>=0.8)
+  - Backends: "piecev4" (>=0.13), "piecev3" (>=0.9), "piecev2" (>=0.8)
 - DDHX_NO_INPLACE_SAVE
   - If set to 1, avoid the use of the newer "in-place" saving mechanic.
   - Version: Since 0.9
