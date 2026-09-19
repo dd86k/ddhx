@@ -259,26 +259,35 @@ struct OSFile
         }
         else version (Posix)
         {
-            stat_t stats = void;
-            if (fstat(handle, &stats) < 0)
-                throw new OSException("fstat");
-            
-            int typ = stats.st_mode & S_IFMT;
-            switch (typ) {
-            case S_IFREG: // File
-            case S_IFLNK: // Link
-                return stats.st_size;
-            case S_IFBLK: // Block devices (like a disk)
-                // fstat(2) sets st_size to 0 on block devices
-                long s = void;
-                if (ioctl(handle, BLOCKSIZE, &s) < 0)
-                    throw new OSException("ioctl(BLOCKSIZE)");
-                return s;
-            default:
-                import std.conv : text;
-                throw new Exception(text("Unsupported file type: ", typ));
-            }
+            // NOTE: Why no fstat(2)
+            //       druntime has no Musl or Bionic stat_t: both land on
+            //       glibc's 32-bit layout, which neither of them matches, so
+            //       on 32-bit targets every field is read from the wrong
+            //       offset. st_size is the one that bites (an off_t both
+            //       runtimes truncate past 2 GiB), but st_mode is in the same
+            //       struct, so the file type it reports is no better. The
+            //       kernel answers both questions through lseek anyway.
+            long current = lseek(handle, 0, SEEK_CUR);
+            if (current < 0) // ESPIPE for pipes, sockets and terminals
+                throw new OSException("lseek");
+
+            long end = lseek(handle, 0, SEEK_END);
+            if (end < 0)
+                throw new OSException("lseek");
+            if (lseek(handle, current, SEEK_SET) < 0)
+                throw new OSException("lseek");
+
+            if (end > 0)
+                return end;
+
+            // A zero is either an empty file or a device the kernel only
+            // measures through an ioctl, which an empty file refuses
+            long blocks = void;
+            if (ioctl(handle, BLOCKSIZE, &blocks) < 0)
+                return 0;
+            return blocks;
         }
+        else static assert(0, "Implement OSFile.size");
     }
     
     /// Read file at current position.
@@ -498,6 +507,93 @@ struct OSFile
             }
         }
     }
+}
+
+/// Size measures without disturbing the file position
+unittest
+{
+    import std.file : remove, tempDir, write;
+    import std.path : buildPath;
+
+    string path = buildPath(tempDir(), "osfile_size.tmp");
+    write(path, new ubyte[300]);
+
+    OSFile file;
+    file.open(path, OFlags.read | OFlags.exists);
+    scope(exit) { file.close(); remove(path); }
+
+    assert(file.size() == 300);
+
+    file.seek(Seek.start, 100);
+    assert(file.size() == 300);
+    assert(file.tell() == 100);
+
+    // Growing and shrinking are seen right away
+    file.close();
+    file.open(path, OFlags.readWrite | OFlags.exists);
+    file.resize(5000);
+    assert(file.size() == 5000);
+    file.resize(0);
+    assert(file.size() == 0); // empty, not a device: the ioctl must not throw
+}
+
+/// Offsets at 2 GiB, where a 32-bit off_t turns negative.
+///
+/// Opt-in with `dub test --d-version=TestLargeFile`: the file is a hole on
+/// ext4, FFS, and tmpfs, but not on FAT, and nobody running the suite on an
+/// embedded target wants two silent gigabytes written to their card. NTFS
+/// gives no hole either, so there the space check below always earns its
+/// keep, even though a Windows offset is 64-bit long before it gets here.
+version (TestLargeFile)
+unittest
+{
+    import std.file : exists, remove, tempDir;
+    import std.path : buildPath;
+    import std.stdio : stderr;
+
+    enum long BOUNDARY = 2L * 1024 * 1024 * 1024;
+
+    // Opting in still does not mean the room is there for a non-sparse copy
+    string dir = tempDir();
+    ulong avail;
+    try
+        avail = availableDiskSpace(dir);
+    catch (Exception ex)
+    {
+        stderr.writeln("os.file: skipping the 2 GiB test, ", dir, ": ", ex.msg);
+        return;
+    }
+
+    if (avail < BOUNDARY * 2)
+    {
+        stderr.writeln("os.file: skipping the 2 GiB test, ", dir, " is short on space");
+        return;
+    }
+
+    string path = buildPath(dir, "osfile_large.tmp");
+    if (exists(path)) remove(path);
+
+    OSFile file;
+    file.open(path, OFlags.readWrite);
+    scope(exit) { file.close(); remove(path); }
+
+    // Sparse where supported: only the page written below is ever allocated
+    file.resize(BOUNDARY + 16);
+    assert(file.size() == BOUNDARY + 16);
+
+    // 0x8000_0000 is where an int32 offset reads as negative
+    ubyte[4] patch = [ 0xde, 0xad, 0xbe, 0xef ];
+    assert(file.writeAt(BOUNDARY, patch) == patch.length);
+
+    ubyte[8] buffer;
+    assert(file.readAt(BOUNDARY - 2, buffer[0..6]) ==
+        [ 0, 0, 0xde, 0xad, 0xbe, 0xef ]);
+
+    // The hole before it reads as zeroes, not as a wrapped-around offset
+    assert(file.readAt(BOUNDARY - 8, buffer) == [ 0, 0, 0, 0, 0, 0, 0, 0 ]);
+
+    file.seek(Seek.start, BOUNDARY);
+    assert(file.tell() == BOUNDARY);
 }
 
 /// Positional I/O ignores the file position, and short reads at EOF
