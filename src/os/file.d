@@ -539,11 +539,12 @@ unittest
 
 /// Offsets at 2 GiB, where a 32-bit off_t turns negative.
 ///
-/// Opt-in with `dub test --d-version=TestLargeFile`: the file is a hole on
-/// ext4, FFS, and tmpfs, but not on FAT, and nobody running the suite on an
-/// embedded target wants two silent gigabytes written to their card. NTFS
-/// gives no hole either, so there the space check below always earns its
-/// keep, even though a Windows offset is 64-bit long before it gets here.
+/// Opt-in with `dub test --d-version=TestLargeFile` or `make test-large`:
+/// the file is a hole on ext4, FFS, and tmpfs, but not on FAT, and nobody
+/// running the suite on an embedded target wants two silent gigabytes written
+/// to their card. NTFS gives no hole either, so there the space check below
+/// always earns its keep, even though a Windows offset is 64-bit long before
+/// it gets here.
 version (TestLargeFile)
 unittest
 {

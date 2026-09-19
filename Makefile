@@ -72,6 +72,10 @@ test-color: $(TEST_SRCS_COLOR)
 	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestColor $(OFLAG)ddhx-test-library $(TEST_SRCS_COLOR)
 	./ddhx-test-library
 
+test-large: $(SRCS)
+	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestLargeFile $(OFLAG)ddhx-test-library $(SRCS)
+	./ddhx-test-library
+
 test-size: $(TEST_SRCS_SIZE)
 	$(DC) $(DEBUG_FLAGS) $(UNITTEST_FLAG) $(VERSION_FLAG)=TestSize $(OFLAG)ddhx-test-library $(TEST_SRCS_SIZE)
 	./ddhx-test-library
@@ -90,5 +94,5 @@ clean:
 
 .PHONY: all ddhx release debug debugv native \
 	debug-static release-static native-static \
-	benchmark test test-input test-color test-size \
+	benchmark test test-input test-color test-large test-size \
 	install uninstall clean
