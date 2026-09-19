@@ -8,6 +8,7 @@ module ddhx.editor;
 public import ddhx.editor.base : IDocumentEditor;
 import ddhx.editor.piecev2 : PieceV2DocumentEditor;
 import ddhx.editor.piecev3 : PieceV3DocumentEditor;
+import ddhx.editor.piecev4 : PieceV4DocumentEditor;
 
 import messages;
 
@@ -26,6 +27,8 @@ IDocumentEditor spawnEditor(string name = null)
         return new PieceV2DocumentEditor();
     case "piecev3", null: // NOTE: null chooses default backend
         return new PieceV3DocumentEditor();
+    case "piecev4":
+        return new PieceV4DocumentEditor();
     default:
         throw new Exception(text(MSG_BACKEND_DOES_NOT_EXIST, name));
     }

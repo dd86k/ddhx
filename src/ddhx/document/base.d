@@ -33,6 +33,7 @@ interface IDocument
     long size();
     /// Read at this position.
     /// Should this read past EOF, do not throw, only partially fill the buffer.
+    /// Must be reentrant: implementations serialize themselves if they need to.
     ubyte[] readAt(long pos, ubyte[] buf);
     /// Write at this position.
     /// If position is past EOF, throw.
