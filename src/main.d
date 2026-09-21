@@ -46,6 +46,17 @@ immutable string SECRET = q"SECRET
   \_/
 SECRET";
 
+// Opening the target fails before there is a session to report into, so
+// both it and the session itself end here rather than escaping main().
+void fatal(Exception ex)
+{
+    writeln(); // if cursor was at some weird place, start at newline
+    debug stderr.writeln("fatal: ", ex);
+    else  stderr.writeln("fatal: ", ex.msg);
+    log("%s", ex);
+    exit(2);
+}
+
 // print a line with spaces for field and value
 void printfield(string field, string line, int spacing = -12)
 {
@@ -372,7 +383,7 @@ void main(string[] args)
             if (notfound)
                 initmsg = MSG_NEWFILE;
             else // ie, permission denied
-                throw ex;
+                fatal(ex);
         }
         
         if (rc.writemode == WritingMode.readonly)
@@ -386,10 +397,6 @@ void main(string[] args)
     try start_session(session, initmsg, bookmarks_file, diff_file);
     catch (Exception ex)
     {
-        writeln(); // if cursor was at some weird place, start at newline
-        debug stderr.writeln("fatal: ", ex);
-        else  stderr.writeln("fatal: ", ex.msg);
-        log("%s", ex);
-        exit(2);
+        fatal(ex);
     }
 }
