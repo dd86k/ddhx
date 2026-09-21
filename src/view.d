@@ -1976,46 +1976,6 @@ unittest
     editor.close();
     fdoc.close();
 }
-// Test: editors without preservation support (piecev2) refuse in-place
-// saves with displaced pieces (before touching the file), and drop
-// history on dirty-only in-place saves.
-unittest
-{
-    import ddhx.editor : spawnEditor;
-    import std.exception : assertThrown;
-    import std.file : remove, read;
-
-    static immutable string path = "temp";
-    static immutable string data = "hello, world!";
-    {
-        scope FileDocument setup = new FileDocument(path, OFlags.readWrite);
-        setup.writeAt(0, cast(ubyte[]) data);
-        setup.flush();
-        setup.close();
-    }
-    scope(exit) remove(path);
-
-    scope FileDocument fdoc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
-    scope IDocumentEditor editor = spawnEditor("piecev2");
-    editor.open(fdoc);
-
-    // Dirty-only save works, but history is dropped by the reopen
-    static immutable string rep = "H";
-    editor.replace(0, rep.ptr, rep.length);
-    save_inplace(editor, path);
-    assert(editor.edited() == false);
-    assert(read(path) == "Hello, world!");
-    assert(editor.undo() < 0); // history gone
-
-    // Displaced pieces are refused, file left untouched
-    static immutable string ins = ">";
-    editor.insert(0, ins.ptr, ins.length);
-    assertThrown!Exception(save_inplace(editor, path));
-    assert(read(path) == "Hello, world!");
-
-    editor.close();
-    fdoc.close();
-}
 
 // True if the opened document cannot change size (e.g., disk, process memory)
 bool fixedsize(Session *session)
