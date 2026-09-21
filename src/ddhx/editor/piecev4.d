@@ -312,7 +312,12 @@ class PieceV4DocumentEditor : IDocumentEditor
     /// Params: threadsafe = If set, guards the editor with a reader-writer lock.
     this(bool threadsafe = false)
     {
-        addbuf.setup(syspagesize() * 16);
+        // NOTE: Granularity
+        //       On most systems, 4K * 16 = 64K
+        //       But on Arm with 64K pages, with *16, that's 1M
+        //       So leave at default, doesn't affect benchmarks much, and even makes
+        //       them a *little* worse in pure allocation situations
+        addbuf.setup(syspagesize());
         threadSafe(threadsafe);
     }
 
@@ -926,12 +931,15 @@ private:
         _coalesce.bufferStart = cast(const(ubyte)*)bufferStart;
     }
 
+    // WARNING: Assumes buffer is under 2 GiB
     ubyte[] viewImpl(long position, ubyte[] buffer)
     {
         if (table.length == 0 || buffer.length == 0)
             return [];
 
         log("VIEW Hi=%u Hc=%u", history_index, history.length);
+        
+        assertion(buffer.length <= int.max, "view buffer too large");
 
         size_t bi; /// buffer index (for slicing)
         for (size_t i = table.find(position); i < table.length; ++i)
