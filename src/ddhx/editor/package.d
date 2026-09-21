@@ -21,11 +21,11 @@ import messages;
 IDocumentEditor spawnEditor(string name = null)
 {
     import std.conv : text;
-    switch (name) {
-    case "piecev3", null: // NOTE: null chooses default backend
-        return new PieceV3DocumentEditor();
-    case "piecev4":
+    switch (name) { // NOTE: null chooses default backend
+    case "piecev4", null:
         return new PieceV4DocumentEditor();
+    case "piecev3":
+        return new PieceV3DocumentEditor();
     default:
         throw new Exception(text(MSG_BACKEND_DOES_NOT_EXIST, name));
     }
