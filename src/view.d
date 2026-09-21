@@ -4255,8 +4255,9 @@ void change_writemode(Session *session, Argument[] args)
 // Refresh screen
 void refresh(Session *session, Argument[] args)
 {
-    terminalClear();
-    update(session);
+    terminalClear();    // In case of a misrender
+    g_status |= UVIEW;  // Force read new data into view buffer
+    update(session);    // Update screen entirely
 }
 
 // Change active panel
