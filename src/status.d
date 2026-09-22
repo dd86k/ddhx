@@ -10,7 +10,7 @@
 module status;
 
 import std.format : sformat;
-import std.path : baseName;
+import os.path : displayName;
 
 import ddhx.formatting;
 import ddhx.transcoder : CharacterSet, charsetID;
@@ -155,7 +155,7 @@ private const(char)[] resolveSpecifier(Session, Selection)(const(char)[] fmt, re
         string target = session.target;
         if (target is null || target.length == 0)
             return "(new buffer)";
-        return baseName(target);
+        return displayName(target);
 
     case 'F': // target path
         string target = session.target;

@@ -342,7 +342,7 @@ void main(string[] args)
         initmsg = MSG_NEWBUF;
         break;
     default: // target is set, to either: file, disk (todo), or PID (todo)
-        import std.path : baseName;
+        import os.path : displayName;
         import ddhx.document.base : IDocument;
         import ddhx.document.file : OFlags;
 
@@ -352,7 +352,7 @@ void main(string[] args)
             editor.open(doc);
             session.ogdoc = doc;
             
-            initmsg = baseName(target);
+            initmsg = displayName(target);
         }
         catch (Exception ex)
         {

@@ -28,6 +28,51 @@ import std.path : buildPath;
 // NOTE: As of Windows Vista, the SHGetSpecialFolderPathW function is a wrapper
 //       for SHGetKnownFolderPath. The latter not defined in the shlobj module.
 
+/// Short name to show for a target path.
+///
+/// std.path.baseName reads `\\.\PhysicalDrive0` as a UNC root, share and all,
+/// and hands back a lone separator, so the device namespaces are taken off
+/// before asking it.
+/// Params: path = Target path.
+/// Returns: Name to display, or the path itself when it has no shorter form.
+string displayName(string path)
+{
+    import std.path : baseName;
+
+    version (Windows)
+    {
+        // \\.\ (devices) and \\?\ (unparsed paths, e.g. \\?\C:\dir\file)
+        if (path.length > 4 &&
+            path[0..2] == `\\` &&
+            (path[2] == '.' || path[2] == '?') &&
+            path[3] == '\\')
+            path = path[4..$];
+    }
+
+    string name = baseName(path);
+    return name.length ? name : path; // roots ("C:", "/") have no basename
+}
+
+/// Device paths keep their device name
+unittest
+{
+    version (Windows)
+    {
+        assert(displayName(`\\.\PhysicalDrive0`)      == "PhysicalDrive0");
+        assert(displayName(`\\?\PhysicalDrive0`)      == "PhysicalDrive0");
+        assert(displayName(`\\.\C:`)                  == `C:`);
+        assert(displayName(`\\?\C:\dir\file.bin`)     == "file.bin");
+        assert(displayName(`C:\dir\file.bin`)         == "file.bin");
+        assert(displayName(`\\server\share\file.bin`) == "file.bin");
+    }
+    else
+    {
+        assert(displayName("/dev/sda")      == "sda");
+        assert(displayName("/dir/file.bin") == "file.bin");
+        assert(displayName("file.bin")      == "file.bin");
+    }
+}
+
 /// Get the path to the current user's home folder.
 /// This does not verify if the path exists.
 /// Windows: Typically C:\\Users\\%USERNAME%

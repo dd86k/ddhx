@@ -4724,8 +4724,8 @@ void report(Session *session, Argument[] args)
 // Deprecated
 void report_name(Session *session, Argument[] args)
 {
-    import std.path : baseName;
-    message( session.target is null ? "(new buffer)" : baseName(session.target) );
+    import os.path : displayName;
+    message( session.target is null ? "(new buffer)" : displayName(session.target) );
 }
 
 // Report program version on screen
@@ -4748,8 +4748,8 @@ void show(Session *session, Argument[] args)
     string arg = args[0].text; // used by default error
     switch (arg) {
     case "name":
-        import std.path : baseName;
-        message( session.target is null ? "(new buffer)" : baseName(session.target) );
+        import os.path : displayName;
+        message( session.target is null ? "(new buffer)" : displayName(session.target) );
         break;
     case "path":
         message( session.target is null ? "(new buffer)" : session.target );
