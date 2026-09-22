@@ -409,6 +409,11 @@ class PieceV3DocumentEditor : IDocumentEditor
         // so read and store it only once
         const(void)*[long[2]] stashed;
         bool failed;
+        // Pieces are stashed whole, and a history piece can span the entire
+        // original file or disk: past this, give up and let the save drop
+        // history rather than run out of memory. Mirrors the view budget.
+        enum STASH_BUDGET = 64L * 1024 * 1024;
+        long stashsize;
 
         // Convert an endangered source piece to a buffer piece.
         // Returns: true when the piece was modified.
@@ -432,6 +437,11 @@ class PieceV3DocumentEditor : IDocumentEditor
             {
                 data = *existing;
             }
+            else if (stashsize + piece.size > STASH_BUDGET)
+            {
+                failed = true;
+                return false;
+            }
             else
             {
                 // Copy the endangered range out of the file. A short read
@@ -441,6 +451,7 @@ class PieceV3DocumentEditor : IDocumentEditor
                 basedoc.readAt(piece.position, copy);
                 data = copy.ptr;
                 stashed[key] = data;
+                stashsize += piece.size;
             }
 
             piece.source = Source.buffer;
@@ -2617,4 +2628,17 @@ unittest
     e.open(new MemoryDocument(cast(const(ubyte)[])"ABCDEFGH"));
     e.insert(0, two.ptr, two.length);
     assert(e.undo() >= 0);
+}
+
+/// A stash past the budget fails preparation instead of running out of
+/// memory, so the save drops history
+unittest
+{
+    log("TEST-0034");
+
+    MemoryDocument doc = new MemoryDocument(new ubyte[65 * 1024 * 1024]);
+    scope PieceV3DocumentEditor e = new PieceV3DocumentEditor().open(doc);
+    ubyte b = 0xff;
+    e.replace(0, &b, 1);
+    assert(e.prepareInplaceSave() == false);
 }
