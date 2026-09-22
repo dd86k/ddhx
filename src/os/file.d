@@ -14,6 +14,7 @@ version (Windows)
     import core.sys.windows.winnt;
     import core.sys.windows.winbase;
     import core.sys.windows.winerror : ERROR_HANDLE_EOF;
+    import core.sys.windows.winbase : GetFileType, FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE;
     import std.utf : toUTF16z;
     
     private alias OSHANDLE = HANDLE;
@@ -23,6 +24,18 @@ version (Windows)
     
     private enum OFLAG_OPENONLY = OPEN_EXISTING;
     private enum INVALID_OSHANDLE = INVALID_HANDLE_VALUE;
+
+    // NOTE: Declared here rather than imported from core.sys.windows.winioctl
+    //       That module has the request numbers but neither structure, so
+    //       importing it would still leave these to declare by hand.
+    private enum IOCTL_STORAGE_GET_DEVICE_NUMBER = 0x2D1080;
+    private enum IOCTL_DISK_GET_LENGTH_INFO      = 0x7405C;
+    private struct STORAGE_DEVICE_NUMBER
+    {
+        DWORD DeviceType;
+        DWORD DeviceNumber;
+        DWORD PartitionNumber;
+    }
 }
 else version (Posix)
 {
@@ -106,6 +119,57 @@ else version (Posix)
     else
         import core.sys.posix.unistd : lseek, ftruncate, pread, pwrite;
 
+    import core.sys.posix.sys.stat : S_IFMT, S_IFREG, S_IFBLK, S_IFCHR, S_IFIFO, S_IFSOCK, S_IFDIR;
+
+    version (linux)
+    {
+        // NOTE: Why statx(2) and not fstat(2)
+        //       struct statx is laid out by the kernel rather than by libc, so
+        //       it is identical across C runtimes, which is exactly what druntime's
+        //       stat_t is not (see size()). It also states a 64-bit size on 32-bit targets.
+        private struct statx_timestamp
+        {
+            long tv_sec;
+            uint tv_nsec;
+            int __reserved;
+        }
+        private struct statx_t
+        {
+            uint stx_mask;
+            uint stx_blksize;
+            ulong stx_attributes;
+            uint stx_nlink;
+            uint stx_uid;
+            uint stx_gid;
+            ushort stx_mode;
+            ushort[1] __spare0;
+            ulong stx_ino;
+            ulong stx_size;
+            ulong stx_blocks;
+            ulong stx_attributes_mask;
+            statx_timestamp stx_atime;
+            statx_timestamp stx_btime;
+            statx_timestamp stx_ctime;
+            statx_timestamp stx_mtime;
+            uint stx_rdev_major;
+            uint stx_rdev_minor;
+            uint stx_dev_major;
+            uint stx_dev_minor;
+            ulong stx_mnt_id;
+            uint stx_dio_mem_align;
+            uint stx_dio_offset_align;
+            ulong[12] __spare3;
+        }
+        static assert(statx_t.sizeof == 256, "struct statx must stay 256 bytes");
+        private extern (C) int statx(int, const(char)*, int, uint, statx_t*);
+        private enum AT_EMPTY_PATH = 0x1000; /// Ask about the descriptor itself
+        private enum STATX_TYPE = 0x1;
+    }
+    else
+    {
+        import core.sys.posix.sys.stat : fstat, stat_t;
+    }
+
     private alias OSHANDLE = int;
     private enum INVALID_OSHANDLE = -1;
 }
@@ -116,10 +180,22 @@ else
 
 import os.error : OSException;
 
-// TODO: FileType GetType(string)
-//       Pipe, device, etc.
-//       Win32: GetFileType
-//       POSIX: fstat(3)
+/// Kind of medium behind an open handle.
+///
+/// Semantic rather than a copy of the platform's type bits, because those
+/// disagree about the same hardware: a whole disk is a block device on Linux,
+/// a character device on the BSDs (/dev/ada0, /dev/rdisk0), and a
+/// \\.\PhysicalDrive path on Windows, yet all three want identical treatment.
+enum OSFileType
+{
+    unknown,    /// Undetermined; assume the least capable medium.
+    regular,    /// Regular file: the only type that may be resized or replaced.
+    disk,       /// Whole disk or partition: fixed extent, writable in place.
+    device,     /// Seekable device of unknown extent (/dev/zero, /dev/mem).
+    stream,     /// Terminal, pipe, or socket: not seekable.
+    pseudo,     /// procfs/sysfs-style file: readable, states no extent.
+    directory,  /// Directory: opens on POSIX, never readable.
+}
 
 /// File seek origin.
 enum Seek
@@ -143,8 +219,9 @@ enum OFlags
 struct OSFile
 {
     private OSHANDLE handle = INVALID_OSHANDLE;
+    private OSFileType filetype; // OSFileType.unknown until open() probes it
 
-    /// Open new or existing file.
+    /// Open new or existing file or directory.
     /// Params:
     ///     path = File path.
     ///     flags = OFlags.
@@ -193,6 +270,14 @@ struct OSFile
                 oflags |= O_WRONLY;
             else if (flags & OFlags.read)
                 oflags |= O_RDONLY;
+            // NOTE: O_NONBLOCK and O_NOCTTY
+            //       O_NONBLOCK: A FIFO with no writer blocks open(2) indefinitely,
+            //       and a terminal or modem waits on carrier, both before the editor
+            //       has drawn anything or can be quit.
+            //       O_NOCTTY: Keeps a /dev/tty* target from becoming this process'
+            //       controlling terminal, which would be a problem for a TUI.
+            //       Neither flag affects a regular file.
+            oflags |= O_NONBLOCK | O_NOCTTY;
             // NOTE: GVFS does not like being given octal perms on open, even with O_RDONLY
             //       And since it doesn't allow O_RDWR anyway, only give those on file creation
             //       If neither O_CREAT nor O_TMPFILE is specified in flags, then mode is ignored
@@ -203,6 +288,131 @@ struct OSFile
                 .open(path.toStringz, oflags, octal!644); // rw-r--r--
             if (handle < 0)
                 throw new OSException("open");
+
+            // Only the open(2) had to be non-blocking: left set, reads on a
+            // character device return EAGAIN instead of waiting for data.
+            int fl = fcntl(handle, F_GETFL, 0);
+            if (fl >= 0)
+                fcntl(handle, F_SETFL, fl & ~O_NONBLOCK);
+        }
+
+        filetype = probeType();
+    }
+
+    /// Medium type behind this handle.
+    /// Returns: File type.
+    OSFileType type() { return filetype; }
+
+    // Probed once rather than on demand: Can't change while it's opened anyway
+    private OSFileType probeType()
+    {
+        version (Windows)
+        {
+            // FILE_TYPE_REMOTE is unused.
+            switch (GetFileType(handle)) {
+            case FILE_TYPE_CHAR, FILE_TYPE_PIPE: // console, serial, or pipe
+                return OSFileType.stream;
+            case FILE_TYPE_DISK: // file or disk
+                break;
+            default:
+                return OSFileType.unknown;
+            }
+
+            // Volumes and physical drives are FILE_TYPE_DISK as well, and
+            // cannot be told apart by asking for a size: GetFileSizeEx
+            // answers for a volume too. Only the storage stack knows, and
+            // this request is the one it answers for a device and fails for
+            // a file, at FILE_ANY_ACCESS so a read-only handle suffices.
+            STORAGE_DEVICE_NUMBER num = void;
+            DWORD returned = void;
+            if (DeviceIoControl(handle, IOCTL_STORAGE_GET_DEVICE_NUMBER, null, 0, &num, num.sizeof, &returned, null))
+                return OSFileType.disk;
+            return OSFileType.regular;
+        }
+        else version (Posix)
+        {
+            // Seekability tells a terminal apart from the character devices
+            // that behave like files, and having an extent tells a BSD raw
+            // disk apart from /dev/zero. Both come from lseek, which every
+            // medium answers one way or another.
+            bool seekable = lseek(handle, 0, SEEK_CUR) >= 0;
+            long extent = seekable ? seekEnd() : -1;
+
+            uint fmt = attributes() & S_IFMT; // stx_mode/st_mode
+            // No attributes: either Linux pre-4.11 or seccomp filter, or fstat refused
+            if (fmt == 0)
+            {
+                // Without a type, lseek is all there is. Answering "regular"
+                // for anything with an extent keeps pre-statx systems behaving
+                // as they did before this probe existed, rather than degrading
+                // every ordinary file to the conservative capability set.
+                if (seekable == false)  return OSFileType.stream;
+                if (extent < 0)         return OSFileType.pseudo;
+                return OSFileType.regular;
+            }
+
+            switch (fmt) {
+            case S_IFREG:
+                // A procfs or sysfs file is a regular file that cannot be
+                // measured, so it has to be read as a stream of unknown length
+                return extent < 0 ? OSFileType.pseudo : OSFileType.regular;
+            case S_IFBLK:
+                return OSFileType.disk;
+            case S_IFCHR:
+                if (seekable == false)
+                    return OSFileType.stream; // terminals
+                // The BSDs expose whole disks as character devices, and those
+                // are the ones that can state an extent
+                return extent > 0 ? OSFileType.disk : OSFileType.device;
+            case S_IFIFO, S_IFSOCK:
+                return OSFileType.stream;
+            case S_IFDIR:
+                return OSFileType.directory;
+            default:
+                return OSFileType.unknown;
+            }
+        }
+        else static assert(0, "Implement OSFile.probeType");
+    }
+
+    version (Posix)
+    {
+        // Raw attribute bits for this handle
+        // Linux: statx + statx.stx_mode
+        // POSIX: fstat + stat_t.st_mode
+        // Windows: GetFileInformationByHandle + BY_HANDLE_FILE_INFORMATION.dwFileAttributes
+        private uint attributes()
+        {
+            version (linux)
+            {
+                statx_t st = void;
+                // Only Linux 6.11 and later takes NULL lol...
+                if (statx(handle, "".ptr, AT_EMPTY_PATH, STATX_TYPE, &st) < 0)
+                    return 0;
+                return st.stx_mode;
+            }
+            else
+            {
+                stat_t st = void;
+                if (fstat(handle, &st) < 0)
+                    return 0;
+                return st.st_mode;
+            }
+        }
+
+        // End offset according to lseek, with the position left untouched.
+        // Negative when the handle has no end to give (terminals, procfs).
+        private long seekEnd()
+        {
+            long current = lseek(handle, 0, SEEK_CUR);
+            if (current < 0) // ESPIPE for pipes, sockets and terminals
+                return -1;
+            long end = lseek(handle, 0, SEEK_END);
+            if (end < 0) // EINVAL for procfs and sysfs
+                return -1;
+            if (lseek(handle, current, SEEK_SET) < 0)
+                return -1;
+            return end;
         }
     }
     
@@ -253,9 +463,21 @@ struct OSFile
         version (Windows)
         {
             LARGE_INTEGER li = void;
-            if (GetFileSizeEx(handle, &li) == FALSE)
-                throw new OSException("GetFileSizeEx");
-            return li.QuadPart;
+            if (GetFileSizeEx(handle, &li))
+                return li.QuadPart;
+
+            // A volume answers GetFileSizeEx, but a raw \\.\PhysicalDrive
+            // path need not, and then only the disk driver can measure it.
+            if (filetype == OSFileType.disk)
+            {
+                LARGE_INTEGER length = void;
+                DWORD returned = void;
+                if (DeviceIoControl(handle, IOCTL_DISK_GET_LENGTH_INFO,
+                    null, 0, &length, length.sizeof, &returned, null))
+                    return length.QuadPart;
+            }
+
+            throw new OSException("GetFileSizeEx");
         }
         else version (Posix)
         {
@@ -263,29 +485,31 @@ struct OSFile
             //       druntime has no Musl or Bionic stat_t: both land on
             //       glibc's 32-bit layout, which neither of them matches, so
             //       on 32-bit targets every field is read from the wrong
-            //       offset. st_size is the one that bites (an off_t both
-            //       runtimes truncate past 2 GiB), but st_mode is in the same
-            //       struct, so the file type it reports is no better. The
-            //       kernel answers both questions through lseek anyway.
-            long current = lseek(handle, 0, SEEK_CUR);
-            if (current < 0) // ESPIPE for pipes, sockets and terminals
-                throw new OSException("lseek");
-
-            long end = lseek(handle, 0, SEEK_END);
-            if (end < 0)
-                throw new OSException("lseek");
-            if (lseek(handle, current, SEEK_SET) < 0)
-                throw new OSException("lseek");
-
+            //       offset, st_size (an off_t both runtimes truncate past
+            //       2 GiB) included. lseek answers this without a struct;
+            //       where the file type is needed too, typeBits() goes
+            //       through statx on Linux for the same reason.
+            long end = seekEnd();
             if (end > 0)
                 return end;
 
-            // A zero is either an empty file or a device the kernel only
-            // measures through an ioctl, which an empty file refuses
-            long blocks = void;
-            if (ioctl(handle, BLOCKSIZE, &blocks) < 0)
-                return 0;
-            return blocks;
+            // Linux block devices measure through an ioctl when lseek will
+            // not. Gated on the type so the request number, which only means
+            // anything on Linux, is never handed to another platform's driver.
+            version (linux)
+            if (filetype == OSFileType.disk)
+            {
+                long bytes = void;
+                if (ioctl(handle, BLOCKSIZE, &bytes) >= 0)
+                    return bytes;
+            }
+
+            // A procfs or sysfs file refuses to seek to an end, which is how
+            // it got classified in the first place: that is the medium
+            // answering, not an error, and it still reads fine.
+            if (end < 0 && filetype != OSFileType.pseudo)
+                throw new OSException("lseek");
+            return 0;
         }
         else static assert(0, "Implement OSFile.size");
     }
@@ -495,6 +719,7 @@ struct OSFile
             {
                 CloseHandle(handle);
                 handle = INVALID_HANDLE_VALUE;
+                filetype = OSFileType.unknown;
             }
         }
         else version (Posix)
@@ -504,6 +729,7 @@ struct OSFile
             {
                 .close(handle);
                 handle = -1;
+                filetype = OSFileType.unknown;
             }
         }
     }
@@ -535,6 +761,84 @@ unittest
     assert(file.size() == 5000);
     file.resize(0);
     assert(file.size() == 0); // empty, not a device: the ioctl must not throw
+}
+
+/// Media classification
+unittest
+{
+    import std.file : exists, remove, tempDir, write;
+    import std.path : buildPath;
+
+    string path = buildPath(tempDir(), "osfile_type.tmp");
+    write(path, new ubyte[32]);
+
+    OSFile file;
+    file.open(path, OFlags.read | OFlags.exists);
+    assert(file.type() == OSFileType.regular);
+
+    // An empty file must not be mistaken for a device that measures zero
+    file.close();
+    assert(file.type() == OSFileType.unknown); // closed handles claim nothing
+    write(path, cast(ubyte[])null);
+    file.open(path, OFlags.read | OFlags.exists);
+    assert(file.type() == OSFileType.regular);
+    assert(file.size() == 0);
+    file.close();
+    remove(path);
+
+version (Posix)
+{
+    // Directories open on POSIX, and read as EISDIR if anything tries
+    file.open(tempDir(), OFlags.read | OFlags.exists);
+    assert(file.type() == OSFileType.directory);
+    file.close();
+}
+
+version (linux)
+{
+    // Seekable character device: readable at any offset, no extent to state
+    if (exists("/dev/zero"))
+    {
+        file.open("/dev/zero", OFlags.read | OFlags.exists);
+        assert(file.type() == OSFileType.device);
+        assert(file.size() == 0);
+
+        // The point of the distinction: it reads despite measuring zero
+        ubyte[8] buffer;
+        assert(file.readAt(1 << 20, buffer).length == buffer.length);
+        file.close();
+    }
+
+    // procfs: a regular file by its mode, but it cannot seek to an end
+    if (exists("/proc/self/maps"))
+    {
+        file.open("/proc/self/maps", OFlags.read | OFlags.exists);
+        assert(file.type() == OSFileType.pseudo);
+        file.close();
+    }
+}
+}
+
+/// A FIFO neither blocks open() nor passes for a file
+version (Posix)
+unittest
+{
+    import core.sys.posix.sys.stat : mkfifo;
+    import std.file : remove, tempDir;
+    import std.path : buildPath;
+    import std.string : toStringz;
+
+    string path = buildPath(tempDir(), "osfile_fifo");
+    if (mkfifo(path.toStringz, 0x1B6) != 0) // 0666
+        return; // no permission to make one here, nothing to test
+
+    // Without O_NONBLOCK on the open, this call never returns: a reader
+    // waits for a writer that no one is going to provide
+    OSFile file;
+    file.open(path, OFlags.read | OFlags.exists);
+    scope(exit) { file.close(); remove(path); }
+
+    assert(file.type() == OSFileType.stream);
 }
 
 /// Offsets at 2 GiB, where a 32-bit off_t turns negative.
