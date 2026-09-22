@@ -7,7 +7,7 @@ module ddhx.document.file;
 
 import ddhx.document.base;
 import os.file;
-public import os.file : OFlags;
+public import os.file : OFlags, OSFileType;
 
 version (Windows) import core.sync.mutex : Mutex;
 
@@ -26,6 +26,17 @@ class FileDocument : IDocument
     this(string path, OFlags flags) // non-optional due to previous ctor
     {
         file.open(path, flags);
+
+        // Reject here rather than letting the first size() fail: by then the
+        // error is an errno with no mention of which target caused it.
+        OSFileType type = file.type();
+        if (type == OSFileType.stream || type == OSFileType.directory)
+        {
+            file.close();
+            import std.conv : text;
+            throw new Exception(text(path, ": cannot edit a ", type));
+        }
+
         oflags = flags;
         version (Windows) reads = new Mutex();
     }
@@ -38,8 +49,30 @@ class FileDocument : IDocument
     /// Returns: Capability flags (DocCaps).
     int caps()
     {
-        return DocCaps.read | DocCaps.write | DocCaps.resize | DocCaps.stable | DocCaps.replace;
+        enum BASE = DocCaps.read | DocCaps.write;
+        final switch (file.type()) {
+        case OSFileType.regular:
+            return BASE | DocCaps.resize | DocCaps.stable | DocCaps.replace;
+        case OSFileType.disk:
+            // Fixed extent, and a full save would rename a temporary file
+            // over the device node, destroying it. In-place writes only.
+            return BASE | DocCaps.stable;
+        case OSFileType.device, OSFileType.pseudo:
+            // Ditto, minus stability: /dev/urandom and procfs files read
+            // differently every time, so undo history cannot be trusted.
+            return BASE;
+        case OSFileType.unknown:
+            // Only reached when the platform would not state a type at all,
+            // so claim nothing beyond reading and writing in place.
+            return BASE;
+        case OSFileType.stream, OSFileType.directory:
+            return 0; // rejected by the constructor
+        }
     }
+
+    /// Medium behind this document.
+    /// Returns: File type.
+    OSFileType type() { return file.type(); }
 
     /// Size of document in bytes.
     /// Returns: Size in bytes.
