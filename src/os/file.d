@@ -9,6 +9,10 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module os.file;
 
+// Platforms whose raw disks refuse transfers not aligned to a sector
+version (Windows) version = DiskSectors;
+else version (FreeBSD) version = DiskSectors;
+
 version (Windows)
 {
     import core.sys.windows.winnt;
@@ -113,7 +117,14 @@ else version (Posix)
     private enum _IOR(int type,int nr,size_t size) = cast(IOCTL_TYPE)_IOC!(_IOC_READ,type,nr,size);
     private enum BLKGETSIZE64 = cast(IOCTL_TYPE)_IOR!(0x12,114,size_t.sizeof);
     private alias BLOCKSIZE = BLKGETSIZE64;
-    
+
+    version (FreeBSD)
+    {
+        // sys/disk.h: _IOR('d', 128, u_int) and _IOR('d', 129, off_t)
+        private enum DIOCGSECTORSIZE = cast(IOCTL_TYPE)0x4004_6480;
+        private enum DIOCGMEDIASIZE  = cast(IOCTL_TYPE)0x4008_6481;
+    }
+
     // NOTE: Every call taking a file offset
     //       Two runtimes hand us a 32-bit off_t on 32-bit targets, which
     //       caps files at 2 GiB (and makes druntime's declarations outright
@@ -207,7 +218,7 @@ else
 
 import os.error : OSException;
 
-version (Windows)
+version (DiskSectors)
 {
     // Last stretch of a disk this thread read. Thread-local so readAt needs no
     // lock, which leaves invalidation to a shared epoch: any disk write or
@@ -218,7 +229,7 @@ version (Windows)
         ubyte  *data;       // raw aligned to the sector size
         size_t capacity;
         size_t alignment;
-        HANDLE handle;
+        OSHANDLE handle;
         uint   epoch;
         long   start;
         size_t length;
@@ -235,6 +246,15 @@ version (Windows)
     // Every disk read is uncached I/O, and under a hypervisor a VM exit too,
     // while the editor rereads the same screen on every redraw.
     private enum DISK_WINDOW = 64 * 1024;
+}
+
+// Error a whole-sector read reports when the medium hands over less.
+version (Windows)
+    private enum ERROR_SHORT_READ = ERROR_HANDLE_EOF;
+else version (Posix)
+{
+    import core.stdc.errno : EIO;
+    private enum ERROR_SHORT_READ = EIO;
 }
 
 /// Kind of medium behind an open handle.
@@ -282,7 +302,7 @@ struct OSFile
 {
     private OSHANDLE handle = INVALID_OSHANDLE;
     private OSFileType filetype; // OSFileType.unknown until open() probes it
-    version (Windows)
+    version (DiskSectors)
     {
         private uint sectorsize; // 0 unless the medium demands aligned transfers
         private long disklen;    // 0 unless a disk driver measured this handle
@@ -364,7 +384,7 @@ struct OSFile
         }
 
         filetype = probeType();
-        version (Windows)
+        version (DiskSectors)
         if (filetype == OSFileType.disk)
         {
             sectorsize = probeSectorSize();
@@ -490,6 +510,26 @@ struct OSFile
             return 0;
         }
     }
+    else version (FreeBSD)
+    {
+        // GEOM passes raw disk I/O through uncached, so pread and pwrite
+        // answer EINVAL when the offset or the length is off a sector.
+        private uint probeSectorSize()
+        {
+            uint size;
+            if (ioctl(handle, DIOCGSECTORSIZE, &size) == 0 && pow2(size))
+                return size;
+            return 512;
+        }
+
+        private long probeDiskLength()
+        {
+            long length; // off_t is 64-bit on every FreeBSD target
+            if (ioctl(handle, DIOCGMEDIASIZE, &length) == 0)
+                return length;
+            return 0;
+        }
+    }
 
     version (Posix)
     {
@@ -576,14 +616,15 @@ struct OSFile
     /// Throws: OSException.
     long size()
     {
+        // A volume answers GetFileSizeEx, but a raw \\.\PhysicalDrive
+        // path need not, and then only the disk driver can measure it
+        // (asked once, at open).
+        version (DiskSectors)
+        if (disklen > 0)
+            return disklen;
+
         version (Windows)
         {
-            // A volume answers GetFileSizeEx, but a raw \\.\PhysicalDrive
-            // path need not, and then only the disk driver can measure it
-            // (asked once, at open).
-            if (disklen > 0)
-                return disklen;
-
             LARGE_INTEGER li = void;
             if (GetFileSizeEx(handle, &li))
                 return li.QuadPart;
@@ -679,12 +720,18 @@ struct OSFile
     /// Throws: OSException.
     ubyte[] readAt(long position, void *buffer, size_t size)
     {
+        version (DiskSectors)
+        if (sectorsize != 0 && ((position | size | cast(size_t)buffer) & (sectorsize - 1)) != 0)
+            return readAtSector(position, buffer, size);
+
+        return (cast(ubyte*)buffer)[0 .. readDirect(position, buffer, size)];
+    }
+
+    // One transfer as given, 0 where there is nothing left to read.
+    private size_t readDirect(long position, void *buffer, size_t size)
+    {
         version (Windows)
         {
-            // Sector-aligned requirement
-            if (sectorsize != 0 && ((position | size | cast(size_t)buffer) & (sectorsize - 1)) != 0)
-                return readAtSector(position, buffer, size);
-
             // NOTE: OVERLAPPED on a synchronous handle
             //       Without FILE_FLAG_OVERLAPPED, ReadFile still completes
             //       before returning, and reads from the given offset instead
@@ -700,24 +747,52 @@ struct OSFile
             uint len = cast(uint)size;
             if (ReadFile(handle, buffer, len, &len, &overlap) == FALSE)
             {
-                // Reading past EOF fills nothing, like a short read
-                if (GetLastError() == ERROR_HANDLE_EOF)
-                    return (cast(ubyte*)buffer)[0..0];
-                throw new OSException("ReadFile");
+                // Reading past EOF fills nothing, like a short read. Where
+                // a file says ERROR_HANDLE_EOF, the last sector of a disk
+                // answers ERROR_SECTOR_NOT_FOUND.
+                switch (GetLastError()) {
+                case ERROR_HANDLE_EOF, ERROR_SECTOR_NOT_FOUND:
+                    return 0;
+                default:
+                    throw new OSException("ReadFile");
+                }
             }
-            return (cast(ubyte*)buffer)[0..len];
+            return len;
         }
         else version (Posix)
         {
             ssize_t len = pread(handle, buffer, size, position);
             if (len < 0)
                 throw new OSException("pread");
-            return (cast(ubyte*)buffer)[0..len];
+            return len;
         }
-        else static assert(0, "Implement OSFile.readAt");
+        else static assert(0, "Implement OSFile.readDirect");
     }
 
-    version (Windows)
+    private size_t writeDirect(long position, const(void) *data, size_t size)
+    {
+        version (Windows)
+        {
+            OVERLAPPED overlap; // .init
+            overlap.Offset     = cast(uint)position;
+            overlap.OffsetHigh = cast(uint)(position >>> 32);
+
+            uint len = cast(uint)size;
+            if (WriteFile(handle, data, len, &len, &overlap) == FALSE)
+                throw new OSException("WriteFile");
+            return len;
+        }
+        else version (Posix)
+        {
+            ssize_t len = pwrite(handle, data, size, position);
+            if (len < 0)
+                throw new OSException("pwrite");
+            return len;
+        }
+        else static assert(0, "Implement OSFile.writeDirect");
+    }
+
+    version (DiskSectors)
     {
         // Serve a read a disk handle would refuse for alignment out of this
         // thread's window, refilling it as the range walks out. Nothing above
@@ -778,21 +853,9 @@ struct OSFile
                         total = cast(size_t)left;
                 }
 
-                uint len = cast(uint)total;
-                OVERLAPPED overlap; // .init
-                overlap.Offset     = cast(uint)start;
-                overlap.OffsetHigh = cast(uint)(start >>> 32);
-                if (ReadFile(handle, diskwin.data, len, &len, &overlap) == FALSE)
-                {
-                    // Where a file says ERROR_HANDLE_EOF, the last sector of
-                    // a disk answers ERROR_SECTOR_NOT_FOUND
-                    switch (GetLastError()) {
-                    case ERROR_HANDLE_EOF, ERROR_SECTOR_NOT_FOUND:
-                        continue;
-                    default:
-                        throw new OSException("ReadFile");
-                    }
-                }
+                size_t len = readDirect(start, diskwin.data, total);
+                if (len == 0)
+                    continue;
                 if (start + len <= at)
                     return false;
 
@@ -803,18 +866,6 @@ struct OSFile
                 return true;
             }
             return false;
-        }
-
-        private size_t writeAtDirect(long position, const(void) *data, size_t size)
-        {
-            OVERLAPPED overlap; // .init
-            overlap.Offset     = cast(uint)position;
-            overlap.OffsetHigh = cast(uint)(position >>> 32);
-
-            uint len = cast(uint)size;
-            if (WriteFile(handle, data, len, &len, &overlap) == FALSE)
-                throw new OSException("WriteFile");
-            return len;
         }
 
         // Size this thread's window buffer for the sector size, returning its span.
@@ -870,12 +921,7 @@ struct OSFile
                     readSector(start + total - sectorsize, diskwin.data + total - sectorsize);
                 memcpy(diskwin.data + delta, src + done, count);
 
-                uint len = cast(uint)total;
-                OVERLAPPED overlap; // .init
-                overlap.Offset     = cast(uint)start;
-                overlap.OffsetHigh = cast(uint)(start >>> 32);
-                if (WriteFile(handle, diskwin.data, len, &len, &overlap) == FALSE)
-                    throw new OSException("WriteFile");
+                size_t len = writeDirect(start, diskwin.data, total);
                 if (len < total) // only whatever landed past delta counts
                 {
                     if (len > delta)
@@ -890,14 +936,8 @@ struct OSFile
         // One whole sector, or an exception: a write must not merge garbage.
         private void readSector(long start, ubyte *into)
         {
-            uint len = sectorsize;
-            OVERLAPPED overlap; // .init
-            overlap.Offset     = cast(uint)start;
-            overlap.OffsetHigh = cast(uint)(start >>> 32);
-            if (ReadFile(handle, into, len, &len, &overlap) == FALSE)
-                throw new OSException("ReadFile");
-            if (len < sectorsize)
-                throw new OSException("ReadFile", ERROR_HANDLE_EOF);
+            if (readDirect(start, into, sectorsize) < sectorsize)
+                throw new OSException("readSector", ERROR_SHORT_READ);
         }
     }
 
@@ -922,11 +962,9 @@ struct OSFile
     /// Throws: OSException.
     size_t writeAt(long position, inout(ubyte) *data, size_t size)
     {
-        version (Windows)
+        version (DiskSectors)
+        if (sectorsize != 0)
         {
-            if (sectorsize == 0)
-                return writeAtDirect(position, data, size);
-
             // Bumped even when the write throws halfway: some sectors may have landed
             scope(exit)
             {
@@ -935,16 +973,10 @@ struct OSFile
             }
             if (((position | size | cast(size_t)data) & (sectorsize - 1)) != 0)
                 return writeAtSector(position, data, size);
-            return writeAtDirect(position, data, size);
+            return writeDirect(position, data, size);
         }
-        else version (Posix)
-        {
-            ssize_t len = pwrite(handle, data, size, position);
-            if (len < 0)
-                throw new OSException("pwrite");
-            return len;
-        }
-        else static assert(0, "Implement OSFile.writeAt");
+
+        return writeDirect(position, data, size);
     }
 
     /// Write file at current position.
@@ -1016,21 +1048,23 @@ struct OSFile
     /// Close file.
     void close()
     {
+        version (DiskSectors)
+        if (sectorsize != 0)
+        {
+            import core.atomic : atomicOp;
+            // The handle value may be reused by the next open
+            atomicOp!"+="(diskepoch, 1);
+            sectorsize = 0;
+            disklen = 0;
+        }
+
         version (Windows)
         {
             if (handle != INVALID_HANDLE_VALUE)
             {
-                // The handle value may be reused by the next open
-                if (sectorsize != 0)
-                {
-                    import core.atomic : atomicOp;
-                    atomicOp!"+="(diskepoch, 1);
-                }
                 CloseHandle(handle);
                 handle = INVALID_HANDLE_VALUE;
                 filetype = OSFileType.unknown;
-                sectorsize = 0;
-                disklen = 0;
             }
         }
         else version (Posix)
@@ -1250,7 +1284,7 @@ unittest
 ///
 /// A regular file standing in for a disk: it takes any alignment, so this
 /// checks the arithmetic, not that a real disk accepts the result.
-version (Windows)
+version (DiskSectors)
 unittest
 {
     import std.file : remove, tempDir, write;
