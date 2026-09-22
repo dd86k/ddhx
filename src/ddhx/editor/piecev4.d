@@ -273,6 +273,94 @@ struct Operation
 ///
 /// Documents may read short when a piece claims more data than its source
 /// holds (e.g., the file shrank); memory sources always fill the request.
+/// Source bytes as they were before in-place saves wrote over them.
+///
+/// Sparse: holds only the ranges saves overwrote and reads through to the
+/// source for the rest, which those saves left untouched. A history piece
+/// commonly spans the whole original file (or disk), and copying it whole
+/// would cost its full size instead of the bytes that actually changed.
+private
+final class StashDocument : IDocument
+{
+    this(IDocument base) { this.base = base; }
+
+    /// Copy [start, end) out of the source, keeping bytes already held,
+    /// which date from an earlier save. Must run before the write.
+    void capture(long start, long end)
+    {
+        import std.array : insertInPlace;
+
+        size_t i;
+        while (i < starts.length && starts[i] + chunks[i].length <= start)
+            i++;
+        long at = start;
+        while (at < end)
+        {
+            if (i < starts.length && starts[i] <= at)
+            {
+                at = starts[i] + chunks[i].length;
+                i++;
+                continue;
+            }
+            long stop = i < starts.length ? min(end, starts[i]) : end;
+            // A short read (file shrank externally) leaves the tail zeroed,
+            // which view() would have truncated anyway
+            ubyte[] copy = new ubyte[cast(size_t)(stop - at)];
+            base.readAt(at, copy);
+            insertInPlace(starts, i, at);
+            insertInPlace(chunks, i, copy);
+            i++;
+            at = stop;
+        }
+    }
+
+    int caps() { return DocCaps.read | DocCaps.stable; }
+
+    long size()
+    {
+        long end = base.size();
+        if (starts.length)
+            end = max(end, starts[$ - 1] + cast(long)chunks[$ - 1].length);
+        return end;
+    }
+
+    ubyte[] readAt(long position, ubyte[] buffer)
+    {
+        size_t i, got;
+        while (got < buffer.length)
+        {
+            long at = position + got;
+            while (i < starts.length && starts[i] + chunks[i].length <= at)
+                i++;
+            if (i < starts.length && starts[i] <= at)
+            {
+                size_t offset = cast(size_t)(at - starts[i]);
+                size_t count  = min(chunks[i].length - offset, buffer.length - got);
+                buffer[got .. got + count] = chunks[i][offset .. offset + count];
+                got += count;
+                continue;
+            }
+            size_t count = buffer.length - got;
+            if (i < starts.length)
+                count = cast(size_t)min(count, starts[i] - at);
+            size_t read = base.readAt(at, buffer[got .. got + count]).length;
+            got += read;
+            if (read < count)
+                break;
+        }
+        return buffer[0 .. got];
+    }
+
+    void writeAt(long, ubyte[]) { throw new Exception("stash is read-only"); }
+    void flush() {}
+    void close() {}
+
+private:
+    IDocument base;
+    long[] starts;      // sorted, disjoint
+    ubyte[][] chunks;
+}
+
 private
 size_t materialize(IDocument basedoc, ref Piece piece, long offset, ubyte[] dest)
 {
@@ -408,6 +496,7 @@ class PieceV4DocumentEditor : IDocumentEditor
         invalidateCoalesce();
         long docsize = doc.size();
         basedoc = doc;
+        stash = null;
 
         // Derive editing policy from the document's capabilities
         int dcaps = doc.caps();
@@ -445,6 +534,7 @@ class PieceV4DocumentEditor : IDocumentEditor
 
         invalidateCoalesce();
         basedoc = null;
+        stash = null;
 
         // reset internals
         table.clear();
@@ -473,9 +563,9 @@ class PieceV4DocumentEditor : IDocumentEditor
     /// Prepare the editor for an in-place save of its source document.
     ///
     /// Converts every source reference, current or in undo/redo history,
-    /// whose read range the save would overwrite (or truncate away) into
-    /// an in-memory buffer reference. Once done, the save cannot
-    /// invalidate anything the editor still points at: remaining source
+    /// whose read range the save would overwrite (or truncate away) into a
+    /// stash reference, which copies only the overwritten bytes. Once done,
+    /// the save cannot invalidate anything the editor still points at: remaining source
     /// references only read file ranges the save leaves untouched, so
     /// pieces can be written in any order and history stays usable.
     /// Returns: true when references were preserved; false on failure.
@@ -509,62 +599,51 @@ class PieceV4DocumentEditor : IDocumentEditor
                 merged ~= range;
         }
 
-        // True if [start, end) intersects any written range.
-        // Ranges are disjoint and sorted, so only the last range starting
-        // before end can overlap.
-        bool endangered(long start, long end)
+        if (stash is null)
+            stash = new StashDocument(basedoc);
+        bool failed;
+
+        // Stash whatever this save overwrites under a piece reading the
+        // source, directly or through the stash, and point it at the stash.
+        void retarget(ref Piece piece)
         {
+            bool direct = piece.source == Source.source;
+            if (direct == false && (piece.source != Source.document || piece.doc !is stash))
+                return;
+
+            long start = piece.position;
+            long end   = start + piece.size;
+            bool endangered;
+            // Ranges are disjoint and sorted: skip those ending before the piece
             size_t lo, hi = merged.length;
             while (lo < hi)
             {
                 size_t mid = (lo + hi) / 2;
-                if (merged[mid][0] < end)
+                if (merged[mid][1] <= start)
                     lo = mid + 1;
                 else
                     hi = mid;
             }
-            return lo > 0 && merged[lo - 1][1] > start;
-        }
-
-        // Stashed copies keyed by (position, size): the same range is
-        // typically referenced by both a tree piece and its history copy,
-        // so read and store it only once
-        const(void)*[long[2]] stashed;
-        bool failed;
-
-        // Convert an endangered source piece to a buffer piece.
-        void retarget(ref Piece piece)
-        {
-            if (piece.source != Source.source)
-                return;
-            if (endangered(piece.position, piece.position + piece.size) == false)
-                return;
-
-            // Cannot address this much memory (32-bit platforms)
-            if (cast(ulong)piece.size > size_t.max)
+            for (; lo < merged.length && merged[lo][0] < end; lo++)
             {
-                failed = true;
-                return;
+                long from = max(start, merged[lo][0]);
+                long to   = min(end, merged[lo][1]);
+                // Cannot address this much memory (32-bit platforms)
+                if (cast(ulong)(to - from) > size_t.max)
+                {
+                    failed = true;
+                    return;
+                }
+                stash.capture(from, to);
+                endangered = true;
             }
 
-            long[2] key = [ piece.position, piece.size ];
-            const(void)* data;
-            if (const(void)** existing = key in stashed)
+            if (direct && endangered)
             {
-                data = *existing;
+                Piece moved = Piece.makefile(piece.size, stash);
+                moved.position = piece.position;
+                piece = moved;
             }
-            else
-            {
-                // Copy the endangered range out of the file. A short read
-                // (file shrank externally) leaves the tail zeroed, which
-                // view() would have truncated anyway.
-                ubyte[] copy; copy.length = cast(size_t)piece.size;
-                basedoc.readAt(piece.position, copy);
-                data = copy.ptr;
-                stashed[key] = data;
-            }
-
-            piece = Piece.makebuffer(data, piece.size);
         }
 
         foreach (i; 0 .. table.length)
@@ -860,6 +939,10 @@ private:
     ///
     /// Nullable.
     IDocument basedoc;
+
+    /// Pre-save source bytes for pieces reading ranges saves overwrote.
+    /// Tied to basedoc, so reset with it.
+    StashDocument stash;
 
     /// Editor lock, null when the editor is not thread-safe.
     ReadWriteMutex rwlock;
@@ -2713,4 +2796,63 @@ unittest
         assert(e.view(0, buffer) == states[i]);
     }
     assert(e.redo() < 0);
+}
+
+/// In-place save stashes only the overwritten bytes, not the whole pieces
+/// referencing them, and history survives repeated saves
+unittest
+{
+    log("TEST-0041");
+
+    enum SIZE = 1024 * 1024;
+    ubyte[] original = new ubyte[SIZE];
+    foreach (i, ref ubyte c; original)
+        c = cast(ubyte)(i * 13);
+    MemoryDocument doc = new MemoryDocument(original.dup);
+    scope PieceV4DocumentEditor e = new PieceV4DocumentEditor().open(doc);
+    e.coalescing(false);
+
+    void save()
+    {
+        assert(e.prepareInplaceSave());
+        foreach (PieceInfo info; e.dirtyPieceInfos(true))
+        {
+            ubyte[] data = new ubyte[cast(size_t)info.size];
+            doc.writeAt(info.logicalPos, e.view(info.logicalPos, data));
+        }
+        e.markSaved();
+    }
+    size_t stashed()
+    {
+        size_t total;
+        foreach (ubyte[] chunk; e.stash.chunks)
+            total += chunk.length;
+        return total;
+    }
+
+    ubyte[4] patch = [ 0xde, 0xad, 0xbe, 0xef ];
+    e.replace(1000, patch.ptr, patch.length);
+    save();
+    // The history piece spans all of the original document
+    assert(stashed() == patch.length);
+
+    e.replace(1002, patch.ptr, patch.length); // overlaps the first save
+    e.replace(5000, patch.ptr, patch.length);
+    save();
+    assert(stashed() == patch.length + 2 + patch.length);
+
+    ubyte[] buffer = new ubyte[SIZE];
+    e.undo();
+    e.undo();
+    ubyte[] expected = original.dup;
+    expected[1000 .. 1004] = patch;
+    assert(e.view(0, buffer) == expected);
+    e.undo();
+    assert(e.view(0, buffer) == original);
+
+    e.redo(); e.redo(); e.redo();
+    expected[1002 .. 1006] = patch;
+    expected[5000 .. 5004] = patch;
+    assert(e.view(0, buffer) == expected);
+    assert(e.view(0, buffer) == doc.readAt(0, new ubyte[SIZE]));
 }
