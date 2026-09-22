@@ -1,25 +1,51 @@
-Changelog for ddhx, newest first. See README for the roadmap.
+Changelog for ddhx, by tags, newest first.
 
-Categories are used consistently across releases: Added, Changed, Fixed,
-Removed, and (when significant) Docs.
+Rules:
+- Should remain user-facing. Technical details are best left in source.
+- Hard cap to 80 columns.
+- Categories: Added, Changed, Improvements, Fixed, Removed, and
+  (when significant) Docs.
+- Should remain user-facing. Technical details are best left in source.
 
 ////////////////////////////////////////////////////////////////////////////////
-// 0.13
+// v0.13.0
 
 // Added
 - New "piecev4" editor backend (DDHX_BACKEND=piecev4)
-- OSFile.readAt and OSFile.writeAt: positional I/O
 - `utf8bom:`, `utf16bom:`, and `utf32bom:` prefixes
   To avoid having to remember byte marks per endian, these prefixes include
   BOM, following the current `endian` setting.
 
+// Improvements
+- Medium detection: ddhx now tells apart what it opened better (OSFileType)
+  Regular files, disks, devices, streams, and procfs-style files each get the
+  capabilities they support, so a disk or character device no longer offers to
+  resize or replace itself.
+- Document capabilities: Able to allow certain operations if the medium allow
+  it. For example, inserts (instead of replace) for disk types, since they
+  cannot grow.
+
 // Fixed
-- os.file: 32-bit Android and 32-bit musl build fixes
-  Note a character device now reports a size of zero rather than raising
-  "Unsupported file type".
+- 32-bit Android and 32-bit musl build fixes
+- Make `refresh` command force reading target document into view buffer.
+- A failure to open the target printed a raw exception and stack trace.
+- Opening a FIFO waited forever for a writer, with nothing drawn and no way to
+  quit. Opens no longer block, and a /dev/tty* target can no longer become the
+  controlling terminal.
+- Terminals, pipes, sockets, and directories are refused by name
+  ("/dev/console: cannot edit a stream") rather than by errno
+  ("lseek: Illegal seek").
+- Saving a device-backed document could replace the device node with a regular
+  file. Such media are saved in place only.
+- procfs and sysfs files failed to open for stating no size.
+- Disk sizing no longer issues a Linux-only ioctl on other platforms, nor
+  mistakes a Windows volume for a regular file.
+
+// Removed
+- "piecev2" backend removed.
 
 ////////////////////////////////////////////////////////////////////////////////
-// 0.12
+// v0.12.0
 
 Prompt and prefix overhauls, readline enhancements, diff pane navigation,
 write protection overhaul, terminal rendering fixes, and new prefixes.
