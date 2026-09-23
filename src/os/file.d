@@ -165,8 +165,10 @@ else version (Posix)
             partition[64] d_partitions; // MAXPARTITIONSUNIT
         }
         static assert(disklabel.sizeof == 1172, "DIOCGDINFO encodes the size of struct disklabel");
-        // sys/sys/dkio.h: _IOR('d', 101, struct disklabel)
-        private enum DIOCGDINFO = cast(IOCTL_TYPE)0x4494_6465;
+        // sys/sys/dkio.h: _IOR('d', 101, struct disklabel) and its 16 partition
+        // predecessor, O_DIOCGDINFO, which is all older kernels answer
+        private enum DIOCGDINFO   = cast(IOCTL_TYPE)0x4494_6465;
+        private enum O_DIOCGDINFO = cast(IOCTL_TYPE)0x4194_6465;
     }
     else version (linux)
     {
@@ -613,10 +615,17 @@ struct OSFile
     {
         // physio and the label's bounds check refuse transfers off a sector,
         // and only the label knows the sector and partition sizes.
+        private bool readLabel(ref disklabel label)
+        {
+            // Both fill the same leading fields, the old one 16 partitions
+            return ioctl(handle, DIOCGDINFO, &label) == 0 ||
+                ioctl(handle, O_DIOCGDINFO, &label) == 0;
+        }
+
         private uint probeSectorSize()
         {
             disklabel label = void;
-            if (ioctl(handle, DIOCGDINFO, &label) == 0 && pow2(label.d_secsize))
+            if (readLabel(label) && pow2(label.d_secsize))
                 return label.d_secsize;
             return 512;
         }
@@ -625,12 +634,15 @@ struct OSFile
         {
             stat_t st = void;
             disklabel label = void;
-            if (fstat(handle, &st) < 0 || ioctl(handle, DIOCGDINFO, &label) < 0)
+            if (fstat(handle, &st) < 0 || readLabel(label) == false)
                 return 0;
             // The label describes the whole disk, the node only one partition
             uint rdev = cast(uint)st.st_rdev;
             uint minor = (rdev & 0xff) | ((rdev & 0xffff0000) >> 8);
-            partition *part = &label.d_partitions[minor % label.d_partitions.length];
+            size_t index = minor % label.d_partitions.length; // MAXPARTITIONSUNIT
+            if (index >= label.d_npartitions)
+                return 0;
+            partition *part = &label.d_partitions[index];
             ulong sectors = (cast(ulong)part.p_sizeh << 32) + part.p_size;
             return cast(long)(sectors * label.d_secsize);
         }
