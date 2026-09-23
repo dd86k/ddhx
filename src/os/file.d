@@ -14,6 +14,11 @@ version (Windows) version = DiskSectors;
 else version (FreeBSD) version = DiskSectors;
 else version (NetBSD) version = DiskSectors;
 else version (OSX) version = DiskSectors;
+else version (OpenBSD) version = DiskSectors;
+
+// Platforms whose raw disks state no extent through lseek
+version (OSX) version = DiskExtentByIoctl;
+else version (OpenBSD) version = DiskExtentByIoctl;
 
 version (Windows)
 {
@@ -114,6 +119,54 @@ else version (Posix)
         // bsd/sys/disk.h: _IOR('d', 24, uint32_t) and _IOR('d', 25, uint64_t)
         private enum DKIOCGETBLOCKSIZE  = cast(IOCTL_TYPE)0x4004_6418;
         private enum DKIOCGETBLOCKCOUNT = cast(IOCTL_TYPE)0x4008_6419;
+    }
+    else version (OpenBSD)
+    {
+        // sys/sys/disklabel.h
+        private struct partition
+        {
+            uint p_size;
+            uint p_offset;
+            ushort p_offseth;
+            ushort p_sizeh;
+            ubyte p_fstype;
+            ubyte p_fragblock;
+            ushort p_cpg;
+        }
+        private struct disklabel
+        {
+            uint d_magic;
+            ushort d_type;
+            ushort d_subtype;
+            char[16] d_typename;
+            char[16] d_packname;
+            uint d_secsize;
+            uint d_nsectors;
+            uint d_ntracks;
+            uint d_ncylinders;
+            uint d_secpercyl;
+            uint d_secperunit;
+            ubyte[8] d_uid;
+            uint d_acylinders;
+            ushort d_bstarth;
+            ushort d_bendh;
+            uint d_bstart;
+            uint d_bend;
+            uint d_flags;
+            uint[5] d_spare4;
+            ushort d_secperunith;
+            ushort d_version;
+            uint[4] d_spare;
+            uint d_magic2;
+            ushort d_checksum;
+            ushort d_npartitions;
+            uint d_spare2;
+            uint d_spare3;
+            partition[64] d_partitions; // MAXPARTITIONSUNIT
+        }
+        static assert(disklabel.sizeof == 1172, "DIOCGDINFO encodes the size of struct disklabel");
+        // sys/sys/dkio.h: _IOR('d', 101, struct disklabel)
+        private enum DIOCGDINFO = cast(IOCTL_TYPE)0x4494_6465;
     }
     else version (linux)
     {
@@ -475,8 +528,9 @@ struct OSFile
                 // are the ones that can state an extent
                 if (extent > 0)
                     return OSFileType.disk;
-                // devfs on macOS states none, so only the driver can tell
-                version (OSX)
+                // devfs on macOS and inodes on OpenBSD state none, so only
+                // the driver can tell
+                version (DiskExtentByIoctl)
                 if (probeDiskLength() > 0)
                     return OSFileType.disk;
                 return OSFileType.device;
@@ -553,6 +607,32 @@ struct OSFile
                 ioctl(handle, DKIOCGETBLOCKCOUNT, &count) == 0)
                 return cast(long)(count * size);
             return 0;
+        }
+    }
+    else version (OpenBSD)
+    {
+        // physio and the label's bounds check refuse transfers off a sector,
+        // and only the label knows the sector and partition sizes.
+        private uint probeSectorSize()
+        {
+            disklabel label = void;
+            if (ioctl(handle, DIOCGDINFO, &label) == 0 && pow2(label.d_secsize))
+                return label.d_secsize;
+            return 512;
+        }
+
+        private long probeDiskLength()
+        {
+            stat_t st = void;
+            disklabel label = void;
+            if (fstat(handle, &st) < 0 || ioctl(handle, DIOCGDINFO, &label) < 0)
+                return 0;
+            // The label describes the whole disk, the node only one partition
+            uint rdev = cast(uint)st.st_rdev;
+            uint minor = (rdev & 0xff) | ((rdev & 0xffff0000) >> 8);
+            partition *part = &label.d_partitions[minor % label.d_partitions.length];
+            ulong sectors = (cast(ulong)part.p_sizeh << 32) + part.p_size;
+            return cast(long)(sectors * label.d_secsize);
         }
     }
     else version (DiskSectors)
