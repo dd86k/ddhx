@@ -13,6 +13,7 @@ module os.file;
 version (Windows) version = DiskSectors;
 else version (FreeBSD) version = DiskSectors;
 else version (NetBSD) version = DiskSectors;
+else version (OSX) version = DiskSectors;
 
 version (Windows)
 {
@@ -107,6 +108,12 @@ else version (Posix)
         // sys/sys/dkio.h: _IOR('d', 133, u_int) and _IOR('d', 132, off_t)
         private enum DIOCGSECTORSIZE = cast(IOCTL_TYPE)0x4004_6485;
         private enum DIOCGMEDIASIZE  = cast(IOCTL_TYPE)0x4008_6484;
+    }
+    else version (OSX)
+    {
+        // bsd/sys/disk.h: _IOR('d', 24, uint32_t) and _IOR('d', 25, uint64_t)
+        private enum DKIOCGETBLOCKSIZE  = cast(IOCTL_TYPE)0x4004_6418;
+        private enum DKIOCGETBLOCKCOUNT = cast(IOCTL_TYPE)0x4008_6419;
     }
     else version (linux)
     {
@@ -466,7 +473,13 @@ struct OSFile
                     return OSFileType.stream; // terminals
                 // The BSDs expose whole disks as character devices, and those
                 // are the ones that can state an extent
-                return extent > 0 ? OSFileType.disk : OSFileType.device;
+                if (extent > 0)
+                    return OSFileType.disk;
+                // devfs on macOS states none, so only the driver can tell
+                version (OSX)
+                if (probeDiskLength() > 0)
+                    return OSFileType.disk;
+                return OSFileType.device;
             case S_IFIFO, S_IFSOCK:
                 return OSFileType.stream;
             case S_IFDIR:
@@ -517,6 +530,28 @@ struct OSFile
             if (DeviceIoControl(handle, IOCTL_DISK_GET_LENGTH_INFO,
                 null, 0, &length, length.sizeof, &returned, null))
                 return length.QuadPart;
+            return 0;
+        }
+    }
+    else version (OSX)
+    {
+        // Raw disks (/dev/rdisk) refuse transfers off a block, block devices
+        // go through the buffer cache but are held to the same rule anyway.
+        private uint probeSectorSize()
+        {
+            uint size;
+            if (ioctl(handle, DKIOCGETBLOCKSIZE, &size) == 0 && pow2(size))
+                return size;
+            return 512;
+        }
+
+        private long probeDiskLength()
+        {
+            uint size;
+            ulong count;
+            if (ioctl(handle, DKIOCGETBLOCKSIZE, &size) == 0 &&
+                ioctl(handle, DKIOCGETBLOCKCOUNT, &count) == 0)
+                return cast(long)(count * size);
             return 0;
         }
     }
