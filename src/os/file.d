@@ -12,6 +12,7 @@ module os.file;
 // Platforms whose raw disks refuse transfers not aligned to a sector
 version (Windows) version = DiskSectors;
 else version (FreeBSD) version = DiskSectors;
+else version (NetBSD) version = DiskSectors;
 
 version (Windows)
 {
@@ -95,34 +96,43 @@ else version (Posix)
         private alias IOCTL_TYPE = c_ulong;
     private extern (C) int ioctl(int, IOCTL_TYPE, ...);
     
-    // NOTE: BLKGETSIZE64
-    //       BLKGETSIZE64 is missing from dmd 2.098.1 and ldc 1.24.0
-    //       ldc 1.24 missing core.sys.linux.fs
-    //       source musl 1.2.0 and glibc 2.25 has roughly same settings.
-    private enum _IOC_NRBITS = 8;
-    private enum _IOC_TYPEBITS = 8;
-    private enum _IOC_SIZEBITS = 14;
-    private enum _IOC_NRSHIFT = 0;
-    private enum _IOC_TYPESHIFT = _IOC_NRSHIFT+_IOC_NRBITS;
-    private enum _IOC_SIZESHIFT = _IOC_TYPESHIFT+_IOC_TYPEBITS;
-    private enum _IOC_DIRSHIFT = _IOC_SIZESHIFT+_IOC_SIZEBITS;
-    private enum _IOC_READ = 2;
-    private enum _IOC(int dir,int type,int nr,size_t size) =
-        (dir  << _IOC_DIRSHIFT) |
-        (type << _IOC_TYPESHIFT) |
-        (nr   << _IOC_NRSHIFT) |
-        (size << _IOC_SIZESHIFT);
-    // NOTE: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
-    //       I don't know why, so I'm casting it to used ioctl type to let it compile.
-    private enum _IOR(int type,int nr,size_t size) = cast(IOCTL_TYPE)_IOC!(_IOC_READ,type,nr,size);
-    private enum BLKGETSIZE64 = cast(IOCTL_TYPE)_IOR!(0x12,114,size_t.sizeof);
-    private alias BLOCKSIZE = BLKGETSIZE64;
-
     version (FreeBSD)
     {
-        // sys/disk.h: _IOR('d', 128, u_int) and _IOR('d', 129, off_t)
+        // sys/sys/disk.h: _IOR('d', 128, u_int) and _IOR('d', 129, off_t)
         private enum DIOCGSECTORSIZE = cast(IOCTL_TYPE)0x4004_6480;
         private enum DIOCGMEDIASIZE  = cast(IOCTL_TYPE)0x4008_6481;
+    }
+    else version (NetBSD)
+    {
+        // sys/sys/dkio.h: _IOR('d', 133, u_int) and _IOR('d', 132, off_t)
+        private enum DIOCGSECTORSIZE = cast(IOCTL_TYPE)0x4004_6485;
+        private enum DIOCGMEDIASIZE  = cast(IOCTL_TYPE)0x4008_6484;
+    }
+    else version (linux)
+    {
+
+        // NOTE: BLKGETSIZE64
+        //       BLKGETSIZE64 is missing from dmd 2.098.1 and ldc 1.24.0
+        //       ldc 1.24 missing core.sys.linux.fs
+        //       source musl 1.2.0 and glibc 2.25 has roughly same settings.
+        private enum _IOC_NRBITS = 8;
+        private enum _IOC_TYPEBITS = 8;
+        private enum _IOC_SIZEBITS = 14;
+        private enum _IOC_NRSHIFT = 0;
+        private enum _IOC_TYPESHIFT = _IOC_NRSHIFT+_IOC_NRBITS;
+        private enum _IOC_SIZESHIFT = _IOC_TYPESHIFT+_IOC_TYPEBITS;
+        private enum _IOC_DIRSHIFT = _IOC_SIZESHIFT+_IOC_SIZEBITS;
+        private enum _IOC_READ = 2;
+        private enum _IOC(int dir,int type,int nr,size_t size) =
+            (dir  << _IOC_DIRSHIFT) |
+            (type << _IOC_TYPESHIFT) |
+            (nr   << _IOC_NRSHIFT) |
+            (size << _IOC_SIZESHIFT);
+        // NOTE: _IOR!(0x12,114,size_t.sizeof) results in ulong.max
+        //       I don't know why, so I'm casting it to used ioctl type to let it compile.
+        private enum _IOR(int type,int nr,size_t size) = cast(IOCTL_TYPE)_IOC!(_IOC_READ,type,nr,size);
+        private enum BLKGETSIZE64 = cast(IOCTL_TYPE)_IOR!(0x12,114,size_t.sizeof);
+        private alias BLOCKSIZE = BLKGETSIZE64;
     }
 
     // NOTE: Every call taking a file offset
@@ -510,10 +520,10 @@ struct OSFile
             return 0;
         }
     }
-    else version (FreeBSD)
+    else version (DiskSectors)
     {
-        // GEOM passes raw disk I/O through uncached, so pread and pwrite
-        // answer EINVAL when the offset or the length is off a sector.
+        // Raw disk I/O bypasses the buffer cache (GEOM, physio), so pread and
+        // pwrite answer EINVAL when the offset or the length is off a sector.
         private uint probeSectorSize()
         {
             uint size;
@@ -524,7 +534,7 @@ struct OSFile
 
         private long probeDiskLength()
         {
-            long length; // off_t is 64-bit on every FreeBSD target
+            long length; // off_t is 64-bit on every FreeBSD and NetBSD target
             if (ioctl(handle, DIOCGMEDIASIZE, &length) == 0)
                 return length;
             return 0;
