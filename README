@@ -67,9 +67,9 @@ This list may change at any given time without notice.
 
 0.13: WIP
 - [x] Disk-aware: Reading and saving
-      Tested: Windows, Linux, FreeBSD
+      Tested: Windows, Linux, FreeBSD, NetSBD
       Recognized: OpenBSD (sees zero-byte disk)
-      Untested: NetBSD, macOS
+      Untested: macOS
 
 future:
 - [ ] Improve tab-completion
