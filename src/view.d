@@ -969,7 +969,7 @@ string tempName(string basename)
 }
 
 // Save changes to file target
-void save_to_file(IDocumentEditor editor, string target)
+public void save_to_file(IDocumentEditor editor, string target) // public so benchmark can use this
 {
     log("target='%s'", target);
     
@@ -1130,7 +1130,7 @@ unittest
 // support only qualify when no source piece is displaced, and their
 // history is dropped by reopening the document.
 // Can't save with MemoryDocument, caller responsibility.
-void save_inplace(IDocumentEditor editor, string path)
+public void save_inplace(IDocumentEditor editor, string path) // public so benchmark can use this
 {
     enum OFLAGS = OFlags.exists | OFlags.readWrite | OFlags.share;
     scope FileDocument wdoc = new FileDocument(path, OFLAGS);

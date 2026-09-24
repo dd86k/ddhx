@@ -117,17 +117,17 @@ void printDelimiter()
 {
     stderr.writeln("--------------------------------");
 }
-void printTime(string prefix, Duration time)
+void printTime(string what, Duration time)
 {
     char[32] tbuf;
-    stderr.write(prefix, ": ", fmtdur( time, tbuf ));
-    stderr.writeln(" (", fmtdur( time / 1_000, tbuf ), " each)");
+    stderr.writeln(what, ": ", fmtdur( time, tbuf ));
 }
-void printTime(int runs, string what, Duration time)
+void printTime(int total, int runs, string what, Duration batch, Duration sum)
 {
     char[32] tbuf;
-    stderr.writef("%*d %s: %s", 6, runs, what, fmtdur( time, tbuf ));
-    stderr.writeln(" (", fmtdur( time / 1_000, tbuf ), " each)");
+    stderr.writef("%*d %s: %s", 6, total, what, fmtdur( batch, tbuf ));
+    stderr.write(" (", fmtdur( batch / runs, tbuf ), " each");
+    stderr.writeln(", ", fmtdur( sum, tbuf ), " total)");
 }
 void printGCstats(GC.Stats stats)
 {
@@ -402,35 +402,59 @@ void testLocks(int threads = 4, int ops = 5_000)
     }
 }
 
+void printGCgrowth(string what, GC.Stats before, GC.Stats after)
+{
+    char[16] tbuf;
+    bool shrunk = after.usedSize < before.usedSize;
+    ulong diff = shrunk ? before.usedSize - after.usedSize : after.usedSize - before.usedSize;
+    stderr.writeln(what, ": ", shrunk ? "-" : "+", fmtbin( diff, tbuf ));
+}
+
 void test(string name, int rounds = 30, int runs = 100)
 {
-    writeln("BACKEND: ", name);
-    writeln("ROUNDS : ", rounds);
-    writeln("RUNS   : ", runs);
+    import std.file : remove, tempDir, write;
+    import std.path : buildPath;
+    import ddhx.document.file : FileDocument, OFlags;
+    import view : save_inplace, save_to_file;
     
-    // Buffer to avoid influencing GC stats
-    // Eventually to include chunk backend
+    enum SIZE = 1_000_000;
+    
+    stderr.writeln("BACKEND: ", name);
+    stderr.writeln("ROUNDS : ", rounds);
+    stderr.writeln("RUNS   : ", runs);
+    
+    // malloc'd so the document content stays out of GC stats
     import core.stdc.stdlib : malloc, free;
-    size_t buffer_size = 1_000_000;
-    ubyte[] buffer = (cast(ubyte*)malloc(buffer_size))[0..buffer_size];
-    if (buffer is null)
+    ubyte[] content = (cast(ubyte*)malloc(SIZE))[0..SIZE];
+    if (content is null)
         throw new Exception("error: Out of memory");
-    scope(exit) free(buffer.ptr);
+    scope(exit) free(content.ptr);
+    foreach (i, ref ubyte b; content)
+        b = cast(ubyte)i;
     
+    string path = buildPath(tempDir(), "ddhx_bench_save.tmp");
+    string copypath = buildPath(tempDir(), "ddhx_bench_saveas.tmp");
+    write(path, content);
+    scope(exit) remove(path);
+    
+    // Saving in place requires a file-backed document, like ddhx opens them
+    scope FileDocument doc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    scope(exit) doc.close();
     scope IDocumentEditor e = spawnEditor(name);
+    e.open(doc);
     
     StopWatch sw;
     
-    e.replace(0, buffer.ptr, buffer.length);
-    
     printDelimiter();
-    printGCstats(GC.stats());
+    GC.Stats gcstart = GC.stats();
+    printGCstats(gcstart);
     
     ubyte n = 0xff;
     long pos = 10;
     
     printDelimiter();
     int totalruns;
+    Duration sum;
     for (int r; r < rounds; r++)
     {
         sw.start();
@@ -440,9 +464,13 @@ void test(string name, int rounds = 30, int runs = 100)
             pos += 2; // avoid coalescing
         }
         sw.stop();
-        printTime(totalruns += runs, "replaces", sw.peek());
+        sum += sw.peek();
+        printTime(totalruns += runs, runs, "replaces", sw.peek(), sum);
         sw.reset();
     }
+    
+    GC.Stats gcedits = GC.stats();
+    printGCgrowth("GC.used from edits", gcstart, gcedits);
     
     ubyte[] viewbuf;
     viewbuf.length = 400;
@@ -451,16 +479,41 @@ void test(string name, int rounds = 30, int runs = 100)
     sw.start();
     ubyte[] res = e.view(0, viewbuf);
     sw.stop();
-    stderr.writeln("view(pos=0,size=400): ", sw.peek());
+    printTime("view(pos=0,size=400)", sw.peek());
     sw.reset();
     
     sw.start();
     res = e.view(10_000, viewbuf);
     sw.stop();
-    stderr.writeln("view(pos=10_000,size=400): ", sw.peek());
+    printTime("view(pos=10_000,size=400)", sw.peek());
     sw.reset();
     
+    printDelimiter();
+    
+    // Snapshot before, as save_to_file collects on its way out
+    GC.Stats gcbefore = GC.stats();
+    sw.start();
+    save_inplace(e, path);
+    sw.stop();
+    GC.Stats gcafter = GC.stats();
+    printTime("save in-place", sw.peek());
+    printGCgrowth("GC.used from save in-place", gcbefore, gcafter);
+    sw.reset();
+    
+    sw.start();
+    save_to_file(e, copypath);
+    sw.stop();
+    remove(copypath);
+    printTime("save-as (full rewrite)", sw.peek());
+    sw.reset();
+    
+    printDelimiter();
+    // Last, as it steps the editor back
+    stderr.writeln("undo after saves: ", e.undo() >= 0);
+    printDelimiter();
     printGCstats(GC.stats());
+    
+    e.close();
 }
 
 void main(string[] args)
