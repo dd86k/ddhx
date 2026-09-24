@@ -15,7 +15,8 @@ one name per encoding (e.g. `charset ebcdic037`).
 
 // Added
 - New "piecev4" editor backend (DDHX_BACKEND=piecev4)
-  Faster and lighter on memory, saves included.
+  Edits are ~3x faster than "piecev3", and saving in place is faster and
+  keeps undo history without a 64 MiB memory spike.
 - `utf8bom:`, `utf16bom:`, and `utf32bom:` prefixes
   Same as `utf8:`/`utf16:`/`utf32:`, but with a BOM in front.
 - "latin1" (ISO 8859-1) and "win1252" (Windows-1252) character sets

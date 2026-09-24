@@ -290,9 +290,7 @@ final class StashDocument : IDocument
     {
         import std.array : insertInPlace;
 
-        size_t i;
-        while (i < starts.length && starts[i] + chunks[i].length <= start)
-            i++;
+        size_t i = firstEndingAfter(start);
         long at = start;
         while (at < end)
         {
@@ -326,7 +324,7 @@ final class StashDocument : IDocument
 
     ubyte[] readAt(long position, ubyte[] buffer)
     {
-        size_t i, got;
+        size_t i = firstEndingAfter(position), got;
         while (got < buffer.length)
         {
             long at = position + got;
@@ -359,6 +357,22 @@ private:
     IDocument base;
     long[] starts;      // sorted, disjoint
     ubyte[][] chunks;
+
+    // A save captures once per history piece and overwritten range, so a
+    // linear scan here turns thousands of edits into seconds of saving
+    size_t firstEndingAfter(long position)
+    {
+        size_t lo, hi = starts.length;
+        while (lo < hi)
+        {
+            size_t mid = (lo + hi) / 2;
+            if (starts[mid] + chunks[mid].length <= position)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        return lo;
+    }
 }
 
 private
@@ -599,22 +613,72 @@ class PieceV4DocumentEditor : IDocumentEditor
                 merged ~= range;
         }
 
+        // Capture once per overwritten range that any piece reads, rather
+        // than once per piece and range: history holds a removed piece per
+        // edit, most spanning every later edit, which made saves quadratic
+        bool reads(ref const(Piece) piece)
+        {
+            return piece.size > 0 && (piece.source == Source.source ||
+                (piece.source == Source.document && stash !is null && piece.doc is stash));
+        }
+        long[2][] readers;
+        void collect(ref const(Piece) piece)
+        {
+            if (reads(piece))
+                readers ~= [ piece.position, piece.position + piece.size ];
+        }
+        foreach (i; 0 .. table.length)
+            collect(table.pieces[i]);
+        foreach (ref Operation op; history)
+        {
+            foreach (ref Piece piece; op.added)
+                collect(piece);
+            foreach (ref Piece piece; op.removed)
+                collect(piece);
+        }
+        if (readers.length == 0)
+            return true;
+
+        sort!((a, b) => a[0] < b[0])(readers);
+        size_t n;
+        foreach (range; readers[1 .. $])
+        {
+            if (range[0] <= readers[n][1])
+                readers[n][1] = max(readers[n][1], range[1]);
+            else
+                readers[++n] = range;
+        }
+        readers = readers[0 .. n + 1];
+
         if (stash is null)
             stash = new StashDocument(basedoc);
-        bool failed;
 
-        // Stash whatever this save overwrites under a piece reading the
-        // source, directly or through the stash, and point it at the stash.
+        // Both lists are sorted and disjoint: capture their intersections
+        size_t w, r;
+        while (w < merged.length && r < readers.length)
+        {
+            long from = max(merged[w][0], readers[r][0]);
+            long to   = min(merged[w][1], readers[r][1]);
+            if (from < to)
+            {
+                // Cannot address this much memory (32-bit platforms)
+                if (cast(ulong)(to - from) > size_t.max)
+                    return false;
+                stash.capture(from, to);
+            }
+            if (merged[w][1] < readers[r][1])
+                w++;
+            else
+                r++;
+        }
+
+        // Point source pieces reading an overwritten range at the stash
         void retarget(ref Piece piece)
         {
-            bool direct = piece.source == Source.source;
-            if (direct == false && (piece.source != Source.document || piece.doc !is stash))
+            if (piece.source != Source.source || piece.size == 0)
                 return;
 
             long start = piece.position;
-            long end   = start + piece.size;
-            bool endangered;
-            // Ranges are disjoint and sorted: skip those ending before the piece
             size_t lo, hi = merged.length;
             while (lo < hi)
             {
@@ -624,32 +688,16 @@ class PieceV4DocumentEditor : IDocumentEditor
                 else
                     hi = mid;
             }
-            for (; lo < merged.length && merged[lo][0] < end; lo++)
-            {
-                long from = max(start, merged[lo][0]);
-                long to   = min(end, merged[lo][1]);
-                // Cannot address this much memory (32-bit platforms)
-                if (cast(ulong)(to - from) > size_t.max)
-                {
-                    failed = true;
-                    return;
-                }
-                stash.capture(from, to);
-                endangered = true;
-            }
+            if (lo == merged.length || merged[lo][0] >= start + piece.size)
+                return;
 
-            if (direct && endangered)
-            {
-                Piece moved = Piece.makefile(piece.size, stash);
-                moved.position = piece.position;
-                piece = moved;
-            }
+            Piece moved = Piece.makefile(piece.size, stash);
+            moved.position = piece.position;
+            piece = moved;
         }
 
         foreach (i; 0 .. table.length)
             retarget(table.pieces[i]);
-
-        // History operations, in both undo and redo directions
         foreach (ref Operation op; history)
         {
             foreach (ref Piece piece; op.added)
@@ -658,7 +706,7 @@ class PieceV4DocumentEditor : IDocumentEditor
                 retarget(piece);
         }
 
-        return failed == false;
+        return true;
     }
 
     ubyte[] view(long position, void* buffer, size_t size)
@@ -2855,4 +2903,60 @@ unittest
     expected[5000 .. 5004] = patch;
     assert(e.view(0, buffer) == expected);
     assert(e.view(0, buffer) == doc.readAt(0, new ubyte[SIZE]));
+}
+
+/// Interleaved edits, where every history piece spans the later ones,
+/// survive repeated in-place saves with exact stashing and full history
+unittest
+{
+    log("TEST-0042");
+
+    enum SIZE  = 64 * 1024;
+    enum EDITS = 500;
+    ubyte[] original = new ubyte[SIZE];
+    foreach (i, ref ubyte c; original)
+        c = cast(ubyte)(i * 7);
+    MemoryDocument doc = new MemoryDocument(original.dup);
+    scope PieceV4DocumentEditor e = new PieceV4DocumentEditor().open(doc);
+    e.coalescing(false);
+
+    void save()
+    {
+        assert(e.prepareInplaceSave());
+        foreach (PieceInfo info; e.dirtyPieceInfos(true))
+        {
+            ubyte[] data = new ubyte[cast(size_t)info.size];
+            doc.writeAt(info.logicalPos, e.view(info.logicalPos, data));
+        }
+        e.markSaved();
+    }
+
+    ubyte[] expected = original.dup;
+    ubyte n = 0xff;
+    foreach (i; 0 .. EDITS)
+    {
+        long pos = 10 + i * 2;
+        e.replace(pos, &n, 1);
+        expected[cast(size_t)pos] = n;
+        if (i % 100 == 99)
+            save();
+    }
+
+    size_t stashed;
+    foreach (ubyte[] chunk; e.stash.chunks)
+        stashed += chunk.length;
+    assert(stashed == EDITS);
+
+    ubyte[] buffer = new ubyte[SIZE];
+    assert(e.view(0, buffer) == expected);
+    assert(doc.readAt(0, new ubyte[SIZE]) == expected);
+
+    foreach (i; 0 .. EDITS)
+        e.undo();
+    assert(e.undo() < 0);
+    assert(e.view(0, buffer) == original);
+
+    foreach (i; 0 .. EDITS)
+        e.redo();
+    assert(e.view(0, buffer) == expected);
 }
