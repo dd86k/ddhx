@@ -1,58 +1,48 @@
 Changelog for ddhx, by tags, newest first.
 
 Rules:
-- Keep it short and user-facing. Technical details are best left in source.
+- Should remain short and user-facing. No need to tell how things are fixed.
+  Technical details are best left in source.
 - Hard cap to 80 columns.
 - Categories: Added, Changed, Improvements, Fixed, Removed, and
   (when significant) Docs.
-- Should remain user-facing. Technical details are best left in source.
 
 ////////////////////////////////////////////////////////////////////////////////
 // v0.13.0
 
 // Added
 - New "piecev4" editor backend (DDHX_BACKEND=piecev4)
+  Faster and lighter on memory, saves included.
 - `utf8bom:`, `utf16bom:`, and `utf32bom:` prefixes
-  To avoid having to remember byte marks per endian, these prefixes include
-  BOM, following the current `endian` setting.
+  Same as `utf8:`/`utf16:`/`utf32:`, but with a BOM in front.
 
 // Improvements
-- Improved medium detection (OSFileType enum)
-  Regular files, disks, devices, streams, and procfs-style files each get the
-  capabilities they support, so a disk or character device no longer offers to
-  resize or replace itself.
-  Also tested 
-- Document capabilities: Able to allow certain operations if the medium allow
-  it. For example, inserts (instead of replace) for disk types, since they
-  cannot grow.
-- Windows: Disk reads are cached per 64 KiB, so redraws and scrolling no
-  longer hit the disk every time.
+- Media detection: files, disks, devices, streams, and procfs-style files
+  only offer what they support, e.g. a disk can't be resized or inserted into.
+- Windows: Disk reads are cached per 64 KiB for faster redraws and scrolling.
 
 // Fixed
-- 32-bit Android and 32-bit musl build fixes
-- Make `refresh` command force reading target document into view buffer.
-- A failure to open the target printed a raw exception and stack trace.
-- Opening a FIFO waited forever for a writer, with nothing drawn and no way to
-  quit. Opens no longer block, and a /dev/tty* target can no longer become the
-  controlling terminal.
-- Terminals, pipes, sockets, and directories are refused by name
+- `refresh` command now rereads the document.
+- Fix 32-bit Android and 32-bit musl builds
+- A failure to open the target printed a stack trace instead of an error.
+- Opening a named pipe (e.g. from mkfifo) with no writer hung forever, with
+  nothing drawn and no way to quit. It is now refused as a stream, and a
+  /dev/tty* target can no longer become the controlling terminal.
+- Streams (terminals, pipes, sockets, directories) are refused by name
   ("/dev/console: cannot edit a stream") rather than by errno
   ("lseek: Illegal seek").
-- Saving a device-backed document could replace the device node with a regular
-  file. Such media are saved in place only.
-- procfs and sysfs files failed to open for stating no size.
-- Disk sizing no longer issues a Linux-only ioctl on other platforms, nor
-  mistakes a Windows volume for a regular file.
+- Saving to a device could replace its node with a regular file. Devices are
+  now saved in place.
+- procfs and sysfs files failed to open because they report no size.
+- Disk sizing ran a Linux-only ioctl on other platforms, and took Windows
+  volumes for regular files.
 - Windows: Opening a disk (e.g. \\.\PhysicalDrive0) failed on the first read
-  with "ReadFile: The parameter is incorrect". Reads are now made in whole
-  sectors, as such devices require.
+  with "The parameter is incorrect".
 - Windows: A disk target was titled "\" instead of its device name.
 - Windows: Saving in place to a disk failed on writes not aligned to its
   sectors.
-- Saving in place after an edit to a large file or disk ran out of memory,
-  keeping a copy of all original data referenced by undo history. Only the
-  overwritten bytes are kept now. With "piecev3", such a save drops undo
-  history instead.
+- Saving in place after editing a large file or disk could run out of memory.
+  With "piecev3", such a save now drops undo history.
 
 // Removed
 - "piecev2" backend removed.
