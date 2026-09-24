@@ -45,7 +45,7 @@ Title font: Shaded Blocky (FIGlet)
   * Unlimited undo/redo, even with new buffers
   * Large file support: up to 8 EiB
   * Visual selection and range commands
-  * Character sets: ascii, mac, cp437, ebcdic, latin1, win1252
+  * Character sets: ascii, cp437, ebcdic037, macroman, latin1, win1252
   * Search data with a powerful pattern syntax
   * Skip identical data or repeating patterns by selection
   * Customizable with configuration file
@@ -74,7 +74,7 @@ This list may change at any given time without notice.
 future:
 - [ ] Improve tab-completion
 - [ ] open/close commands
-- [ ] Charset-specific pattern prefixes (e.g., ebcdic:)
+- [ ] Charset-specific pattern prefixes (e.g., ebcdic037:)
 - [ ] Document: Process memory
 
 ////////////////////////////////////////////////////////////////////////////////

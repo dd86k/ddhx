@@ -38,7 +38,7 @@ Large file support: up to 8 EiB
 .IP \(bu
 Visual selection and range commands
 .IP \(bu
-Multiple charset representations: ascii, mac, cp437, ebcdic, latin1, win1252
+Multiple charset representations: ascii, cp437, ebcdic037, macroman, latin1, win1252
 .IP \(bu
 Search data with a powerful pattern syntax
 .IP \(bu
@@ -84,8 +84,8 @@ section for the file format.
 Set character translation:
 .BR ascii ,
 .BR cp437 ,
-.BR mac ,
-.BR ebcdic ,
+.BR ebcdic037 ,
+.BR macroman ,
 .BR latin1 ,
 or
 .BR win1252 .
@@ -828,7 +828,7 @@ value.
 Examples:
 .RS
 .nf
-set charset mac              \fRSet character set to Mac\fP
+set charset macroman         \fRSet character set to Mac OS Roman\fP
 bind right\-arrow goto +32    \fRBind Right Arrow to jump 32 bytes\fP
 unbind right\-arrow           \fRRemove the binding\fP
 reset\-keys                   \fRReset all bindings to defaults\fP
@@ -1338,7 +1338,7 @@ Address display format. Default:
 Address column width. Default:
 .BR 11 .
 .TP
-.BR charset " \fRascii\fP | cp437 | mac | ebcdic | latin1 | win1252"
+.BR charset " \fRascii\fP | cp437 | ebcdic037 | macroman | latin1 | win1252"
 Character set for the text column. Default:
 .BR ascii .
 This affects the display only: a text pattern names its own encoding
@@ -1489,7 +1489,7 @@ Color names:
 .RS
 .nf
 # Use EBCDIC character set
-charset ebcdic
+charset ebcdic037
 # 32 columns per row
 columns 32
 # Vim-style navigation
@@ -1560,7 +1560,7 @@ lb l.
 lb l.
 %e	Edited indicator ("*" if modified, " " otherwise)
 %m	Writing mode (OVR, INS, DIG, R/O)
-%c	Character set (ascii, cp437, mac, ebcdic, latin1, win1252)
+%c	Character set (ascii, cp437, ebcdic037, macroman, latin1, win1252)
 %t	Data type (x8, x16, etc.)
 %%	Literal percent sign
 .TE

@@ -72,7 +72,7 @@ Prefix patternpfx(const(char)[] input)
     //       prefixes rather than a setting: a format is what the file is, and
     //       "f32:" already means binary32 everywhere, so nothing changes
     //       meaning behind a setting nobody remembers flipping
-    // TODO: More text encodings: "ascii:", "latin1:", "ebcdic:", ...
+    // TODO: More text encodings: "ascii:", "latin1:", "ebcdic037:", ...
     //
     // Text names its encoding for the same reason a scalar names its width:
     // "utf8:" says what bytes come out, where the old "s:" left it to whatever

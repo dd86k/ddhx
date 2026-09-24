@@ -9,7 +9,7 @@ import std.conv : text, to;
 import std.system : Endian;
 
 import ddhx.formatting;
-import ddhx.charset : Charset, ASCII, EBCDIC, findCharset;
+import ddhx.charset : Charset, ASCII, EBCDIC037, findCharset;
 
 import os.terminal : terminalKeybind;
 
@@ -204,7 +204,7 @@ unittest
     // Load and check
     loadRC(rc,
 `columns 20
-charset ebcdic
+charset ebcdic037
 bind j left`);
     assert(rc.columns == 6); // Untouched by config file
     assert(rc.charset == &ASCII);
@@ -240,7 +240,7 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
     },
     {
         "charset", "Character set",
-        `"ascii", "cp437", "mac", "ebcdic"`, `"ascii"`,
+        `"ascii", "cp437", "ebcdic037", "macroman", "latin1", "win1252"`, `"ascii"`,
         &configure_charset
     },
     {
@@ -361,8 +361,8 @@ unittest
     configRC(rc, "address-spacing", "5");
     assert(rc.address_spacing == 5);
     
-    configRC(rc, "charset", "ebcdic");
-    assert(rc.charset == &EBCDIC);
+    configRC(rc, "charset", "ebcdic037");
+    assert(rc.charset == &EBCDIC037);
 
     configRC(rc, "writemode", "insert");
     assert(rc.writemode == WritingMode.insert);

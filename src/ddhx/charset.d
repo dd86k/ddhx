@@ -124,14 +124,14 @@ immutable(Charset)* findCharset(const(char)[] id)
 
 // Named rather than only listed, because the address of an array element is
 // not a constant and a field default like `= &ASCII` needs one
-immutable Charset ASCII   = Charset("ascii",   "ASCII",                        ascii());
-immutable Charset CP437   = Charset("cp437",   "IBM PC Code Page 437",         ascii(CP437_HIGH), cp437pictures());
-immutable Charset EBCDIC  = Charset("ebcdic",  "IBM EBCDIC Code Page 37",      table(CP037));
-immutable Charset MAC     = Charset("mac",     "Mac OS Roman (Windows 10000)", ascii(MAC_HIGH));
-immutable Charset LATIN1  = Charset("latin1",  "ISO/IEC 8859-1",               phobos!Latin1Char());
-immutable Charset WIN1252 = Charset("win1252", "Windows-1252",                 phobos!Windows1252Char());
+immutable Charset ASCII     = Charset("ascii",     "ASCII",                        ascii());
+immutable Charset CP437     = Charset("cp437",     "IBM PC Code Page 437 (DOS)",   ascii(CP437_HIGH), cp437pictures());
+immutable Charset EBCDIC037 = Charset("ebcdic037", "IBM EBCDIC Code Page 37",      table(CP037));
+immutable Charset MACROMAN  = Charset("macroman",  "Mac OS Roman (Windows 10000)", ascii(MAC_HIGH));
+immutable Charset LATIN1    = Charset("latin1",    "ISO/IEC 8859-1",               phobos!Latin1Char());
+immutable Charset WIN1252   = Charset("win1252",   "Windows-1252",                 phobos!Windows1252Char());
 
-immutable(Charset*)[] charsets = [ &ASCII, &CP437, &EBCDIC, &MAC, &LATIN1, &WIN1252 ];
+immutable(Charset*)[] charsets = [ &ASCII, &CP437, &EBCDIC037, &MACROMAN, &LATIN1, &WIN1252 ];
 
 private:
 
@@ -224,7 +224,7 @@ immutable wstring MAC_HIGH =
 
 unittest
 {
-    immutable(Charset)* ebcdic = findCharset("ebcdic");
+    immutable(Charset)* ebcdic = findCharset("ebcdic037");
     assert(ebcdic);
     assert(ebcdic.glyph(0x00) == "");
     assert(ebcdic.glyph(0x25) == "");   // LF, not printable...
@@ -256,7 +256,7 @@ unittest
     assert(ascii.decode(0x80) == wchar.init);
     assert(ascii.encode(wchar.init) == -1);
 
-    immutable(Charset)* mac = findCharset("mac");
+    immutable(Charset)* mac = findCharset("macroman");
     assert(mac.glyph(0xaa) == "™");
     assert(mac.glyph(0xf0) == "");
     assert(mac.encode('\uf8ff') == 0xf0);
@@ -291,7 +291,7 @@ unittest
 {
     import std.exception : assertThrown;
     import std.utf : UTFException;
-    immutable(Charset)* ebcdic = findCharset("ebcdic");
+    immutable(Charset)* ebcdic = findCharset("ebcdic037");
     assertThrown!UTFException(ebcdic.encode("\xff"));
     assertThrown(ebcdic.encode("€"));
     assertThrown(findCharset("ascii").encode("é"));
