@@ -9,7 +9,7 @@ import std.conv : text, to;
 import std.system : Endian;
 
 import ddhx.formatting;
-import ddhx.transcoder : CharacterSet, selectCharacterSet;
+import ddhx.charset : Charset, ASCII, EBCDIC, findCharset;
 
 import os.terminal : terminalKeybind;
 
@@ -35,7 +35,7 @@ struct RC
     DataType data_type  = DataType(BaseType.u8, Format.hex);
     
     /// Character set used for transcoding.
-    CharacterSet charset = CharacterSet.ascii;
+    immutable(Charset)* charset = &ASCII;
     
     /// Writing mode.
     ///
@@ -207,7 +207,7 @@ unittest
 charset ebcdic
 bind j left`);
     assert(rc.columns == 6); // Untouched by config file
-    assert(rc.charset == CharacterSet.ascii);
+    assert(rc.charset == &ASCII);
     assert(binded(key));
 }
 
@@ -362,7 +362,7 @@ unittest
     assert(rc.address_spacing == 5);
     
     configRC(rc, "charset", "ebcdic");
-    assert(rc.charset == CharacterSet.ebcdic);
+    assert(rc.charset == &EBCDIC);
 
     configRC(rc, "writemode", "insert");
     assert(rc.writemode == WritingMode.insert);
@@ -530,7 +530,10 @@ void configure_charset(ref RC rc, string value, bool conf = false)
     if (conf && rc.charset_set)
         return;
     
-    rc.charset = selectCharacterSet(value);
+    immutable(Charset)* set = findCharset(value);
+    if (set == null)
+        throw new Exception(text(MSG_INVALID_CHARSET, value));
+    rc.charset = set;
     rc.charset_set = true;
 }
 

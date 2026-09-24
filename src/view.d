@@ -20,6 +20,7 @@ import std.format : sformat;
 
 import os.terminal;
 
+import ddhx.charset : Charset;
 import ddhx.document.base : IDocument, DocCaps;
 import ddhx.document.file : FileDocument, OFlags;
 import ddhx.document.memory : MemoryDocument;
@@ -28,7 +29,6 @@ import ddhx.formatting;
 import ddhx.inspector;
 import ddhx.logger;
 import ddhx.platform;       // For assertion, MAXSIZE
-import ddhx.transcoder;
 
 import colors;
 import configuration;
@@ -2450,8 +2450,8 @@ void update_view(Session *session)
             string text;
             if (ci < result.length)
             {
-                string c = transcode(result[ci], session.rc.charset);
-                text = c ? c : DEFAULT;
+                immutable(Charset)* cs = session.rc.charset;
+                text = cs.printable(result[ci]) ? cs.glyph(result[ci]) : DEFAULT;
             }
             else
             {
@@ -2461,51 +2461,7 @@ void update_view(Session *session)
             chars += line.add(text, scheme);
         }
         
-        // Render line segments on screen
-        terminalCursor(0, row + rowdisp);
-        ColorMap lastmap; // Need to track full color range...
-        size_t rendered; // chars printed
-        foreach (ref segment; line.segments)
-        {
-            if (rendered >= g_cols) break;
-
-            ColorMap map = g_colors.get(segment.scheme);
-
-            bool change = lastmap != map;
-
-            if (change)
-                terminalResetColor(); // fixes runaway color with invert (cursor) on POSIX
-
-            // Apply attribute(s)
-            if (map.foreground.isNull == false && change)
-                terminalForeground(map.foreground.get);
-            if (map.background.isNull == false && change)
-                terminalBackground(map.background.get);
-            if (map.flags & COLORMAP_INVERTED && change)
-                terminalInvertColor();
-
-            // Truncate segment if it would exceed terminal width
-            size_t avail = g_cols - rendered;
-            if (segment.data.length <= avail)
-            {
-                terminalWrite(segment.data);
-                rendered += segment.data.length;
-            }
-            else
-            {
-                terminalWrite(segment.data[0..avail]);
-                rendered += avail;
-            }
-
-            lastmap = map;
-        }
-
-        // Fill rest of term with spaces
-        if (rendered < g_cols)
-        {
-            terminalResetColor();   // fixes colors when in text column
-            terminalWriteChar(' ', cast(int)(g_cols - rendered));
-        }
+        render_line(line, row + rowdisp);
 
         // Tried fixing copying from VTE terminal for newlines...
         // Adding "\n" didn't work. ddhx <0.5 makes that work.
@@ -2839,8 +2795,8 @@ void update_diff(Session *session, int top, int height)
             string text = " ";
             if (hastheir)
             {
-                string c = transcode(theirs[o], session.rc.charset);
-                text = c ? c : ".";
+                immutable(Charset)* cs = session.rc.charset;
+                text = cs.printable(theirs[o]) ? cs.glyph(theirs[o]) : ".";
             }
             chars += line.add(text, scheme);
         }
@@ -2875,14 +2831,14 @@ void render_line(ref Line line, int y)
             terminalInvertColor();
 
         size_t avail = g_cols - rendered;
-        if (segment.data.length <= avail)
+        if (segment.columns <= avail)
         {
             terminalWrite(segment.data);
-            rendered += segment.data.length;
+            rendered += segment.columns;
         }
         else
         {
-            terminalWrite(segment.data[0..avail]);
+            terminalWrite(segment.head(avail));
             rendered += avail;
         }
 

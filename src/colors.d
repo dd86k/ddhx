@@ -237,13 +237,45 @@ struct ColorMapper
 struct LineSegment
 {
     string data;
+    size_t columns;
     ColorScheme scheme;
 
     string toString() const { return data; }
+
+    /// Leading part that fits in this many columns, never splitting a glyph.
+    string head(size_t cols) const
+    {
+        size_t i;
+        for (; i < data.length; ++i)
+        {
+            if (isLead(data[i]) && cols-- == 0)
+                break;
+        }
+        return data[0 .. i];
+    }
+}
+
+// Every glyph the view emits is one column wide (see ddhx.charset), so a
+// column is a character, and a character starts at any non-continuation byte
+private bool isLead(char c) { return (c & 0xc0) != 0x80; }
+
+private
+size_t columnsOf(const(char)[] text)
+{
+    size_t n;
+    foreach (char c; text)
+    {
+        if (isLead(c))
+            ++n;
+    }
+    return n;
 }
 struct Line
 {
     List!LineSegment segments;
+    // TODO: Size from the column count, or grow. A glyph takes up to 3 bytes,
+    //       so a large "columns" setting (~1000) trips the assertion in add()
+    //       Could be a global, growing buffer instead of static, or determined by caller
     char[4 * 1024] textbuf;
     size_t textpos;
 
@@ -265,6 +297,7 @@ struct Line
     // Setting index=0 is faster than de- and re-allocating
     void reset() { segments.reset(); textpos = 0; }
 
+    /// Returns: Columns added.
     size_t add(string text, ColorScheme scheme)
     {
         import core.stdc.string : memcpy;
@@ -272,23 +305,26 @@ struct Line
         assertion(textpos + text.length <= textbuf.length);
 
         memcpy(textbuf.ptr + textpos, text.ptr, text.length);
+        size_t cols = columnsOf(text);
 
         // Coalesce: extend previous segment if same scheme
         if (segments.count > 0 && segments.buffer[segments.count - 1].scheme == scheme)
         {
             auto prev = &segments.buffer[segments.count - 1];
             prev.data = cast(string) textbuf[textpos - prev.data.length .. textpos + text.length];
+            prev.columns += cols;
         }
         else
         {
             LineSegment segment;
             segment.data = cast(string) textbuf[textpos .. textpos + text.length];
+            segment.columns = cols;
             segment.scheme = scheme;
             segments ~= segment;
         }
 
         textpos += text.length;
-        return text.length;
+        return cols;
     }
     
     // No color
@@ -374,4 +410,19 @@ unittest
 
     assert(line[2].toString()   == "  ....");
     assert(line[2].scheme       == ColorScheme.normal);
+}unittest
+{
+    Line line;
+
+    // Columns, not bytes, so a multibyte glyph counts once
+    assert(line.normal("ab") == 2);
+    assert(line.normal("ñ☺") == 2);
+    assert(line[0].columns == 4);
+    assert(line[0].data.length == 7);
+
+    // A cut lands between glyphs, never inside one
+    assert(line[0].head(0) == "");
+    assert(line[0].head(3) == "abñ");
+    assert(line[0].head(4) == "abñ☺");
+    assert(line[0].head(9) == "abñ☺");
 }

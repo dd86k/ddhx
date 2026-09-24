@@ -13,7 +13,7 @@ import std.format : sformat;
 import os.path : displayName;
 
 import ddhx.formatting;
-import ddhx.transcoder : CharacterSet, charsetID;
+import ddhx.charset : Charset, ASCII;
 
 /// Buffer-backed writer for formatting into a char[] slice, it's "write-and-forget".
 /// This is used by report_position to format into g_messagebuf, it's "write-and-retain".
@@ -217,7 +217,7 @@ private const(char)[] resolveSpecifier(Session, Selection)(const(char)[] fmt, re
         return sformat(tmpbuf, "%s-%s", s, e);
 
     case 'c': // character set
-        return charsetID(session.rc.charset);
+        return session.rc.charset.id;
 
     case 't': // data type
         return dataTypeToString(session.rc.data_type);
@@ -281,7 +281,7 @@ version(unittest)
     {
         AddressType address_type = AddressType.hex;
         DataType data_type = DataType(BaseType.u8, Format.hex);
-        CharacterSet charset = CharacterSet.ascii;
+        immutable(Charset)* charset = &ASCII;
         WritingMode writemode = WritingMode.overwrite;
     }
 
