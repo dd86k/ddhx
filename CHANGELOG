@@ -15,6 +15,7 @@ Rules:
   Faster and lighter on memory, saves included.
 - `utf8bom:`, `utf16bom:`, and `utf32bom:` prefixes
   Same as `utf8:`/`utf16:`/`utf32:`, but with a BOM in front.
+- "latin1" (ISO 8859-1) and "win1252" (Windows-1252) character sets
 
 // Improvements
 - Media detection: files, disks, devices, streams, and procfs-style files
@@ -23,6 +24,7 @@ Rules:
 
 // Fixed
 - `refresh` command now rereads the document.
+- cp437: `<=>` and `LMN` were displayed out of order, and 0xE1 as β (now ß).
 - Fix 32-bit Android and 32-bit musl builds
 - A failure to open the target printed a stack trace instead of an error.
 - Opening a named pipe (e.g. from mkfifo) with no writer hung forever, with

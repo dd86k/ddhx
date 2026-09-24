@@ -45,7 +45,7 @@ Title font: Shaded Blocky (FIGlet)
   * Unlimited undo/redo, even with new buffers
   * Large file support: up to 8 EiB
   * Visual selection and range commands
-  * Character sets: ascii, mac, cp437, ebcdic
+  * Character sets: ascii, mac, cp437, ebcdic, latin1, win1252
   * Search data with a powerful pattern syntax
   * Skip identical data or repeating patterns by selection
   * Customizable with configuration file

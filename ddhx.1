@@ -38,7 +38,7 @@ Large file support: up to 8 EiB
 .IP \(bu
 Visual selection and range commands
 .IP \(bu
-Multiple charset representations: ascii, mac, cp437, ebcdic
+Multiple charset representations: ascii, mac, cp437, ebcdic, latin1, win1252
 .IP \(bu
 Search data with a powerful pattern syntax
 .IP \(bu
@@ -85,8 +85,10 @@ Set character translation:
 .BR ascii ,
 .BR cp437 ,
 .BR mac ,
+.BR ebcdic ,
+.BR latin1 ,
 or
-.BR ebcdic .
+.BR win1252 .
 Default:
 .BR ascii .
 .TP
@@ -1336,7 +1338,7 @@ Address display format. Default:
 Address column width. Default:
 .BR 11 .
 .TP
-.BR charset " \fRascii\fP | cp437 | mac | ebcdic"
+.BR charset " \fRascii\fP | cp437 | mac | ebcdic | latin1 | win1252"
 Character set for the text column. Default:
 .BR ascii .
 This affects the display only: a text pattern names its own encoding
@@ -1558,7 +1560,7 @@ lb l.
 lb l.
 %e	Edited indicator ("*" if modified, " " otherwise)
 %m	Writing mode (OVR, INS, DIG, R/O)
-%c	Character set (ascii, cp437, mac, ebcdic)
+%c	Character set (ascii, cp437, mac, ebcdic, latin1, win1252)
 %t	Data type (x8, x16, etc.)
 %%	Literal percent sign
 .TE
