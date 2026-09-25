@@ -67,8 +67,7 @@ This list may change at any given time without notice.
 
 0.13: WIP
 - [x] Disk-aware: Reading and saving
-      Tested: Windows, Linux, FreeBSD, NetSBD
-      Recognized: OpenBSD (sees zero-byte disk)
+      Tested: Windows, Linux, FreeBSD, NetBSD, OpenBSD
       Untested: macOS
 
 future:
