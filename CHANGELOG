@@ -10,6 +10,9 @@ Rules:
 ////////////////////////////////////////////////////////////////////////////////
 // v0.13.0
 
+New editor backend (piecev4), improved medium detection (disks officially
+supported), redone character encoding module (and added "latin1" and win1252").
+
 WARNING: charsets "ebcdic" and "mac" are renamed "ebcdic037" and "macroman",
 one name per encoding (e.g. `charset ebcdic037`).
 
