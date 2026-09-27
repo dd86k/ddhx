@@ -23,8 +23,9 @@ one name per encoding (e.g. `charset ebcdic037`).
 - `utf8bom:`, `utf16bom:`, and `utf32bom:` prefixes
   Same as `utf8:`/`utf16:`/`utf32:`, but with a BOM in front.
 - "latin1" (ISO 8859-1) and "win1252" (Windows-1252) character sets
-- Additional prefixes for registered charsets ("ebcdic037:", "latin1:",
-  "
+- Additional prefixes for registered charsets available to search with:
+  "ebcdic037:", "latin1:", "win1252:", "macroman:", "ascii:", "cp437"
+- `--help-charsets` switch: List available charsets.
 
 // Improvements
 - Media detection: files, disks, devices, streams, and procfs-style files

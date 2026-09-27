@@ -167,6 +167,15 @@ void printpage(string opt)
             writeln;
         }
         break;
+    case "help-charsets":
+        import ddhx.charset : Charset, charsets;
+        enum SPACING = -12;
+        printfield("CHARSET", "NAME", SPACING);
+        foreach (immutable(Charset)* set; charsets)
+        {
+            printfield(set.id, set.name, SPACING);
+        }
+        break;
     }
     exit(EXIT_SUCCESS);
 }
@@ -242,6 +251,7 @@ void main(string[] args)
         "help-commands","Print commands page and exit", &printpage,
         "help-config",  "Print configuration page and exit", &printpage,
         "help-keys",    "Print default shortcuts and exit", &printpage,
+        "help-charsets","Print available character sets and exit", &printpage,
         "ver",          "Print only the version and exit", &printpage,
         "version",      "Print the version page and exit", &printpage,
         );
