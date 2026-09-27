@@ -140,6 +140,8 @@ string versus scalar:
     utf16: utf32:         text, transcoded, one scalar per code unit
     utf8bom: utf16bom:    likewise, preceded by a byte order mark
     utf32bom:
+    ascii: cp437:         text, transcoded, one byte per character, named
+    ebcdic037: ...        by the charset setting's ids
     x8: x16: x32: x64:    scalar, unsigned, that many bytes (bit indicator)
     u8: u16: u32: u64:    likewise, decimal
     o8: o16: o32: o64:    likewise, octal
@@ -199,6 +201,17 @@ behind it, so utf16bom:hi is right in both orders and stays right.
 
 A mark alone is still x:efbbbf or x16:feff, since a prefix with nothing after
 it is a typo here as everywhere else.
+
+Single-byte sets get a prefix if they are in the charset list, spelled by the
+same id the charset setting takes, so the two share one vocabulary and a set
+added to one is added to both. Unbounded or user-loaded sets would go through
+one parametric form (text(koi8r): say) rather than more flat prefixes. Ids are
+one name per encoding (ebcdic037, not ebcdic, of which there are dozens).
+
+A character the set lacks is an error, never substituted; the way to put a raw
+byte next to set text is its own x: argument, not utf8:, which would splice
+UTF-8 into EBCDIC. Escapes resolve before encoding, so ebcdic037:"\x25" is '%'
+(6C), not byte 25.
 
 Floats are named by their width in bits like everything else, so f32: and f64:
 rather than 'float:' and 'double:', and what they encode is the bit pattern the
@@ -360,6 +373,10 @@ and the unittest at the end of patterns.d (both, by typed command line).
   find utf16bom:hi                  FF FE 68 00 69 00   ...ordered like the text
   find utf16bom:a b                 FF FE 61 00 62 00   one needle, one mark
   find utf8bom:                     error, a mark alone is x:efbbbf
+  find ebcdic037:Hi                 C8 89               a set, by its charset id
+  find ebcdic037:"\x25"             6C                  '%', escapes come first
+  find ebcdic037:Hi x:25            C8 89 25            ...raw bytes go in x:
+  find ascii:'é'                    error, not in the set
   find x:1122                       11 22               bytes, as written
   find x16:1122                     22 11               a value, so encoded
   find x:0001                       00 01               no leading zero eaten

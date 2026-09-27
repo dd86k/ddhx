@@ -67,13 +67,12 @@ This list may change at any given time without notice.
 
 0.13: WIP
 - [x] Disk-aware: Reading and saving
-      Tested: Windows, Linux, FreeBSD, NetBSD, OpenBSD
-      Untested: macOS
+      Tested: Windows, macOS, Linux, FreeBSD, NetBSD, OpenBSD
+- [x] Charset-specific pattern prefixes (e.g., ebcdic037:)
 
 future:
 - [ ] Improve tab-completion
 - [ ] open/close commands
-- [ ] Charset-specific pattern prefixes (e.g., ebcdic037:)
 - [ ] Document: Process memory
 
 ////////////////////////////////////////////////////////////////////////////////

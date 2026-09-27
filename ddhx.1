@@ -1144,6 +1144,28 @@ alone is
 or
 .BR x16:feff .
 .TP
+.IR CHARSET : STRING
+Text in a single\-byte character set, one byte per character, where
+.I CHARSET
+is any id the
+.B charset
+setting takes
+(ascii, cp437, ebcdic037, macroman, latin1, win1252).
+.B ebcdic037:Hi
+is [ 0xc8, 0x89 ].
+A character the set lacks is an error, never substituted.
+.IP
+Escapes resolve before encoding, so
+.B ebcdic037:\(dq\ex25\(dq
+is \(aq%\(aq, [ 0x6c ], not byte 0x25.
+A raw byte goes in an
+.B x:
+argument of its own
+.RB ( "ebcdic037:Hi x:25" ),
+not
+.BR utf8: ,
+which would splice UTF\-8 into the set\(aqs text.
+.TP
 .B ?
 Match any single byte (wildcard). Only a bare argument is a wildcard, so give
 it a prefix
@@ -1342,7 +1364,7 @@ Address column width. Default:
 Character set for the text column. Default:
 .BR ascii .
 This affects the display only: a text pattern names its own encoding
-.RB ( utf8: ", " utf16: ", " utf32: ,
+.RB ( utf8: ", " utf16: ", " ebcdic037: ,
 see
 .BR PATTERNS ).
 .TP

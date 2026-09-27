@@ -115,6 +115,7 @@ static immutable string MSG_VALUE_OUT_OF_RANGE = "Value too large for its type: 
 // Charsets / transcoding
 
 static immutable string MSG_INVALID_CHARSET = "Invalid charset: ";
+static immutable string MSG_NOT_IN_CHARSET = "U+%04X is not in %s";
 
 // Configuration
 

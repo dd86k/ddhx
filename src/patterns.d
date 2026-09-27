@@ -7,10 +7,12 @@
 module patterns; // plural not to mess with pattern function
 
 import std.conv : text;
+import std.format : format;
 import std.math : E, PI, SQRT2;
 import std.string : startsWith;
 import std.system : Endian;
 
+import ddhx.charset : Charset, charsets;
 import utils : Argument, printable;
 
 import messages;
@@ -29,7 +31,7 @@ enum PatternType
 {
     unknown,
     bytes,    /// Literal bytes, as written ("x:", "0x").
-    text,     /// Text encoded into bytes ("utf8:", "utf16:", "utf32:", "*bom:").
+    text,     /// Text encoded into bytes ("utf8:", "utf16:", "*bom:", "ebcdic037:", ...).
     scalar,   /// An integer encoded into bytes ("u8:", "x16:", "i32:", ...).
     floating, /// A float encoded into bytes ("f32:", "f64:", "f80:").
 }
@@ -53,6 +55,7 @@ struct PatternSpec
     size_t width; /// Scalar size in bytes: 1, 2, 4, or 8 (4, 8, or 10 for floats,
                   /// and the code unit size for text).
     int flags;    /// SPEC_* bits.
+    immutable(Charset)* charset; /// Single-byte set for text, null for Unicode.
 }
 struct Prefix { const(char)[] str; PatternSpec spec; }
 /// Detect pattern prefix.
@@ -65,14 +68,13 @@ Prefix patternpfx(const(char)[] input)
     if (input is null || input.length == 0)
         return pfx;
 
-    // TODO: "re:" for Regular Expressions
+    // TODO: "regex:" for Regular Expressions
     // TODO: "f16:"/"bf16:" exotic IEEE-adjacent floats
     // TODO: "ibm32:"/"ibm64:" (System/360 hex floats, as in SEG-Y and SAS
     //       transport files) and "vax32:"/"vaxg64:" if anyone asks. These get
     //       prefixes rather than a setting: a format is what the file is, and
     //       "f32:" already means binary32 everywhere, so nothing changes
     //       meaning behind a setting nobody remembers flipping
-    // TODO: More text encodings: "ascii:", "latin1:", "ebcdic037:", ...
     //
     // Text names its encoding for the same reason a scalar names its width:
     // "utf8:" says what bytes come out, where the old "s:" left it to whatever
@@ -134,6 +136,18 @@ Prefix patternpfx(const(char)[] input)
         {
             pfx.str  = input[prefix.str.length..$];
             pfx.spec = prefix.spec;
+            return pfx;
+        }
+    }
+
+    // The rest of the existing charsets (ascii, macroman, ebcdic037, etc.)
+    foreach (immutable(Charset)* set; charsets)
+    {
+        if (input.length > set.id.length && input[set.id.length] == ':' &&
+            startsWith(input, set.id))
+        {
+            pfx.str  = input[set.id.length + 1..$];
+            pfx.spec = PatternSpec(PatternType.text, 0, 1, 0, set);
             return pfx;
         }
     }
@@ -214,6 +228,17 @@ unittest
     assert(patternpfx("utf:hi")   == Prefix("utf:hi"));
     assert(patternpfx("utf7:hi")  == Prefix("utf7:hi"));
     assert(patternpfx("utf16le:hi") == Prefix("utf16le:hi"));
+
+    // Single-byte sets are named by their charset id, and only by it
+    {
+        import ddhx.charset : EBCDIC037, CP437;
+        assert(patternpfx("ebcdic037:hi") == Prefix("hi", PatternSpec(PatternType.text, 0, 1, 0, &EBCDIC037)));
+        assert(patternpfx("cp437:hi")     == Prefix("hi", PatternSpec(PatternType.text, 0, 1, 0, &CP437)));
+        assert(patternpfx("ebcdic037:")   == Prefix("",   PatternSpec(PatternType.text, 0, 1, 0, &EBCDIC037)));
+        assert(patternpfx("ebcdic:hi")    == Prefix("ebcdic:hi"));
+        assert(patternpfx("ebcdic037")    == Prefix("ebcdic037"));
+        assert(patternpfx("ebcdic0370:a") == Prefix("ebcdic0370:a"));
+    }
 }
 
 // Turn hex digits into the bytes they spell, in the order they were written.
@@ -320,12 +345,36 @@ unittest
 // is U+FEFF spelled in the encoding named, so the wide ones go through the same
 // encoder as their text and answer to `endian` with it; UTF-8 has a fixed
 // spelling instead, that path having nothing to encode with.
+//
+// A single-byte set ("ebcdic037:" and the rest of `charsets`) transcodes too,
+// and a character it lacks is refused rather than substituted. Escapes are
+// resolved before this, so `ebcdic037:"\x25"` is "%" (6C), not byte 25; a raw
+// byte goes in its own "x:" argument.
 private
 ubyte[] textbytes(const(char)[] input, PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
 {
     import std.utf : decode, UTFException;
 
     assert(spec.width == 1 || spec.width == 2 || spec.width == 4);
+
+    if (spec.charset)
+    {
+        ubyte[] result = new ubyte[input.length]; // never more bytes than UTF-8
+        size_t o, i;
+        while (i < input.length)
+        {
+            dchar c = void;
+            try c = decode(input, i);
+            catch (UTFException)
+                throw new Exception(text(MSG_ARGUMENT_NOT_TEXT, printable(arg)));
+
+            int b = spec.charset.encode(c);
+            if (b < 0)
+                throw new Exception(format(MSG_NOT_IN_CHARSET, cast(uint)c, spec.charset.id));
+            result[o++] = cast(ubyte)b;
+        }
+        return result[0..o];
+    }
 
     ubyte[] mark;
     if (spec.flags & SPEC_BOM)
@@ -448,6 +497,19 @@ unittest
         test_throw("\xed\xa0\x80", UTF32);
         test_throw("\xff\xfe", UTF16B);   // ...a mark buying no leniency
         test_throw("\xed\xa0\x80", UTF32B);
+
+        // A single-byte set encodes what it has and refuses what it lacks
+        import ddhx.charset : EBCDIC037, CP437, ASCII;
+        static immutable PatternSpec EBCDIC = { PatternType.text, 0, 1, 0, &EBCDIC037 };
+        static immutable PatternSpec DOS    = { PatternType.text, 0, 1, 0, &CP437 };
+        static immutable PatternSpec ASC    = { PatternType.text, 0, 1, 0, &ASCII };
+        assert(textbytes("Hi\n", EBCDIC, littleEndian, null) == [ 0xc8, 0x89, 0x25 ]);
+        assert(textbytes("Hi\n", EBCDIC, bigEndian,    null) == [ 0xc8, 0x89, 0x25 ]);
+        assert(textbytes("%",    EBCDIC, littleEndian, null) == [ 0x6c ]); // what "\x25" resolves to
+        assert(textbytes("\u263a\u00df", DOS, littleEndian, null) == [ 0x01, 0xe1 ]);
+        test_throw("\u20ac", EBCDIC);
+        test_throw("\u00e9", ASC);
+        test_throw("\xff",   EBCDIC); // not text, so nothing to encode
     }
 }
 
@@ -1583,6 +1645,13 @@ unittest
     // ...and it belongs to the needle, so an argument that continues the
     // prefix continues the encoding alone
     assert(pat("utf16bom:a", "b").data    == [ 0xff, 0xfe, 'a', 0, 'b', 0 ]);
+    // A charset carries over like any other text prefix, and mixes with bytes
+    assert(pat("ebcdic037:ab", "c").data    == [ 0x81, 0x82, 0x83 ]);
+    assert(pat("ebcdic037:a", "x:25").data  == [ 0x81, 0x25 ]);
+    assert(pat("latin1:\u00e9").data        == [ 0xe9 ]);
+    assert(pat("win1252:\u20ac").data       == [ 0x80 ]);
+    assert(pat("macroman:\u00e9").data      == [ 0x8e ]);
+    assert(pat("ascii:A").data              == [ 0x41 ]);
     assert(pat("utf8bom:a", "b").data     == [ 0xef, 0xbb, 0xbf, 'a', 'b' ]);
     // Typing it twice is another matter, that being what was asked for
     assert(pat("utf8bom:a", "utf8bom:b").data
@@ -1832,6 +1901,9 @@ unittest
         ["utf16:a", "\xff"],    // ...including where the prefix carried over
         ["utf16bom:\xff\xfe"],  // ...and a mark buys no leniency for the text
         ["utf16bom:a", "\xc3"],
+        // A charset refuses what it lacks, never substituting
+        ["ebcdic037:"], ["ebcdic037:\u20ac"], ["ascii:\u00e9"], ["ebcdic037:a", "\xff"],
+        ["ebcdic:a"], ["mac:a"], ["dos:a"],
         // Half a byte is a typo, not a byte
         ["x:0"], ["x:fff"], ["0x0"], ["0xfff"], ["x:00", "0"],
         // A scalar type without a width, whatever it would have encoded to.
