@@ -288,6 +288,7 @@ void main(string[] args)
     }
     
     if (string logpath = environment.get("DDHX_LOG"))
+    if (logpath.length)
     {
         import std.process : thisProcessID;
         logStart(logpath);
