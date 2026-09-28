@@ -3283,7 +3283,8 @@ void prompt_command(Session *session, Argument[] args)
     immutable(ubyte)[] name = argv[0].data;
     argv = argv.length > 1 ? argv[1..$] : null;
     
-    // Get command by its name
+    // Looked up as bytes: a name that is not text simply misses, and "command
+    // not found" beats an encoding complaint about a typo.
     const(void function(Session*, Argument[])) *com = cast(string)name in g_commands;
     if (com == null)
     {

@@ -59,7 +59,7 @@ The folder structure is pretty straight-forward:
 ********************************************************************************
 
 This section is about typing commands at the ':' prompt and in .ddhxrc. The
-COMMANDS section further down is about the undo history, which is unrelated.
+HISTORY section further down is about undo, which is unrelated.
 
 A typed line goes through two steps:
 
@@ -68,169 +68,177 @@ A typed line goes through two steps:
   patterns.pattern()  Turns one argument into a needle, applying prefixes and
                       wildcards.
 
+A hex editor's job is precision, so each rule below trades a little
+convenience for a needle whose bytes are never a surprise.
+
 *
-* QUOTING RULES
+* QUOTING
 *
 
-Quoting style selects how the text is read, the same way it does in a
-programming language. The two quotes buy two independent things, and neither of
-them buys the other's:
+The two quotes buy two independent things, and neither buys the other's:
 
                     protects whitespace    escape sequences
     text            no                     no
     'text'          yes                    no
     "text"          yes                    yes
 
-So text is raw unless it is double quoted, which makes it a C string literal:
+So text is raw unless double quoted, which makes it a C string literal:
 
     find utf8:C:\Users              a path, typed as a path
     find utf8:'C:\Program Files'    a path with a space, quoted for the space
     find utf8:"\x1b[0m"             an escape sequence, opted into
 
-From there:
+Adjacent runs concatenate, each read its own way, and a prefix may sit inside
+or outside the quotes ("utf8:abc" is utf8:"abc"):
 
-1. Adjacent runs concatenate, so the forms mix freely within one argument. That
-   is a plain concatenation of literals, as in any language that has more than
-   one kind of them:
+    find utf8:'C:\Users'"\0"        a raw path with a NUL after it
+    find utf8:'a'"\t"'b'            tab between two raw runs
 
-       find utf8:'C:\Users'"\0"    a raw path with a NUL after it
-       find utf8:'a'"\t"'b'        tab between two raw runs
+Why is an argument bytes, not text?
+- Once escapes resolve, "\0" and "\xff" are not valid UTF-8, and POSIX
+  filenames are byte strings anyway. Commands wanting text validate it; the
+  rest never care.
 
-   A prefix may sit inside or outside the quotes: "utf8:abc" and utf8:"abc"
-   are the same thing.
+Why are escapes the same for every command?
+- They resolve while the quotes are read, before a command is chosen. "\xff"
+  is one byte for find and diff-file alike, and diff-file "C:\dir" is an error
+  rather than a path.
 
-2. There is no escape outside of double quotes, not even \" and \'. A quote is
-   written by using the other kind: "'" for an apostrophe, '"' for a double
-   quote. The POSIX 'it'\''s' idiom does not apply, since the backslash is data
-   here; it is 'it'"'"'s' instead.
+Why is a backslash a byte outside double quotes, even before a quote?
+- Interpreting escapes everywhere makes backslashes and quotes a chore to
+  search for. A quote is written with the other kind instead: 'it'"'"'s', not
+  POSIX's 'it'\''s'.
 
-3. An unknown escape is an error. "C:\dir" names \d and stops;
-   it is written 'C:\dir' or "C:\\dir".
+Why is an unknown escape an error?
+- As in a compiler: with one policy for every command, the strict one is the
+  safe one. "C:\dir" names \d and stops; write 'C:\dir' or "C:\\dir".
 
-4. An unterminated quote is an error.
+Why is an unterminated quote an error?
+- Guessing where the line ended would silently run half a command.
 
-5. Empty quotes produce no argument rather than an empty one. `find ''` sees
-   nothing at all.
+Why do empty quotes produce no argument?
+- No command distinguishes "" from absent, so find "" reports "Need search"
+  instead of an obscure empty needle.
 
-6. Wildcards are a product of their own and not part of the quoting process.
-
-Escapes are resolved where the quotes are read, in the same pass, so an
-argument is bytes rather than text:
-
-  utils.Argument    immutable(ubyte)[] data, quotes removed and escapes
-                    resolved, plus a .text() that validates UTF-8 and throws
-                    if the bytes are not.
-
-One pass also means the escape rules cannot differ per command, since they are
-applied before a command is chosen. "\xff" resolves to one byte for find and
-for diff-file alike, whether or not the command can do anything with it.
+Why do wildcards ignore quoting?
+- They match whole arguments before prefixes, so anything prefixed is already
+  data; consulting quotes only made find '*' an error.
 
 *
-* PREFIXES
+* BYTES AND SCALARS
 *
 
-Step 2 is prefixes. The split that organizes them is not the radix, it is byte
-string versus scalar:
-
-    BYTE STRING     already a sequence of bytes, so it is taken as written and
-                    has neither a width nor an endian to ask about
-    SCALAR          a value that still has to be encoded, so it has both
+Prefixes split into byte strings, taken as written, and scalars, which still
+have to be encoded and so have a width and a byte order:
 
     x: 0x                 bytes, two hex digits each
-    utf8:                 bytes, text as typed
-    utf16: utf32:         text, transcoded, one scalar per code unit
-    utf8bom: utf16bom:    likewise, preceded by a byte order mark
-    utf32bom:
-    ascii: cp437:         text, transcoded, one byte per character, named
-    ebcdic037: ...        by the charset setting's ids
-    x8: x16: x32: x64:    scalar, unsigned, that many bytes (bit indicator)
+    x8: x16: x32: x64:    scalar, unsigned, that many bits
     u8: u16: u32: u64:    likewise, decimal
     o8: o16: o32: o64:    likewise, octal
     i8: i16: i32: i64:    likewise, signed, two's complement
-    f32: f64:             likewise, IEEE-754, that many bytes
-    f80:                  likewise, x87's 80-bit extended, ten bytes
 
-Hexadecimal is the only radix on both sides, because two digits are exactly one
-byte. Decimal and octal do not tile bytes, so they are only ever scalars, and a
-scalar always names its width: the bare d:, o:, and 0o are gone, decimal being
-u8:..u64: unsigned and i8:..i64: signed. 0x survives the same cut only because
-it is a byte string, like the x: it abbreviates.
+Scalars are ordered by the `endian` setting (the inspector's, flipped by
+Alt+E). An argument without a prefix continues the previous one, width
+included, so `find u16:1 2` is two 16-bit values.
 
-Text names its encoding rather than taking the charset setting, which is
-what 's:' was going to do. Endian works as a setting because a file picks one
-and the toggle is cheap; a character set is the text column's setting, so a
-needle sourced from it changes meaning with state that is not in the line and
-searching EBCDIC while reading ASCII would mean flipping it twice per search.
+Why must every scalar name its width?
+- The prefix decides the length, never the value. The old d:, o:, and 0o
+  sized themselves to the value (d:255 one byte, d:65536 three), so under
+  replace or insert the number decided how much of the file got overwritten.
 
-Additionally, a s: string prefix says nothing about its encoding leaves the
-bytes it produces up to the character set setting, and an encoding is a
-property of the file being looked at. That's why 'utf8:' was chosen over 's:':
-It is both D's native format and what the readline implementation returns.
-It belongs on the needle. utf16: and utf32: followed, and neither changes what
-utf8: means. string/wstring/dstring terms only used in D.
+Why is hex on both sides?
+- Two digits are exactly one byte. Decimal and octal do not tile bytes, so
+  they are scalars only. 0x survives where 0o went because it is a byte
+  string, like x:.
 
-utf8: is the pass-through, since the line hands over UTF-8 already, and it is
-byte transparent: utf8:"\xff" is a byte nobody claimed was a character, which
-is what makes the escapes worth having. utf16: and utf32: transcode, so they
-need text to work with and refuse anything that is not UTF-8, including a lone
-surrogate, rather than widening a byte to a code unit (that would be Latin-1
-wearing a UTF-16 name). x16: is how an unpaired D800 is searched for.
+Why is an odd hex digit count an error?
+- Padding means guessing which end gains the zero.
 
-A code unit is a scalar like any other, so it is ordered by the endian setting
-and there is no utf16le:/utf16be: pair to keep in step with it. The pair is
-ordered a half at a time, so U+10000 is 00 D8 00 DC little endian and not four
-bytes reversed, which is what a file holds.
+Why u32: and i32:, not db/dw/dd?
+- They are the type names the program already shows, better known, and do
+  not collide with endian suffixes.
 
-No mark is emitted unless one is asked for by name, since a marked file has it
-at the front and not before every match. The '*bom:' forms are what asks: they
-are the mark plus the text, which is what the front of such a file holds, so
-utf8bom:hi is EF BB BF 68 69 and utf16bom:hi is FF FE 68 00 69 00. The mark is
-U+FEFF in the encoding named, so the wide two are ordered by the endian setting
-along with the text behind them, and nothing else about the argument changes:
-utf8bom: is still byte transparent and utf16bom: still refuses what is not text.
+Why is endianness a setting and not a prefix?
+- It belongs to the file, applies to every scalar and the inspector alike,
+  and in the prefix would double every type.
 
-None of the three reach anywhere the line could not already reach, and each
-earns its place anyway, a prefix being cheap next to what it can save someone
-typing. utf8bom: saves recognizing EF BB BF, the only mark that does not read
-as U+FEFF on sight. utf16bom: and utf32bom: save more than that: spelled by
-hand a mark is a byte string, x:fffe, and a byte string does not follow the
-endian setting, so it is on the reader to pick FF FE or FE FF and to pick again
-whenever the setting moves. x16:feff is the spelling that does follow, which is
-one more thing to know rather than fewer. The prefix cannot get it wrong: the
-mark is U+FEFF in the encoding named, ordered by the same setting as the text
-behind it, so utf16bom:hi is right in both orders and stays right.
+Why does only i* take a sign?
+- A minus on an unsigned type is a mistake, not a wrap. There is no bare i:
+  or u: either.
 
-A mark alone is still x:efbbbf or x16:feff, since a prefix with nothing after
-it is a typo here as everywhere else.
+Why is a value too large for its width an error?
+- Truncating it searches for bytes nobody asked for, and a needle that
+  quietly matches the wrong thing is the worst outcome available.
 
-Single-byte sets get a prefix if they are in the charset list, spelled by the
-same id the charset setting takes, so the two share one vocabulary and a set
-added to one is added to both. Unbounded or user-loaded sets would go through
-one parametric form (text(koi8r): say) rather than more flat prefixes. Ids are
-one name per encoding (ebcdic037, not ebcdic, of which there are dozens).
+*
+* TEXT
+*
 
-A character the set lacks is an error, never substituted; the way to put a raw
-byte next to set text is its own x: argument, not utf8:, which would splice
-UTF-8 into EBCDIC. Escapes resolve before encoding, so ebcdic037:"\x25" is '%'
-(6C), not byte 25.
+    utf8:                 bytes, text as typed
+    utf16: utf32:         transcoded, one scalar per code unit
+    utf8bom: utf16bom:    likewise, preceded by a byte order mark
+    utf32bom:
+    ascii: cp437:         transcoded, one byte per character, named by the
+    ebcdic037: ...        charset setting's ids
 
-Floats are named by their width in bits like everything else, so f32: and f64:
-rather than 'float:' and 'double:', and what they encode is the bit pattern the
-value occupies in the file, not the digits it was typed as. They are the one
-scalar whose sign is not the prefix's business: there is no unsigned float to
-tell them apart from, so the literal keeps its own '-', and "nan" and "inf" are
-accepted since neither is memorable as hex. A literal that only fits once
-rounded to infinity (f32:1e39) is an error, the same as any other value too
-large for the width asked for.
+utf8: is byte transparent: utf8:"\xff" is one byte, which is what makes
+escapes worth having. utf16: and utf32: refuse anything that is not UTF-8,
+lone surrogates included; x16: searches an unpaired D800. Code units are
+scalars, ordered a half at a time: U+10000 is 00 D8 00 DC little endian.
 
-'f80:' is the odd one, being x87's 80-bit extended rather than an IEEE-754
-binary format: ten bytes, a 64-bit significand and then the sign and exponent,
-with the integer bit stored rather than implied. It is named by width like the
-others even though its width is not a power of two, since that is what a file
-holds and what the x86 ABIs call long double.
+A mark is U+FEFF in the encoding named, ordered with the text: utf8bom:hi is
+EF BB BF 68 69 and utf16bom:hi is FF FE 68 00 69 00. A mark alone is still
+x:efbbbf or x16:feff, since an empty prefix is a typo.
 
-All three take named constants as well as digits, since the point of typing a
-float instead of its bytes is that its bytes are not recognizable:
+A character a single-byte set lacks is an error, never substituted. Raw bytes
+go in their own x: argument. Escapes resolve before encoding, so
+ebcdic037:"\x25" is '%' (6C), not byte 25.
+
+Why does text name its encoding rather than use the charset setting?
+- The encoding belongs to the needle: taking it from the text column makes a
+  line mean something that is not in the line, and searching EBCDIC while
+  reading ASCII would mean flipping it twice per search. utf8: is the base,
+  being D's native format and what readline returns.
+
+Why don't utf16: and utf32: widen bytes that are not UTF-8?
+- That would be Latin-1 wearing a UTF-16 name.
+
+Why no utf16le: and utf16be:?
+- A code unit is a scalar, so the endian setting already answers it.
+
+Why no mark unless asked for?
+- A marked file has it at the front, not before every match.
+
+Why *bom: prefixes, when x: can already spell a mark?
+- x:fffe ignores the endian setting and x16:feff is one more thing to know. A
+  prefix costs a table row; it saves remembering, under pressure, a mark's
+  bytes and how the setting orders them.
+
+Why only the single-byte sets in the charset list?
+- Spelled by the charset setting's id, the two share one vocabulary. One id
+  per encoding (ebcdic037, not ebcdic, of which there are dozens). Unbounded
+  or user-loaded sets would get one parametric form (text(koi8r):, say)
+  rather than more flat prefixes.
+
+Why not utf8: for raw bytes next to set text?
+- It would splice UTF-8 into EBCDIC.
+
+*
+* FLOATS
+*
+
+    f32: f64:             IEEE-754 binary32 and binary64, on every host
+    f80:                  x87's 80-bit extended: ten bytes, a 64-bit
+                          significand with the integer bit stored, then
+                          sign and exponent
+
+They encode the value's bit pattern, not its digits. The literal keeps its own
+'-', there being no unsigned float, and one that rounds to infinity (f32:1e39)
+is too large for its width. Literals are converted from their digits exactly,
+never through a host float or a wider format, so the same literal is the same
+bytes on every host and f80: gets its full precision and range (f80:1e400).
+
+All three take named constants, since a float's bytes are not recognizable:
 
     inf                           one encoding, the format says so
     nan qnan snan snan_hi         the NaNs, below
@@ -238,105 +246,41 @@ float instead of its bytes is that its bytes are not recognizable:
     pi e tau sqrt2 phi            maths, as compiled into binaries
     max min epsilon denorm_min    the format's edges, as used for sentinels
 
-A name is the whole literal, sign aside, so nothing can shadow a number: the 'e'
-in "1e5" is an exponent and "e" alone is the constant, "f32:pi2" is an error
-rather than half a match, and matching is case insensitive as std.conv already
-is for nan and inf. Each width gets its own value, which matters for the four
-that are properties of the format rather than numbers: f32:max is the largest
-binary32, not the largest binary64 narrowed down, which would be infinity.
+A name is the whole literal, sign aside, case insensitive: "1e5" has an
+exponent, "e" is the constant, "f32:pi2" is an error. Each width gets its own
+value: f32:max is the largest binary32, not binary64's narrowed to infinity,
+and f80:pi is all 64 bits, what FLDPI loads.
 
-At f80: the constants are written out as bit patterns rather than computed,
-because there is no host type to compute them in (below), and the mathematical
-ones carry all 64 bits: f80:pi is the ten bytes FLDPI loads. The unittest
-re-derives every one of them from decimal digits, so the table is checked and
-not merely trusted.
-
-The NaNs are named in IEEE's own words, quiet and signaling, rather than in
-invented ones. A NaN is any nonzero mantissa, so which one is a choice:
+Any nonzero mantissa is a NaN, so which one is a choice. They use IEEE's names:
 
     nan  qnan       7FC00000    quiet, the standard's recommended bit
     snan            7F800001    signaling, so the quiet bit clear, payload 1
     snan_hi         7FA00000    signaling, payload's high bit
     indefinite      FFC00000    Intel's name for the negative quiet NaN
 
-The quiet bit is a recommendation of IEEE-754 rather than a rule, and one that
-x86, ARM, SPARC, POWER and RISC-V follow while MIPS before r6 and PA-RISC invert
-it. ddhx spells the recommended one everywhere, being the format's and not the
-host's:
-
     binary32   0 11111111 1 0000000000000000000000    nan
                0 11111111 0 1000000000000000000000    snan_hi
                0 11111111 0 0000000000000000000001    snan
                  exponent ^ quiet bit
 
-The "hi" in snan_hi is the high bit of the payload, which is the bit just under
-the quiet bit and so the highest one a signaling NaN may set without going
-quiet. It is named for that bit rather than for a toolchain, though it is what
-GCC and glibc's SNANF emit; they pick it because a payload there keeps its
-position relative to the quiet bit when the width changes, where a payload of 1
-does not. 7FA00000 widens to 7FFC000000000000 with its shape intact, while
-7F800001 widens to 7FF8000020000000. Any other payload is a byte string, which
-is what x32: is for.
+Why f80:, when its width is not a power of two?
+- It is what a file holds and what the x86 ABIs call long double.
 
-"indefinite" is a spelling of -qnan rather than a fifth value, and it earns a
-name by being the NaN most likely to be sitting in a file: x87 and SSE produce
-it for 0.0/0.0 and the other invalid operations, where ARM produces the positive
-one. Which is also why a NaN's sign is honoured here even though std.conv drops
-it: -nan and indefinite have to be sayable, or the common case is unreachable.
+Why the recommended quiet bit on every host?
+- It is IEEE-754's recommendation, followed by x86, ARM, SPARC, POWER and
+  RISC-V and inverted by pre-r6 MIPS and PA-RISC. ddhx follows the format,
+  not the host.
 
-These four are encoded as bit patterns and never as float values, deliberately.
-A float holding a signaling NaN is not safe to pass around, since x87 quiets one
-on the way through a register, so an snan carried as a value would arrive as a
-qnan on a 32-bit x86 build.
+Why snan_hi?
+- It is the highest bit a signaling NaN may set without going quiet, and what
+  GCC and glibc's SNANF emit, since it keeps its shape across widths:
+  7FA00000 widens to 7FFC000000000000, where 7F800001 becomes
+  7FF8000020000000. Any other payload is x32: territory.
 
-f32: is IEEE-754 binary32 and f64: binary64, on every host. Not "whatever this
-machine calls a float": a needle describes bytes in a file, and a file does not
-change format because of the machine reading it. The named constants are taken
-from host floats, which happen to be those formats, and a static assert in
-floating() checks that rather than assuming it; the NaNs above are spelled out
-rather than borrowed, since IEEE-754 pins infinity exactly but allows any
-nonzero mantissa for a NaN and hosts disagree on which one they hand out.
-
-Literals do not touch a host float at any width. decimal() converts them in
-integer arithmetic: a literal is digits times a power of ten, which is an exact
-rational, so it is built as one and divided to a significand of the width asked
-for, rounded to nearest with ties to even as IEEE-754 asks. Three things make
-that worth the arithmetic:
-
-  - std.conv accumulates in `real`, which is x87 extended on x86 and a plain
-    double on AArch64. On the second kind of host the intermediate rounding
-    survives into the answer, so "3.14159265358979323846" parsed as an f64
-    landed an ULP off the pi constant. A needle whose bytes depend on the
-    machine that typed it is not a needle, and this one shipped: it was an
-    aarch64 CI failure, not a hypothetical.
-  - Rounding to a wide format and then to a narrow one is not rounding to the
-    narrow one. f32: used to convert through a double, so a literal a hair
-    above the tie between 1.0 and the float after it rounded up on the way to
-    the double, landed exactly on the tie, and then took the even neighbour:
-    3F800000 where the digits say 3F800001.
-  - f80: has no host type to borrow in the first place, and a double is eleven
-    bits short of it besides (the twenty digits of pi widen to 4000
-    C90FDAA22168C000, where the value they spell is 4000 C90FDAA22168C235,
-    which is what FLDPI loads). Doing it exactly also brings the format's own
-    exponent range along, and range is half of why a file holds one of these
-    (f80:1e400 has no double to pass through).
-
-The three formats differ only in significand bits, bias, and exponent range, so
-they share one conversion and differ at packing time, where binary32 and
-binary64 imply the leading significand bit and x87 stores it. The unittests pin
-literals whose correctly rounded values are known from glibc's strtod and
-strtof, including both textbook hard cases (1e23 and 2.2250738585072011e-308)
-and the double-rounding one above.
-
-The rule underneath both sides is that the prefix decides the length and the
-value never does. A byte string is as long as what was typed, a scalar is as
-long as its width says, and nothing is measured by how large a number happens
-to be.
-
-Endianness is not in the prefix either. Scalars are encoded with the `endian`
-setting, the same one the inspector uses and Alt+E flips. An argument without a
-prefix continues the previous one, width included, so `find u16:1 2` is two
-16-bit values.
+Why indefinite, and why does a NaN keep its sign?
+- x87 and SSE produce -qnan for invalid operations (ARM produces +qnan),
+  making it the NaN most likely in a file. std.conv drops the sign; ddhx
+  cannot, or the common case is unreachable.
 
 *
 * EXPECTATIONS
@@ -424,141 +368,6 @@ and the unittest at the end of patterns.d (both, by typed command line).
   diff-file "C:\dump.bin"           error, unknown escape \d
   save-as "dump\x2Etxt"             saves dump.txt      escapes are not pattern-only
   save-as "\xff"                    error, argument is not valid UTF-8 text
-
-*
-* RATIONALE
-*
-
-The core idea of a hex editor is to manipulate data with precision. For that,
-it needs to be precise, and it needs to be constant in this precision.
-
-None of the above is forced. Why each of them, once:
-
-- An argument is bytes because escapes are resolved before a command sees it,
-  and resolving escapes rules out text as the type. "\0" and "\xff" are not
-  valid UTF-8, and an argument flows into every command, into status messages,
-  and into the logger. A command that wants text asks for it and takes the
-  exception; a command that wants bytes takes the bytes and never has to care.
-  Filenames on POSIX are byte strings anyway, so this is not only a pattern's
-  problem. This also allows for commands that work with data to see data as-is.
-
-- Escapes resolve in one pass, while the quotes are being read, because that is
-  the only place that still knows which quote a byte came out of. Carrying the
-  quoting onward instead was tried, first as one flag per argument, which has to
-  pick a meaning for utf8:C:\dir"a b" or refuse it, then as a flag per span,
-  which works but makes every consumer walk spans and offset around its prefix.
-  Resolving on the spot deletes both and benefits all commands.
-
-- One pass is also why the escape rules cannot differ per command: the line is
-  read before a command is chosen. What that costs is diff-file "C:\dir", which
-  is an unknown escape rather than a path.
-
-- An unknown escape is an error. One pass means one policy for every command,
-  so it may as well be the obvious one. A compiler stops on invalid escapes,
-  because it's clear it's an invalid combination of text for the special
-  double-quote text.
-
-- Unquoted text is raw with no exceptions, not even \" and \'. That costs the
-  usual way of writing a quote without quoting, and buys back a rule with
-  nothing attached to it: outside of double quotes, a backslash is a byte. The
-  other kind of quote is how a quote is written, which only works because runs
-  concatenate. Otherwise, making all strings interpreted would lead to
-  frustration when looking for a single quote or backslash. Searching for '"',
-  "\"", '"', and "\'" is still viable.
-
-- An unterminated quote is an error. The line was not finished being typed, and
-  guessing where it ended would silently run half a command. Silently accepting
-  it would be costlier both in implementation and headaches/confusion.
-
-- Empty quotes produce no argument rather than an empty one. No command here
-  distinguishes "" from absent, and dropping keeps 'find ""' an obvious
-  "Need search" instead of an obscure empty needle. Not pure C string, so no
-  null termination.
-
-- Wildcards do not consult quoting at all, though they briefly did. They are
-  matched as whole arguments before prefixes, so anything with a prefix is
-  already data, and knowing how * had been quoted bought nothing but making
-  find '*' an error instead of a glob. Wildcards are a product of prefixes,
-  not quoting and escapes.
-
-- Inside double quotes, a backslash covers the character after it while the
-  closing quote is being looked for, before the escape itself is decoded. That
-  is what lets utf8:"C:\\" work: otherwise the second backslash escapes the
-  closing quote, eats its own terminator, and the argument runs to end of line
-  as an unterminated quote.
-
-- Argument does not implicitly convert to its text, and .text is a function that
-  can throw rather than a field. Bytes are not text here; an alias this would
-  let an argument decay into a string overload with the validation skipped, and
-  a command that only ever wanted bytes should not pay for a check it did not
-  ask for. utils.texts() is for unittests, where the check is the point.
-
-- Commands look their own name up as bytes (view.prompt_command). No command is
-  named something that is not text, so bytes that are not simply miss the
-  lookup, and "command not found" beats complaining about the encoding of
-  something that was only mistyped.
-
-- x: is a byte string and not a number, though it used to be one. Everything
-  went through parse!ulong and a byte slice of it, which made x:1122 depend on
-  the host's endianness (22 11 here, 11 22 elsewhere) and x:0001 one byte
-  instead of two. Both were invisible, since every test value was a palindrome.
-  A hex editor's own notation is the one place where the bytes are already
-  written out in order, so reading them in any other is indefensible.
-
-- An odd digit count is an error rather than a pad. Padding is guessing which
-  end gains the zero, and that guess is exactly what x: used to get wrong.
-
-- Every scalar names a width, and there is no bare d:, o:, or 0o. Those sized
-  themselves to the value, so d:255 was one byte, d:256 was two, and d:65536 was
-  three, a width no scalar type has. That is the same trap x: was in, one radix
-  over: the length of the needle decided by the number written in it rather than
-  by what was typed. It is worse than a surprising search, because the length is
-  destructive under replace and insert, where d:255 and d:256 overwrite
-  different amounts of the file. Dropping them costs the two-character spelling
-  and buys a rule with nothing attached: the prefix decides the length, the
-  value never does.
-
-- The width forms are named after types the program already shows rather than
-  as db/dw/dd for clarity. The assembler spelling would also have collided with
-  any letter suffix for endianness, back when that was still a candidate.
-  Additionally, u32 and i32 spellings are more popular spellings than d32.
-
-- 0x stayed while 0o went. They look like a matched pair of C-style aliases, but
-  only one of them survives the rule above: 0x is a byte string, so its length
-  is the digits, while 0o was an octal scalar with nowhere to put a width.
-
-- Endianness is a setting and not a prefix. It is a property of the file being
-  looked at, not of one needle, so the same answer applies to every scalar on
-  the line and to the inspector alongside them. In the prefix it would double
-  every type for something that changes once per file, and it would collide
-  with the width letters besides. That is what keeps utf16: one prefix rather
-  than the utf16le:/utf16be: pair every other tool carries: a code unit is a
-  scalar, so it is already answered. A byte order mark is a code unit too, so
-  utf16bom: is one prefix for the same reason, and the setting orders the mark
-  and the text behind it together.
-
-- A mark is a flag on the prefix, never bytes in the prefix table. The bytes it
-  produces are not known until the endian setting is, so a table of literals
-  would have to carry both orders of two of them and would be the endian back
-  in the prefix in another spelling. The flag says a mark was asked for; the
-  encoder answers with what U+FEFF is at that width and order, which is the
-  same code path the text takes.
-
-- A prefix is cheap, so "the line can already spell that" does not settle
-  whether one is worth adding. It costs a row in a table and a line of
-  documentation; what it buys is a thing the person typing no longer has to
-  remember correctly under time pressure. The '*bom:' family is the case in
-  point: every needle it produces was already spellable, and none of them were
-  spellable without knowing both the mark's bytes and how the endian setting
-  orders them. `find text:utf16bom utf16:hello` feels too verbose in a pinch.
-
-- Only the i* types accept a sign at all. A minus on an unsigned type is a
-  mistake worth reporting, not a wrap to perform. There is no bare i: either,
-  for the same reason there is no bare u:.
-
-- A value too large for its width is an error rather than a truncation. The
-  bytes that would be searched for are not the ones that were asked for, and a
-  needle that quietly matches the wrong thing is the worst outcome available.
 
 ********************************************************************************
 * DOCUMENT EDITOR
