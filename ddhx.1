@@ -1,7 +1,7 @@
 .\" ddhx - modal hex editor
 .\" Copyright (c) 2017-2026 dd86k <dd@dax.moe>
 .\" MIT License
-.TH DDHX 1 "2026-06-19" "ddhx 0.10.0" "User Commands"
+.TH DDHX 1 "2026-09-28" "ddhx 0.13.0" "User Commands"
 .
 .SH NAME
 ddhx \- modal TUI hex editor
@@ -91,6 +91,8 @@ or
 .BR win1252 .
 Default:
 .BR ascii .
+See
+.BR \-\-help\-charsets .
 .TP
 .BI "\-c, \-\-columns=" N
 Set the number of columns per row. Use
@@ -134,8 +136,6 @@ Allow document editing, ignoring the
 setting from configuration files. Lifts
 .BR \-R / \-\-restrict
 when given after it, the last of the two options wins.
-.SM
-.TOP
 .
 .SS Information
 .TP
@@ -150,6 +150,9 @@ Print configuration options and file paths and exit.
 .TP
 .B \-\-help\-keys
 Print default keybindings and exit.
+.TP
+.B \-\-help\-charsets
+Print available character sets and exit.
 .TP
 .B \-\-ver
 Print only the version number and exit.
@@ -1649,15 +1652,15 @@ Available since version 0.7.
 Forces the specified editor backend to be selected.
 Available since version 0.7.
 Default:
-.B piecev3
-(since 0.9).
+.B piecev4
+(since 0.13).
 Available backends:
 .B piecev4
 (>=0.13),
 .B piecev3
-(>=0.9),
+(>=0.9).
 .B piecev2
-(>=0.8).
+was removed in 0.13.
 .TP
 .B DDHX_NO_INPLACE_SAVE
 When set to "1", avoid using the save in-place mechanic.
