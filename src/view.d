@@ -2099,19 +2099,24 @@ unittest
     int oldrows = g_viewrows;
     scope(exit) g_viewrows = oldrows;
     g_viewrows = 6;
+    // Largest padding a 2-row match leaves room for in 6 rows
+    enum long P = min(CONFIG_FIND_PADDING, 2);
 
-    // Ahead, spanning rows 8-9: bottom padding of 2 puts top at row 6
-    reveal(&session, 0x88, 0x92);
-    assert(session.position_view == 6 * 16);
-    // Behind, row 3: top padding
-    reveal(&session, 0x30, 0x30);
-    assert(session.position_view == 1 * 16);
-    // Already comfortably visible: no scroll
-    reveal(&session, 0x30, 0x30);
-    assert(session.position_view == 1 * 16);
-    // Near EOF (row 16): padding stops at the EOF row
-    reveal(&session, 0xF0, 0xF0);
-    assert(session.position_view == (16 - 5) * 16);
+    static if (P > 0)
+    {
+        // Ahead, spanning rows 8-9: bottom padding scrolls past row 9
+        reveal(&session, 0x88, 0x92);
+        assert(session.position_view == (4 + P) * 16);
+        // Behind, row 3: top padding
+        reveal(&session, 0x30, 0x30);
+        assert(session.position_view == (3 - P) * 16);
+        // Already comfortably visible: no scroll
+        reveal(&session, 0x30, 0x30);
+        assert(session.position_view == (3 - P) * 16);
+        // Near EOF (row 16): padding stops at the EOF row
+        reveal(&session, 0xF0, 0xF0);
+        assert(session.position_view == (16 - 5) * 16);
+    }
     // Too tall to pad: left to follow()
     session.position_view = 0;
     reveal(&session, 0x80, 0xDF);
