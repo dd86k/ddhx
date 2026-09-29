@@ -688,6 +688,7 @@ void onresize() // I/O is allowed here
     // If autoresize configuration is enabled, automatically set column count
     if (g_session.rc.columns == COLUMNS_AUTO)
         autosize(g_session, null);
+    realign(g_session);
     
     // Yes, on resize, conhost will show the console's cursor again
     version (Windows) terminalHideCursor();
@@ -744,7 +745,7 @@ Lread:
                 message(ex.msg);
             }
             
-            // If we have additional pending, it's time to update the state again
+            // If we have additional input pending, read them immediately
             if (input.pending) goto Lread;
             
             goto Lupdate;
@@ -2030,7 +2031,16 @@ void moveabs(Session *session, long pos)
     if (pos == session.position_cursor)
         return;
     
-    // Adjust view position if cursor outside of view
+    session.position_cursor = pos;
+    g_status |= USTATUS;
+    follow(session);
+}
+
+// Scroll the view, by whole rows, until the cursor is within it
+void follow(Session *session)
+{
+    long pos = session.position_cursor;
+    int data_size = size_of(session.rc.data_type);
     int g = session.rc.columns * data_size; // group size
     int count = g * g_viewrows;
     if (pos < session.position_view) // cursor is behind view
@@ -2043,9 +2053,18 @@ void moveabs(Session *session, long pos)
         session.position_view = align64up(pos - count + data_size, g);
         g_status |= UVIEW; // missing data
     }
-    
-    session.position_cursor = pos;
-    g_status |= USTATUS;
+}
+
+// Snap cursor and view back onto the element and row grid after the data
+// type or column count changed, otherwise rows start mid-element.
+void realign(Session *session)
+{
+    int data_size = size_of(session.rc.data_type);
+    int g = session.rc.columns * data_size;
+    session.position_cursor -= session.position_cursor % data_size;
+    session.position_view = align64down(session.position_view, g);
+    g_status |= UVIEW | USTATUS;
+    follow(session);
 }
 
 // TODO: Handle multiple messages.
@@ -3510,7 +3529,7 @@ void view_up(Session *session, Argument[] args)
     if (session.position_view == 0)
         return;
     
-    session.position_view -= session.rc.columns;
+    session.position_view -= session.rc.columns * size_of(session.rc.data_type);
     if (session.position_view < 0)
         session.position_view = 0;
     g_status |= UVIEW;
@@ -3519,13 +3538,47 @@ void view_up(Session *session, Argument[] args)
 // Move view down
 void view_down(Session *session, Argument[] args)
 {
-    int count = session.rc.columns * g_viewrows;
-    long max = session.editor.size() - count;
+    int g = session.rc.columns * size_of(session.rc.data_type);
+    long max = session.editor.size() - (g * g_viewrows);
     if (session.position_view > max)
         return;
     
-    session.position_view += session.rc.columns;
+    session.position_view += g;
     g_status |= UVIEW;
+}
+// d32: scrolling the view and switching data type must keep rows on the grid,
+// or moving down later shifts the cursor's column.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(new immutable(ubyte)[256]);
+    session.input  = new InputFormatter;
+    session.rc.columns   = 4;
+    session.rc.data_type = DataType(BaseType.u32, Format.dec);
+    int oldrows = g_viewrows;
+    scope(exit) g_viewrows = oldrows;
+    g_viewrows = 2;
+
+    view_down(&session, null);
+    assert(session.position_view == 16);
+    view_up(&session, null);
+    assert(session.position_view == 0);
+
+    session.rc.data_type = DataType(BaseType.u8, Format.hex);
+    session.position_cursor = 7;
+    session.position_view   = 3;
+    session.rc.data_type = DataType(BaseType.u32, Format.dec);
+    realign(&session);
+    assert(session.position_cursor == 4);
+    assert(session.position_view   == 0);
+
+    move_down(&session, null);
+    assert(session.position_cursor == 20);
+    move_down(&session, null);
+    assert(session.position_cursor == 36);
+    assert(session.position_view   == 16);
 }
 
 //
@@ -5285,6 +5338,7 @@ void set(Session *session, Argument[] args)
     configRC(session.rc, setting, value);
 
     sync_settings();
+    realign(session);
     demote_writemode(session);
 }
 
