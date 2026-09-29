@@ -1988,7 +1988,9 @@ bool fixedsize(Session *session)
 // Move the cursor relative to its position within the file
 void moverel(Session *session, long pos)
 {
-    moveabs(session, session.position_cursor + pos);
+    // An unaligned cursor is on the EOF slot, which is drawn one element past
+    // the trailing partial element.
+    moveabs(session, align64up(session.position_cursor, size_of(session.rc.data_type)) + pos);
 }
 
 // Move the cursor to an absolute file position
@@ -2023,9 +2025,12 @@ void moveabs(Session *session, long pos)
     
     int data_size = size_of(session.rc.data_type);
     
-    // Adjust cursor position to base depending on data size
+    // Adjust cursor position to base depending on data size, except the EOF
+    // slot: aligning it would land on a trailing partial element, where
+    // appending is impossible.
     // Can throw SIGFPE if data_size is wrong (zero?)
-    pos -= pos % data_size;
+    if (pos != docsize)
+        pos -= pos % data_size;
     
     // No need to update if it's at the same place
     if (pos == session.position_cursor)
@@ -2039,8 +2044,8 @@ void moveabs(Session *session, long pos)
 // Scroll the view, by whole rows, until the cursor is within it
 void follow(Session *session)
 {
-    long pos = session.position_cursor;
     int data_size = size_of(session.rc.data_type);
+    long pos = align64up(session.position_cursor, data_size); // EOF slot
     int g = session.rc.columns * data_size; // group size
     int count = g * g_viewrows;
     if (pos < session.position_view) // cursor is behind view
@@ -2061,7 +2066,8 @@ void realign(Session *session)
 {
     int data_size = size_of(session.rc.data_type);
     int g = session.rc.columns * data_size;
-    session.position_cursor -= session.position_cursor % data_size;
+    if (session.position_cursor != session.editor.size())
+        session.position_cursor -= session.position_cursor % data_size;
     session.position_view = align64down(session.position_view, g);
     g_status |= UVIEW | USTATUS;
     follow(session);
@@ -2331,8 +2337,8 @@ void update_view(Session *session)
     int sel_start   = cast(int)(sel.start - address) / data_spec.size_of;
     int sel_end     = cast(int)(sel.end   - address) / data_spec.size_of;
     
-    // Render view
-    int viewpos     = cast(int)(curpos - address) / data_spec.size_of; // relative cursor position in view
+    // Render view, relative cursor position in view, rounded up for EOF slot
+    int viewpos     = cast(int)(curpos - address + data_spec.size_of - 1) / data_spec.size_of;
     PanelType panel = session.panel;
     
     if (logging)
@@ -3443,7 +3449,7 @@ void move_skip_backward(Session *session, Argument[] args)
     // If cursor is at the very end of buffer, move it by one element
     // back, because there's no data where the cursor points to.
     if (session.position_cursor == session.editor.size())
-        --curpos;
+        curpos = align64down(curpos - 1, size_of(session.rc.data_type));
     
     // Selection: needle
     ubyte[] needle;
@@ -3580,6 +3586,38 @@ unittest
     assert(session.position_cursor == 36);
     assert(session.position_view   == 16);
 }
+// d32 on a 10-byte document: EOF (10) must be reachable to append, and
+// stepping back from it lands on the trailing partial element (8).
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(new immutable(ubyte)[10]);
+    session.input  = new InputFormatter;
+    session.rc.columns   = 4;
+    session.rc.data_type = DataType(BaseType.u32, Format.dec);
+    int oldrows = g_viewrows;
+    scope(exit) g_viewrows = oldrows;
+    g_viewrows = 2;
+
+    move_abs_end(&session, null);
+    assert(session.position_cursor == 10);
+    move_left(&session, null);
+    assert(session.position_cursor == 8);
+    move_right(&session, null);
+    assert(session.position_cursor == 10);
+    move_right(&session, null);
+    assert(session.position_cursor == 10);
+
+    realign(&session);
+    assert(session.position_cursor == 10);
+
+    select_left(&session, null);
+    Selection sel = selection(&session);
+    assert(sel.start  == 8);
+    assert(sel.length == 4);
+}
 
 //
 // Deletion
@@ -3675,8 +3713,9 @@ Selection selection(Session *session)
     int g = size_of(session.rc.data_type);
     
     // Adjustment in moveabs right now fucks a little with sel.end
-    sel.start = min(session.selection.anchor, session.position_cursor);
-    sel.end   = max(session.selection.anchor, session.position_cursor);
+    long anchor = session.selection.anchor - (session.selection.anchor % g); // EOF slot
+    sel.start = min(anchor, session.position_cursor);
+    sel.end   = max(anchor, session.position_cursor);
     
     if (sel.end >= session.editor.size())
         sel.end -= g;
