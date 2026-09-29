@@ -6,6 +6,8 @@ Rules:
 - Hard cap to 80 columns.
 - Categories: Added, Changed, Improvements, Fixed, Removed, and
   (when significant) Docs.
+- Should only state changes between versions.
+  Something that breaks and is then fixed within a dev cycle shouldn't count.
 
 ////////////////////////////////////////////////////////////////////////////////
 // v0.13.0

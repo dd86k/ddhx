@@ -3024,8 +3024,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
             
             ubyte[] haystack = session.editor.view(base, hay);
             if (haystack.length < needle.length)
-                // somehow haystack is smaller than needle
-                return SearchResult(SEARCH_RESULT_NOT_FOUND, 0);
+                break; // document smaller than needle
 
             long o = position - base;
             // Clamp starting offset so matchPattern cannot read past haystack.
@@ -3062,10 +3061,8 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
         }
         while (base > 0);
 
-        // The loop above walks past offset 0 before giving up, so keep
-        // SEARCH_LASTPOS on the document.
-        if (position < 0)
-            position = 0;
+        // Scan ended at the start of the document, for SEARCH_LASTPOS
+        position = 0;
     }
     else // forward
     {
@@ -3076,7 +3073,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
             
             ubyte[] haystack = session.editor.view(position, hay);
             if (haystack.length < needle.length)
-                return SearchResult(SEARCH_RESULT_NOT_FOUND, 0);
+                break; // tail shorter than needle
 
             size_t bound = (needle.flags & PATTERN_HAS_GLOB)
                 ? haystack.length
@@ -3103,6 +3100,10 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
                 update_progress(session, position > docsize ? docsize : position, docsize);
         }
         while (position < docsize);
+        
+        // Scan ended at the end of the document (a tail shorter than the
+        // needle, or glob overshoot, leaves position elsewhere), for SEARCH_LASTPOS
+        position = docsize;
     }
     
     debug sw.stop();
@@ -3200,6 +3201,23 @@ unittest
     SearchResult result = search(&session, needle, 5,
         SEARCH_REVERSE | SEARCH_LASTPOS | SEARCH_NON_INTERACTIVE);
     assert(result.pos == 0, "reverse lastpos: expected 0");
+}
+// SEARCH_LASTPOS: a tail shorter than the needle ends the scan at EOF, not -1,
+// which sent skip-front from the last element to the start of the document.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAABBBBCC");
+
+    Pattern needle = Pattern.fromBytes(cast(const(ubyte)[]) "BBBB");
+    enum FLAGS = SEARCH_LASTPOS | SEARCH_DIFF | SEARCH_ALIGNED | SEARCH_NON_INTERACTIVE;
+    assert(search(&session, needle, 8, FLAGS).pos == 10);
+    assert(search(&session, needle, 10, FLAGS).pos == 10);
+
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "BB");
+    assert(search(&session, needle, 2, FLAGS | SEARCH_REVERSE).pos == 0);
 }
 // Hit callback: every occurrence is reported, in order, and the search
 // concludes as a no-match once the callback consumed them all.
