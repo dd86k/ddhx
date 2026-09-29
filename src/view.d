@@ -191,9 +191,6 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     int g_cols;     /// Terminal columns available
     int g_viewrows; /// Effective height for view panel
     
-    // Number of bytes for a row, updated by update()
-    int g_linesize;
-    
     // HACK: Global for screen resize events
     // Eventually, a session manager could hold multiple sessions and return
     // the 'current' session (return sessions[current]).
@@ -2183,7 +2180,6 @@ struct ElementState
     // booleans are fine for now, not looking into high performance right now
     bool isSelected;
     bool isCursor;
-    bool hasData;
     bool isActiveEdit;
     bool isZero;
     bool isBookmarked;
@@ -2229,14 +2225,13 @@ struct ElementState
     }
 }
 ElementState getElementState(int elementIndex, int viewpos, int sl0, int sl1,
-                             bool selectionActive, int readlen, size_t inputIndex,
+                             bool selectionActive, size_t inputIndex,
                              bool zero, bool bookmarked)
 {
     bool isCursor = elementIndex == viewpos;
     return ElementState(
         selectionActive && elementIndex >= sl0 && elementIndex <= sl1,
         isCursor,
-        elementIndex < readlen,
         inputIndex && isCursor,
         zero,
         bookmarked,
@@ -2257,6 +2252,43 @@ bool element_bookmarked(const(Bookmark)[] bookmarks, long byteStart, int byteLen
     return false;
 }
 
+// Rows to render: up to and including the one holding the EOF slot, which
+// sits right after the last (possibly partial) element read.
+int renderrows(int readlen, int size, int cols, int rows)
+{
+    int eofelem = (readlen + size - 1) / size;
+    return min(rows, eofelem / cols + 1);
+}
+unittest
+{
+    // x8, 16 columns, 2 rows
+    assert(renderrows( 0, 1, 16, 2) == 1);
+    assert(renderrows(10, 1, 16, 2) == 1);
+    assert(renderrows(16, 1, 16, 2) == 2);
+    assert(renderrows(32, 1, 16, 2) == 2);
+    // d32, 4 columns, 2 rows
+    assert(renderrows(10, 4, 4, 2) == 1);
+    assert(renderrows(16, 4, 4, 2) == 2);
+    assert(renderrows(24, 4, 4, 2) == 2);
+    assert(renderrows(32, 4, 4, 2) == 2);
+}
+
+// Element index of pos relative to the view, clamped to [-1, count] so that
+// positions far outside the view cannot overflow into it.
+int viewindex(long pos, long base, int size, int count)
+{
+    if (pos < base)
+        return -1;
+    return cast(int)min((pos - base) / size, count);
+}
+unittest
+{
+    assert(viewindex(  0, 16, 4, 8) == -1);
+    assert(viewindex( 16, 16, 4, 8) ==  0);
+    assert(viewindex( 23, 16, 4, 8) ==  1);
+    assert(viewindex(long.max, 0, 4, 8) == 8);
+}
+
 // Render view with data on screen
 void update_view(Session *session)
 {
@@ -2266,55 +2298,34 @@ void update_view(Session *session)
     if (rows < 1)
         return;
     
-    int cols        = session.rc.columns;       /// elements per row
-    int count       = rows * cols;              /// elements on screen
-    long curpos     = session.position_cursor;  /// Cursor position
-    long address    = session.position_view;    /// Base address
+    DataSpec spec   = selectDataSpec(session.rc.data_type);
+    int cols        = session.rc.columns;   /// elements per row
+    int count       = rows * cols;          /// elements on screen
+    int linesize    = cols * spec.size_of;  /// bytes per row
+    long address    = session.position_view;
     
     bool logging    = logEnabled();
     
-    debug import std.datetime.stopwatch : StopWatch, Duration;
+    debug import std.datetime.stopwatch : StopWatch;
     debug StopWatch sw;
     
-    __gshared ubyte[] viewbuf;  /// View buffer (capacity)
-    __gshared ubyte[] result;   /// View buffer slice (result)
-    __gshared int readlen;      /// Slice length in int, easier to add with col/row
+    // Kept across frames and only re-read on UVIEW (moved, resized, edited,
+    // undone); resizing reuses the allocation and skips the memset of `new`.
+    __gshared ubyte[] viewbuf;
+    __gshared ubyte[] result;
     
-    DataSpec data_spec = selectDataSpec(session.rc.data_type);
-    
-    g_linesize = cols * data_spec.size_of; // line is worth this many bytes
-    
-    /// Requested size of view buffer
-    size_t viewsize = count * data_spec.size_of;
-    
-    // Bit of a hack to force update when buffer size changes (config or otherwise)
-    // Only useful when screen resizes, but fails when data changes (ie, a paste)
-    if (viewbuf.length != viewsize) // only resize if required
+    size_t viewsize = count * spec.size_of;
+    if (viewbuf.length != viewsize)
     {
         viewbuf.length = viewsize;
         g_status |= UVIEW;
     }
     
-    // Read data into view buffer
-    
-    // To avoid unecessary I/O, call .view() when:
-    // - base position changed (when base pos changes, set UVIEW)
-    // - read size changed (resize event, set UVIEW flag)
-    // - new edit (set UVIEW when inserting/replacing/deleting)
-    // - undo or redo (set UVIEW)
-    // Basically, just rely on UVIEW flag.
-    
-    // scope array allocations does nothing.
-    // This is a non-issue since the conservative GC will keep the
-    // allocation alive and simply resize it (either pool or realloc).
-    
-    // new expression clears memory (memset), wasting cpu time.
     if (g_status & UVIEW)
     {
-        debug if (logging) sw.start(); // For IDocumentEditor.view()
+        debug if (logging) sw.start();
         
-        result  = session.editor.view(address, viewbuf);
-        readlen = cast(int)result.length;
+        result = session.editor.view(address, viewbuf);
         
         debug if (logging)
         {
@@ -2324,24 +2335,21 @@ void update_view(Session *session)
         }
     }
     
-    // Effective number of rows to render
-    int erows = readlen / (cols * data_spec.size_of);
-    // If col count flush and "view incomplete", add row
-    if (readlen % cols == 0 && readlen < count) erows++;
-    // If col count not flush (near EOF) and view full, add row
-    else if (readlen % cols) erows++;
+    int readlen = cast(int)result.length;
+    int erows   = renderrows(readlen, spec.size_of, cols, rows);
     
-    // Selection stuff (relative to view)
-    // Watch out for element-oriented views, selection is byte-wise
+    // Selection is byte-wise, the view is element-wise
     Selection sel   = selection(session);
-    int sel_start   = cast(int)(sel.start - address) / data_spec.size_of;
-    int sel_end     = cast(int)(sel.end   - address) / data_spec.size_of;
+    bool selecting  = session.selection.status != 0;
+    int sel_start   = viewindex(sel.start, address, spec.size_of, count);
+    int sel_end     = viewindex(sel.end,   address, spec.size_of, count);
+    // Rounded up: an unaligned cursor is the EOF slot, past the partial element
+    int viewpos     = viewindex(align64up(session.position_cursor, spec.size_of), address, spec.size_of, count);
     
-    // Render view, relative cursor position in view, rounded up for EOF slot
-    int viewpos     = cast(int)(curpos - address + data_spec.size_of - 1) / data_spec.size_of;
     PanelType panel = session.panel;
+    bool mirror     = session.rc.mirror_cursor;
     
-    if (logging)
+    if (logging) // eager, avoids passing parameters just for logging to return when off
     {
         log("address=%d viewpos=%d cols=%d rows=%d count=%d readlen=%d panel=%s "~
             "select.anchor=%d selection=%#x sel_start=%d sel_end=%d",
@@ -2349,29 +2357,26 @@ void update_view(Session *session)
             session.selection.anchor, session.selection.status, sel_start, sel_end);
     }
     
-    static immutable string DEFAULT = ".";
-    
     debug if (logging) sw.start();
     
-    int row;
     int rowdisp = session.rc.header ? 1 : 0; // lazy hack if header is present
+    immutable(Charset)* cs = session.rc.charset;
     
     DataFormatter dfmt = DataFormatter(session.rc.data_type, result.ptr, result.length);
     AddressFormatter afmt = AddressFormatter(session.rc.address_type);
     
     Line line = Line(128); // init with 128 segments
     ElementText buf = void;
-    bool prev_selected;
-    bool prev_bookmarked;
-    size_t ci; // character index because lazy
-    for (; row < erows; ++row, address += g_linesize)
+    int row;
+    for (; row < erows; ++row, address += linesize)
     {
         line.reset();
         
-        // Add address + one spacer
         size_t chars = line.normal(afmt.textual(buf, address, session.rc.address_spacing), " ");
         
-        // Render data by element, so by column
+        // Scalar data
+        bool prev_selected;
+        bool prev_bookmarked;
         for (int col; col < cols; col++)
         {
             // Past the terminal edge: nothing else on this row is visible, but
@@ -2382,30 +2387,19 @@ void update_view(Session *session)
                 dfmt.skip(cols - col);
                 break;
             }
-
-            int elemidx = (row * cols) + col;
             
-            // Is element zero?
             bool zero = session.rc.highlight_zeros && dfmt.iszero();
-            // Absolute byte range covered by this element
-            long elem_addr = address + col * data_spec.size_of;
-            // Within bookmark range
-            bool bookmarked = element_bookmarked(session.bookmarks, elem_addr, data_spec.size_of);
-
-            ElementState state = getElementState(
-                elemidx, viewpos, sel_start, sel_end, session.selection.status != 0,
-                readlen, session.input.index, zero, bookmarked);
+            bool bookmarked = element_bookmarked(session.bookmarks,
+                address + col * spec.size_of, spec.size_of);
+            ElementState state = getElementState((row * cols) + col, viewpos,
+                sel_start, sel_end, selecting, session.input.index, zero, bookmarked);
             
-            ColorScheme current = state.dataScheme(panel, session.rc.mirror_cursor);
-            
-            // Add spacer (before element) with scheme continuous to previous one.
+            // Spacer takes the scheme of a run spanning both of its neighbours.
             // Selection wins over bookmark when both apply.
             ColorScheme spacerscheme = ColorScheme.normal;
-            if (col)
+            if (col) // selection > 0 for joints
             {
-                bool sel_run = state.isSelected && prev_selected &&
-                    panel == PanelType.data;
-                if (sel_run)
+                if (state.isSelected && prev_selected && panel == PanelType.data)
                     spacerscheme = ColorScheme.selection;
                 else if (state.isBookmarked && prev_bookmarked)
                     spacerscheme = ColorScheme.bookmark;
@@ -2414,76 +2408,43 @@ void update_view(Session *session)
             prev_selected = state.isSelected;
             prev_bookmarked = state.isBookmarked;
             
-            // Add data text
             string data = state.isActiveEdit ? session.input.format : dfmt.textual(buf);
             assertion(data);
             dfmt.step();
             
-            // In digit mode, split cursor element to highlight single digit
+            // In digit mode, only the cursor's digit is highlighted
             if (state.isCursor && session.rc.writemode == WritingMode.digit
-                && panel == PanelType.data && data.length >= data_spec.spacing)
+                && panel == PanelType.data && data.length >= spec.spacing)
             {
                 int dp = g_digitpos;
-                int sp = data_spec.spacing;
-                // Before the cursor digit
+                int sp = spec.spacing;
+                ColorScheme rest = state.isZero ? ColorScheme.zero : ColorScheme.normal;
                 if (dp > 0)
-                    chars += line.add(data[0..dp], state.isZero ? ColorScheme.zero : ColorScheme.normal);
-                // The cursor digit itself
+                    chars += line.add(data[0..dp], rest);
                 chars += line.add(data[dp..dp+1], ColorScheme.cursor);
-                // After the cursor digit
                 if (dp + 1 < sp)
-                    chars += line.add(data[dp+1..sp], state.isZero ? ColorScheme.zero : ColorScheme.normal);
-            }
-            else // Otherwise cursor is whole element
-            {
-                chars += line.add(data, current);
-            }
-        }
-        
-        // data-text spacers
-        chars += line.normal("  ");
-        
-        // Render text by byte
-        for (int idx; idx < g_linesize; idx++, ci++)
-        {
-            // Same as the data panel: skipped bytes still count, otherwise the
-            // next row would resume on this row's leftover characters.
-            if (chars > g_cols)
-            {
-                ci += g_linesize - idx;
-                break;
-            }
-
-            // Convert byte offset to element index for state checking
-            int elementIndex = ((row * g_linesize) + idx) / data_spec.size_of;
-            
-            // Is element zero?
-            bool zero = session.rc.highlight_zeros && ci < result.length ? result[ci] == 0 : false;
-
-            // Absolute byte address for this text byte
-            long byte_addr = address + idx;
-            bool bookmarked = element_bookmarked(session.bookmarks, byte_addr, 1);
-
-            // Calculate element state
-            ElementState state = getElementState(elementIndex, viewpos, sel_start, sel_end,
-                                                session.selection.status != 0, readlen, session.input.index, zero, bookmarked);
-            
-            // Get color scheme for this element in text panel
-            ColorScheme scheme = state.textScheme(panel, session.rc.mirror_cursor);
-            
-            // Get character
-            string text;
-            if (ci < result.length)
-            {
-                immutable(Charset)* cs = session.rc.charset;
-                text = cs.printable(result[ci]) ? cs.glyph(result[ci]) : DEFAULT;
+                    chars += line.add(data[dp+1..sp], rest);
             }
             else
             {
-                text = " ";
+                chars += line.add(data, state.dataScheme(panel, mirror));
             }
+        }
+        
+        chars += line.normal("  ");
+        
+        // Text data
+        int rowoff = row * linesize;
+        for (int idx; idx < linesize && chars <= g_cols; idx++)
+        {
+            int off = rowoff + idx;
+            bool zero = session.rc.highlight_zeros && off < readlen && result[off] == 0;
+            bool bookmarked = element_bookmarked(session.bookmarks, address + idx, 1);
+            ElementState state = getElementState(off / spec.size_of, viewpos,
+                sel_start, sel_end, selecting, session.input.index, zero, bookmarked);
             
-            chars += line.add(text, scheme);
+            string text = off >= readlen ? " " : cs.printable(result[off]) ? cs.glyph(result[off]) : ".";
+            chars += line.add(text, state.textScheme(panel, mirror));
         }
         
         render_line(line, row + rowdisp);
