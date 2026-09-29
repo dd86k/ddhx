@@ -31,9 +31,14 @@ one name per encoding (e.g. `charset ebcdic037`).
 - Media detection: files, disks, devices, streams, and procfs-style files
   only offer what they support, e.g. a disk can't be resized or inserted into.
 - Windows: Disk reads are cached per 64 KiB for faster redraws and scrolling.
+- Views with many bookmarks draw much faster (100K: ~170 ms to ~0.5 ms).
 
 // Fixed
 - `refresh` command now rereads the document.
+- Multi-byte data types (e.g. d32): the end of file was unreachable when the
+  size is not a multiple of the element, scrolling moved by partial rows, and
+  changing the data type or columns left rows starting mid-element.
+- An empty DDHX_LOG is now ignored.
 - cp437: `<=>` and `LMN` were displayed out of order, and 0xE1 as β (now ß).
 - Fix 32-bit Android and 32-bit musl builds
 - A failure to open the target printed a stack trace instead of an error.
