@@ -59,6 +59,8 @@ private enum CONFIG_CHUNKSIZE      = KiB!128;
 private enum CONFIG_INPLACE_STASH_BUDGET = MiB!64;
 /// Artificial needle size limit for find/find-back commands.
 private enum CONFIG_NEEDLE_LIMIT   = KiB!128;
+/// Rows of context kept around a find result when the view scrolls to it.
+private enum CONFIG_FIND_PADDING   = 1;
 /// Buffer size for diff navigation scans: a chunk, plus room for the one
 /// element of overlap that carries the hunk state between chunks (the widest
 /// supported element is 8 bytes).
@@ -2056,6 +2058,64 @@ void follow(Session *session)
         session.position_view = align64up(pos - count + data_size, g);
         g_status |= UVIEW; // missing data
     }
+}
+
+// Scroll the view so rows [start, end] sit within it with padding, when both
+// fit. A match wider than a row would otherwise land flush against an edge.
+void reveal(Session *session, long start, long end)
+{
+    long g = session.rc.columns * size_of(session.rc.data_type);
+    long srow = start / g;
+    long erow = end / g;
+    long rows = g_viewrows;
+    long pad = min(CONFIG_FIND_PADDING, (rows - (erow - srow + 1)) / 2);
+    if (pad <= 0)
+        return;
+    
+    long lastrow = session.editor.size() / g; // EOF slot
+    long top = session.position_view / g;
+    long want = top;
+    if (srow - pad < top)
+        want = max(srow - pad, 0);
+    else if (min(erow + pad, lastrow) >= top + rows)
+        want = min(erow + pad, lastrow) - rows + 1;
+    
+    if (want == top)
+        return;
+    session.position_view = want * g;
+    g_status |= UVIEW;
+}
+
+// Padding: a match scrolled into view keeps context rows around it, but not
+// past the EOF row, and not when the match plus padding cannot fit.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(new immutable(ubyte)[256]);
+    session.rc.columns   = 16;
+    session.rc.data_type = DataType(BaseType.u8, Format.hex);
+    int oldrows = g_viewrows;
+    scope(exit) g_viewrows = oldrows;
+    g_viewrows = 6;
+
+    // Ahead, spanning rows 8-9: bottom padding of 2 puts top at row 6
+    reveal(&session, 0x88, 0x92);
+    assert(session.position_view == 6 * 16);
+    // Behind, row 3: top padding
+    reveal(&session, 0x30, 0x30);
+    assert(session.position_view == 1 * 16);
+    // Already comfortably visible: no scroll
+    reveal(&session, 0x30, 0x30);
+    assert(session.position_view == 1 * 16);
+    // Near EOF (row 16): padding stops at the EOF row
+    reveal(&session, 0xF0, 0xF0);
+    assert(session.position_view == (16 - 5) * 16);
+    // Too tall to pad: left to follow()
+    session.position_view = 0;
+    reveal(&session, 0x80, 0xDF);
+    assert(session.position_view == 0);
 }
 
 // Snap cursor and view back onto the element and row grid after the data
@@ -5479,6 +5539,7 @@ void find(Session *session, Argument[] args)
     }
 
     neselect(session, r.pos, r.pos + r.len - 1);
+    reveal(session, r.pos, r.pos + r.len - 1);
 
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
@@ -5522,6 +5583,7 @@ void find_back(Session *session, Argument[] args)
     }
 
     neselect(session, r.pos, r.pos + r.len - 1);
+    reveal(session, r.pos, r.pos + r.len - 1);
 
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
@@ -5553,6 +5615,7 @@ void find_next(Session *session, Argument[] args)
     }
 
     neselect(session, r.pos, r.pos + r.len - 1);
+    reveal(session, r.pos, r.pos + r.len - 1);
 
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
@@ -5584,6 +5647,7 @@ void find_prev(Session *session, Argument[] args)
     }
 
     neselect(session, r.pos, r.pos + r.len - 1);
+    reveal(session, r.pos, r.pos + r.len - 1);
 
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
@@ -5734,6 +5798,7 @@ void find_replace(Session *session, Argument[] args)
     g_status |= UVIEW | UHEADER | USTATUS;
 
     neselect(session, r.pos, r.pos + pb.length - 1);
+    reveal(session, r.pos, r.pos + pb.length - 1);
 
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
