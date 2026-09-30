@@ -48,7 +48,7 @@ immutable string DDHX_COPYRIGHT = "Copyright (c) 2017-2026 dd86k <dd@dax.moe>";
 /// For packaging, the DEB script expects this.
 /// Also, Debian uses tilde (~) for pre-release markers.
 immutable string DDHX_VERSION   = "0.13.0"~DEBUG;
-/// Build information
+/// Build timestamp
 immutable string DDHX_BUILDINFO = "Built: "~__TIMESTAMP__;
 
 /// Chunk size to use when I/O is involved (reading, writing)
@@ -238,7 +238,6 @@ struct Command
 }
 
 // Reserved (Ideal: Ctrl=Action, Alt=Alternative):
-// - "toggle-inspector" (Alt+I): Toggle data inspector
 // - "hash": Hash selection with result in status
 //           Mostly checksums and digests under 256 bits.
 //           256 bits -> 32 Bytes -> 64 hex characters

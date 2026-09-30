@@ -16,7 +16,7 @@ New editor backend (piecev4), improved medium detection (disks officially
 supported), redone character encoding module (and added "latin1" and win1252").
 
 WARNING: charsets "ebcdic" and "mac" are renamed "ebcdic037" and "macroman",
-one name per encoding (e.g. `charset ebcdic037`).
+with one name per encoding rule (e.g. `charset ebcdic037`).
 
 // Added
 - New "piecev4" editor backend (DDHX_BACKEND=piecev4)
@@ -26,7 +26,7 @@ one name per encoding (e.g. `charset ebcdic037`).
   Same as `utf8:`/`utf16:`/`utf32:`, but with a BOM in front.
 - "latin1" (ISO 8859-1) and "win1252" (Windows-1252) character sets
 - Additional prefixes for registered charsets available to search with:
-  "ebcdic037:", "latin1:", "win1252:", "macroman:", "ascii:", "cp437"
+  "ebcdic037:", "latin1:", "win1252:", "macroman:", "ascii:", "cp437:"
 - `--help-charsets` switch: List available charsets.
 
 // Improvements
@@ -34,6 +34,7 @@ one name per encoding (e.g. `charset ebcdic037`).
   only offer what they support, e.g. a disk can't be resized or inserted into.
 - Windows: Disk reads are cached per 64 KiB for faster redraws and scrolling.
 - Views with many bookmarks draw much faster (100K: ~170 ms to ~0.5 ms).
+- A find result now pads view of one row when scrolled.
 
 // Fixed
 - `refresh` command now rereads the document.
@@ -62,6 +63,8 @@ one name per encoding (e.g. `charset ebcdic037`).
   sectors.
 - Saving in place after editing a large file or disk could run out of memory.
   With "piecev3", such a save now drops undo history.
+- `skip-front` (Ctrl+Right) now reaches the end of the document when the
+  remaining data is shorter than the skipped element or selection.
 
 // Removed
 - "piecev2" backend removed.
