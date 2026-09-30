@@ -28,6 +28,7 @@ with one name per encoding rule (e.g. `charset ebcdic037`).
 - Additional prefixes for registered charsets available to search with:
   "ebcdic037:", "latin1:", "win1252:", "macroman:", "ascii:", "cp437:"
 - `--help-charsets` switch: List available charsets.
+- Integer ranges in patterns, e.g. `find u16:1..9` (inclusive, search only).
 
 // Improvements
 - Media detection: files, disks, devices, streams, and procfs-style files

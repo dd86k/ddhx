@@ -171,6 +171,23 @@ Why is a value too large for its width an error?
   quietly matches the wrong thing is the worst outcome available.
 
 *
+* RANGES
+*
+
+An integer scalar may be an inclusive range, find u16:1..9, matching any
+value from 1 to 9 as a 16-bit value in the endian setting's order. Both ends
+take the prefix's rules (sign, width, min/max), and a range is fixed-width,
+so it mixes with literals and wildcards. Only searches take one.
+
+Why inclusive?
+- It reads as "1 to 9", and address ranges (START:END) are inclusive too.
+
+Why integers only?
+- A byte string has no order to range over, and ordering floats means
+  handling their bits (signs, NaNs) without a host float; not worth it yet.
+  Text ranges can be spelled with scalars (u8:0x41..0x5a is x8:41..5a).
+
+*
 * TEXT
 *
 

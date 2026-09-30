@@ -9,7 +9,7 @@ module patterns; // plural not to mess with pattern function
 import std.conv : text;
 import std.format : format;
 import std.math : E, PI, SQRT2;
-import std.string : startsWith;
+import std.string : indexOf, startsWith;
 import std.system : Endian;
 
 import ddhx.charset : Charset, charsets;
@@ -523,6 +523,12 @@ unittest
 private
 ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
 {
+    return encode(scalarvalue(input, spec, arg), spec.width, endian);
+}
+// Ditto, the value alone, two's complement across all 64 bits when negative.
+private
+ulong scalarvalue(const(char)[] input, PatternSpec spec, immutable(ubyte)[] arg)
+{
     import std.conv : ConvException, parse;
     import std.string : icmp;
 
@@ -591,10 +597,7 @@ ubyte[] scalar(const(char)[] input, PatternSpec spec, Endian endian, immutable(u
     if (value > max)
         throw new Exception(text(MSG_VALUE_OUT_OF_RANGE, printable(arg)));
 
-    if (negative)
-        value = -value;
-
-    return encode(value, spec.width, endian);
+    return negative ? -value : value;
 }
 
 /// An x87 80-bit extended value, split the way the format stores it.
@@ -1459,16 +1462,51 @@ unittest
 enum
 {
     PATTERN_HAS_GLOB  = 1,   /// pattern contains ? or * wildcards
+    PATTERN_HAS_RANGE = 2,   /// pattern contains a value range (u8:1..9)
+    /// Pattern is not a flat byte string, so it can only be searched for.
+    PATTERN_NOT_BYTES = PATTERN_HAS_GLOB | PATTERN_HAS_RANGE,
     // Globbing values
     PATTERN_GLOB_ONE  = 256, /// ushort sentinel for '?' (match exactly one byte)
     PATTERN_GLOB_MANY = 257, /// ushort sentinel for '*' (match zero or more bytes)
+    // A range spans its width in data, so data.length stays the match length
+    // of any pattern without '*': the head indexes Pattern.ranges, and the
+    // tail entries only hold its place.
+    PATTERN_RANGE_TAIL = 258, /// ushort sentinel for the bytes after a range head
+    PATTERN_RANGE      = 259, /// ushort sentinel base for a range head, plus its index
+}
+/// An inclusive range of integer values, as `u16:1..9` asks for.
+struct PatternRange
+{
+    ulong min, max; /// Two's complement when signed.
+    size_t width;
+    bool signed;
+    Endian endian;
+    
+    /// Whether the value `bytes` starts with is in range.
+    /// Params: bytes = Data holding the value, at least width long.
+    /// Returns: True if the value is within min and max, inclusively.
+    bool contains(const(ubyte)[] bytes) const
+    {
+        ulong v;
+        foreach (size_t i; 0..width)
+            v |= cast(ulong)bytes[endian == Endian.littleEndian ? i : width - 1 - i] << (i * 8);
+        if (signed == false)
+            return min <= v && v <= max;
+        if (width < 8) // sign-extend
+        {
+            uint shift = cast(uint)(64 - width * 8);
+            v = cast(ulong)(cast(long)(v << shift) >> shift);
+        }
+        return cast(long)min <= cast(long)v && cast(long)v <= cast(long)max;
+    }
 }
 struct Pattern
 {
     ushort[] data; /// full pattern; values 0-255 are literal bytes, >=256 being special
+    PatternRange[] ranges; /// indexed by PATTERN_RANGE heads in data
     int flags;
     alias data this;
-    /// Generate a flat ubyte[] from data on demand. Valid only when there is not globbing.
+    /// Generate a flat ubyte[] from data on demand. Valid only without PATTERN_NOT_BYTES.
     ubyte[] toBytes() const
     {
         ubyte[] result = new ubyte[data.length];
@@ -1485,6 +1523,30 @@ struct Pattern
         foreach (i, v; newdata) pat.data[i] = v;
         return pat;
     }
+}
+// Append an inclusive value range to a pattern, both ends parsed as scalars of
+// the same prefix so they take its signedness, width checks, and min/max.
+private
+void patternrange(ref Pattern pat, const(char)[] lo, const(char)[] hi,
+    PatternSpec spec, Endian endian, immutable(ubyte)[] arg)
+{
+    if (lo.length == 0 || hi.length == 0)
+        throw new Exception(MSG_MISSING_PATTERN_DATA);
+
+    PatternRange range = PatternRange(
+        scalarvalue(lo, spec, arg), scalarvalue(hi, spec, arg),
+        spec.width, (spec.flags & SPEC_SIGNED) != 0, endian);
+    if (range.signed ? cast(long)range.min > cast(long)range.max : range.min > range.max)
+        throw new Exception(text(MSG_RANGE_REVERSED, printable(arg)));
+
+    size_t index = pat.ranges.length;
+    if (index > ushort.max - PATTERN_RANGE)
+        throw new Exception(MSG_TOO_MANY_RANGES);
+    pat.ranges ~= range;
+    pat.data ~= cast(ushort)(PATTERN_RANGE + index);
+    foreach (size_t i; 1..spec.width)
+        pat.data ~= PATTERN_RANGE_TAIL;
+    pat.flags |= PATTERN_HAS_RANGE;
 }
 /// Transform a pattern into an array of bytes, useful as a needle.
 ///
@@ -1513,6 +1575,14 @@ struct Pattern
 /// find i16:-1         ff ff       two's complement
 /// find i8:min         80          the width's own edge, by name
 /// find f32:1.0        00 00 80 3f IEEE-754, the bits a float occupies
+/// ---
+///
+/// A scalar may be an inclusive range of values instead, which only a search
+/// can use, being many needles rather than one:
+///
+/// ---
+/// find u16:1..9       01 00 through 09 00
+/// find i8:-1..1       ff, 00, or 01
 /// ---
 ///
 /// Text names its encoding the same way, and a code unit is a scalar like any
@@ -1565,6 +1635,12 @@ Pattern pattern(Endian endian, Argument[] args)
         if (pfx.str.length == 0)
             throw new Exception(MSG_MISSING_PATTERN_DATA);
 
+        // Integers only: a byte string has no order to range over, and a float
+        // range would need its bits ordered safely first. Text is text.
+        if ((pfx.spec.type == PatternType.bytes || pfx.spec.type == PatternType.floating)
+            && indexOf(pfx.str, "..") >= 0)
+            throw new Exception(text(MSG_RANGE_NOT_INTEGER, printable(arg.data)));
+
         final switch (pfx.spec.type) {
         case PatternType.bytes:
             foreach (ubyte v; hexbytes(pfx.str, arg.data)) pat.data ~= v;
@@ -1577,7 +1653,13 @@ Pattern pattern(Endian endian, Argument[] args)
             foreach (ubyte v; textbytes(pfx.str, pfx.spec, endian, arg.data)) pat.data ~= v;
             break;
         case PatternType.scalar:
-            foreach (ubyte v; scalar(pfx.str, pfx.spec, endian, arg.data)) pat.data ~= v;
+            ptrdiff_t dots = indexOf(pfx.str, "..");
+            if (dots < 0)
+            {
+                foreach (ubyte v; scalar(pfx.str, pfx.spec, endian, arg.data)) pat.data ~= v;
+                break;
+            }
+            patternrange(pat, pfx.str[0..dots], pfx.str[dots + 2..$], pfx.spec, endian, arg.data);
             break;
         case PatternType.floating:
             foreach (ubyte v; floating(pfx.str, pfx.spec, endian, arg.data)) pat.data ~= v;
@@ -2142,13 +2224,13 @@ unittest
 ///
 /// Params:
 ///     haystack = Data buffer.
-///     needle   = Compiled pattern (may contain ? and * wildcards).
+///     needle   = Compiled pattern (may contain ? and * wildcards, and ranges).
 ///     hPos     = Starting offset in haystack.
 ///     nPos     = Starting offset in needle (normally 0).
 /// Returns: Number of haystack bytes consumed on match, or -1 on no match.
 ptrdiff_t matchPattern(ubyte[] haystack, Pattern needle, size_t hPos, size_t nPos)
 {
-    if ((needle.flags & PATTERN_HAS_GLOB) == 0)
+    if ((needle.flags & PATTERN_NOT_BYTES) == 0)
     {
         size_t nl = needle.data.length;
         if (hPos + nl > haystack.length) return -1;
@@ -2172,6 +2254,16 @@ ptrdiff_t matchPattern(ubyte[] haystack, Pattern needle, size_t hPos, size_t nPo
             case PATTERN_GLOB_ONE: h++; n++; continue;
             case PATTERN_GLOB_MANY: starN = n++; starH = h; continue;
             default:
+            }
+            if (nc >= PATTERN_RANGE)
+            {
+                const(PatternRange)* range = &needle.ranges[nc - PATTERN_RANGE];
+                if (h + range.width <= haystack.length && range.contains(haystack[h..h + range.width]))
+                {
+                    h += range.width;
+                    n += range.width;
+                    continue;
+                }
             }
         }
         else // pattern exhausted, so prefix matches. haystack tail is irrelevant
@@ -2223,4 +2315,73 @@ unittest
     assert(matchPattern(hay, p, 3, 0) == 3);    // "DEF": D=D, E=?, F=F
     assert(matchPattern(hay, p, 0, 0) == -1);   // 'A' != 'D'
     assert(matchPattern(hay, p, 4, 0) == -1);   // not enough room
+}
+// Ranges: an inclusive span of values, compiled to one element per byte.
+unittest
+{
+    Pattern pat(string[] args...)
+    {
+        return pattern(Endian.littleEndian, args);
+    }
+    void test_throw(string[] args...)
+    {
+        try pat(args); catch (Exception) return;
+        assert(false, "range should have thrown");
+    }
+
+    Pattern p = pat("u16:1..9");
+    assert(p.data == [ PATTERN_RANGE, PATTERN_RANGE_TAIL ]);
+    assert(p.flags == PATTERN_HAS_RANGE);
+    assert(p.ranges == [ PatternRange(1, 9, 2, false, Endian.littleEndian) ]);
+    assert(pat("i8:min..max").ranges == [ PatternRange(-128, 127, 1, true, Endian.littleEndian) ]);
+
+    // Prefixes carry both ways, and every range gets its own head
+    assert(pat("u8:1..2", "5").data == [ PATTERN_RANGE, 5 ]);
+    assert(pat("u8:5", "1..2").data == [ 5, PATTERN_RANGE ]);
+    assert(pat("u8:1..2", "3..4").data == [ PATTERN_RANGE, PATTERN_RANGE + 1 ]);
+
+    // Text is text, dots included
+    assert(pat("utf8:a..z").data == [ 'a', '.', '.', 'z' ]);
+    assert(pat("utf8:a..z").flags == 0);
+
+    test_throw("u8:..5");
+    test_throw("u8:5..");
+    test_throw("u8:9..1");
+    test_throw("i8:1..-1");
+    test_throw("u8:1..256");
+    test_throw("u8:1..2..3");
+    test_throw("f32:1..2");
+    test_throw("x:00..ff");
+
+    // Matching, inclusive at both ends
+    ubyte[] hay = [ 0, 1, 9, 10, 0xff, 0x80, 0x7f ];
+    p = pat("u8:1..9");
+    assert(matchPattern(hay, p, 0, 0) == -1);
+    assert(matchPattern(hay, p, 1, 0) == 1);
+    assert(matchPattern(hay, p, 2, 0) == 1);
+    assert(matchPattern(hay, p, 3, 0) == -1);
+    // Signed compares signed: ff is -1, 80 is -128
+    p = pat("i8:-1..1");
+    assert(matchPattern(hay, p, 0, 0) == 1);
+    assert(matchPattern(hay, p, 4, 0) == 1);
+    assert(matchPattern(hay, p, 5, 0) == -1);
+    assert(matchPattern(hay, p, 6, 0) == -1);
+
+    // The endian setting orders a range like any other scalar
+    hay = [ 0x01, 0x02 ];
+    assert(matchPattern(hay, pat("u16:258..258"), 0, 0) == -1);
+    assert(matchPattern(hay, pat("x16:0201..0201"), 0, 0) == 2);
+    assert(matchPattern(hay, pattern(Endian.bigEndian, "x16:0102..0102"), 0, 0) == 2);
+    assert(matchPattern(hay, pat("x16:0201..0201"), 1, 0) == -1); // not enough room
+    hay = [ 0xfe, 0xff, 0xff, 0xff ];
+    assert(matchPattern(hay, pat("i32:-2..-2"), 0, 0) == 4);
+    hay = [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ];
+    assert(matchPattern(hay, pat("u64:1..max"), 0, 0) == 8);
+    assert(matchPattern(hay, pat("i64:min..-1"), 0, 0) == 8);
+
+    // ...and mixes with literals and wildcards
+    hay = cast(ubyte[]) "Axy5z";
+    assert(matchPattern(hay, pat("utf8:A", "*", "u8:48..57"), 0, 0) == 4);
+    assert(matchPattern(hay, pat("utf8:A", "?", "u8:48..57"), 0, 0) == -1);
+    assert(matchPattern(hay, pat("u8:48..57", "utf8:z"), 3, 0) == 2);
 }

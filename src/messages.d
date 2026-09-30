@@ -49,8 +49,8 @@ static immutable string MSG_UNKNOWN_WRITEMODE = "Unknown writemode:";
 
 // Globbing
 
-static immutable string MSG_CANT_REPLACE_GLOBBING = "Can't replace with globbing";
-static immutable string MSG_CANT_INSERT_GLOBBING = "Can't insert with globbing";
+static immutable string MSG_CANT_REPLACE_GLOBBING = "Can't replace with wildcards or ranges";
+static immutable string MSG_CANT_INSERT_GLOBBING = "Can't insert with wildcards or ranges";
 
 // Clipboard
 
@@ -111,6 +111,9 @@ static immutable string MSG_UNKNOWN_PATTERN_PREFIX = "Unknown pattern prefix: ";
 static immutable string MSG_ODD_HEX_DIGITS = "Hex bytes take an even number of digits: ";
 static immutable string MSG_INVALID_NUMBER = "Invalid number: ";
 static immutable string MSG_VALUE_OUT_OF_RANGE = "Value too large for its type: ";
+static immutable string MSG_RANGE_NOT_INTEGER = "Ranges take an integer prefix: ";
+static immutable string MSG_RANGE_REVERSED = "Range starts above its end: ";
+static immutable string MSG_TOO_MANY_RANGES = "Too many ranges in pattern";
 
 // Charsets / transcoding
 

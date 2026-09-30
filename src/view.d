@@ -4979,7 +4979,7 @@ void replace_(Session *session, Argument[] args)
             return;
         }
         Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_HAS_GLOB)
+        if (p.flags & PATTERN_NOT_BYTES)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
@@ -4994,7 +4994,7 @@ void replace_(Session *session, Argument[] args)
     }
 
     Pattern p = pattern(session.rc.endian, args);
-    if (p.flags & PATTERN_HAS_GLOB)
+    if (p.flags & PATTERN_NOT_BYTES)
         throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternReplace(session.position_cursor, pb.length, pb.ptr, pb.length);
@@ -5016,7 +5016,7 @@ void insert_(Session *session, Argument[] args)
             return;
         }
         Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_HAS_GLOB)
+        if (p.flags & PATTERN_NOT_BYTES)
             throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
@@ -5031,7 +5031,7 @@ void insert_(Session *session, Argument[] args)
     }
 
     Pattern p = pattern(session.rc.endian, args);
-    if (p.flags & PATTERN_HAS_GLOB)
+    if (p.flags & PATTERN_NOT_BYTES)
         throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternInsert(session.position_cursor, pb.length, pb.ptr, pb.length);
@@ -5053,7 +5053,7 @@ void replace_range(Session *session, Argument[] args)
             return;
         }
         Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_HAS_GLOB)
+        if (p.flags & PATTERN_NOT_BYTES)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
@@ -5074,7 +5074,7 @@ void replace_range(Session *session, Argument[] args)
 
     Range r = askrange(args, 0, "Range: ");
     Pattern p = pattern(session.rc.endian, args[1..$]);
-    if (p.flags & PATTERN_HAS_GLOB)
+    if (p.flags & PATTERN_NOT_BYTES)
         throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternReplace(r.start, r.length, pb.ptr, pb.length);
@@ -5096,7 +5096,7 @@ void insert_range(Session *session, Argument[] args)
             return;
         }
         Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_HAS_GLOB)
+        if (p.flags & PATTERN_NOT_BYTES)
             throw new Exception(MSG_CANT_INSERT_GLOBBING);
         ubyte[] pb = p.toBytes();
         session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
@@ -5117,7 +5117,7 @@ void insert_range(Session *session, Argument[] args)
 
     Range r = askrange(args, 0, "Range: ");
     Pattern p = pattern(session.rc.endian, args[1..$]);
-    if (p.flags & PATTERN_HAS_GLOB)
+    if (p.flags & PATTERN_NOT_BYTES)
         throw new Exception(MSG_CANT_INSERT_GLOBBING);
     ubyte[] pb = p.toBytes();
     session.editor.patternInsert(r.start, r.length, pb.ptr, pb.length);
@@ -5776,7 +5776,7 @@ void find_replace(Session *session, Argument[] args)
             throw new Exception(MSG_EMPTY_NEEDLE);
 
         g_replacement = pattern(session.rc.endian, replArgs);
-        if (g_replacement.flags & PATTERN_HAS_GLOB)
+        if (g_replacement.flags & PATTERN_NOT_BYTES)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
     else if (g_needle.data is null || g_replacement.data is null)
@@ -5825,7 +5825,7 @@ void find_replace_all(Session *session, Argument[] args)
             throw new Exception(MSG_EMPTY_NEEDLE);
 
         g_replacement = pattern(session.rc.endian, replArgs);
-        if (g_replacement.flags & PATTERN_HAS_GLOB)
+        if (g_replacement.flags & PATTERN_NOT_BYTES)
             throw new Exception(MSG_CANT_REPLACE_GLOBBING);
     }
     else if (g_needle.data is null || g_replacement.data is null)
@@ -5883,4 +5883,20 @@ void quit(Session *session, Argument[] args)
 Lexit:
     terminalRestore();
     exit(0);
+}
+// A range is fixed-width, so a search reports its width as the match length.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ab12cd");
+
+    Pattern needle = pattern(Endian.littleEndian, "u8:48..57", "u8:48..57");
+    SearchResult result = search(&session, needle, 0, SEARCH_NON_INTERACTIVE);
+    assert(result.pos == 2);
+    assert(result.len == 2);
+    result = search(&session, needle, 5, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE);
+    assert(result.pos == 2);
 }

@@ -1169,6 +1169,33 @@ not
 .BR utf8: ,
 which would splice UTF\-8 into the set\(aqs text.
 .TP
+.IB SCALAR : MIN .. MAX
+Match any value from
+.I MIN
+to
+.IR MAX ,
+both included, where
+.I SCALAR
+is an integer prefix
+.RB ( x8: ,
+.BR u16: ,
+.BR i32: ,
+\&...).
+Both ends follow the prefix, so
+.B i8:\-1..1
+matches [ 0xff ], [ 0x00 ], or [ 0x01 ], and
+.B u8:min..max
+any byte.
+The range is as wide as its prefix and ordered by the
+.B endian
+setting, like any other scalar.
+Only searches take ranges;
+.B replace
+and
+.B insert
+refuse them, as they do wildcards.
+Byte strings and floats take no range.
+.TP
 .B ?
 Match any single byte (wildcard). Only a bare argument is a wildcard, so give
 it a prefix
