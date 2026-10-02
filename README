@@ -65,14 +65,16 @@ This list may change at any given time without notice.
 - [x] Overhaul prefixes (fixed-width prefixes)
 - [x] find-bookmark commmand: Find and create bookmarks
 
-0.13: WIP
+0.13: Released!
 - [x] Disk-aware: Reading and saving
       Tested: Windows, macOS, Linux, FreeBSD, NetBSD, OpenBSD
 - [x] Charset-specific pattern prefixes (e.g., ebcdic037:)
 
-future:
-- [ ] Improve tab-completion
+0.14: WIP
 - [ ] open/close commands
+- [ ] Improve tab-completion
+
+1.0:
 - [ ] Document: Process memory
 
 ////////////////////////////////////////////////////////////////////////////////
