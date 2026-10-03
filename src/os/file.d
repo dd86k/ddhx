@@ -28,13 +28,15 @@ version (Windows)
     import core.sys.windows.winbase : GetFileType, FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE;
     import std.utf : toUTF16z;
     
-    private alias OSHANDLE = HANDLE;
+    /// Native file handle.
+    alias OSHANDLE = HANDLE;
     private alias SEEK_SET = FILE_BEGIN;
     private alias SEEK_CUR = FILE_CURRENT;
     private alias SEEK_END = FILE_END;
     
     private enum OFLAG_OPENONLY = OPEN_EXISTING;
-    private enum INVALID_OSHANDLE = INVALID_HANDLE_VALUE;
+    /// Ditto, that holds nothing.
+    enum INVALID_OSHANDLE = INVALID_HANDLE_VALUE;
 
     // NOTE: Declared here rather than imported from core.sys.windows.winioctl
     //       That module has the request numbers but neither structure, so
@@ -280,8 +282,10 @@ else version (Posix)
         import core.sys.posix.sys.stat : fstat, stat_t;
     }
 
-    private alias OSHANDLE = int;
-    private enum INVALID_OSHANDLE = -1;
+    /// Native file handle.
+    alias OSHANDLE = int;
+    /// Ditto, that holds nothing.
+    enum INVALID_OSHANDLE = -1;
 }
 else
 {
@@ -455,6 +459,20 @@ struct OSFile
                 fcntl(handle, F_SETFL, fl & ~O_NONBLOCK);
         }
 
+        probe();
+    }
+
+    /// Take ownership of a handle opened elsewhere, such as one passed by a
+    /// more privileged process. Closed by close() like any other.
+    /// Params: h = Native handle.
+    void adopt(OSHANDLE h)
+    {
+        handle = h;
+        probe();
+    }
+
+    private void probe()
+    {
         filetype = probeType();
         version (DiskSectors)
         if (filetype == OSFileType.disk)

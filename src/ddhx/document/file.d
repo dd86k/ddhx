@@ -7,7 +7,7 @@ module ddhx.document.file;
 
 import ddhx.document.base;
 import os.file;
-public import os.file : OFlags, OSFileType;
+public import os.file : OFlags, OSFileType, OSHANDLE, INVALID_OSHANDLE;
 
 version (Windows) import core.sync.mutex : Mutex;
 
@@ -26,7 +26,22 @@ class FileDocument : IDocument
     this(string path, OFlags flags) // non-optional due to previous ctor
     {
         file.open(path, flags);
+        setup(path, flags);
+    }
+    /// New file document over a handle opened elsewhere, taking ownership of it.
+    /// Params:
+    ///     handle = Native handle.
+    ///     flags = Access the handle was opened with, as writable() reports it.
+    ///     name = What an error names the target as.
+    this(OSHANDLE handle, OFlags flags, string name = "handle")
+    {
+        file.adopt(handle);
+        setup(name, flags);
+    }
+    ~this() { close(); }
 
+    private void setup(string name, OFlags flags)
+    {
         // Reject here rather than letting the first size() fail: by then the
         // error is an errno with no mention of which target caused it.
         OSFileType type = file.type();
@@ -34,13 +49,12 @@ class FileDocument : IDocument
         {
             file.close();
             import std.conv : text;
-            throw new Exception(text(path, ": cannot edit a ", type));
+            throw new Exception(text(name, ": cannot edit a ", type));
         }
 
         oflags = flags;
         version (Windows) reads = new Mutex();
     }
-    ~this() { close(); }
     
     /// File media capabilities.
     ///
@@ -136,4 +150,26 @@ private:
     OSFile file;
     OFlags oflags;
     version (Windows) Mutex reads;
+}
+/// Adopting a handle opened elsewhere
+version (Posix) unittest
+{
+    import core.sys.posix.fcntl : open, O_RDONLY;
+    import std.file : remove, tempDir, write;
+    import std.path : buildPath;
+    import std.string : toStringz;
+
+    string path = buildPath(tempDir(), "filedoc_adopt.tmp");
+    write(path, "adopted");
+    scope(exit) remove(path);
+
+    int fd = open(path.toStringz, O_RDONLY);
+    assert(fd >= 0);
+    FileDocument doc = new FileDocument(fd, OFlags.read, path);
+    scope(exit) doc.close();
+
+    ubyte[16] buf;
+    assert(doc.size() == 7);
+    assert(doc.readAt(0, buf) == cast(ubyte[]) "adopted");
+    assert(doc.writable() == false);
 }
