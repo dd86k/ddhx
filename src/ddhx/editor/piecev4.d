@@ -1318,9 +1318,7 @@ private:
     }
 
     //
-    // Add buffer
-    //
-
+    // Resource management
     AddBuffer addbuf;
 }
 
@@ -1352,6 +1350,14 @@ struct AddBuffer
     {
         if (blocks.length == 0 || len > blocks[$ - 1].length - used)
         {
+            // Allocate a block (granularity is typically pagesize) to start inserting
+            // data in, or by length if it cannot be inserted.
+            // This is typically done for alignment reasons, since any memory management
+            // system (GC/malloc) will align allocations, naturally aligning it to the
+            // data that pieces hold.
+            // Note with len-only (smaller) sizes: performing new unaligned allocations
+            // *increases* memory usage, because then there are new allocations, and
+            // thus, new references created.
             blocks ~= new ubyte[max(len, blocksize)];
             used = 0;
         }
