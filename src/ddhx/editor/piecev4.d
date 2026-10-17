@@ -47,6 +47,14 @@ enum Source : ubyte
     document,   /// File document
 }
 
+/// Pool entry shared by every piece reading the same document, so swapping a
+/// handle (e.g., a reopened file) rewrites one slot instead of every piece.
+private
+struct DocSlot
+{
+    IDocument doc;
+}
+
 /// Represents a single piece in the Piece Table.
 ///
 /// Kept at 32 bytes so two pieces share a cache line. `position` means
@@ -59,7 +67,7 @@ struct Piece
     union
     {
         const(void) *data;  /// Buffer or pattern bytes.
-        IDocument doc;      /// Document source.
+        DocSlot *doc;       /// Pooled document source.
     }
     long position;
     long size;
@@ -98,7 +106,7 @@ struct Piece
         return piece;
     }
 
-    static Piece makefile(long len, IDocument doc)
+    static Piece makefile(long len, DocSlot *doc)
     {
         Piece piece     = Piece.init;
         piece.source    = Source.document;
@@ -282,7 +290,7 @@ struct Operation
 private
 final class StashDocument : IDocument
 {
-    this(IDocument base) { this.base = base; }
+    this(DocSlot *base) { this.base = base; }
 
     /// Copy [start, end) out of the source, keeping bytes already held,
     /// which date from an earlier save. Must run before the write.
@@ -304,7 +312,7 @@ final class StashDocument : IDocument
             // A short read (file shrank externally) leaves the tail zeroed,
             // which view() would have truncated anyway
             ubyte[] copy = new ubyte[cast(size_t)(stop - at)];
-            base.readAt(at, copy);
+            base.doc.readAt(at, copy);
             insertInPlace(starts, i, at);
             insertInPlace(chunks, i, copy);
             i++;
@@ -316,7 +324,7 @@ final class StashDocument : IDocument
 
     long size()
     {
-        long end = base.size();
+        long end = base.doc.size();
         if (starts.length)
             end = max(end, starts[$ - 1] + cast(long)chunks[$ - 1].length);
         return end;
@@ -341,7 +349,7 @@ final class StashDocument : IDocument
             size_t count = buffer.length - got;
             if (i < starts.length)
                 count = cast(size_t)min(count, starts[i] - at);
-            size_t read = base.readAt(at, buffer[got .. got + count]).length;
+            size_t read = base.doc.readAt(at, buffer[got .. got + count]).length;
             got += read;
             if (read < count)
                 break;
@@ -354,7 +362,7 @@ final class StashDocument : IDocument
     void close() {}
 
 private:
-    IDocument base;
+    DocSlot *base;
     long[] starts;      // sorted, disjoint
     ubyte[][] chunks;
 
@@ -376,13 +384,13 @@ private:
 }
 
 private
-size_t materialize(IDocument basedoc, ref Piece piece, long offset, ubyte[] dest)
+size_t materialize(DocSlot *baseslot, ref Piece piece, long offset, ubyte[] dest)
 {
     final switch (piece.source) {
     case Source.source:
-        return basedoc.readAt(piece.position + offset, dest).length;
+        return baseslot.doc.readAt(piece.position + offset, dest).length;
     case Source.document:
-        return piece.doc.readAt(piece.position + offset, dest).length;
+        return piece.doc.doc.readAt(piece.position + offset, dest).length;
     case Source.buffer:
         memcpy(dest.ptr, piece.data + piece.position + offset, dest.length);
         return dest.length;
@@ -488,7 +496,7 @@ class PieceV4DocumentEditor : IDocumentEditor
     IDirtyRange dirtyRegions(bool includeDisplaced = false)
     {
         lockRead(); scope(exit) unlockRead();
-        return new PieceV4DirtyRange(table, basedoc, includeDisplaced);
+        return new PieceV4DirtyRange(table, baseslot, includeDisplaced);
     }
 
     /// Returns lightweight piece metadata for dirty/displaced pieces.
@@ -509,8 +517,9 @@ class PieceV4DocumentEditor : IDocumentEditor
 
         invalidateCoalesce();
         long docsize = doc.size();
-        basedoc = doc;
         stash = null;
+        docpool = [ new DocSlot(doc) ];
+        baseslot = docpool[0];
 
         // Derive editing policy from the document's capabilities
         int dcaps = doc.caps();
@@ -536,7 +545,55 @@ class PieceV4DocumentEditor : IDocumentEditor
     IDocument document()
     {
         lockRead(); scope(exit) unlockRead();
-        return basedoc;
+        return baseslot !is null ? baseslot.doc : null;
+    }
+
+    /// Every document the editor reads from, including the opened one and
+    /// those inserted into the current state or history.
+    ///
+    /// The editor does not own them: fetch these before `close()` to
+    /// release their handles.
+    /// Returns: Documents, without duplicates.
+    IDocument[] documents()
+    {
+        lockRead(); scope(exit) unlockRead();
+
+        import std.algorithm.searching : canFind;
+        IDocument[] list;
+        foreach (DocSlot *slot; docpool)
+        {
+            // Editor-owned, nothing for the caller to release
+            if (slot.doc is stash)
+                continue;
+            if (list.canFind!((a, b) => a is b)(slot.doc) == false)
+                list ~= slot.doc;
+        }
+        return list;
+    }
+
+    /// Point every piece reading `old`, history included, at `replacement`.
+    ///
+    /// For adopting a reopened handle on the same content: the replacement
+    /// must hold the same bytes at the same offsets, and the editing policy
+    /// derived from `old` on `open()` is kept.
+    /// Params:
+    ///     old = Document currently referenced.
+    ///     replacement = Document taking its place.
+    /// Returns: false when `old` is not referenced by this editor.
+    bool swapDocument(IDocument old, IDocument replacement)
+    in (replacement !is null, "replacement !is null")
+    {
+        lockWrite(); scope(exit) unlockWrite();
+
+        bool found;
+        foreach (DocSlot *slot; docpool)
+        {
+            if (slot.doc !is old)
+                continue;
+            slot.doc = replacement;
+            found = true;
+        }
+        return found;
     }
 
     /// Close document.
@@ -547,8 +604,9 @@ class PieceV4DocumentEditor : IDocumentEditor
         lockWrite(); scope(exit) unlockWrite();
 
         invalidateCoalesce();
-        basedoc = null;
+        baseslot = null;
         stash = null;
+        docpool.length = 0;
 
         // reset internals
         table.clear();
@@ -591,7 +649,7 @@ class PieceV4DocumentEditor : IDocumentEditor
         invalidateCoalesce();
 
         // Without a document, there are no source references to preserve
-        if (basedoc is null)
+        if (baseslot is null)
             return true;
 
         // Collect the file ranges the save will overwrite, as [start,end):
@@ -619,7 +677,7 @@ class PieceV4DocumentEditor : IDocumentEditor
         bool reads(ref const(Piece) piece)
         {
             return piece.size > 0 && (piece.source == Source.source ||
-                (piece.source == Source.document && stash !is null && piece.doc is stash));
+                (piece.source == Source.document && stash !is null && piece.doc.doc is stash));
         }
         long[2][] readers;
         void collect(ref const(Piece) piece)
@@ -651,7 +709,7 @@ class PieceV4DocumentEditor : IDocumentEditor
         readers = readers[0 .. n + 1];
 
         if (stash is null)
-            stash = new StashDocument(basedoc);
+            stash = new StashDocument(baseslot);
 
         // Both lists are sorted and disjoint: capture their intersections
         size_t w, r;
@@ -672,6 +730,8 @@ class PieceV4DocumentEditor : IDocumentEditor
                 r++;
         }
 
+        DocSlot *stashslot = pooled(stash);
+
         // Point source pieces reading an overwritten range at the stash
         void retarget(ref Piece piece)
         {
@@ -691,7 +751,7 @@ class PieceV4DocumentEditor : IDocumentEditor
             if (lo == merged.length || merged[lo][0] >= start + piece.size)
                 return;
 
-            Piece moved = Piece.makefile(piece.size, stash);
+            Piece moved = Piece.makefile(piece.size, stashslot);
             moved.position = piece.position;
             piece = moved;
         }
@@ -846,7 +906,7 @@ class PieceV4DocumentEditor : IDocumentEditor
         // A replace ending past EOF grows the document
         if (_can_resize == false && position + doc.size() > table.total())
             throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
-        replacePiece(position, Piece.makefile(doc.size(), doc));
+        replacePiece(position, Piece.makefile(doc.size(), pooled(doc)));
     }
 
     /// Insert new data at this position
@@ -920,7 +980,7 @@ class PieceV4DocumentEditor : IDocumentEditor
 
         if (_can_resize == false)
             throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
-        insertPiece(position, Piece.makefile(doc.size(), doc));
+        insertPiece(position, Piece.makefile(doc.size(), pooled(doc)));
     }
 
     /// Undo last modification.
@@ -983,14 +1043,28 @@ private:
     /// Pending edits flag when history is not tracked.
     bool _edited;
 
-    /// Source document to apply edits on.
+    /// Source document to apply edits on, always docpool[0].
     ///
     /// Nullable.
-    IDocument basedoc;
+    DocSlot *baseslot;
 
     /// Pre-save source bytes for pieces reading ranges saves overwrote.
-    /// Tied to basedoc, so reset with it.
+    /// Tied to baseslot, so reset with it.
     StashDocument stash;
+
+    /// Documents referenced by pieces, history included.
+    DocSlot*[] docpool;
+
+    DocSlot* pooled(IDocument doc)
+    {
+        // The latest document is the likeliest to be reused
+        foreach_reverse (DocSlot *slot; docpool)
+            if (slot.doc is doc)
+                return slot;
+        DocSlot *slot = new DocSlot(doc);
+        docpool ~= slot;
+        return slot;
+    }
 
     /// Editor lock, null when the editor is not thread-safe.
     ReadWriteMutex rwlock;
@@ -1089,7 +1163,7 @@ private:
             // Assumes view buffer is ... under 2 GiB
             size_t to_read = cast(size_t)min(available, buffer.length - bi);
 
-            size_t got = materialize(basedoc, table.pieces[i], offset,
+            size_t got = materialize(baseslot, table.pieces[i], offset,
                 buffer[bi .. bi + to_read]);
             bi += got;
 
@@ -1376,9 +1450,9 @@ struct AddBuffer
 /// or by the same one) before it is drained.
 private class PieceV4DirtyRange : IDirtyRange
 {
-    this(ref PieceTable table, IDocument basedoc, bool includeDisplaced)
+    this(ref PieceTable table, DocSlot *baseslot, bool includeDisplaced)
     {
-        this._basedoc = basedoc;
+        this._baseslot = baseslot;
         this._buf.length = BUFFER_SIZE;
 
         foreach (i; 0 .. table.length)
@@ -1435,7 +1509,7 @@ private:
     long _offset;       /// Offset within the current piece
     size_t _chunk;      /// Size of the chunk currently yielded
 
-    IDocument _basedoc;
+    DocSlot *_baseslot;
     ubyte[] _buf;
     DirtyRegion _current;
 
@@ -1447,7 +1521,7 @@ private:
 
         // Dirty regions feed saving: a short read here means the source
         // shrank underneath us, and writing garbage would corrupt the save
-        size_t got = materialize(_basedoc, _pieces[_index].piece,
+        size_t got = materialize(_baseslot, _pieces[_index].piece,
             _offset, _buf[0..chunk]);
         assertion(got == chunk, "short read while materializing dirty region");
 
@@ -2965,4 +3039,67 @@ unittest
     foreach (i; 0 .. EDITS)
         e.redo();
     assert(e.view(0, buffer) == expected);
+}
+
+/// Pieces reading the same document share one pool slot, dropped on reopen
+unittest
+{
+    log("TEST-0043");
+
+    scope MemoryDocument base  = new MemoryDocument(cast(const(ubyte)[])"ABCD");
+    scope MemoryDocument patch = new MemoryDocument(cast(const(ubyte)[])"xy");
+    scope PieceV4DocumentEditor e = new PieceV4DocumentEditor().open(base);
+    assert(e.docpool.length == 1);
+
+    e.fileInsert(0, patch);
+    e.fileInsert(4, patch);
+    e.fileReplace(2, patch);
+    e.fileInsert(0, base);
+    assert(e.docpool.length == 2);
+
+    ubyte[12] buffer;
+    assert(e.view(0, buffer) == "ABCDxyxyxyCD");
+
+    // Undo history still points into the pool, so it survives until reopen
+    e.undo();
+    e.undo();
+    assert(e.docpool.length == 2);
+    e.open(base);
+    assert(e.docpool.length == 1);
+    e.close();
+    assert(e.docpool.length == 0);
+}
+
+/// Swapping a document reaches source, document, and stashed pieces alike,
+/// and documents() lists only what the caller owns
+unittest
+{
+    log("TEST-0044");
+
+    // Differing content only to tell which document a read went through
+    scope MemoryDocument base  = new MemoryDocument(cast(const(ubyte)[])"ABCDEFGH");
+    scope MemoryDocument base2 = new MemoryDocument(cast(const(ubyte)[])"ABCDEFGQ");
+    scope MemoryDocument patch = new MemoryDocument(cast(const(ubyte)[])"xy");
+    scope PieceV4DocumentEditor e = new PieceV4DocumentEditor().open(base);
+
+    static immutable string z = "Z";
+    e.replace(0, z.ptr, z.length);
+    // Only byte 0 is overwritten: the undo piece moves to the stash, which
+    // holds that byte and reads the rest through the base slot
+    assert(e.prepareInplaceSave());
+    assert(e.stash !is null);
+    e.fileInsert(8, patch);
+    assert(e.documents() == [ cast(IDocument)base, patch ]);
+
+    assert(e.swapDocument(patch, base) == true);
+    assert(e.documents() == [ cast(IDocument)base ]);
+    assert(e.swapDocument(base, base2) == true);
+    assert(e.swapDocument(patch, base2) == false);
+    assert(e.document() is base2);
+
+    ubyte[16] buffer;
+    assert(e.view(0, buffer) == "ZBCDEFGQAB");
+    e.undo();
+    e.undo();
+    assert(e.view(0, buffer) == "ABCDEFGQ");
 }
