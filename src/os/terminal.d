@@ -82,14 +82,14 @@ else version (Posix)
         private enum TCSANOW    = 0;
         private enum TCSAFLUSH  = 2;
         private enum ICANON     = 2;
-        private enum ECHO       = 10;
+        private enum ECHO       = 0x8;
         private enum BRKINT     = 2;
-        private enum INPCK      = 20;
-        private enum ISTRIP     = 40;
-        private enum ICRNL      = 400;
-        private enum IXON       = 2000;
-        private enum IEXTEN     = 100000;
-        private enum CS8        = 60;
+        private enum INPCK      = 0x10;
+        private enum ISTRIP     = 0x20;
+        private enum ICRNL      = 0x100;
+        private enum IXON       = 0x400;
+        private enum IEXTEN     = 0x8000;
+        private enum CS8        = 0x30;
         private struct termios {
             tcflag_t c_iflag;
             tcflag_t c_oflag;
