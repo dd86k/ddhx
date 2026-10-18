@@ -169,10 +169,27 @@ ulong installedSizeKiB(string root)
     return total;
 }
 
+// Ubuntu 26.04's ld stamps binaries with an x86-64-v3 ISA note, which makes
+// them refuse to run on older CPUs. The same section carries the CET marks,
+// so those go too. Other architectures' property notes (BTI, PAC) stay.
+bool hasX86IsaNote(string bin)
+{
+    return execute([ "readelf", "-n", bin ], [ "LC_ALL": "C" ])
+        .output.canFind("x86 ISA needed");
+}
+
+void stripX86IsaNote(string src, string installed)
+{
+    if (hasX86IsaNote(src) == false)
+        return;
+    writeln(">> stripping x86 ISA note");
+    run([ "objcopy", "--remove-section=.note.gnu.property", installed ]);
+}
+
 void stepDeb(const(PackageInfo) info)
 {
     require(exists("ddhx"), "./ddhx not found, build it first (make release)");
-    foreach (string tool; [ "fakeroot", "dpkg-deb" ])
+    foreach (string tool; [ "fakeroot", "dpkg-deb", "readelf", "objcopy" ])
         requireTool(tool);
 
     string arch = info.arch;
@@ -190,6 +207,7 @@ void stepDeb(const(PackageInfo) info)
     removeTree(stage);
 
     installFile("ddhx", root~"/bin/ddhx", octal!755);
+    stripX86IsaNote("ddhx", root~"/bin/ddhx");
     installGzip("ddhx.1", root~"/share/man/man1/ddhx.1.gz");
     installFile("LICENSE", root~"/share/doc/ddhx/copyright", octal!644);
 
