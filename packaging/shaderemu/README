@@ -1,0 +1,120 @@
+ShaderEmu target (mkpkg.d shaderemu-setup shaderemu-build)
+====================================
+
+Machine: 32-bit RISC-V Linux, no MMU, static musl, rv32imaf (F, no D, no C),
+ilp32 ABI (floats still passed in integer registers). The kernel only runs
+bFLT flat executables. https://github.com/MichaelMoroz/ShaderEmu
+
+Quick start (zig toolchain):
+  1. download ShaderEmu into ./ShaderEmu (not part of this repo)
+  2. ./mkpkg.d shaderemu-setup   one time: LDC runtime sources, zig, druntime
+  3. ./mkpkg.d shaderemu-build   builds the .gz.b64.txt
+Steps run left to right, so "./mkpkg.d shaderemu-setup shaderemu-build" does
+both; --dry-run (-n) prints what each would do without changing anything.
+Setup needs on PATH: a stock LDC with ldc-build-runtime (--ldc), curl, tar,
+cmake, ninja; the build also python3 (for elf2bflt.py). Everything lands in
+--work (default ~/ddhx-rv32), and both steps check what they need and say
+what is missing. The numbered steps below are what shaderemu-setup does, for
+doing it by hand or with the --toolchain shaderemu.
+
+
+Status
+------
+Tested (Debian container, LDC 1.43.0 stock, zig 0.14.1): the zig toolchain
+builds the runtime and ddhx, links, and elf2bflt produces a bFLT. The same
+objects linked as a normal static-pie run under qemu-riscv32-static: --version
+and the TUI render a file correctly. Not tested: the bFLT start path
+(flatcrt.c) on ShaderEmu itself, and the --toolchain shaderemu (ShaderEmu gcc,
+sysroot, libunwind), which needs a kernel build here.
+
+Stock LDC has no riscv32 ABI ("unknown target ABI" warning) and passes every
+struct byval/sret to C. ddhx and the Phobos paths it uses pass only scalars
+and pointers to C, so this is expected to be fine; if the binary misbehaves at
+a C call, suspect it first (LDC 1.43 gen/abi/riscv32.cpp would be needed).
+
+Requirements
+------------
+- stock LDC (same version as the source tree below; 1.43.0 tested)
+  and its ldc-build-runtime; cmake, ninja
+- LDC source tarball extracted as WORK/ldc-1.43.0-src/ (only its runtime is
+  built; the compiler itself is not rebuilt)
+- ShaderEmu checkout (linux/nommu/elf2bflt.py); python3 to run it
+- one of two C toolchains (default zig):
+  shaderemu (untested): run ShaderEmu's linux/kernel/build.sh and
+    linux/nommu/setup.sh once. Provides riscv32-linux-gcc
+    (~/shaderemu-linux/toolchain/bin) and the musl 1.2.5 sysroot with
+    compiler_rt (~/nm/work/sysroot), built with -march=rv32imaf -mabi=ilp32.
+  zig (0.14.1 tested; pip "ziglang" or the tarball): musl, libunwind and the
+    linker come from zig.
+
+Setup
+-----
+1. Patch the runtime sources in WORK/ldc-1.43.0-src/runtime/ for rv32 + musl:
+     druntime/src/core/sys/posix/signal.d
+         MINSIGSTKSZ: "else version (RISCV64)" -> RISCV_Any
+     druntime/src/core/stdc/fenv.d
+         musl section, fenv_t/fexcept_t: RISCV64 -> RISCV_Any
+     druntime/src/core/stdc/config.d
+         muslRedirTime64 = false on RISCV32 (musl rv32 never had 32-bit
+         time_t); add "else version (RISCV32)" after the Pre_Time64 case
+     druntime/src/core/stdc/stdio.d
+         drop pragma(printf)/pragma(scanf) on the v*printf/v*scanf
+         declarations: without an riscv32 ABI the compiler has no va_list
+         type to check them against:
+           perl -0pi -e 's/pragma\((?:printf|scanf)\)\n(\s+int v\w*(?:printf|scanf)\()/$1/g' stdio.d
+     phobos/std/math/hardware.d (line ~61)
+         IeeeFlagsSupport: "else version (RISCV_Any)" -> RISCV64. LDC's
+         FloatingPointControl.clearExceptions has no riscv case and hits a
+         static assert otherwise.
+   druntime/src/core/internal/backtrace/libunwind.d
+         add a RISCV32 case: _LIBUNWIND_CONTEXT_SIZE = 64, _CURSOR_SIZE = 76
+         (the RISCV64 values; opaque storage, oversize is harmless)
+   Not needed with +f: core/thread/osthread.d (its fsw stores are valid on
+   rv32 F).
+2. Cross-build druntime + phobos into WORK/rt (rt/lib must hold the libs).
+   The C compiler goes in as environment variables, not cmake variables, and
+   -wi is needed because the missing-ABI warning is an error under the
+   runtime's -w:
+     CC=<cc> AR=<ar> ldc-build-runtime --ninja --buildDir=WORK/rt \
+       --ldcSrcDir=WORK/ldc-1.43.0-src --targetSystem='Linux;musl;UNIX' \
+       --dFlags='-mtriple=riscv32-unknown-linux-musl;-mattr=+m,+a,+f,-c,-d;-mabi=ilp32;-wi' \
+       --cFlags=... BUILD_SHARED_LIBS=OFF CMAKE_AR=<ar> CMAKE_RANLIB=<ranlib>
+   C toolchain, either:
+     shaderemu: CC=riscv32-linux-gcc, --cFlags='-O2 -march=rv32imaf
+                -mabi=ilp32 -fno-stack-protector -nostdinc
+                -isystem <sysroot>/include -isystem <gcc include>'
+     zig:       WORK/bin/rv32cc, rv32ar, rv32ranlib wrappers (no +f: zig's
+                musl rv32 setjmp.S uses fsd, so it only builds soft-float;
+                the D objects are +f and still link, both are ilp32):
+                  exec zig cc -target riscv32-linux-musl -mcpu=generic_rv32+m+a "$@"
+                  exec zig ar "$@"   /   exec zig ranlib "$@"
+3. libunwind (druntime links -lunwind; the zig toolchain brings its own, the
+   ShaderEmu sysroot has none). Untested for shaderemu: build LLVM 18.1.8
+   libunwind (llvm-project releases: libunwind-18.1.8.src.tar.xz) as a static
+   library with riscv32-linux-gcc/g++ and the same arch flags
+   (-fno-exceptions -fno-rtti -nostdinc++; it relies on musl's
+   dl_iterate_phdr, so do not define _LIBUNWIND_IS_BAREMETAL) and drop
+   libunwind.a into WORK/rt/lib. If this fights back, use --toolchain zig.
+
+Expected layout
+---------------
+  WORK/ldc-VERSION-src/ (VERSION = --ldc's)  WORK/rt/lib/  [./ShaderEmu/]
+  shaderemu: --gcc (riscv32-linux-gcc), --sysroot
+  zig:       WORK/bin/rv32cc
+
+Build
+-----
+  ./mkpkg.d shaderemu-setup [--work DIR] [--ldc PATH]
+  ./mkpkg.d shaderemu-build [--work DIR] [--ldc PATH] [--shaderemu DIR]
+                      [--toolchain zig] [--gcc PATH] [--sysroot DIR]
+
+Using the output
+----------------
+Upload the .gz.b64.txt, open it in ShaderEmu's browser, "Save page as"
+/root/ddhx.b64, then:
+  base64 -d /root/ddhx.b64 | gunzip > /root/ddhx && chmod +x /root/ddhx
+
+flatcrt.c is the bFLT start file (after ShaderEmu's linux/nommu/flatcrt.c)
+plus AT_PHDR/AT_PHNUM/AT_PHENT so musl's TLS setup and D's dl_iterate_phdr
+find the program headers. Its entry is _flat_start, so it does not collide
+with the _start of the C library's startup file.
