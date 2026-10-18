@@ -50,6 +50,7 @@ version (Windows)
 else version (Posix)
 {
     import core.stdc.stdio : snprintf;
+    import core.stdc.config : c_ulong;
     import core.sys.posix.sys.stat;
     import core.sys.posix.sys.ioctl;
     import core.sys.posix.unistd;
@@ -109,7 +110,7 @@ else version (Posix)
             ushort ws_xpixel;
             ushort ws_ypixel;
         }
-        private extern (C) int ioctl(int fd, ulong request, ...);
+        private extern (C) int ioctl(int fd, c_ulong request, ...);
     }
     
     version (NetBSD)
