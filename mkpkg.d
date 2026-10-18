@@ -52,6 +52,7 @@ struct Step
 // Steps run left to right in the order given; each is "<format>[-<phase>]".
 immutable Step[] steps = [
     Step("deb", "Build a .deb from the built ./ddhx", &stepDeb),
+    Step("rpm", "Build a .rpm from the built ./ddhx", &stepRpm),
     Step("shaderemu-setup",
         "One-time rv32 toolchain: LDC runtime, zig, druntime (see README)",
         &stepShaderEmuSetup),
@@ -186,6 +187,15 @@ void stripX86IsaNote(string src, string installed)
     run([ "objcopy", "--remove-section=.note.gnu.property", installed ]);
 }
 
+// The payload shared by every Linux package format, minus the license, whose
+// location differs per distro family.
+void stageCommon(string root)
+{
+    installFile("ddhx", root~"/bin/ddhx", octal!755);
+    stripX86IsaNote("ddhx", root~"/bin/ddhx");
+    installGzip("ddhx.1", root~"/share/man/man1/ddhx.1.gz");
+}
+
 void stepDeb(const(PackageInfo) info)
 {
     require(exists("ddhx"), "./ddhx not found, build it first (make release)");
@@ -206,9 +216,7 @@ void stepDeb(const(PackageInfo) info)
     writeln(">> staging into ", stage);
     removeTree(stage);
 
-    installFile("ddhx", root~"/bin/ddhx", octal!755);
-    stripX86IsaNote("ddhx", root~"/bin/ddhx");
-    installGzip("ddhx.1", root~"/share/man/man1/ddhx.1.gz");
+    stageCommon(root);
     installFile("LICENSE", root~"/share/doc/ddhx/copyright", octal!644);
 
     // Continuation lines of Description must start with a space.
@@ -230,6 +238,77 @@ void stepDeb(const(PackageInfo) info)
     string output = pkg~".deb";
     run(["fakeroot", "dpkg-deb", "--build", stage, output]);
     removeTree(stage);
+    writeln(">> done: ", output);
+}
+
+// ARCH may be given in dpkg terms; rpm spells them differently.
+string rpmArch(string arch)
+{
+    switch (arch)
+    {
+    case "amd64": return "x86_64";
+    case "arm64": return "aarch64";
+    case "i386":  return "i686";
+    case "armhf": return "armv7hl";
+    default:      return arch;
+    }
+}
+
+void stepRpm(const(PackageInfo) info)
+{
+    require(exists("ddhx"), "./ddhx not found, build it first (make release)");
+    foreach (string tool; [ "rpmbuild", "readelf", "objcopy" ])
+        requireTool(tool);
+
+    string arch = info.arch;
+    if (arch is null && dryRun == false)
+        arch = execute([ "uname", "-m" ]).output.strip();
+    arch = arch is null ? "unknown" : rpmArch(arch);
+
+    // rpm versions cannot contain '-'; '~' sorts a pre-release before the
+    // final version.
+    string ver  = info.version_.replace("-", "~");
+    string top  = absolutePath(format("%s_%s_%s-rpm", info.name, ver, arch));
+    string root  = top~"/BUILDROOT";
+    string spec = top~"/SPECS/"~info.name~".spec";
+
+    writeln(">> staging into ", top);
+    removeTree(top);
+    foreach (string dir; [ "BUILD", "RPMS", "SPECS" ])
+        makeDirs(top~"/"~dir);
+
+    stageCommon(root~info.prefix);
+    installFile("LICENSE", root~info.prefix~"/share/licenses/ddhx/LICENSE",
+        octal!644);
+
+    // The binary is prebuilt, so debuginfo extraction has nothing to work on.
+    putFile(spec, format(
+        "%%global debug_package %%{nil}\n"~
+        "Name: %s\n"~
+        "Version: %s\n"~
+        "Release: 1\n"~
+        "Summary: %s\n"~
+        "License: MIT\n"~
+        "URL: %s\n"~
+        "Packager: %s\n"~
+        "\n"~
+        "%%description\n%s\n"~
+        "\n"~
+        "%%files\n"~
+        "%s/bin/ddhx\n"~
+        "%s/share/man/man1/ddhx.1.gz\n"~
+        "%%license %s/share/licenses/ddhx/LICENSE\n",
+        info.name, ver, info.summary, info.homepage, info.maintainer,
+        info.description, info.prefix, info.prefix, info.prefix));
+
+    writeln(">> packaging");
+    run([ "rpmbuild", "-bb", "--define", "_topdir "~top,
+        "--buildroot", root, "--target", arch, spec ]);
+
+    string output = format("%s-%s-1.%s.rpm", info.name, ver, arch);
+    if (dry("copy "~output) == false)
+        copy(format("%s/RPMS/%s/%s", top, arch, output), output);
+    removeTree(top);
     writeln(">> done: ", output);
 }
 
