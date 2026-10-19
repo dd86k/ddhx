@@ -53,6 +53,7 @@ struct Step
 immutable Step[] steps = [
     Step("deb", "Build a .deb from the built ./ddhx", &stepDeb),
     Step("rpm", "Build a .rpm from the built ./ddhx", &stepRpm),
+    Step("tar", "Build a portable .tar.gz from the built ./ddhx", &stepTar),
     Step("shaderemu-setup",
         "One-time rv32 toolchain: LDC runtime, zig, druntime (see README)",
         &stepShaderEmuSetup),
@@ -309,6 +310,49 @@ void stepRpm(const(PackageInfo) info)
     if (dry("copy "~output) == false)
         copy(format("%s/RPMS/%s/%s", top, arch, output), output);
     removeTree(top);
+    writeln(">> done: ", output);
+}
+
+// A static executable has no program interpreter.
+bool isStaticElf(string bin)
+{
+    return execute([ "readelf", "-l", bin ], [ "LC_ALL": "C" ])
+        .output.canFind("INTERP") == false;
+}
+
+// Flat, relocatable layout (no prefix) so it unpacks and runs anywhere.
+void stepTar(const(PackageInfo) info)
+{
+    require(exists("ddhx"), "./ddhx not found, build it first (make release)");
+    foreach (string tool; [ "tar", "readelf", "objcopy" ])
+        requireTool(tool);
+
+    string arch = info.arch;
+    if (arch is null && dryRun == false)
+        arch = execute([ "uname", "-m" ]).output.strip();
+    arch = arch is null ? "unknown" : rpmArch(arch);
+
+    bool portable = exists("ddhx") && isStaticElf("ddhx");
+    if (portable == false)
+        stderr.writeln("warning: ./ddhx is dynamically linked, "~
+            "not tagging the archive as static");
+
+    string name   = format("%s-%s-linux-%s%s", info.name, info.version_, arch,
+        portable ? "-static" : "");
+    string stage  = absolutePath(name);
+    string output = name~".tar.gz";
+
+    writeln(">> staging into ", stage);
+    removeTree(stage);
+    installFile("ddhx", stage~"/ddhx", octal!755);
+    stripX86IsaNote("ddhx", stage~"/ddhx");
+    installGzip("ddhx.1", stage~"/ddhx.1.gz");
+    installFile("LICENSE", stage~"/LICENSE", octal!644);
+
+    writeln(">> packaging");
+    run([ "tar", "--owner=0", "--group=0", "--numeric-owner", "-czf", output,
+        "-C", dirName(stage), name ]);
+    removeTree(stage);
     writeln(">> done: ", output);
 }
 
