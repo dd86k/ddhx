@@ -30,6 +30,10 @@ jobs:
           - { os: ubuntu-24.04, dc: gdc }
           - { os: ubuntu-24.04, dc: ldc }
           - { os: ubuntu-24.04-arm, dc: ldc }
+          - { os: ubuntu-26.04, dc: dmd }
+          - { os: ubuntu-26.04, dc: gdc }
+          - { os: ubuntu-26.04, dc: ldc }
+          - { os: ubuntu-26.04-arm, dc: ldc }
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v6
