@@ -11,7 +11,7 @@ jobs:
         include: # easier to maintain, more explicit
           # DMD: Currently x86-only
           # GDC: Works best on Linux, BSDs
-          # NOTE: setup-dlang grabs gdc from repo, dmd/ldc always latest
+          # NOTE: setup-dlang grabs gdc from distro repo, dmd/ldc always latest
           # Windows
           - { os: windows-2022, dc: dmd }
           - { os: windows-2022, dc: ldc }
@@ -54,3 +54,33 @@ jobs:
         name: ddhx-${{ matrix.os }}-${{ matrix.dc }}
         # Includes executable, manpage, test exec, PDBs
         path: ddhx*
+  # musl, through Alpine. No 32-bit: Alpine has no D compiler for x86/armv7.
+  alpine:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-24.04, arch: x86_64, dc: ldc2, pkg: ldc }
+          - { os: ubuntu-24.04, arch: x86_64, dc: gdc, pkg: gcc-gdc }
+          - { os: ubuntu-24.04-arm, arch: aarch64, dc: ldc2, pkg: ldc }
+          - { os: ubuntu-24.04-arm, arch: aarch64, dc: gdc, pkg: gcc-gdc }
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v6
+    # NOTE: docker run since JS actions can't run in Alpine containers on arm64
+    - name: Unit tests, run, static build
+      run: |
+        docker run --rm -v "$PWD:/src" -w /src -e DC=${{ matrix.dc }} \
+          alpine:latest sh -euxc '
+            apk add --no-cache gcc musl-dev dub make ${{ matrix.pkg }}
+            dub test --compiler=$DC
+            dub run --compiler=$DC -- --ver
+            make release-static DC=$DC
+            if readelf -l ddhx | grep -q INTERP; then
+              echo "ddhx is not static"; exit 1
+            fi
+            ./ddhx --ver'
+    - name: Upload build
+      uses: actions/upload-artifact@v7
+      with:
+        name: ddhx-alpine-${{ matrix.arch }}-${{ matrix.dc }}
+        path: ddhx
