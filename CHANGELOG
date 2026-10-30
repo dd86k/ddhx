@@ -10,7 +10,7 @@ Rules:
   Something that breaks and is then fixed within a dev cycle shouldn't count.
 
 ////////////////////////////////////////////////////////////////////////////////
-// v0.14.0 (WIP)
+// v0.14.0
 
 // Added
 - mkpkg.d: Build deb, rpm, and tar packages.
