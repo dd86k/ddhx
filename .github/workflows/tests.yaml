@@ -71,7 +71,7 @@ jobs:
       run: |
         docker run --rm -v "$PWD:/src" -w /src -e DC=${{ matrix.dc }} \
           alpine:latest sh -euxc '
-            apk add --no-cache gcc musl-dev dub make ${{ matrix.pkg }}
+            apk add --no-cache gcc musl-dev zlib-dev zlib-static dub make ${{ matrix.pkg }}
             dub test --compiler=$DC
             dub run --compiler=$DC -- --ver
             make release-static DC=$DC
