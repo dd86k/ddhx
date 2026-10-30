@@ -380,6 +380,30 @@ or give it empty input.
 Some commands require arguments. If omitted, the editor will prompt for the
 missing arguments, or continue if there is an active selection.
 .
+.SS Completion
+Press
+.B Tab
+in the command prompt to complete command names and their arguments: file
+paths, settings and their values, keys, color elements and colors, and
+.B show
+items.
+Prompts for a missing argument complete the same way.
+.PP
+With a single match, the match is inserted. Completing a directory then
+lists its contents on the next
+.BR Tab .
+With several matches, the text is first extended to their common start, then
+.B Tab
+cycles through them and
+.B Shift+Tab
+cycles backward.
+.PP
+In the command prompt, arguments are quoted as needed, so a path with spaces
+is inserted inside single quotes (see
+.BR Quoting ).
+Prompts for a missing argument insert text as-is.
+Hidden files are listed only when the name typed so far starts with a dot.
+.
 .SS Quoting
 Command lines are split into arguments on whitespace. Quoting style then selects
 how the text is read, the same way it does in a programming language, and the
@@ -757,6 +781,16 @@ Save the document to a new file and set it as the current target.
 .TP
 .BI export\-range " RANGE PATH"
 Export the specified range to a file.
+.TP
+.BI open " PATH"
+Open a file, replacing the current document.
+A missing file starts a new document under that name.
+.TP
+.B close
+Close the document, leaving an empty buffer.
+.PP
+Both commands ask to save unsaved changes first, and clear the bookmarks,
+selection, and undo history.
 .
 .SS Reporting Commands
 .TP

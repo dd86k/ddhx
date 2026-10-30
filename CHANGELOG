@@ -12,6 +12,9 @@ Rules:
 ////////////////////////////////////////////////////////////////////////////////
 // v0.14.0
 
+Smaller release with "open"/"close" commands, Tab completion for
+command arguments, and packaging options via mkpkg.d.
+
 // Added
 - mkpkg.d: Build deb, rpm, and tar packages.
 - "open" and "close" commands: Switch documents without restarting.
