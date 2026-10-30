@@ -122,9 +122,8 @@ GDC is typically available in system repositories as 'gdc', 'gdc-*', 'gcc-gdc',
 LDC is typically available in system repositories as 'ldc', and is typically
 invoked using 'ldc2'. This project doesn't use 'ldmd2', the dmd wrapper.
 
-Minimum version should be a compiler with DMD front-end version 2.081 and
-later. Project successfully compiles on Ubuntu 16.04 using dmd-2.082.0,
-using the deb package from dlang.org.
+Minimum version should be a compiler with DMD front-end version 2.076 and
+later, such as GDC 11.
 
 Compile a debug build:
   $ dub build
