@@ -71,7 +71,7 @@ This list may change at any given time without notice.
 - [x] Charset-specific pattern prefixes (e.g., ebcdic037:)
 
 0.14: WIP
-- [ ] open/close commands
+- [x] open/close commands
 - [ ] Improve tab-completion
 
 1.0:

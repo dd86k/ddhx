@@ -14,6 +14,7 @@ Rules:
 
 // Added
 - mkpkg.d: Build deb, rpm, and tar packages.
+- "open" and "close" commands: Switch documents without restarting.
 
 // Fixed
 - musl and Android: Terminal settings were set wrong, and the terminal size

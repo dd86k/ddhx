@@ -17,6 +17,11 @@ static immutable string MSG_UNKNOWN_COMMAND = "Unknown command: ";
 static immutable string MSG_COMMAND_NOT_FOUND = "command not found: ";
 static immutable string MSG_MISSING_ACTION = "Missing action";
 
+// Documents
+
+static immutable string MSG_NEW_BUFFER = "(new buffer)";
+static immutable string MSG_NEW_FILE = "(new file)";
+
 // Ranges and selections
 
 static immutable string MSG_EMPTY_RANGE = "Empty range";

@@ -15,12 +15,11 @@ import std.stdio, std.getopt;
 
 import core.stdc.stdlib : exit, EXIT_SUCCESS, EXIT_FAILURE;
 
-import ddhx.document.file : FileDocument;
 import ddhx.editor;
-import ddhx.formatting : WritingMode;
 import ddhx.logger;
 
 import configuration;
+import messages;
 
 import view;
 
@@ -313,9 +312,6 @@ void main(string[] args)
             goto Lrc;
     }
     
-    static immutable string MSG_NEWBUF  = "(new buffer)";
-    static immutable string MSG_NEWFILE = "(new file)";
-    
     // Select editor backend, this allows transitioning between multiple
     // backends (implementations) easier.
     IDocumentEditor editor = spawnEditor( environment.get("DDHX_BACKEND") );
@@ -338,7 +334,7 @@ void main(string[] args)
         import os.terminal : terminalInputIsPipe;
         if (terminalInputIsPipe())
             goto case "-";
-        initmsg = MSG_NEWBUF;
+        initmsg = MSG_NEW_BUFFER;
         break;
     case "-": // In-memory buffer from stdin
         import ddhx.document.memory : MemoryDocument;
@@ -350,57 +346,12 @@ void main(string[] args)
         }
         editor.open(doc);
         session.ogdoc = doc;
-        initmsg = MSG_NEWBUF;
+        initmsg = MSG_NEW_BUFFER;
         break;
     default: // target is set, to either: file, disk (todo), or PID (todo)
-        import os.path : displayName;
-        import ddhx.document.base : IDocument;
-        import ddhx.document.file : OFlags;
-
-        try
-        {
-            IDocument doc = new FileDocument(target, OFlags.read | OFlags.exists | OFlags.share);
-            editor.open(doc);
-            session.ogdoc = doc;
-            
-            initmsg = displayName(target);
-        }
+        try initmsg = open_document(session, target);
         catch (Exception ex)
-        {
-            debug log("%s", ex);
-            else  log("%s", ex.msg);
-
-            // Only treat as new file if the file truly doesn't exist.
-            // Other errors (permission denied, unsupported type, etc.)
-            // should be reported to the user.
-            import os.error : OSException;
-            bool notfound = false;
-            if (OSException exos = cast(OSException) ex)
-            {
-                version (Windows)
-                {
-                    import core.sys.windows.windef : ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND;
-                    notfound = exos.oscode == ERROR_FILE_NOT_FOUND
-                            || exos.oscode == ERROR_PATH_NOT_FOUND;
-                }
-                else
-                {
-                    import core.stdc.errno : ENOENT;
-                    notfound = exos.oscode == ENOENT;
-                }
-            }
-            
-            // If not found, then it is considered a new file
-            if (notfound)
-                initmsg = MSG_NEWFILE;
-            else // ie, permission denied
-                fatal(ex);
-        }
-        
-        if (rc.writemode == WritingMode.readonly)
-        {
-            initmsg ~= " [readonly]";
-        }
+            fatal(ex);
     }
     log(`initmsg="%s"`, initmsg);
     assert(initmsg, "Forgot initmsg?");

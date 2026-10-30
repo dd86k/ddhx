@@ -395,6 +395,10 @@ immutable Command[] default_commands = [
     //       Analogous to GNU nano having ^O.
     { "save-as",                    "Save document as a different file",
         Mod.ctrl|Key.O,             &save_as },
+    { "open",                       "Open a file, replacing the current document",
+        0,                          &open_ },
+    { "close",                      "Close the document, leaving an empty buffer",
+        0,                          &close_ },
     // Undo-Redo
     { "undo",                       "Undo last edit",
         Mod.ctrl|Key.U,             &undo },
@@ -658,7 +662,97 @@ void start_session(Session *session, string initmsg,
     terminalRestore();
 }
 
+/// Open the file or disk at path, replacing the current document, and return
+/// the status message. A missing file becomes a new file at that path.
+/// Throws on other errors, leaving the current document untouched.
+string open_document(Session *session, string path)
+{
+    import os.path : displayName;
+    import os.error : OSException;
+
+    IDocument doc;
+    try doc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
+    catch (OSException ex)
+    {
+        // Other errors (permission denied, unsupported type, etc.) are
+        // reported, only a missing file is treated as new
+        version (Windows)
+        {
+            import core.sys.windows.windef : ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND;
+            bool notfound = ex.oscode == ERROR_FILE_NOT_FOUND
+                         || ex.oscode == ERROR_PATH_NOT_FOUND;
+        }
+        else
+        {
+            import core.stdc.errno : ENOENT;
+            bool notfound = ex.oscode == ENOENT;
+        }
+        if (notfound == false)
+            throw ex;
+        log("%s", ex.msg);
+    }
+
+    close_document(session);
+    session.target = path;
+
+    string msg = MSG_NEW_FILE;
+    if (doc)
+    {
+        session.editor.open(doc);
+        session.ogdoc = doc;
+        msg = displayName(path);
+    }
+
+    if (session.rc.writemode == WritingMode.readonly)
+        msg ~= " [readonly]";
+    return msg;
+}
+
 private:
+
+/// Close the document and files inserted into it, resetting the session to
+/// an empty buffer. Unsaved edits are lost.
+void close_document(Session *session)
+{
+    session.editor.close();
+    if (session.ogdoc)
+        session.ogdoc.close();
+    session.ogdoc = null;
+    foreach (IDocument doc; session.documents)
+        doc.close();
+    session.documents = null;
+    session.target = null;
+
+    session.selection = CurrentSelection.init;
+    session.bookmarks = null;
+    session.position_view = 0;
+    session.position_cursor = 0;
+    session.editpos = 0;
+    if (session.input) // NOTE: null before start_session
+        session.input.reset();
+    g_digitpos = 0;
+
+    g_status |= UALL;
+}
+
+/// Ask to save unsaved edits, false if the user canceled.
+bool confirm_discard(Session *session)
+{
+    if (session.editor.edited() == false)
+        return true;
+
+    switch (promptkey("Save? (Yes/No/Cancel) ")) {
+    case 'n', 'N':
+        return true;
+    case 'y', 'Y':
+        save(session, null);
+        return true;
+    default:
+        // Canceling isn't an error
+        message(MSG_CANCELED);
+        return false;
+    }
+}
 
 // Sync RC options to various front-end components, notably when a setting changes
 void sync_settings()
@@ -5428,6 +5522,28 @@ void save_as(Session *session, Argument[] args)
     session.target = name;
 }
 
+/// Open a file, replacing the current document.
+void open_(Session *session, Argument[] args)
+{
+    string path = askstring(args, 0, "Open: ");
+
+    if (confirm_discard(session) == false)
+        return;
+
+    message(open_document(session, path));
+    demote_writemode(session);
+}
+
+/// Close the document, leaving an empty buffer.
+void close_(Session *session, Argument[] args)
+{
+    if (confirm_discard(session) == false)
+        return;
+
+    close_document(session);
+    message(MSG_NEW_BUFFER);
+}
+
 // Set runtime config
 void set(Session *session, Argument[] args)
 {
@@ -5865,22 +5981,9 @@ void find_replace_all(Session *session, Argument[] args)
 // Quit app
 void quit(Session *session, Argument[] args)
 {
-    if (session.editor.edited())
-    {
-        switch (promptkey("Save? (Yes/No/Cancel) ")) {
-        case 'n', 'N':
-            goto Lexit; // quit without saving
-        case 'y', 'Y':
-            save(session, null); // save and continue to quit
-            break;
-        default:
-            // Canceling isn't an error, don't know
-            message(MSG_CANCELED);
-            return;
-        }
-    }
-    
-Lexit:
+    if (confirm_discard(session) == false)
+        return;
+
     terminalRestore();
     exit(0);
 }
