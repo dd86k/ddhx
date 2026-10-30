@@ -19,7 +19,7 @@ jobs:
           - { os: windows-2025, dc: ldc }
           - { os: windows-11-arm, dc: ldc }
           # macOS
-          - { os: macos-14, dc: ldc }
+          # macOS 14 runner retired November 2, 2026
           - { os: macos-15, dc: ldc }
           - { os: macos-26, dc: ldc }
           - { os: macos-15-intel, dc: ldc }
