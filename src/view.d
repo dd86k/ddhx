@@ -18,6 +18,7 @@ import std.file : exists;
 import std.process : environment;
 import std.stdio : File;
 import std.format : sformat;
+import std.functional : toDelegate;
 
 import os.terminal;
 
@@ -101,6 +102,10 @@ private enum PanelType
 }
 
 private alias command_func = void function(Session*, Argument[]);
+/// Argument completion: candidates for the argument after args, starting with
+/// partial. A candidate ending with a space is a whole argument, others are
+/// meant to be typed further (directory, key modifier).
+private alias complete_func = string[] function(Argument[] args, string partial);
 
 private
 struct Keybind
@@ -220,6 +225,8 @@ private __gshared // globals have the ugly "g_" prefix to be told apart
     
     /// Registered commands
     command_func[string] g_commands;
+    /// Argument completion of registered commands
+    complete_func[string] g_completers;
     /// Registered shortcuts
     Keybind[int] g_keys;
     
@@ -235,6 +242,7 @@ struct Command
     string description; /// Short description
     int key;            /// Default shortcut
     command_func impl;  /// Implementation
+    complete_func complete; /// Argument completion, or null
 }
 
 // Reserved (Ideal: Ctrl=Action, Alt=Alternative):
@@ -331,9 +339,9 @@ immutable Command[] default_commands = [
     { "bookmark-clear",             "Clear list of bookmarks",
         0,                          &bookmark_clear },
     { "bookmark-save",              "Save bookmarks to a file",
-        0,                          &bookmark_save },
+        0,                          &bookmark_save, &complete_path },
     { "bookmark-load",              "Load bookmarks from a file",
-        0,                          &bookmark_load },
+        0,                          &bookmark_load, &complete_path },
     // Mode, panel...
     { "change-panel",               "Switch data panel",
         Key.Tab,                    &change_panel },
@@ -343,7 +351,7 @@ immutable Command[] default_commands = [
         Mod.alt|Key.E,              &toggle_endian },
     // Acting as a toggle (file opened + no args=close) is fine
     { "diff-file",                  "Diff a file against the current view (no path closes it)",
-        0,                          &diff_file },
+        0,                          &diff_file, &complete_path },
     { "diff-next",                  "Jump to the next difference against the diffed file",
         Key.RightBrace,             &diff_next },
     { "diff-prev",                  "Jump to the previous difference against the diffed file",
@@ -371,9 +379,9 @@ immutable Command[] default_commands = [
     { "insert-range",               "Insert data using a range and pattern",
         0,                          &insert_range },
     { "replace-file",               "Replace data using a file",
-        0,                          &replace_file },
+        0,                          &replace_file, &complete_path },
     { "insert-file",                "Insert data using a file",
-        0,                          &insert_file },
+        0,                          &insert_file, &complete_path },
     // Find and Data manipulation
     { "find-replace",               "Find next occurrence and replace it",
         Mod.ctrl|Key.R,             &find_replace },
@@ -394,9 +402,9 @@ immutable Command[] default_commands = [
     //       Despite that "save" could have just gotten an optional parameter.
     //       Analogous to GNU nano having ^O.
     { "save-as",                    "Save document as a different file",
-        Mod.ctrl|Key.O,             &save_as },
+        Mod.ctrl|Key.O,             &save_as, &complete_path },
     { "open",                       "Open a file, replacing the current document",
-        0,                          &open_ },
+        0,                          &open_, &complete_path },
     { "close",                      "Close the document, leaving an empty buffer",
         0,                          &close_ },
     // Undo-Redo
@@ -418,23 +426,23 @@ immutable Command[] default_commands = [
         0,                          &report_version },
     // Show information command 
     { "show",                       "Show information",
-        0,                          &show },
+        0,                          &show, &complete_show },
     // Exports
     { "export-range",               "Export selected range to file",
-        0,                          &export_range },
+        0,                          &export_range, &complete_path },
     // Misc actions
     { "refresh",                    "Refresh entire screen",
         Mod.ctrl|Key.L,             &refresh },
     { "autosize",                   "Automatically set column size depending of screen",
         Mod.alt|Key.R,              &autosize },
     { "set",                        "Set a configuration value for this session",
-        0,                          &set },
+        0,                          &set, &complete_set },
     { "bind",                       "Bind a new command shortcut for this session",
-        0,                          &bind },
+        0,                          &bind, &complete_bind },
     { "unbind",                     "Remove or reset a bind shortcut",
-        0,                          &unbind },
+        0,                          &unbind, &complete_key },
     { "color",                      "Change scheme color for this session",
-        0,                          &color, },
+        0,                          &color, &complete_color },
     { "reset-keys",                 "Reset all binded keys to default for this session",
         0,                          &reset_keys },
     { "menu",                       "Invoke command prompt",
@@ -451,6 +459,8 @@ void initdefaults()
     foreach (command; default_commands)
     {
         g_commands[command.name] = command.impl;
+        if (command.complete)
+            g_completers[command.name] = command.complete;
         
         if (command.key)
             g_keys[command.key] = Keybind( command.impl, null );
@@ -941,7 +951,7 @@ bool iscancelling(ref TermInput input)
 }
 
 // Invoke command prompt
-string promptline(string prompt, const(string)[] completions = null)
+string promptline(string prompt, scope Completer complete = null)
 {
     assert(prompt, "Prompt text missing");
     assert(prompt.length, "Prompt text required"); // disallow empty
@@ -961,7 +971,7 @@ string promptline(string prompt, const(string)[] completions = null)
     scope(exit) terminalHideCursor();
     
     // Passing x,y to fix issues where obtaining cursor position is not possible
-    return readline(cast(int)prompt.length, tsize.rows - 1, RL_HISTORY, completions);
+    return readline(cast(int)prompt.length, tsize.rows - 1, RL_HISTORY, complete);
 }
 int promptkey(string text)
 {
@@ -996,10 +1006,31 @@ Lread:
     return input.key;
 }
 
-// Command requires argument
-string askstring(Argument[] args, size_t idx, string prefix)
+/// Argument idx of args, or prompted for with prefix, completing with complete.
+string askstring(Argument[] args, size_t idx, string prefix, complete_func complete = null)
 {
-    string s = args is null || args.length <= idx ? promptline(prefix) : args[idx].text;
+    // The answer is the argument as typed, so candidates go in unquoted
+    string[] raw(const(char)[] line, size_t caret, out size_t start)
+    {
+        string[] words;
+        try words = complete(args[0..min(idx, args.length)], line[0..caret].idup);
+        catch (Exception) {}
+        foreach (ref string word; words)
+        {
+            if (word.length && word[$-1] == ' ')
+                word = word[0..$-1];
+        }
+        return words;
+    }
+    
+    return askline(args, idx, prefix, complete ? &raw : null);
+}
+
+/// Argument idx of args, or prompted for with prefix, completing with complete.
+string askline(Argument[] args, size_t idx, string prefix, scope Completer complete)
+{
+    string s = args is null || args.length <= idx ? promptline(prefix, complete) : args[idx].text;
+
     
     // Empty string? Cancel! Can't do anything with that.
     // Bonus: Besides, throwing an exception is easier to manage than
@@ -1048,6 +1079,263 @@ Range askrange(Argument[] args, size_t idx, string prefix)
         throw new Exception(MSG_RANGE_START_AFTER_END);
     
     return r;
+}
+
+//
+// ANCHOR Completion
+//
+
+/// Words starting with partial, sorted, as whole arguments.
+string[] matching(const(string)[] words, string partial)
+{
+    import std.algorithm.searching : startsWith;
+    import std.algorithm.sorting : sort;
+    
+    string[] results;
+    foreach (string word; words)
+    {
+        if (word.startsWith(partial))
+            results ~= word ~ " ";
+    }
+    sort(results);
+    return results;
+}
+
+/// Candidates for a command line typed up to caret, quoted as needed, with
+/// start set to where they go.
+string[] complete_line(const(char)[] line, size_t caret, out size_t start)
+{
+    import std.ascii : isWhite;
+    
+    string[] words;
+    try
+    {
+        Argument[] argv = partialArguments(line[0..caret], start);
+        string partial = argv[$-1].text;
+        if (argv.length == 1)
+            words = matching(g_commands.keys, partial);
+        else if (const(complete_func) *complete = cast(string)argv[0].data in g_completers)
+            words = (*complete)(argv[1..$-1], partial);
+    }
+    catch (Exception) // half-typed escape, or bytes that are not text
+        return null;
+    
+    // No space added when there is one after the caret already
+    bool spaced = caret < line.length && isWhite(line[caret]);
+    foreach (ref string word; words)
+    {
+        bool whole = word.length && word[$-1] == ' ';
+        string arg = quoteArgument(whole ? word[0..$-1] : word);
+        word = whole && spaced == false ? arg ~ " " : arg;
+    }
+    return words;
+}
+
+/// File paths starting with partial, directories ending with a separator.
+string[] complete_path(Argument[] args, string partial)
+{
+    import std.algorithm.searching : startsWith;
+    import std.algorithm.sorting : sort;
+    import std.file : dirEntries, DirEntry, SpanMode;
+    import std.path : baseName, dirSeparator, filenameCharCmp, isDirSeparator;
+    
+    if (args.length)
+        return null;
+    
+    // "dir/na": list "dir/", match "na"
+    size_t cut = partial.length;
+    while (cut > 0 && isDirSeparator(partial[cut - 1]) == false)
+        --cut;
+    string dir  = partial[0..cut];
+    string name = partial[cut..$];
+    
+    string[] results;
+    try foreach (DirEntry entry; dirEntries(dir.length ? dir : ".", SpanMode.shallow, false))
+    {
+        string base = baseName(entry.name);
+        
+        // Hidden files only when asked for
+        if (name.length == 0 && base[0] == '.')
+            continue;
+        
+        // Case-insensitive on Windows. Names that are not UTF-8 are skipped
+        bool match;
+        try match = startsWith!((dchar a, dchar b) => filenameCharCmp(a, b) == 0)(base, name);
+        catch (Exception) {}
+        if (match == false)
+            continue;
+        
+        bool isdir; // false on a dangling link
+        try isdir = entry.isDir;
+        catch (Exception) {}
+        
+        results ~= dir ~ base ~ (isdir ? dirSeparator : " ");
+    }
+    catch (Exception) {} // unreadable directory: what was listed so far
+    
+    sort(results);
+    return results;
+}
+
+/// Subjects of the show command.
+string[] complete_show(Argument[] args, string partial)
+{
+    return args.length ? null : matching([ "name", "path", "size", "version" ], partial);
+}
+
+/// Setting names, then values of that setting.
+string[] complete_set(Argument[] args, string partial)
+{
+    switch (args.length) {
+    case 0:
+        string[] names;
+        foreach (ref immutable(Config) config; configurations)
+            names ~= config.name;
+        return matching(names, partial);
+    case 1:
+        return matching(setting_values(args[0].text), partial);
+    default:
+        return null;
+    }
+}
+
+/// Values a setting takes, as quoted in its availvalues ("h[exadecimal]"
+/// reads as "hexadecimal"), or null for free-form settings.
+string[] setting_values(string name)
+{
+    import std.array : replace;
+    import std.string : indexOf;
+    import ddhx.charset : charsets;
+    
+    string[] values;
+    
+    // Listed here so a new charset can't be forgotten in availvalues
+    if (name == "charset")
+    {
+        foreach (immutable(Charset)* set; charsets)
+            values ~= set.id;
+        return values;
+    }
+    
+    foreach (ref immutable(Config) config; configurations)
+    {
+        if (config.name != name)
+            continue;
+        
+        if (config.availvalues == "Boolean")
+            return [ "on", "off" ];
+        
+        string s = config.availvalues;
+        for (;;)
+        {
+            ptrdiff_t open = indexOf(s, '"');
+            if (open < 0)
+                break;
+            ptrdiff_t close = indexOf(s[open + 1..$], '"');
+            if (close < 0)
+                break;
+            values ~= s[open + 1..open + 1 + close].replace("[", "").replace("]", "");
+            s = s[open + close + 2..$];
+        }
+        break;
+    }
+    
+    return values;
+}
+unittest
+{
+    assert(setting_values("address") == [ "hexadecimal", "octal", "decimal" ]);
+    assert(setting_values("endian") == [ "little", "big", "le", "be" ]);
+    assert(setting_values("header") == [ "on", "off" ]);
+    assert(setting_values("columns") == [ "auto" ]);
+    assert(setting_values("status-format") == null);
+    assert(setting_values("charset").canFind("ascii"));
+    assert(setting_values("nope") == null);
+}
+
+/// Key names for a bind, keeping modifiers typed so far.
+string[] complete_key(Argument[] args, string partial)
+{
+    import std.algorithm.searching : startsWith;
+    import std.string : lastIndexOf;
+    
+    if (args.length)
+        return null;
+    
+    // "ctrl+pa": keep "ctrl+", match "pa"
+    string mods = partial[0..lastIndexOf(partial, '+') + 1];
+    string name = partial[mods.length..$];
+    
+    string[] results;
+    foreach (string mod; [ "ctrl+", "alt+", "shift+" ])
+    {
+        if (canFind(mods, mod) == false && mod.startsWith(name))
+            results ~= mods ~ mod;
+    }
+    foreach (ref immutable(KeyName) key; keyNames)
+    {
+        if (key.name.startsWith(name))
+            results ~= mods ~ key.name ~ " ";
+    }
+    return results;
+}
+unittest
+{
+    assert(complete_key(null, "ctrl+a") == [ "ctrl+alt+" ]);
+    assert(complete_key(null, "ctrl+alt+page") == [ "ctrl+alt+page-up ", "ctrl+alt+page-down " ]);
+    assert(complete_key(null, "f1") == [ "f1 ", "f10 ", "f11 ", "f12 " ]);
+}
+
+/// Key, then command name, then that command's own arguments.
+string[] complete_bind(Argument[] args, string partial)
+{
+    switch (args.length) {
+    case 0:
+        return complete_key(args, partial);
+    case 1:
+        return matching(g_commands.keys, partial);
+    default:
+        const(complete_func) *complete = cast(string)args[1].data in g_completers;
+        return complete ? (*complete)(args[2..$], partial) : null;
+    }
+}
+
+/// Color scheme, then a color map ("fg", "fg:bg", "invert", "reset").
+string[] complete_color(Argument[] args, string partial)
+{
+    import std.array : replace;
+    import std.string : indexOf;
+    
+    string[] colors = [ "default" ];
+    foreach (string member; __traits(allMembers, TermColor))
+        colors ~= member;
+    
+    switch (args.length) {
+    case 0:
+        string[] schemes = [ "reset" ];
+        foreach (string member; __traits(allMembers, ColorScheme))
+            schemes ~= member.replace("_", "-");
+        return matching(schemes, partial);
+    case 1:
+        // "red:bl": keep "red:", match background "bl"
+        ptrdiff_t colon = indexOf(partial, ':');
+        if (colon < 0)
+            return matching(colors ~ [ "invert", "reset" ], partial);
+        string[] results = matching(colors, partial[colon + 1..$]);
+        foreach (ref string color; results)
+            color = partial[0..colon + 1] ~ color;
+        return results;
+    default:
+        return null;
+    }
+}
+unittest
+{
+    assert(complete_color(null, "diff") == [ "diff-changed ", "diff-missing " ]);
+    Argument[] scheme = [ Argument("cursor") ];
+    assert(complete_color(scheme, "re") == [ "red ", "reset " ]);
+    assert(complete_color(scheme, "red:bri") == [ "red:brightaqua ", "red:brightblue ",
+        "red:brightgreen ", "red:brightpurple ", "red:brightred ", "red:brightyellow " ]);
 }
 // Get length from range result
 long rangelen(ref Range r)
@@ -3450,7 +3738,7 @@ unittest
 // Run command
 void prompt_command(Session *session, Argument[] args)
 {
-    string line = promptline(">", g_commands.keys);
+    string line = promptline(">", toDelegate(&complete_line));
     if (line.length == 0)
         return;
     
@@ -4338,7 +4626,7 @@ void bookmark_save(Session *session, Argument[] args)
     if (session.bookmarks.length == 0)
         throw new Exception(MSG_NO_BOOKMARKS_TO_SAVE);
 
-    string path = askstring(args, 0, "Save bookmarks to: ");
+    string path = askstring(args, 0, "Save bookmarks to: ", &complete_path);
 
     File f = File(path, "w"); // Overwrite
     f.writeln("# ddhx bookmarks");
@@ -4376,7 +4664,7 @@ void bookmark_load(Session *session, Argument[] args)
     import std.string : strip, stripLeft;
     import std.conv : parse, ConvException;
 
-    string path = askstring(args, 0, "Load bookmarks from: ");
+    string path = askstring(args, 0, "Load bookmarks from: ", &complete_path);
 
     File f = File(path, "rt"); // text-mode just in case windows user hand-writes one
 
@@ -4510,7 +4798,7 @@ void diff_file(Session *session, Argument[] args)
         return;
     }
 
-    string path = askstring(args, 0, "Diff against file: ");
+    string path = askstring(args, 0, "Diff against file: ", &complete_path);
 
     IDocument doc = new FileDocument(path, OFlags.read | OFlags.exists | OFlags.share);
 
@@ -5021,7 +5309,7 @@ void export_range(Session *session, Argument[] args)
     if (sel.length == 0)
         throw new Exception(MSG_NEED_SELECTION);
     
-    string name = askstring(args, 0, "Name: ");
+    string name = askstring(args, 0, "Name: ", &complete_path);
     if (exists(name))
     {
         int key = promptkey("File exists, overwrite? [y/N] ");
@@ -5224,7 +5512,7 @@ void replace_file(Session *session, Argument[] args)
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
-    string path = askstring(args, 0, "File: ");
+    string path = askstring(args, 0, "File: ", &complete_path);
     
     IDocument file = new FileDocument(path, true);
     session.documents ~= file;
@@ -5239,7 +5527,7 @@ void insert_file(Session *session, Argument[] args)
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
-    string path = askstring(args, 0, "File: ");
+    string path = askstring(args, 0, "File: ", &complete_path);
     
     IDocument file = new FileDocument(path, true);
     session.documents ~= file;
@@ -5411,11 +5699,7 @@ void save(Session *session, Argument[] args)
     if (target is null)
     {
         // Ask for a filename
-        target = promptline("Name: ");
-        if (target.length == 0)
-        {
-            throw new Exception(MSG_CANCELED);
-        }
+        target = askstring(null, 0, "Name: ", &complete_path);
         
         // Check if target exists to ask for overwrite
         if (exists(target))
@@ -5499,7 +5783,7 @@ Ldone:
 // Save as file
 void save_as(Session *session, Argument[] args)
 {
-    string name = askstring(args, 0, "Save as: ");
+    string name = askstring(args, 0, "Save as: ", &complete_path);
     
     message("Saving...");
     update_status(session);
@@ -5525,7 +5809,7 @@ void save_as(Session *session, Argument[] args)
 /// Open a file, replacing the current document.
 void open_(Session *session, Argument[] args)
 {
-    string path = askstring(args, 0, "Open: ");
+    string path = askstring(args, 0, "Open: ", &complete_path);
 
     if (confirm_discard(session) == false)
         return;
@@ -5547,8 +5831,10 @@ void close_(Session *session, Argument[] args)
 // Set runtime config
 void set(Session *session, Argument[] args)
 {
-    string setting = askstring(args, 0, "Setting: ");
-    string value   = askstring(args, 1, "Value: ");
+    string setting = askstring(args, 0, "Setting: ", &complete_set);
+    if (args.length == 0) // so the value prompt completes for it
+        args = [ Argument(setting) ];
+    string value   = askstring(args, 1, "Value: ", &complete_set);
     
     configRC(session.rc, setting, value);
 
@@ -5560,18 +5846,12 @@ void set(Session *session, Argument[] args)
 // Bind key to action (command + parameters)
 void bind(Session *session, Argument[] args)
 {
-    int key = terminalKeybind( askstring(args, 0, "Key: ") );
-    Argument[] commands = arguments( askstring(args, 1, "Command: ") );
+    int key = terminalKeybind( askstring(args, 0, "Key: ", &complete_key) );
     
-    // When prompted interactively, we might get "goto +32" as a single
-    // string. Split it so the command name and parameters are separated.
-    /*string[] params = args.length >= 2 ? args[2..$] : null;
-    if (params is null)
-    {
-        string[] argv = arguments(command);
-        if (argv.length > 0) command = argv[0];
-        if (argv.length > 1) params = argv[1..$];
-    }*/
+    // "bind ctrl+9 goto +1" as is, while a prompt or "bind ctrl+9 'goto +1'"
+    // has the command line in one string
+    Argument[] commands = args.length > 2 ? args[1..$] :
+        arguments( askline(args, 1, "Command: ", toDelegate(&complete_line)) );
     
     bindkey(key, commands[0].text, commands.length > 1 ? commands[1..$] : null);
     message("Key binded");
@@ -5580,7 +5860,7 @@ void bind(Session *session, Argument[] args)
 // Unbind key
 void unbind(Session *session, Argument[] args)
 {
-    int key = terminalKeybind( askstring(args, 0, "Key: ") );
+    int key = terminalKeybind( askstring(args, 0, "Key: ", &complete_key) );
     unbindkey(key);
     message("Key unbinded");
 }

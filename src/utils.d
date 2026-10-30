@@ -514,6 +514,110 @@ Argument[] arguments(const(char)[] buffer)
     assert(texts(arguments(`find "WARNING: %s"`)) == [ "find", `WARNING: %s` ]);
 }
 
+/// Arguments of a command line being typed, for completion.
+///
+/// Same as arguments(), except the last argument may be empty or missing its
+/// closing quote. It is always present, empty when the line ends on a space.
+/// Params:
+///     buffer = Shell-like input, up to the caret.
+///     start  = Set to the byte offset where the last argument begins.
+/// Returns: Arguments, never empty.
+/// Throws: Exception on an invalid escape sequence.
+Argument[] partialArguments(const(char)[] buffer, out size_t start)
+{
+    import std.ascii : isControl, isWhite;
+
+    char quote = 0; // Quote left open, or 0 (char.init is 0xff)
+    for (size_t i; i < buffer.length; ++i)
+    {
+        char c = buffer[i];
+        if (quote)
+        {
+            if (c == quote)
+                quote = 0;
+            else if (quote == '"' && c == '\\')
+                ++i;
+            continue;
+        }
+        if (c == '\'' || c == '"')
+            quote = c;
+        else if (isControl(c) || isWhite(c))
+            start = i + 1;
+    }
+
+    Argument[] results = arguments(buffer[0..start]);
+    const(char)[] last = buffer[start..$];
+    if (quote)
+        last ~= quote;
+    Argument[] tail = arguments(last);
+    results ~= tail.length ? tail[0] : Argument.init;
+    return results;
+}
+unittest
+{
+    size_t start;
+    assert(texts(partialArguments("", start)) == [ "" ] && start == 0);
+    assert(texts(partialArguments("op", start)) == [ "op" ] && start == 0);
+    assert(texts(partialArguments("open ", start)) == [ "open", "" ] && start == 5);
+    assert(texts(partialArguments("open sr", start)) == [ "open", "sr" ] && start == 5);
+    assert(texts(partialArguments("open 'my d", start)) == [ "open", "my d" ] && start == 5);
+    assert(texts(partialArguments(`open "a\"b c`, start)) == [ "open", `a"b c` ] && start == 5);
+    assert(texts(partialArguments("open 'my dir/'s", start)) == [ "open", "my dir/s" ] && start == 5);
+    assert(texts(partialArguments("set  data x", start)) == [ "set", "data", "x" ] && start == 10);
+}
+
+/// Quote text so arguments() reads it back as one argument, or as-is when
+/// nothing in it needs quoting.
+/// Params: text = Argument text.
+/// Returns: Text fit for a command line.
+string quoteArgument(string text)
+{
+    import std.ascii : isControl, isWhite;
+    import std.format : format;
+
+    bool plain = true;
+    bool squote;    // has a single quote
+    bool control;   // has a byte that needs an escape
+    foreach (char c; text)
+    {
+        if (isControl(c) || isWhite(c) || c == '\'' || c == '"')
+            plain = false;
+        if (c == '\'')
+            squote = true;
+        if (isControl(c))
+            control = true;
+    }
+    if (plain)
+        return text;
+    if (squote == false && control == false)
+        return "'" ~ text ~ "'";
+
+    string result = `"`;
+    foreach (char c; text)
+    {
+        if (c == '\\' || c == '"')
+            result ~= '\\';
+        if (isControl(c))
+            result ~= format("\\%03o", c); // \x rejects a hex digit after it
+        else
+            result ~= c;
+    }
+    return result ~ `"`;
+}
+unittest
+{
+    assert(quoteArgument("") == "");
+    assert(quoteArgument("src/") == "src/");
+    assert(quoteArgument(`C:\dir`) == `C:\dir`);
+    assert(quoteArgument("my dir/") == "'my dir/'");
+    assert(quoteArgument(`a"b`) == `'a"b'`);
+    assert(quoteArgument(`it's \x`) == `"it's \\x"`);
+    assert(quoteArgument("a\tb") == `"a\011b"`);
+
+    foreach (string s; [ "my dir/", `a"b`, `it's \x`, "a\tb", `C:\a b` ])
+        assert(texts(arguments(quoteArgument(s))) == [ s ], s);
+}
+
 /// Parse string as hexadecimal, decimal, or octal.
 /// Params: input = String input.
 /// Returns: Parsed value.

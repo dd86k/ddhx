@@ -246,7 +246,7 @@ immutable Config[] configurations = [ // Try keeping this ascending by name!
     {
         // NOTE: "autoresize" was too ambiguous and moved into columns
         "columns", "Number of elements to show on a row, 'auto' to fit screen",
-        "Number", "16",
+        `Number, or "auto"`, "16",
         &configure_columns
     },
     {

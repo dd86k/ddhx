@@ -1998,6 +1998,10 @@ int readlineCaretColumn(ref ReadlineState state, size_t caret_cells, int width)
     return x >= width ? width - 1 : x; // outside buffer
 }
 
+/// Tab completion callback. Returns candidates that replace line[start..caret],
+/// with start set to where the replaced text begins.
+alias Completer = string[] delegate(const(char)[] line, size_t caret, out size_t start);
+
 // Flags to better define behavior versus relying on current_features.
 enum {
     /// Uses legacy readln method.
@@ -2013,9 +2017,9 @@ private enum {
 ///     column = Original column position.
 ///     row    = Original row position.
 ///     flags  = Read flags.
-///     completions = Optional list of completion candidates for Tab.
+///     complete = Tab completion callback, or null.
 /// Returns: String without newline.
-string readline(int column, int row, int flags = 0, const(string)[] completions = null)
+string readline(int column, int row, int flags = 0, scope Completer complete = null)
 {
     // Cheap line-oriented if we're not using alternate screen buffer,
     // because there isn't any rendering worries. Legacy bit.
@@ -2051,10 +2055,11 @@ string readline(int column, int row, int flags = 0, const(string)[] completions 
     // History browsing state
     size_t hist_idx;        // 0 = current input, 1..N = history entries
     string hist_saved;      // saved current input when browsing history
-    // Tab completion state
-    size_t tab_match_idx;   // current match index (cycles)
-    char[] tab_prefix;      // prefix that was matched
-    bool tab_active;        // currently cycling through matches
+    // Tab completion state, kept while cycling
+    string[] tab_matches;   // candidates being cycled
+    size_t tab_idx;         // current candidate
+    size_t tab_start;       // where candidates are inserted
+    bool tab_active;        // currently cycling through candidates
 
     // Signal the renderer that the buffer changed from byte position `offset`,
     // everything before that is still valid on-screen
@@ -2080,7 +2085,7 @@ Lread: // Emulate line buffer
         goto Lread;
 
     // Reset tab completion state on any non-Tab key
-    if (input.key != Key.Tab)
+    if ((input.key & ~Mod.shift) != Key.Tab)
         tab_active = false;
 
     switch (input.key) {
@@ -2209,65 +2214,58 @@ Lread: // Emulate line buffer
         rl_state.caret = i;
         markDirty(i);
         break;
-    case Key.Tab:
-        if (completions is null || completions.length == 0)
+    case Key.Tab, Mod.shift | Key.Tab:
+        if (complete is null)
             goto Lread;
-
-        if (!tab_active)
+        
+        bool back = (input.key & Mod.shift) != 0;
+        
+        // Replace typed or previously inserted text with a candidate
+        void apply(size_t start, string text)
         {
-            // Start new completion: use current line content as prefix
-            tab_prefix = line[].dup;
-            tab_match_idx = 0;
-            tab_active = true;
-        }
-        else
-        {
-            // Cycle to next match
-            ++tab_match_idx;
+            line.deleteAt(start, rl_state.caret - start);
+            rl_state.caret = start + line.insert(start, cast(char[])text);
+            markDirty(start);
         }
         
-        void apply_match(string c)
+        if (tab_active)
         {
-            line.length = 0;
-            line.cells = 0;
-            line.insert(0, cast(char[])c);
-            rl_state.caret = line.length;
-            rl_state.base = 0;
-            markDirty(0);
+            size_t n = tab_matches.length;
+            tab_idx = back ? (tab_idx + n - 1) % n : (tab_idx + 1) % n;
+            apply(tab_start, tab_matches[tab_idx]);
+            break;
         }
         
-        import std.algorithm : startsWith;
+        size_t start;
+        string[] matches = complete(line[], rl_state.caret, start);
+        if (matches.length == 0)
+            goto Lread;
         
-        // Find matches
-        size_t matches_found;
-        foreach (c; completions)
+        // Single candidate is taken outright, and the next Tab starts over,
+        // so completing a directory then lists its content
+        if (matches.length == 1)
         {
-            if (tab_prefix.length == 0 || c.startsWith(tab_prefix))
-            {
-                if (matches_found == tab_match_idx)
-                {
-                    apply_match(c);
-                }
-                ++matches_found;
-            }
+            apply(start, matches[0]);
+            break;
         }
-
-        if (matches_found == 0)
-            goto Lread; // no matches
-
-        // Wrap around if past the end
-        if (tab_match_idx >= matches_found)
+        
+        import std.algorithm.searching : commonPrefix;
+        string common = matches[0];
+        foreach (string m; matches[1..$])
+            common = commonPrefix(common, m);
+        
+        // Extend to the shared part first, cycle once there is nothing to extend
+        if (common.length > rl_state.caret - start)
         {
-            tab_match_idx = 0;
-            foreach (c; completions)
-            {
-                if (tab_prefix.length == 0 || c.startsWith(tab_prefix))
-                {
-                    apply_match(c);
-                    break;
-                }
-            }
+            apply(start, common);
+            break;
         }
+        
+        tab_matches = matches;
+        tab_start = start;
+        tab_idx = back ? matches.length - 1 : 0;
+        tab_active = true;
+        apply(start, matches[tab_idx]);
         break;
     // Ignore list
     case Key.PageDown, Key.PageUp, Key.Insert:
@@ -2537,6 +2535,43 @@ int _keyCodepoint(const(char)[] buf)
         return -1;
 }
 
+/// Named keys accepted by terminalKeybind, besides single characters.
+immutable KeyName[] keyNames = [
+    { "insert",       Key.Insert },
+    { "home",         Key.Home },
+    { "end",          Key.End },
+    { "page-up",      Key.PageUp },
+    { "page-down",    Key.PageDown },
+    { "delete",       Key.Delete },
+    { "left-arrow",   Key.LeftArrow },
+    { "right-arrow",  Key.RightArrow },
+    { "up-arrow",     Key.UpArrow },
+    { "down-arrow",   Key.DownArrow },
+    { "tab",          Key.Tab },
+    { "backspace",    Key.Backspace },
+    { "enter",        Key.Enter },
+    { "spacebar",     Key.Spacebar },
+    { "f1",           Key.F1 },
+    { "f2",           Key.F2 },
+    { "f3",           Key.F3 },
+    { "f4",           Key.F4 },
+    { "f5",           Key.F5 },
+    { "f6",           Key.F6 },
+    { "f7",           Key.F7 },
+    { "f8",           Key.F8 },
+    { "f9",           Key.F9 },
+    { "f10",          Key.F10 },
+    { "f11",          Key.F11 },
+    { "f12",          Key.F12 },
+];
+
+/// Key name and its keycode.
+struct KeyName
+{
+    string name; /// Name as written in a bind
+    int key;     /// Keycode
+}
+
 /// Return key value from string interpretation.
 /// Throws: Exception.
 /// Params:
@@ -2571,45 +2606,22 @@ int terminalKeybind(string value)
     if (value.length == 0)
         throw new Exception("Expected key, got empty");
     
-    switch (value) {
-    case "insert":      return mod | Key.Insert;
-    case "home":        return mod | Key.Home;
-    case "end":         return mod | Key.End;
-    case "page-up":     return mod | Key.PageUp;
-    case "page-down":   return mod | Key.PageDown;
-    case "delete":      return mod | Key.Delete;
-    case "left-arrow":  return mod | Key.LeftArrow;
-    case "right-arrow": return mod | Key.RightArrow;
-    case "up-arrow":    return mod | Key.UpArrow;
-    case "down-arrow":  return mod | Key.DownArrow;
-    case "tab":         return mod | Key.Tab;
-    case "backspace":   return mod | Key.Backspace;
-    case "enter":       return mod | Key.Enter;
-    case "spacebar":    return mod | Key.Spacebar;
-    case "f1":          return mod | Key.F1;
-    case "f2":          return mod | Key.F2;
-    case "f3":          return mod | Key.F3;
-    case "f4":          return mod | Key.F4;
-    case "f5":          return mod | Key.F5;
-    case "f6":          return mod | Key.F6;
-    case "f7":          return mod | Key.F7;
-    case "f8":          return mod | Key.F8;
-    case "f9":          return mod | Key.F9;
-    case "f10":         return mod | Key.F10;
-    case "f11":         return mod | Key.F11;
-    case "f12":         return mod | Key.F12;
-    default:
-        int c = value[0]; // had zero check earlier, this is fine
-        if (c >= 'a' && c <= 'z') // lower ascii, force to upper to map to Key enum
-            return mod | (c - 32);
-        else if (c >= 32 && c < 127) // printable
-            return mod | c;
-        else // possible UTF-8 lead byte (accented/non-ASCII key)
-        {
-            int cp = _keyCodepoint(value);
-            if (cp >= 0)
-                return mod | cp;
-        }
+    foreach (ref immutable(KeyName) k; keyNames)
+    {
+        if (k.name == value)
+            return mod | k.key;
+    }
+    
+    int c = value[0]; // had zero check earlier, this is fine
+    if (c >= 'a' && c <= 'z') // lower ascii, force to upper to map to Key enum
+        return mod | (c - 32);
+    else if (c >= 32 && c < 127) // printable
+        return mod | c;
+    else // possible UTF-8 lead byte (accented/non-ASCII key)
+    {
+        int cp = _keyCodepoint(value);
+        if (cp >= 0)
+            return mod | cp;
     }
     
     throw new Exception("Unknown key");

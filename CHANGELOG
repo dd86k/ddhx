@@ -15,8 +15,11 @@ Rules:
 // Added
 - mkpkg.d: Build deb, rpm, and tar packages.
 - "open" and "close" commands: Switch documents without restarting.
+- Tab completion for command arguments and prompts: file paths, settings and
+  their values, keys, color schemes. Shift+Tab cycles back.
 
 // Fixed
+- "bind ctrl+9 goto +1" dropped "+1". Quoting the command still works.
 - musl and Android: Terminal settings were set wrong, and the terminal size
   query failed on 32-bit.
 

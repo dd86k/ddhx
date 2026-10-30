@@ -72,7 +72,7 @@ This list may change at any given time without notice.
 
 0.14: WIP
 - [x] open/close commands
-- [ ] Improve tab-completion
+- [x] Improve tab-completion
 
 1.0:
 - [ ] Document: Process memory
