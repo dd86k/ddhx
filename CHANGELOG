@@ -23,6 +23,7 @@ command arguments, and packaging options via mkpkg.d.
 
 // Fixed
 - "bind ctrl+9 goto +1" dropped "+1". Quoting the command still works.
+- "set columns auto" crashed, and auto columns only refit once on resize.
 - musl and Android: Terminal settings were set wrong, and the terminal size
   query failed on 32-bit.
 

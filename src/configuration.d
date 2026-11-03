@@ -19,9 +19,6 @@ import utils : arguments, Argument;
 
 import view : bindkey, setcolor, initdefaults, binded;
 
-/// Special value for RC.columns to autoresize.
-enum COLUMNS_AUTO = 0;
-
 /// Special value for RC.find_bookmark_limit, for no limit at all.
 enum BOOKMARK_LIMIT_NONE = -1;
 
@@ -50,6 +47,9 @@ struct RC
 
     /// Number of columns
     int columns = 16;
+    
+    /// If set, columns are refit to the terminal width on resize.
+    bool columns_auto;
     
     /// Number of characters to fill when printing row address.
     int address_spacing = 11;
@@ -420,16 +420,17 @@ void configure_columns(ref RC rc, string value, bool conf = false)
     // Aliases
     switch (value) {
     case "auto", "autoresize":
-        rc.columns = COLUMNS_AUTO;
+        rc.columns_auto = true;
         rc.columns_set = true;
         return;
     default:
     }
     
     int cols = to!int(value);
-    if (cols < 0)
-        throw new Exception(MSG_NEGATIVE_COLUMNS);
+    if (cols <= 0)
+        throw new Exception(MSG_NO_COLUMNS);
     rc.columns = cols;
+    rc.columns_auto = false;
     rc.columns_set = true;
 }
 

@@ -213,7 +213,7 @@ void main(string[] args)
             ()
             {
                 // I've decided this switch can stay because whatever
-                rc.columns = COLUMNS_AUTO;
+                configure_columns(rc, "auto");
             },
         "B|bookmarks",  "Load bookmarks from a file on startup", &bookmarks_file,
         "C|charset",    `Set character translation (default="ascii")`,

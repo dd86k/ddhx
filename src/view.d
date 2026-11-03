@@ -641,6 +641,8 @@ void start_session(Session *session, string initmsg,
     session.input = new InputFormatter; // hack due to buffer escapes
     
     sync_settings();
+    if (session.rc.columns_auto)
+        autosize(session, null);
 
     message(initmsg);
     demote_writemode(session); // may replace initmsg, warning is more important
@@ -789,7 +791,7 @@ void demote_writemode(Session *session)
 void onresize() // I/O is allowed here
 {
     // If autoresize configuration is enabled, automatically set column count
-    if (g_session.rc.columns == COLUMNS_AUTO)
+    if (g_session.rc.columns_auto)
         autosize(g_session, null);
     realign(g_session);
     
@@ -5839,6 +5841,8 @@ void set(Session *session, Argument[] args)
     configRC(session.rc, setting, value);
 
     sync_settings();
+    if (session.rc.columns_auto) // also refits after a data type change
+        autosize(session, null);
     realign(session);
     demote_writemode(session);
 }
