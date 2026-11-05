@@ -56,7 +56,7 @@ struct Charset
 
     /// Returns: UTF-8 for display, one column wide, or empty (though not
     ///          null, so test the length) if nothing prints.
-    string glyph(ubyte b) immutable
+    string glyph(ubyte b) immutable return
     {
         return glyphs[b][0 .. glyphs[b][3]];
     }
