@@ -41,6 +41,8 @@ jobs:
       uses: dlang-community/setup-dlang@5d239e99bc553874d9362e7e6aeeac9454b6789f # v2
       with:
         compiler: ${{ matrix.dc }}
+        # HACK: dub 1.41.0+ releases have no binaries, remove once fixed upstream
+        dub: ${{ matrix.dc == 'gdc' && '1.40.0' || 'any' }}
     # Ensure basic functionality
     - name: Unit tests
       run: dub test
