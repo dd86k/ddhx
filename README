@@ -60,17 +60,12 @@ Title font: Shaded Blocky (FIGlet)
 
 This list may change at any given time without notice.
 
-0.12: Released!
-- [x] String expressions (allow escapes like \t) with double-quote strings
-- [x] Overhaul prefixes (fixed-width prefixes)
-- [x] find-bookmark commmand: Find and create bookmarks
-
 0.13: Released!
 - [x] Disk-aware: Reading and saving
       Tested: Windows, macOS, Linux, FreeBSD, NetBSD, OpenBSD
 - [x] Charset-specific pattern prefixes (e.g., ebcdic037:)
 
-0.14: WIP
+0.14: Released!
 - [x] open/close commands
 - [x] Improve tab-completion
 
