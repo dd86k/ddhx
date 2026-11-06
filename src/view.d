@@ -6201,8 +6201,8 @@ void find_replace(Session *session, Argument[] args)
     session.editor.patternReplace(r.pos, r.len, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 
-    neselect(session, r.pos, r.pos + pb.length - 1);
-    reveal(session, r.pos, r.pos + pb.length - 1);
+    neselect(session, r.pos, r.pos + r.len - 1);
+    reveal(session, r.pos, r.pos + r.len - 1);
 
     ElementText buf = void;
     AddressFormatter addr = AddressFormatter(session.rc.address_type);
@@ -6250,7 +6250,7 @@ void find_replace_all(Session *session, Argument[] args)
             break;
 
         session.editor.patternReplace(r.pos, r.len, pb.ptr, pb.length);
-        start = r.pos + pb.length;
+        start = r.pos + r.len;
         count++;
     }
 

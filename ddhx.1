@@ -581,8 +581,9 @@ section.
 .BI find\-replace " [NEEDLE \fR\-\-\fP REPLACEMENT]"
 Find the next occurrence of
 .I NEEDLE
-and replace it with
-.IR REPLACEMENT .
+and overwrite it with
+.IR REPLACEMENT ,
+repeated or truncated to the length of the match.
 The needle and replacement are both patterns, separated by a literal
 .BR \-\- .
 With no arguments, repeats the last find-replace
