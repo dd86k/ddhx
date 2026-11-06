@@ -3417,12 +3417,13 @@ enum SearchAction
 ///     onhit = Called for every match. Returning SearchAction.next resumes
 ///             the scan past the match, so matches never overlap.
 ///             A null callback stops at the first match.
+///     end = Forward only: matches must end before this position (exclusive).
 /// Returns: SearchResult with pos=SEARCH_RESULT_NOT_FOUND on no match.
 ///          SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND. On no-match
 ///          (including LASTPOS), len is 0. When onhit consumed every match,
 ///          the search ran to the end, so this is a no-match result.
 SearchResult search(Session *session, Pattern needle, long position, int flags,
-    SearchAction delegate(SearchResult) onhit = null)
+    SearchAction delegate(SearchResult) onhit = null, long end = long.max)
 {
     assertion(needle, "Need needle");
     
@@ -3441,6 +3442,7 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
     bool interactive = (flags & SEARCH_NON_INTERACTIVE) == 0;
     
     long docsize = session.editor.size();
+    long stop = end < docsize ? end : docsize;
 
     // Distance to skip on top of what the loop already advances, to resume
     // scanning right after (or before) a match, so matches never overlap
@@ -3520,6 +3522,8 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
                 throw new Exception(MSG_CANCELED);
             
             ubyte[] haystack = session.editor.view(position, hay);
+            if (position + cast(long)haystack.length > stop)
+                haystack = haystack[0 .. position < stop ? cast(size_t)(stop - position) : 0];
             if (haystack.length < needle.length)
                 break; // tail shorter than needle
 
@@ -3547,11 +3551,11 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
             if (interactive)
                 update_progress(session, position > docsize ? docsize : position, docsize);
         }
-        while (position < docsize);
+        while (position < stop);
         
         // Scan ended at the end of the document (a tail shorter than the
         // needle, or glob overshoot, leaves position elsewhere), for SEARCH_LASTPOS
-        position = docsize;
+        position = stop;
     }
     
     debug sw.stop();
@@ -3685,6 +3689,27 @@ unittest
     assert(hits.length == 2, "expected two matches");
     assert(hits[0].pos == 0 && hits[0].len == 2);
     assert(hits[1].pos == 4 && hits[1].len == 2);
+}
+// End bound: a match crossing or past the bound is not found.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AABAABAA");
+
+    Pattern needle = pattern(Endian.littleEndian, "utf8:AA");
+    long[] positions;
+    search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
+        (SearchResult r) { positions ~= r.pos; return SearchAction.next; }, 4);
+    assert(positions == [0], "match at 3 crosses the bound");
+    positions = null;
+    search(&session, needle, 0, SEARCH_NON_INTERACTIVE,
+        (SearchResult r) { positions ~= r.pos; return SearchAction.next; }, 5);
+    assert(positions == [0, 3]);
+    SearchResult r = search(&session, needle, 1, SEARCH_NON_INTERACTIVE | SEARCH_LASTPOS, null, 3);
+    assert(r.pos == 3 && r.len == 0, "LASTPOS reports the bound");
 }
 // Hit callback: matches never overlap, the scan resumes past the match.
 unittest
@@ -6235,6 +6260,7 @@ void find_replace_all(Session *session, Argument[] args)
 
     Selection sel = selection(session);
     long start = sel.length ? sel.start : session.position_cursor;
+    long end = sel.length ? sel.start + sel.length : long.max;
 
     unselect(session);
 
@@ -6245,7 +6271,7 @@ void find_replace_all(Session *session, Argument[] args)
     for (;;)
     {
         // search already checks for cancellation
-        SearchResult r = search(session, g_needle, start, 0);
+        SearchResult r = search(session, g_needle, start, 0, null, end);
         if (r.pos < 0)
             break;
 
