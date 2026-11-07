@@ -17,6 +17,7 @@ Fixes for search, selection, and read-only bugs.
 // Improvements
 - Searches with "*" no longer take minutes over long runs of the same byte
   (256 KiB of zeros: 31 s to 3 ms).
+- Forward searches are up to 80x faster (64 MiB: 170 ms to 2 ms).
 
 // Changed
 - "replace-range" and "insert-range" always take a range, even with a
