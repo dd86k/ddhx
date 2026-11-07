@@ -3377,6 +3377,8 @@ enum {
     /// polling for a cancel key. Unittests run in non-interactible
     /// environments, where terminalHasInput throws. Used in tests.
     SEARCH_NON_INTERACTIVE = 32,
+    /// Match only on element boundaries (size of the data type).
+    SEARCH_ELEMENT = 64,
     
     /// Search result not found.
     SEARCH_RESULT_NOT_FOUND = -1,
@@ -3437,6 +3439,14 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
     
     int diff = flags & SEARCH_DIFF;
     size_t alignment = flags & SEARCH_ALIGNED ? needle.data.length : 1;
+    if (flags & SEARCH_ELEMENT)
+    {
+        alignment = size_of(session.rc.data_type);
+        // Round start to a boundary, up when forward, down when reversed
+        long rem = position % cast(long)alignment;
+        if (rem > 0) // negative start means nothing to search
+            position += flags & SEARCH_REVERSE ? -rem : cast(long)alignment - rem;
+    }
     // Terminal work (progress bar, cancel key) is off in non-interactive
     // searches, notably in tests, where terminalHasInput throws
     bool interactive = (flags & SEARCH_NON_INTERACTIVE) == 0;
@@ -3482,8 +3492,12 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
             long maxOff = cast(long)(haystack.length - clampLen);
             if (o > maxOff)
             {
-                position -= (o - maxOff);
-                o = maxOff;
+                // Step down whole alignments to keep o on a boundary
+                long over = o - maxOff;
+                long align_ = cast(long)alignment;
+                over = ((over + align_ - 1) / align_) * align_;
+                position -= over;
+                o -= over;
             }
             // Use signed long for o to avoid size_t underflow when
             // alignment > 1 and o < alignment.
@@ -3710,6 +3724,30 @@ unittest
     assert(positions == [0, 3]);
     SearchResult r = search(&session, needle, 1, SEARCH_NON_INTERACTIVE | SEARCH_LASTPOS, null, 3);
     assert(r.pos == 3 && r.len == 0, "LASTPOS reports the bound");
+}
+// Element alignment: matches only start on element boundaries.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.rc.data_type = DataType(BaseType.u16, Format.hex);
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "xAA.AAAA");
+
+    Pattern needle = pattern(Endian.littleEndian, "utf8:AA");
+    long[] positions;
+    search(&session, needle, 0, SEARCH_NON_INTERACTIVE | SEARCH_ELEMENT,
+        (SearchResult r) { positions ~= r.pos; return SearchAction.next; });
+    assert(positions == [4, 6], "odd offsets 1 and 5 are skipped");
+    // Start is rounded up forward, down in reverse
+    assert(search(&session, needle, 5, SEARCH_NON_INTERACTIVE | SEARCH_ELEMENT).pos == 6);
+    assert(search(&session, needle, 5, SEARCH_NON_INTERACTIVE | SEARCH_ELEMENT | SEARCH_REVERSE).pos == 4);
+    assert(search(&session, needle, 3, SEARCH_NON_INTERACTIVE | SEARCH_ELEMENT | SEARCH_REVERSE).pos
+        == SEARCH_RESULT_NOT_FOUND);
+    // Reverse clamp near the end keeps the boundary: 3-byte needle fits at 5 at most
+    Pattern three = pattern(Endian.littleEndian, "utf8:AAA");
+    assert(search(&session, three, 6, SEARCH_NON_INTERACTIVE | SEARCH_ELEMENT | SEARCH_REVERSE).pos == 4);
 }
 // Hit callback: matches never overlap, the scan resumes past the match.
 unittest
@@ -5960,7 +5998,7 @@ void find(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
     
-    SearchResult r = search(session, g_needle, sel.start, 0);
+    SearchResult r = search(session, g_needle, sel.start, SEARCH_ELEMENT);
     if (r.pos < 0)
     {
         message("Not found");
@@ -6004,7 +6042,7 @@ void find_back(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
     
-    SearchResult r = search(session, g_needle, sel.start, SEARCH_REVERSE);
+    SearchResult r = search(session, g_needle, sel.start, SEARCH_REVERSE | SEARCH_ELEMENT);
     if (r.pos < 0)
     {
         message("Not found");
@@ -6029,14 +6067,14 @@ void find_next(Session *session, Argument[] args)
     // the current match (neselect lands cursor at end-of-match, which would
     // otherwise misalign this skip for needles longer than one byte).
     Selection sel = selection(session);
-    long start = sel.length ? sel.end + 1 : session.position_cursor + g_needle.data.length;
+    long start = sel.length ? sel.start + sel.length : session.position_cursor + g_needle.data.length;
 
     unselect(session);
 
     message("Searching...");
     update_status(session);
 
-    SearchResult r = search(session, g_needle, start, 0);
+    SearchResult r = search(session, g_needle, start, SEARCH_ELEMENT);
     if (r.pos < 0)
     {
         message("Not found");
@@ -6068,7 +6106,7 @@ void find_prev(Session *session, Argument[] args)
     message("Searching...");
     update_status(session);
 
-    SearchResult r = search(session, g_needle, start, SEARCH_REVERSE);
+    SearchResult r = search(session, g_needle, start, SEARCH_REVERSE | SEARCH_ELEMENT);
     if (r.pos < 0)
     {
         message("Not found");
@@ -6128,7 +6166,7 @@ void find_bookmark(Session *session, Argument[] args)
     size_t count;
     try
     {
-        search(session, g_needle, 0, 0,
+        search(session, g_needle, 0, SEARCH_ELEMENT,
             (SearchResult r) {
                 found ~= Bookmark(r.pos, r.len);
                 // Continues if limit is set and not reached
@@ -6208,14 +6246,14 @@ void find_replace(Session *session, Argument[] args)
         throw new Exception(MSG_NO_PREVIOUS_FIND_REPLACE);
 
     Selection sel = selection(session);
-    long start = sel.length ? sel.end + 1 : session.position_cursor;
+    long start = sel.length ? sel.start + sel.length : session.position_cursor;
 
     unselect(session);
 
     message("Searching...");
     update_status(session);
 
-    SearchResult r = search(session, g_needle, start, 0);
+    SearchResult r = search(session, g_needle, start, SEARCH_ELEMENT);
     if (r.pos < 0)
     {
         message("Not found");
@@ -6271,7 +6309,7 @@ void find_replace_all(Session *session, Argument[] args)
     for (;;)
     {
         // search already checks for cancellation
-        SearchResult r = search(session, g_needle, start, 0, null, end);
+        SearchResult r = search(session, g_needle, start, SEARCH_ELEMENT, null, end);
         if (r.pos < 0)
             break;
 
