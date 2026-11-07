@@ -4259,6 +4259,9 @@ unittest
 
 void delete_front(Session *session, Argument[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
+    
     Selection sel = selection(session);
     if (args.length > 0)
     {
@@ -4289,6 +4292,9 @@ void delete_front(Session *session, Argument[] args)
 
 void delete_back(Session *session, Argument[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
+    
     Selection sel = selection(session);
     if (sel.length)
     {
@@ -5780,8 +5786,9 @@ void insert_file(Session *session, Argument[] args)
     g_status |= UVIEW;
 }
 
-// Copy data into clipboard buffer
-void clip_copy(Session *session, Argument[] args)
+/// Copy the selection, or the element at the cursor, into the clipboard,
+/// returning where it starts, or -1 when nothing was copied.
+long clip_store(Session *session)
 {
     long start;
     size_t len;
@@ -5798,7 +5805,7 @@ void clip_copy(Session *session, Argument[] args)
             int k = promptkey("Copy >16 MiB into clipboard? [y/N] ");
             switch (k) {
             case 'y', 'Y': break;
-            default: return;
+            default: return -1;
             }
         }
         
@@ -5807,9 +5814,13 @@ void clip_copy(Session *session, Argument[] args)
     }
     else // No selection
     {
-        len   = 1;
+        len   = size_of(session.rc.data_type);
         start = session.position_cursor;
     }
+    
+    // Cursor on the EOF slot
+    if (start >= session.editor.size())
+        return -1;
     
     log("Copying %u bytes...", len);
     
@@ -5818,55 +5829,30 @@ void clip_copy(Session *session, Argument[] args)
         throw new Exception(MSG_ALLOCATION_FAILED);
     g_clipboard_ptr = cast(ubyte*)ptr;
     
-    g_clipboard_len = len;
-    
-    cast(void)session.editor.view(start, g_clipboard_ptr[0..len]);
+    // A partial last element reads short
+    g_clipboard_len = session.editor.view(start, g_clipboard_ptr[0..len]).length;
+    return start;
+}
+
+// Copy data into clipboard buffer
+void clip_copy(Session *session, Argument[] args)
+{
+    cast(void)clip_store(session);
 }
 
 // Cut data into clipboard buffer
 void clip_cut(Session *session, Argument[] args)
 {
-    // shameless copy from clip_copy
-    long start;
-    size_t len;
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
-    Selection sel = selection(session);
-    if (sel.length)
-    {
-        // Address space range check (notably on 32-bit systems)
-        if (sel.length > MAXSIZE)
-            throw new Exception(MSG_CLIPBOARD_CANNOT_CONTAIN_SELECTION);
-        
-        if (sel.length >= CONFIG_COPY_WORRY)
-        {
-            int k = promptkey("Copy >16 MiB into clipboard? [y/N] ");
-            switch (k) {
-            case 'y', 'Y': break;
-            default: return;
-            }
-        }
-        
-        len   = cast(size_t)sel.length;
-        start = sel.start;
-    }
-    else // No selection: Copy element (right now, that's only a byte)
-    {
-        len   = 1;
-        start = session.position_cursor;
-    }
+    long start = clip_store(session);
+    if (start < 0)
+        return;
     
-    log("Copying %u bytes...", len);
-    
-    void *ptr = realloc(g_clipboard_ptr, len);
-    if (ptr == null)
-        throw new Exception(MSG_ALLOCATION_FAILED);
-    g_clipboard_ptr = cast(ubyte*)ptr;
-    
-    g_clipboard_len = len;
-    
-    cast(void)session.editor.view(start, g_clipboard_ptr[0..len]);
-    
-    session.editor.remove(start, len);
+    session.editor.remove(start, g_clipboard_len);
+    unselect(session);
+    moveabs(session, start); // like delete, cursor could be past the new end
     g_status |= UVIEW; // force read
 }
 
@@ -5875,6 +5861,9 @@ void clip_paste(Session *session, Argument[] args)
 {
     if (g_clipboard_ptr == null)
         throw new Exception(MSG_CLIPBOARD_EMPTY);
+    // Checked before the selection is removed
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception(MSG_DOCUMENT_READONLY);
     
     // Typical behaviour with text editors: If we paste with a selection,
     // (a) selection region gets removed and (b) new data is inserted
@@ -5921,6 +5910,58 @@ void clip_clear(Session *session, Argument[] args)
     free(g_clipboard_ptr);
     g_clipboard_ptr = null;
     g_clipboard_len = 0;
+}
+// Clipboard and delete: copy takes an element, never past the document,
+// and read-only refuses edits before touching anything.
+unittest
+{
+    import ddhx.editor.piecev4 : PieceV4DocumentEditor;
+    import ddhx.document.memory : MemoryDocument;
+
+    Session session;
+    session.input = new InputFormatter;
+    session.rc.columns   = 8;
+    session.rc.data_type = DataType(BaseType.u16, Format.hex);
+    session.editor = new PieceV4DocumentEditor().open(
+        new MemoryDocument(cast(const(ubyte)[]) "ABCDE"));
+    scope(exit) clip_clear(&session, null);
+
+    string text()
+    {
+        ubyte[8] buf;
+        return cast(string) session.editor.view(0, buf[]).idup;
+    }
+
+    session.position_cursor = 2;
+    clip_copy(&session, null);
+    assert(g_clipboard_ptr[0 .. g_clipboard_len] == "CD");
+
+    // Partial last element, then the EOF slot keeps the clipboard
+    session.position_cursor = 4;
+    clip_copy(&session, null);
+    assert(g_clipboard_ptr[0 .. g_clipboard_len] == "E");
+    session.position_cursor = 5;
+    clip_copy(&session, null);
+    assert(g_clipboard_ptr[0 .. g_clipboard_len] == "E");
+
+    session.rc.writemode = WritingMode.readonly;
+    session.position_cursor = 2;
+    foreach (command_func f; [ &delete_front, &delete_back, &clip_cut ])
+    {
+        try { f(&session, null); assert(false); }
+        catch (Exception e) {}
+    }
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = 0;
+    try { clip_paste(&session, null); assert(false); }
+    catch (Exception e) {}
+    assert(text() == "ABCDE");
+
+    session.rc.writemode = WritingMode.overwrite;
+    clip_cut(&session, null);
+    assert(text() == "E");
+    assert(g_clipboard_ptr[0 .. g_clipboard_len] == "ABCD");
+    assert(session.selection.status == 0 && session.position_cursor == 0);
 }
 
 // Save changes (assumes to a file)
