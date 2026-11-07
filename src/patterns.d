@@ -2213,7 +2213,7 @@ unittest
 
 /// Match a pattern against haystack starting at hPos/nPos.
 ///
-/// It does not scan. That is what the search() function is for, in view.
+/// It does not scan. That is what the search() function is for, in searches.
 ///
 /// Glob semantics are MINIMAL-MATCH: `*` consumes as few bytes as possible
 /// (by backtracking one byte at a time when the rest of the pattern fails).
