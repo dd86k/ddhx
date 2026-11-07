@@ -10,6 +10,16 @@ Rules:
   Something that breaks and is then fixed within a dev cycle shouldn't count.
 
 ////////////////////////////////////////////////////////////////////////////////
+// Unreleased
+
+// Added
+- New "piecev5" editor backend, now the default
+  "find-replace-all" undoes in one step and uses half the memory, and
+  editing after an undo no longer slows down with a long history
+  (1M edits: 45 ms to instant).
+  The old backend remains available with DDHX_BACKEND=piecev4.
+
+////////////////////////////////////////////////////////////////////////////////
 // v0.14.1
 
 Fixes for search, selection, and read-only bugs.

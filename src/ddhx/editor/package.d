@@ -23,10 +23,10 @@ IDocumentEditor spawnEditor(string name = null)
 {
     import std.conv : text;
     switch (name) { // NOTE: null chooses default backend
-    case "piecev4", null:
-        return new PieceV4DocumentEditor();
-    case "piecev5":
+    case "piecev5", null:
         return new PieceV5DocumentEditor();
+    case "piecev4":
+        return new PieceV4DocumentEditor();
     case "piecev3":
         return new PieceV3DocumentEditor();
     default:

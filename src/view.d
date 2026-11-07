@@ -4955,13 +4955,13 @@ void goto_(Session *session, Argument[] args)
 // endian setting, and read-only refuses undo/redo.
 unittest
 {
-    import ddhx.editor.piecev4 : PieceV4DocumentEditor;
+    import ddhx.editor.piecev5 : PieceV5DocumentEditor;
     import ddhx.document.memory : MemoryDocument;
 
     Session session;
     session.input = new InputFormatter;
     session.rc.columns = 8;
-    session.editor = new PieceV4DocumentEditor().open(
+    session.editor = new PieceV5DocumentEditor().open(
         new MemoryDocument(cast(const(ubyte)[]) "\x03\x00\x05ABCDEFGHI"));
 
     // Selection holds 3 as a u16, the argument wins
@@ -5213,13 +5213,13 @@ void insert_range(Session *session, Argument[] args)
 // take the selection, and all agree on missing argument messages.
 unittest
 {
-    import ddhx.editor.piecev4 : PieceV4DocumentEditor;
+    import ddhx.editor.piecev5 : PieceV5DocumentEditor;
     import ddhx.document.memory : MemoryDocument;
 
     Session session;
     session.input = new InputFormatter;
     session.rc.columns = 8;
-    session.editor = new PieceV4DocumentEditor().open(
+    session.editor = new PieceV5DocumentEditor().open(
         new MemoryDocument(cast(const(ubyte)[]) "ABCDEF"));
     Session *saved = g_session;
     g_session = &session; // for askrange
@@ -5411,14 +5411,14 @@ void clip_clear(Session *session, Argument[] args)
 // and read-only refuses edits before touching anything.
 unittest
 {
-    import ddhx.editor.piecev4 : PieceV4DocumentEditor;
+    import ddhx.editor.piecev5 : PieceV5DocumentEditor;
     import ddhx.document.memory : MemoryDocument;
 
     Session session;
     session.input = new InputFormatter;
     session.rc.columns   = 8;
     session.rc.data_type = DataType(BaseType.u16, Format.hex);
-    session.editor = new PieceV4DocumentEditor().open(
+    session.editor = new PieceV5DocumentEditor().open(
         new MemoryDocument(cast(const(ubyte)[]) "ABCDE"));
     scope(exit) clip_clear(&session, null);
 
