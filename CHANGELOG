@@ -10,6 +10,42 @@ Rules:
   Something that breaks and is then fixed within a dev cycle shouldn't count.
 
 ////////////////////////////////////////////////////////////////////////////////
+// v0.14.1
+
+Fixes for search, selection, and read-only bugs.
+
+// Changed
+- "replace-range" and "insert-range" always take a range, even with a
+  selection. "replace" and "insert" work on the selection.
+- "copy" and "cut" without a selection take one element, not one byte.
+- "cut" clears the selection, like "delete".
+- Bookmark and diff messages show addresses in the "address" setting.
+
+// Fixed
+- "find-replace" selected the wrong length, and "find-replace-all" could
+  skip matches, when the replacement and match lengths differ.
+- "find-replace-all" ignored the selection.
+- Searches on multi-byte data types (e.g. x16) matched mid-element.
+- "find" and "find-back" skipped matches right next to the cursor.
+- Backward searches missed matches more than 128 KiB away, and "find-prev"
+  could select a match overlapping the current one.
+- Wildcard searches ("?" and "*") missed matches across 128 KiB boundaries.
+- "find-replace-all *" never ended, using memory until canceled. A needle
+  of only "*" is now refused.
+- "skip-front" and "skip-back" with a selection over 128 KiB jumped to the
+  document edge. It is now refused as too big.
+- "select-top" and "select-bottom" selected one element, not from the cursor.
+- Multi-byte data types: "select-all", "select-bottom", and "select" went
+  past the document end or off element boundaries, "export-range" dropped
+  the last byte, and "copy" near the end could take stray bytes.
+- Read-only: "delete", "delete-back", "cut", "undo", and "redo" still
+  edited, and "paste" removed the selection before refusing.
+- Text after a number is an error: "select 0x10..0x20" was taken as a
+  0x10-byte selection, and "goto 0x10zz" as 0x10.
+- "bookmark-load": lengths take the same number formats as addresses.
+- "goto" with a selection ignored its argument and the "endian" setting.
+
+////////////////////////////////////////////////////////////////////////////////
 // v0.14.0
 
 Smaller release with "open"/"close" commands, Tab completion for
