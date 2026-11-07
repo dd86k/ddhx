@@ -12,7 +12,8 @@ SRCS != find src -name '*.d'
 TEST_SRCS_INPUT = $(SRCS) tests/input.d
 TEST_SRCS_COLOR = $(SRCS) tests/color.d
 TEST_SRCS_SIZE  = $(SRCS) tests/size.d
-BENCH_SRCS = $(SRCS) benchmark/src/main.d
+LIB_SRCS != find src -name '*.d' ! -path src/main.d
+BENCH_SRCS = $(LIB_SRCS) benchmark/src/main.d
 
 # Compiler-specific flag mapping. DMD flags are the baseline; LDC and GDC
 # equivalents are selected by matching $(DC) against the compiler binary name.

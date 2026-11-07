@@ -402,6 +402,84 @@ void testLocks(int threads = 4, int ops = 5_000)
     }
 }
 
+//
+// Search throughput (searches)
+//
+// Every needle is absent, so each search scans the whole document. Random
+// bytes stay below 0x80, so needles holding 0xee or 0xff never occur. Edits
+// that keep the data as it was make the editor serve views from many pieces.
+//
+
+/// Time searches of a 64 MiB document, the best of runs for each.
+void testSearch(int runs = 5)
+{
+    import std.system : Endian;
+    import ddhx.document.memory : MemoryDocument;
+    import patterns : Pattern, pattern;
+    import searches;
+    
+    enum SIZE = 64 * 1024 * 1024;
+    
+    stderr.writeln("SEARCH : ", SIZE / (1024 * 1024), " MiB, best of ", runs);
+    
+    ubyte[] random = new ubyte[SIZE];
+    uint x = 1;
+    foreach (ref ubyte b; random)
+        b = cast(ubyte)((x = x * 1_103_515_245 + 12_345) >> 16) & 0x7f;
+    ubyte[] zeros = new ubyte[SIZE];
+    
+    /// Editor over data, with an edit every MiB that rewrites the same byte.
+    IDocumentEditor open(ubyte[] data)
+    {
+        IDocumentEditor e = spawnEditor();
+        e.open(new MemoryDocument(data));
+        for (size_t pos = 512; pos < SIZE; pos += 1024 * 1024)
+            e.replace(pos, &data[pos], ubyte.sizeof);
+        return e;
+    }
+    IDocumentEditor erandom = open(random);
+    IDocumentEditor ezeros  = open(zeros);
+    
+    /// Print the best time of runs searching e for needle, from start.
+    void run(string what, IDocumentEditor e, Pattern needle, int flags = 0, long start = 0)
+    {
+        Duration best = Duration.max;
+        StopWatch sw;
+        for (int i; i < runs; i++)
+        {
+            sw.reset();
+            sw.start();
+            search(e, needle, start, flags | SEARCH_NON_INTERACTIVE);
+            sw.stop();
+            if (sw.peek() < best)
+                best = sw.peek();
+        }
+        char[32] tbuf;
+        double mibs = (SIZE / (1024.0 * 1024.0)) / (best.total!"usecs" / 1e6);
+        stderr.writefln("%-24s: %6.0f MiB/s  %s", what, mibs, fmtdur(best, tbuf));
+    }
+    
+    enum LE = Endian.littleEndian;
+    printDelimiter();
+    stderr.writeln("random data");
+    run("literal x:ff",          erandom, pattern(LE, "x:ff"));
+    run("literal x:ffeeddcc",    erandom, pattern(LE, "x:ffeeddcc"));
+    run("literal 16 bytes",      erandom, pattern(LE, "utf8:ABCDEFGHIJKLMNO", "x:ff"));
+    run("x:ff ? x:ee",           erandom, pattern(LE, "x:ff", "?", "x:ee"));
+    run("x:ff * x:ee",           erandom, pattern(LE, "x:ff", "*", "x:ee"));
+    run("u8:200..250",           erandom, pattern(LE, "u8:200..250"));
+    run("aligned x:ffeeddcc",    erandom, pattern(LE, "x:ffeeddcc"), SEARCH_ALIGNED);
+    run("reverse x:ffeeddcc",    erandom, pattern(LE, "x:ffeeddcc"), SEARCH_REVERSE, SIZE);
+    printDelimiter();
+    stderr.writeln("zero-filled data");
+    run("literal x:00000001",    ezeros, pattern(LE, "x:00000001"));
+    run("x:00 * x:ff",           ezeros, pattern(LE, "x:00", "*", "x:ff"));
+    run("diff x:00",             ezeros, pattern(LE, "x:00"), SEARCH_DIFF);
+    
+    erandom.close();
+    ezeros.close();
+}
+
 void printGCgrowth(string what, GC.Stats before, GC.Stats after)
 {
     char[16] tbuf;
@@ -532,6 +610,9 @@ void main(string[] args)
             break;
         case "reads": // positional read scaling, os.file only
             testReads();
+            break;
+        case "search": // search throughput, default backend
+            testSearch();
             break;
         default:
             test(backend);
