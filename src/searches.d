@@ -6,6 +6,7 @@
 module searches;
 
 import core.stdc.stdlib : malloc, free;
+import core.stdc.string : memchr;
 import std.algorithm.comparison : min, max;
 import ddhx.editor.base : IDocumentEditor;
 import ddhx.logger;
@@ -137,10 +138,8 @@ SearchResult search(IDocumentEditor editor, Pattern needle, long position, int f
     // A needle of only '*' matches zero bytes, and replacing those never ends
     if (minlen == 0)
         throw new Exception(MSG_EMPTY_NEEDLE);
-    // Remembers what follows each '*' within a window, see PatternMatcher
-    PatternMatcher matcher;
-    if (variable)
-        matcher = PatternMatcher(needle);
+    PatternMatcher matcher = PatternMatcher(needle);
+    long align_ = cast(long)alignment;
     // Bytes a window keeps past its last scanned start, room for '*' to grow
     enum long CHUNK = SEARCH_CHUNKSIZE;
     long tail = min(variable ? max(minlen, CHUNK / 2) : minlen, CHUNK);
@@ -152,7 +151,6 @@ SearchResult search(IDocumentEditor editor, Pattern needle, long position, int f
         if (position > stop - minlen)
         {
             long over = position - (stop - minlen);
-            long align_ = cast(long)alignment;
             position -= ((over + align_ - 1) / align_) * align_;
         }
 
@@ -165,16 +163,14 @@ SearchResult search(IDocumentEditor editor, Pattern needle, long position, int f
             ubyte[] haystack = editor.view(base, hay[0 .. cast(size_t)(wend - base)]);
             if (haystack.length < minlen)
                 break; // needle longer than a window
-            if (variable)
-                matcher.reset(haystack);
+            matcher.reset(haystack);
 
             // Use signed long for o to avoid size_t underflow when
             // alignment > 1 and o < alignment.
             long o = position - base;
-            for (; o >= 0; o -= cast(long) alignment, position -= cast(long) alignment)
+            for (; o >= 0; o -= align_, position -= align_)
             {
-                ptrdiff_t mlen = variable ? matcher.match(cast(size_t) o)
-                    : matchPattern(haystack, needle, cast(size_t) o, 0);
+                ptrdiff_t mlen = matcher.match(cast(size_t) o);
                 bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
@@ -207,26 +203,41 @@ SearchResult search(IDocumentEditor editor, Pattern needle, long position, int f
             ubyte[] haystack = editor.view(position, hay[0 .. want]);
             if (haystack.length < minlen)
                 break; // tail shorter than needle
-            if (variable)
-                matcher.reset(haystack);
+            matcher.reset(haystack);
 
             bool last = haystack.length < want || position + want >= stop;
             long top = cast(long) haystack.length - (last ? minlen : tail);
-            for (long o; o <= top; o += cast(long) alignment, position += cast(long) alignment)
+            long base = position;
+            long o; // next start to scan, from base
+            while (o <= top)
             {
-                ptrdiff_t mlen = variable ? matcher.match(cast(size_t) o)
-                    : matchPattern(haystack, needle, cast(size_t) o, 0);
-                bool matched = mlen >= 0;
-                if ((diff == 0 && !matched) || (diff && matched))
-                    continue;
-                SearchResult hit = SearchResult(position,
-                    matched ? cast(long) mlen : cast(long) needle.data.length);
+                ptrdiff_t mlen;
+                if (diff)
+                {
+                    if (matcher.match(cast(size_t) o) >= 0)
+                    {
+                        o += align_;
+                        continue;
+                    }
+                    mlen = needle.data.length;
+                }
+                else
+                {
+                    ptrdiff_t at = matcher.next(cast(size_t) o, cast(size_t) top,
+                        alignment, mlen);
+                    if (at < 0) // to the first boundary past top
+                    {
+                        o += (top - o) / align_ * align_ + align_;
+                        break;
+                    }
+                    o = at;
+                }
+                SearchResult hit = SearchResult(base + o, mlen);
                 if (onhit is null || onhit(hit) == SearchAction.stop)
                     return hit;
-                long skip = resume(hit.len);
-                o += skip;
-                position += skip;
+                o += resume(hit.len) + align_;
             }
+            position = base + o;
 
             if (progress !is null)
                 progress(min(position, docsize), docsize);
@@ -561,4 +572,314 @@ unittest
     search(editor, needle, 7, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE,
         (SearchResult r) { positions ~= r.pos; return SearchAction.next; });
     assert(positions == [ 4L, 0L ], "expected matches in reverse order");
+}
+
+//
+// Matcher
+//
+
+/// Guess of how common each byte is in files, higher being more common.
+/// Segments are found by the least common literal byte they hold.
+private immutable ubyte[256] BYTE_RANK = byteRanks();
+
+/// Builds BYTE_RANK.
+private ubyte[256] byteRanks()
+{
+    ubyte[256] rank = 20; // high bytes
+    foreach (size_t b; 0x01 .. 0x20) // small integers, control codes
+        rank[b] = 100;
+    foreach (size_t b; 0x20 .. 0x7f) // printable ASCII
+        rank[b] = 120;
+    foreach (char c; " etaoinsrhl\n")
+        rank[c] = 160;
+    rank[0xff] = 200;
+    rank[0x00] = 255;
+    return rank;
+}
+
+/// Matches a pattern at many starts of one haystack.
+///
+/// The pattern is split at each '*' into segments. The first is matched where
+/// a match starts, each next one is searched for after the one before. A
+/// segment is searched for by memchr on its least common literal byte, then
+/// checked whole. Segments after a '*' keep where they were last searched
+/// from and found. Starts that only move one way, as in a search, then examine
+/// each byte about once per segment ("00 * ff" over zeros stays linear).
+/// Results equal matchPattern's, the shortest match.
+struct PatternMatcher
+{
+    /// Prepare to match needle.
+    this(Pattern needle)
+    {
+        this.needle = needle;
+        ushort[] data = needle.data;
+        size_t n;
+        while (n < data.length && data[n] != PATTERN_GLOB_MANY)
+            ++n;
+        head = segment(0, n);
+        while (n < data.length) // at a '*'
+        {
+            size_t start = ++n;
+            while (n < data.length && data[n] != PATTERN_GLOB_MANY)
+                ++n;
+            if (n > start) // "* *" leaves nothing between, which matches anywhere
+                parts ~= segment(start, n - start);
+        }
+    }
+
+    /// Set the haystack for the next matches, forgetting what was found in the last.
+    void reset(ubyte[] haystack)
+    {
+        this.haystack = haystack;
+        foreach (ref Segment part; parts)
+            part.from = size_t.max;
+    }
+
+    /// Length of the shortest match starting at hPos, or -1.
+    ptrdiff_t match(size_t hPos)
+    {
+        if (hPos > haystack.length || haystack.length - hPos < head.len ||
+            fits(hPos, head) == false)
+            return -1;
+        return rest(hPos);
+    }
+
+    /// First start from lo up to hi, a multiple of step past lo, where the
+    /// needle matches, or -1. Sets len to the match length.
+    ptrdiff_t next(size_t lo, size_t hi, size_t step, out ptrdiff_t len)
+    {
+        if (haystack.length < head.len)
+            return -1;
+        hi = min(hi, haystack.length - head.len);
+        size_t s = lo;
+        while (s <= hi)
+        {
+            if (head.anchored)
+            {
+                ptrdiff_t at = scan(head, s, hi);
+                if (at < 0)
+                    return -1;
+                size_t off = (at - lo) % step;
+                if (off)
+                {
+                    s = at + step - off;
+                    continue;
+                }
+                s = at;
+            }
+            else if (fits(s, head) == false)
+            {
+                s += step;
+                continue;
+            }
+            // A '*' segment missing after s is also missing after later starts
+            len = rest(s);
+            return len >= 0 ? cast(ptrdiff_t)s : -1;
+        }
+        return -1;
+    }
+
+private:
+    /// Run of needle data without '*'.
+    struct Segment
+    {
+        size_t n;                 /// Index in the needle data.
+        size_t len;               /// Entries, which is also bytes.
+        bool anchored;            /// Whether it holds a literal byte.
+        size_t anchor;            /// Offset of the least common literal byte.
+        ubyte abyte;              /// That byte.
+        size_t from = size_t.max; /// Last searched from here, size_t.max if not yet.
+        ptrdiff_t found;          /// ...and first found here, or -1.
+    }
+
+    Pattern needle;
+    Segment head;     /// Data before the first '*', or all of it.
+    Segment[] parts;  /// Data after each '*'.
+    ubyte[] haystack;
+
+    /// Segment of len entries at needle data n, with its anchor byte.
+    Segment segment(size_t n, size_t len)
+    {
+        Segment seg = Segment(n, len);
+        foreach (size_t i; 0 .. len)
+        {
+            ushort c = needle.data[n + i];
+            if (c >= PATTERN_GLOB_ONE)
+                continue;
+            if (seg.anchored == false || BYTE_RANK[c] < BYTE_RANK[seg.abyte])
+            {
+                seg.anchored = true;
+                seg.anchor = i;
+                seg.abyte = cast(ubyte)c;
+            }
+        }
+        return seg;
+    }
+
+    /// Whether seg matches the haystack at h, which has room.
+    bool fits(size_t h, ref const(Segment) seg)
+    {
+        for (size_t i; i < seg.len;)
+        {
+            ushort c = needle.data[seg.n + i];
+            if (c < PATTERN_GLOB_ONE)
+            {
+                if (haystack[h + i] != c)
+                    return false;
+                ++i;
+            }
+            else if (c == PATTERN_GLOB_ONE)
+                ++i;
+            else // a range head, its tail entries are skipped with it
+            {
+                const(PatternRange)* range = &needle.ranges[c - PATTERN_RANGE];
+                if (range.contains(haystack[h + i .. h + i + range.width]) == false)
+                    return false;
+                i += range.width;
+            }
+        }
+        return true;
+    }
+
+    /// Leftmost start from lo up to hi where seg fits, or -1. Starts up to hi
+    /// leave seg room.
+    ptrdiff_t scan(ref const(Segment) seg, size_t lo, size_t hi)
+    {
+        if (seg.anchored == false)
+        {
+            for (size_t h = lo; h <= hi; ++h)
+                if (fits(h, seg))
+                    return h;
+            return -1;
+        }
+        const(ubyte)* base = haystack.ptr;
+        size_t p   = lo + seg.anchor;
+        size_t end = hi + seg.anchor + 1;
+        while (p < end)
+        {
+            const(ubyte)* at = cast(const(ubyte)*)memchr(base + p, seg.abyte, end - p);
+            if (at is null)
+                return -1;
+            size_t h = (at - base) - seg.anchor;
+            if (fits(h, seg))
+                return h;
+            p = h + seg.anchor + 1;
+        }
+        return -1;
+    }
+
+    /// Length of the match at s, whose head fits, or -1 if a part is missing.
+    ptrdiff_t rest(size_t s)
+    {
+        size_t cur = s + head.len;
+        foreach (ref Segment part; parts)
+        {
+            ptrdiff_t at = find(part, cur);
+            if (at < 0)
+                return -1;
+            cur = at + part.len;
+        }
+        return cur - s;
+    }
+
+    /// Leftmost start at or after q where part matches, or -1.
+    ptrdiff_t find(ref Segment part, size_t q)
+    {
+        if (haystack.length < part.len)
+            return -1;
+        size_t last = haystack.length - part.len; // highest start with room
+
+        if (part.from != size_t.max)
+        {
+            // Below the last search, only q up to it is new
+            if (q < part.from)
+            {
+                size_t below = part.from;
+                part.from = q;
+                ptrdiff_t at = scan(part, q, min(below - 1, last));
+                if (at >= 0)
+                    part.found = at;
+                return part.found;
+            }
+            // At or above it, the answer holds until q passes it
+            if (part.found < 0 || cast(size_t)part.found >= q)
+                return part.found;
+        }
+
+        part.from = q;
+        return part.found = scan(part, q, last);
+    }
+}
+unittest
+{
+    import std.system : Endian;
+
+    ubyte[] hay = cast(ubyte[]) "AxBxAB5";
+    PatternMatcher m = PatternMatcher(pattern(Endian.littleEndian, "utf8:A", "*", "utf8:B"));
+    m.reset(hay);
+    assert(m.match(0) == 3);
+    assert(m.match(4) == 2);
+    assert(m.match(1) == -1);
+    assert(m.match(0) == 3); // back down, the cache still answers right
+
+    // No '*' at all, a leading one, a trailing one, doubled ones, and ranges
+    m = PatternMatcher(pattern(Endian.littleEndian, "utf8:x", "?", "utf8:x"));
+    m.reset(hay);
+    assert(m.match(1) == 3 && m.match(0) == -1);
+    m = PatternMatcher(pattern(Endian.littleEndian, "*", "utf8:B"));
+    m.reset(hay);
+    assert(m.match(0) == 3 && m.match(3) == 3 && m.match(6) == -1);
+    m = PatternMatcher(pattern(Endian.littleEndian, "utf8:A", "*"));
+    m.reset(hay);
+    assert(m.match(0) == 1 && m.match(1) == -1);
+    m = PatternMatcher(pattern(Endian.littleEndian, "utf8:A", "*", "*", "u8:48..57"));
+    m.reset(hay);
+    assert(m.match(0) == 7 && m.match(4) == 3);
+    assert(m.match(7) == -1 && m.match(8) == -1);
+
+    // A new haystack forgets the old answers
+    m = PatternMatcher(pattern(Endian.littleEndian, "utf8:A", "*", "utf8:B"));
+    m.reset(hay);
+    assert(m.match(4) == 2);
+    m.reset(cast(ubyte[]) "AxxxxB");
+    assert(m.match(0) == 6);
+}
+// Scanning: anchors at any offset, alignment, missing '*' parts, and ranges
+unittest
+{
+    import std.system : Endian;
+
+    ubyte[] hay = cast(ubyte[]) "xAyBAzB.AB";
+    ptrdiff_t len;
+    PatternMatcher m = PatternMatcher(pattern(Endian.littleEndian, "utf8:A", "?", "utf8:B"));
+    m.reset(hay);
+    assert(m.next(0, hay.length, 1, len) == 1 && len == 3);
+    assert(m.next(2, hay.length, 1, len) == 4 && len == 3);
+    assert(m.next(5, hay.length, 1, len) == -1);
+    assert(m.next(0, 0, 1, len) == -1); // hi bounds the start
+    assert(m.next(0, hay.length, 2, len) == 4); // 1 is odd
+
+    // Anchored on B, at the end of the segment
+    m = PatternMatcher(pattern(Endian.littleEndian, "?", "utf8:B"));
+    m.reset(hay);
+    assert(m.next(0, hay.length, 1, len) == 2 && len == 2);
+    assert(m.next(3, hay.length, 1, len) == 5);
+    assert(m.next(3, hay.length, 2, len) == 5);
+    assert(m.next(3, hay.length, 3, len) == -1); // 5 and 8 are off by one
+
+    // A '*' part found nowhere ends the scan
+    m = PatternMatcher(pattern(Endian.littleEndian, "utf8:A", "*", "utf8:Z"));
+    m.reset(hay);
+    assert(m.next(0, hay.length, 1, len) == -1);
+    m = PatternMatcher(pattern(Endian.littleEndian, "utf8:A", "*", "utf8:B"));
+    m.reset(hay);
+    assert(m.next(0, hay.length, 1, len) == 1 && len == 3);
+    assert(m.next(2, hay.length, 1, len) == 4 && len == 3);
+    assert(m.next(5, hay.length, 1, len) == 8 && len == 2);
+
+    // Nothing literal to look for
+    m = PatternMatcher(pattern(Endian.littleEndian, "u8:65..66", "?", "u8:65..66"));
+    m.reset(hay);
+    assert(m.next(0, hay.length, 1, len) == 1 && len == 3);
+    assert(m.next(2, hay.length, 1, len) == 4 && len == 3);
 }
