@@ -4250,7 +4250,7 @@ unittest
     select_left(&session, null);
     Selection sel = selection(&session);
     assert(sel.start  == 8);
-    assert(sel.length == 4);
+    assert(sel.length == 2); // partial element, 2 bytes left
 }
 
 //
@@ -4351,12 +4351,13 @@ Selection selection(Session *session)
     sel.start = min(anchor, session.position_cursor);
     sel.end   = max(anchor, session.position_cursor);
     
-    if (sel.end >= session.editor.size())
+    long docsize = session.editor.size();
+    if (sel.end >= docsize)
         sel.end -= g;
-    
-    // End marker is inclusive
-    sel.length = sel.end - sel.start + g;
-    
+
+    // End marker is inclusive, a partial last element stops at the document end
+    sel.length = min(sel.end - sel.start + g, docsize - sel.start);
+
     return sel;
 }
 unittest
@@ -4411,6 +4412,50 @@ unittest
     assert(sel.end    == 4);
     */
 }
+// Selection commands stay on element boundaries and within the document.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.rc.columns   = 8;
+    session.input = new InputFormatter;
+    session.rc.data_type = DataType(BaseType.u16, Format.hex);
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "0123456789abcdef");
+    Session *saved = g_session;
+    g_session = &session; // for askrange
+    scope(exit) g_session = saved;
+
+    Selection sel;
+    session.position_cursor = 4;
+    select_all(&session, null);
+    sel = selection(&session);
+    assert(sel.start == 0 && sel.length == 16);
+
+    session.selection.status = 0;
+    session.position_cursor = 4;
+    select_bottom(&session, null);
+    sel = selection(&session);
+    assert(sel.start == 4 && sel.length == 12);
+
+    session.selection.status = 0;
+    session.position_cursor = 4;
+    select_top(&session, null);
+    sel = selection(&session);
+    assert(sel.start == 0 && sel.length == 6);
+
+    session.selection.status = 0;
+    select(&session, [ Argument("2:5") ]);
+    sel = selection(&session);
+    assert(sel.start == 2 && sel.length == 4);
+
+    // A partial last element ends the selection at the document end
+    session.selection.status = 0;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "0123456789abcde");
+    select_all(&session, null);
+    sel = selection(&session);
+    assert(sel.start == 0 && sel.length == 15);
+}
 
 // Expand selection backward
 void select_left(Session *session, Argument[] args)
@@ -4460,7 +4505,7 @@ void select_down(Session *session, Argument[] args)
     moverel(session, +(session.rc.columns * size_of(session.rc.data_type)));
 }
 
-// Expand selection towards end of line
+// Expand selection to start of line
 void select_home(Session *session, Argument[] args)
 {
     if (!session.selection.status)
@@ -4473,7 +4518,7 @@ void select_home(Session *session, Argument[] args)
     moverel(session, -(session.position_cursor % g));
 }
 
-// Expand selection forward a line
+// Expand selection to end of line
 void select_end(Session *session, Argument[] args)
 {
     if (!session.selection.status)
@@ -4486,28 +4531,35 @@ void select_end(Session *session, Argument[] args)
     moverel(session, +(g - (session.position_cursor % g)) - 1);
 }
 
-// Select from current position to start of document
+// Expand selection to start of document
 void select_top(Session *session, Argument[] args)
 {
-    long docsize = session.editor.size();
-    if (docsize <= 0)
+    if (session.editor.size() <= 0)
         return;
     
-    session.position_cursor  = 0;
-    session.selection.anchor = session.position_cursor;
-    session.selection.status = SELECT_ACTIVE;
+    if (!session.selection.status)
+    {
+        session.selection.status = SELECT_ACTIVE;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moveabs(session, 0);
 }
 
-// Select from current position to end of document
+// Expand selection to end of document
 void select_bottom(Session *session, Argument[] args)
 {
     long docsize = session.editor.size();
     if (docsize <= 0)
         return;
     
-    session.position_cursor  = docsize - 1;
-    session.selection.anchor = session.position_cursor;
-    session.selection.status = SELECT_ACTIVE;
+    if (!session.selection.status)
+    {
+        session.selection.status = SELECT_ACTIVE;
+        session.selection.anchor = session.position_cursor;
+    }
+    
+    moveabs(session, docsize); // lands on the last element
 }
 
 // Select all of document
@@ -4517,9 +4569,9 @@ void select_all(Session *session, Argument[] args)
     if (docsize <= 0)
         return;
     
-    session.position_cursor  = docsize - 1;
     session.selection.anchor = 0;
     session.selection.status = SELECT_ACTIVE;
+    moveabs(session, docsize); // lands on the last element
 }
 
 // Make an explicit selection
@@ -4527,9 +4579,9 @@ void select(Session *session, Argument[] args)
 {
     Range ran = askrange(args, 0, "Range: ");
     
-    session.position_cursor  = ran.end;
     session.selection.anchor = ran.start;
     session.selection.status = SELECT_ACTIVE;
+    moveabs(session, ran.end);
 }
 
 // Start an active selection
@@ -5519,17 +5571,16 @@ void export_range(Session *session, Argument[] args)
         throw new Exception(MSG_OUT_OF_MEMORY);
     scope(exit) free(buf.ptr);
     
-    // HACK: end is inclusive. D ranges are not.
-    sel.end++;
-    
-    while (sel.start < sel.end)
+    long end = sel.start + sel.length;
+    while (sel.start < end)
     {
-        long left = sel.end - sel.start;
-        long want = min(left, CONFIG_CHUNKSIZE);
+        long want = min(end - sel.start, CONFIG_CHUNKSIZE);
         ubyte[] res = session.editor.view(sel.start, buf.ptr, cast(size_t)want);
-        
+        if (res.length == 0)
+            break;
+
         output.rawWrite(res);
-        sel.start += CONFIG_CHUNKSIZE;
+        sel.start += res.length;
     }
     
     // Unfortunately to force the message through
