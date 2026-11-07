@@ -5360,6 +5360,9 @@ void diff_prev(Session *session, Argument[] args)
 // 
 void undo(Session *session, Argument[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
+    
     long pos = session.editor.undo();
     if (pos < 0)
         return;
@@ -5372,6 +5375,9 @@ void undo(Session *session, Argument[] args)
 // 
 void redo(Session *session, Argument[] args)
 {
+    if (session.rc.writemode == WritingMode.readonly)
+        throw new Exception(MSG_CANNOT_EDIT_READONLY);
+    
     long pos = session.editor.redo();
     if (pos < 0)
         return;
@@ -5387,9 +5393,9 @@ void goto_(Session *session, Argument[] args)
     long position = void;
     bool absolute = void;
     
-    // Selection
+    // With arguments: Prioritize before selection
     Selection sel = selection(session);
-    if (sel.length)
+    if (args.length == 0 && sel.length)
     {
         if (sel.length > long.sizeof)
             throw new Exception(MSG_SELECTION_TOO_LARGE);
@@ -5448,6 +5454,40 @@ void goto_(Session *session, Argument[] args)
 
     // Let's fucking go!
     absolute ? moveabs(session, position) : moverel(session, position);
+}
+// goto takes its argument over the selection, and read-only refuses undo/redo.
+unittest
+{
+    import ddhx.editor.piecev4 : PieceV4DocumentEditor;
+    import ddhx.document.memory : MemoryDocument;
+
+    Session session;
+    session.input = new InputFormatter;
+    session.rc.columns = 8;
+    session.editor = new PieceV4DocumentEditor().open(
+        new MemoryDocument(cast(const(ubyte)[]) "\x03\x00ABCDEFGHIJ"));
+
+    // Selection holds 3 as a u16, the argument wins
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = 0;
+    session.position_cursor  = 1;
+    goto_(&session, [ Argument("6") ]);
+    assert(session.position_cursor == 6);
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = 0;
+    session.position_cursor  = 1;
+    goto_(&session, null);
+    assert(session.position_cursor == 3);
+
+    session.editor.replace(4, "z".ptr, 1);
+    session.rc.writemode = WritingMode.readonly;
+    foreach (command_func f; [ &undo, &redo ])
+    {
+        try { f(&session, null); assert(false); }
+        catch (Exception e) {}
+    }
+    ubyte[1] b;
+    assert(session.editor.view(4, b[]) == "z");
 }
 
 // Report alternative statusbar using statusbar formatting

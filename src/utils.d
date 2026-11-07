@@ -621,10 +621,10 @@ unittest
 /// Parse string as hexadecimal, decimal, or octal.
 /// Params: input = String input.
 /// Returns: Parsed value.
-/// Throws: Exception when errno != 0.
+/// Throws: Exception when empty, ConvException on anything but one number.
 long scan(scope string input)
 {
-    import std.conv : parse;
+    import std.conv : parse, ConvException;
     import std.string : strip, startsWith;
     
     // Imitate stroll a little by ignoring whitespace
@@ -632,29 +632,32 @@ long scan(scope string input)
     if (input.length == 0)
         throw new Exception("Empty scan");
     
+    string digits = input;
+    uint radix = 10;
     // Hex: stroll supports "0X" but don't see the appeal yet
-    if (startsWith(input, "0x"))
+    if (startsWith(digits, "0x"))
     {
-        input = input[2..$]; // parse(ref Source source, uint radix)
-        return parse!long(input, 16);
+        digits = digits[2..$];
+        radix = 16;
     }
     // Binary: C23 supports "0b" and "0B" for binary numbers
-    else if (startsWith(input, "0b"))
+    else if (startsWith(digits, "0b"))
     {
-        input = input[2..$];
-        return parse!long(input, 2);
+        digits = digits[2..$];
+        radix = 2;
     }
     // Octal
-    else if (input.length > 2 && input[0] == '0')
+    else if (digits.length > 2 && digits[0] == '0')
     {
-        input = input[1..$];
-        return parse!long(input, 8);
+        digits = digits[1..$];
+        radix = 8;
     }
     // NOTE: Decimal is the only base where negative sign is allowed
-    else
-    {
-        return parse!long(input, 10);
-    }
+    
+    long value = parse!long(digits, radix);
+    if (digits.length) // parse stops at the first character it can't take
+        throw new ConvException(MSG_INVALID_NUMBER ~ input);
+    return value;
 }
 @system unittest
 {
@@ -681,6 +684,14 @@ long scan(scope string input)
     assert(scan("01")  == octal!"1");
     assert(scan("02")  == octal!"2");
     assert(scan("010") == octal!"10");
+    // whitespace around is fine, anything else after the number is not
+    assert(scan(" 0x10 ") == 0x10);
+    import std.conv : ConvException;
+    foreach (string s; [ "0x1000..0x33fff", "0x10zz", "12ab", "0b102", "019", "1 2", "0x" ])
+    {
+        try { cast(void)scan(s); assert(false, s); }
+        catch (ConvException) {}
+    }
 }
 
 /// Parse as a binary number with optional suffix up to gigabytes.
