@@ -4931,8 +4931,8 @@ unittest
 
 // Load bookmarks from a file produced by bookmark-save (or compatible).
 // Each non-comment line: "<address> <length>", both numbers as scan() reads
-// them (0x hex, 0b binary, 0 octal, or decimal). Loaded entries are merged
-// with existing ones.
+// them (0x hex, 0b binary, 0 octal, or decimal), then an optional note.
+// Loaded entries are merged with existing ones.
 void bookmark_load(Session *session, Argument[] args)
 {
     import std.string : strip, stripLeft;
@@ -4958,6 +4958,9 @@ void bookmark_load(Session *session, Argument[] args)
         
         string straddr = line[0..sepi];
         string strlent = stripLeft(line[sepi..$]);
+        ptrdiff_t endi = indexOfSpace(strlent); // Text after the length is a note
+        if (endi > 0)
+            strlent = strlent[0..endi];
 
         Bookmark bk;
         try
@@ -4979,7 +4982,7 @@ void bookmark_load(Session *session, Argument[] args)
     g_status |= UVIEW | USTATUS;
     message("Bookmarks loaded");
 }
-// Bookmark files take any scan() number, and refuse text after one.
+// Bookmark files take any scan() number, refuse text glued to one, and skip notes.
 unittest
 {
     import std.file : remove, tempDir, write;
@@ -4992,7 +4995,7 @@ unittest
     string path = buildPath(tempDir, "ddhx-bookmark-unittest");
     scope(exit) remove(path);
 
-    write(path, "# ddhx bookmarks\n0x10\t0x4\n32 2\n");
+    write(path, "# ddhx bookmarks\n0x10\t0x4\n32 2 header\n");
     bookmark_load(&session, [ Argument(path) ]);
     assert(session.bookmarks == [ Bookmark(0x10, 4), Bookmark(32, 2) ]);
 
