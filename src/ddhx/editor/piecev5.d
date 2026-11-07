@@ -27,7 +27,7 @@
 /// Authors: $(LINK2 https://github.com/dd86k, dd86k)
 module ddhx.editor.piecev5;
 
-import core.stdc.string : memcpy, memset, memmove;
+import core.stdc.string : memcmp, memcpy, memset, memmove;
 import core.sync.rwmutex : ReadWriteMutex;
 
 import std.algorithm.comparison : min, max;
@@ -273,9 +273,10 @@ enum OperationType
 
 /// Represents an operation for the history stack (undo-redo).
 ///
-/// An operation is a splice: at piece index `index`, `removed` became
-/// `added`. Applying and reversing it are the same call with the two piece
-/// lists swapped.
+/// An operation is a splice: at piece index `index`, its removed pieces
+/// became its added pieces. Applying and reversing it are the same call with
+/// the two piece lists swapped. Both lists live in the editor's history pool,
+/// so recording an edit allocates nothing once the pool has grown.
 private
 struct Operation
 {
@@ -289,10 +290,10 @@ struct Operation
     OperationType type;
     /// Piece index where the splice starts.
     size_t index;
-    /// Pieces the operation put in place.
-    Piece[] added;
-    /// Pieces the operation took out.
-    Piece[] removed;
+    /// Pool offset of the removed pieces, followed by the added ones.
+    size_t base;
+    size_t nremoved;    /// Number of pieces the operation took out.
+    size_t nadded;      /// Number of pieces the operation put in place.
 }
 
 /// Read `dest.length` bytes of a piece, starting `offset` bytes into it.
@@ -545,10 +546,7 @@ class PieceV5DocumentEditor : IDocumentEditor
         _track_history = (dcaps & DocCaps.stable) != 0;
         _edited = false;
 
-        // Clear history
-        history.length = 0;
-        history_index = history_saved = 0;
-        group_depth = 0;
+        resetHistory();
 
         // New table
         table.clear();
@@ -629,10 +627,8 @@ class PieceV5DocumentEditor : IDocumentEditor
 
         // reset internals
         table.clear();
-        history.length = 0;
-        history_index = history_saved = 0;
+        resetHistory();
         addbuf.clear();
-        group_depth = 0;
         _can_resize = _track_history = true;
         _edited = false;
     }
@@ -707,13 +703,8 @@ class PieceV5DocumentEditor : IDocumentEditor
         }
         foreach (i; 0 .. table.length)
             collect(table.pieces[i]);
-        foreach (ref Operation op; history)
-        {
-            foreach (ref Piece piece; op.added)
-                collect(piece);
-            foreach (ref Piece piece; op.removed)
-                collect(piece);
-        }
+        foreach (ref Piece piece; pool[0 .. pool_used])
+            collect(piece);
         if (readers.length == 0)
             return true;
 
@@ -778,13 +769,8 @@ class PieceV5DocumentEditor : IDocumentEditor
 
         foreach (i; 0 .. table.length)
             retarget(table.pieces[i]);
-        foreach (ref Operation op; history)
-        {
-            foreach (ref Piece piece; op.added)
-                retarget(piece);
-            foreach (ref Piece piece; op.removed)
-                retarget(piece);
-        }
+        foreach (ref Piece piece; pool[0 .. pool_used])
+            retarget(piece);
 
         return true;
     }
@@ -907,7 +893,7 @@ class PieceV5DocumentEditor : IDocumentEditor
         if (_can_resize == false && position + len > table.total())
             throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
 
-        replacePiece(position, Piece.makepattern(len, addbuf.add(data, datlen), datlen));
+        replacePiece(position, Piece.makepattern(len, addbuf.addPattern(data, datlen), datlen));
     }
 
     /// Replace data using a document.
@@ -982,7 +968,7 @@ class PieceV5DocumentEditor : IDocumentEditor
         if (_can_resize == false)
             throw new Exception(MSG_DOCUMENT_FIXED_SIZE);
 
-        insertPiece(position, Piece.makepattern(len, addbuf.add(data, datlen), datlen));
+        insertPiece(position, Piece.makepattern(len, addbuf.addPattern(data, datlen), datlen));
     }
 
     /// Insert data using a document.
@@ -1093,8 +1079,8 @@ class PieceV5DocumentEditor : IDocumentEditor
 
         foreach_reverse (ref Operation op; history[group_base .. history_index])
             reverseOperation(op);
-        dropHistory(group_base, history_index);
-        shrinkHistory(group_base);
+        cutHistory(group_base);
+        compactHistory();
         history_index = group_base;
 
         // A save made inside the group is no longer reachable
@@ -1138,9 +1124,9 @@ private:
         long end;
         foreach_reverse (ref Operation op; ops)
         {
-            count = count - op.added.length + op.removed.length;
+            count = count - op.nadded + op.nremoved;
             lo    = min(lo, op.index);
-            keep  = min(keep, count - op.index - op.removed.length);
+            keep  = min(keep, count - op.index - op.nremoved);
             start = min(start, op.position);
             end   = max(end, op.position + op.affected);
         }
@@ -1151,50 +1137,131 @@ private:
         foreach_reverse (ref Operation op; ops)
         {
             size_t at = op.index - lo;
-            scratch.splice(at, at + op.added.length, op.removed);
+            scratch.splice(at, at + op.nadded, removedOf(op));
         }
 
-        Operation merged = Operation(start, end - start, OperationType.group, lo);
-        merged.added = table.pieces[lo .. hi].dup;
-        merged.removed = scratch.pieces[0 .. scratch.length].dup;
+        // Recording the merged entry over the group's own drops the save
+        // point inside it, restored below
+        size_t saved = history_saved;
+        history_index = first;
+        Operation merged = newOperation(start, end - start, OperationType.group, lo);
+        recordRemoved(merged, scratch.pieces[0 .. scratch.length]);
+        recordAdded(merged, table.pieces[lo .. hi]);
         scratch.release();
-
-        dropHistory(first + 1, last);
-        history[first] = merged;
-        shrinkHistory(first + 1);
-        history_index = first + 1;
+        addOperation(merged);
+        compactHistory();
 
         // The save point either sits on a group boundary or is gone
-        if (history_saved == last)
+        if (saved == last)
             history_saved = first + 1;
-        else if (history_saved > first && history_saved < last)
+        else if (saved > first)
             history_saved = size_t.max;
-
-        debug ensureConsistency();
+        else
+            history_saved = saved;
     }
 
-    /// Clear history entries [from, to) so their pieces can be collected
-    /// once the history array shrinks over them.
-    void dropHistory(size_t from, size_t to)
+    /// Pieces an operation took out, valid until the pool grows.
+    Piece[] removedOf(ref const(Operation) op)
     {
-        foreach (ref Operation op; history[from .. to])
-            op = Operation.init;
+        return pool[op.base .. op.base + op.nremoved];
     }
 
-    /// Cut history to `length` entries, moving it to a smaller block when
-    /// most of the current one would sit unused.
-    void shrinkHistory(size_t length)
+    /// Pieces an operation put in place, valid until the pool grows.
+    Piece[] addedOf(ref const(Operation) op)
+    {
+        size_t at = op.base + op.nremoved;
+        return pool[at .. at + op.nadded];
+    }
+
+    /// Start an operation recorded after the current history entry,
+    /// dropping the redo entries it branches off from.
+    Operation newOperation(long position, long affected, OperationType type, size_t index)
+    {
+        if (history_index < history.length)
+        {
+            // A save point in the dropped entries cannot be reached again,
+            // so edited() stays true until the next markSaved()
+            if (history_saved > history_index)
+                history_saved = size_t.max;
+            cutHistory(history_index);
+        }
+        return Operation(position, affected, type, index, pool_used);
+    }
+
+    /// Record pieces the operation takes out, before any it puts in.
+    void recordRemoved(ref Operation op, scope const(Piece)[] pieces...)
+    {
+        assertion(op.nadded == 0, "op.nadded == 0");
+        poolAppend(pieces);
+        op.nremoved += pieces.length;
+    }
+
+    /// Record pieces the operation puts in place.
+    void recordAdded(ref Operation op, scope const(Piece)[] pieces...)
+    {
+        poolAppend(pieces);
+        op.nadded += pieces.length;
+    }
+
+    /// Copy pieces, which must not come from the pool, to its end.
+    void poolAppend(scope const(Piece)[] pieces)
+    {
+        size_t need = pool_used + pieces.length;
+        if (need > pool.length)
+            resizePool(max(need, pool.length * 2, 64));
+        pool[pool_used .. need] = pieces[];
+        pool_used = need;
+    }
+
+    /// Move the pool to a block of `capacity` pieces, freeing the old one.
+    void resizePool(size_t capacity)
     {
         import core.memory : GC;
 
-        if (history.capacity > length * 2 + 64)
+        Piece[] old = pool;
+        pool = new Piece[capacity];
+        pool[0 .. pool_used] = old[0 .. pool_used];
+        // Large arrays start past a length prefix, free wants the block
+        GC.free(GC.addrOf(old.ptr));
+    }
+
+    /// Drop history entries from `length` on, with their pieces.
+    ///
+    /// Dropped pieces stay in the pool until overwritten. They only point
+    /// at add buffer blocks and pooled documents, both kept until close.
+    void cutHistory(size_t length)
+    {
+        if (length >= history.length)
+            return;
+        pool_used = history[length].base;
+        history.length = length;
+        history.assumeSafeAppend();
+    }
+
+    /// Move history and its pool to smaller blocks when most of the current
+    /// ones sit unused.
+    void compactHistory()
+    {
+        import core.memory : GC;
+
+        if (history.capacity > history.length * 2 + 64)
         {
             Operation[] old = history;
-            history = history[0 .. length].dup;
+            history = history.dup;
             GC.free(GC.addrOf(old.ptr));
         }
-        else
-            history.length = length;
+        if (pool.length > pool_used * 2 + 64)
+            resizePool(pool_used);
+    }
+
+    /// Clear history and release its blocks to the GC.
+    void resetHistory()
+    {
+        history = null;
+        history_index = history_saved = 0;
+        pool = null;
+        pool_used = 0;
+        group_depth = 0;
     }
 
     /// The piece table, flat and searched by binary search.
@@ -1211,6 +1278,10 @@ private:
     Operation[] history;
     size_t history_index;   /// Current history index
     size_t history_saved;   /// History index when last saved
+    /// Pieces of every history entry in history order. Entries hold offsets
+    /// into it, so it may move when it grows.
+    Piece[] pool;
+    size_t pool_used;       /// Pieces in use, the rest are dropped entries
 
     /// If piece coalescing is enabled.
     bool _coalescing = true; // Enabled by default, important for tests!
@@ -1401,19 +1472,19 @@ private:
         size_t first = table.find(position);
         size_t last  = table.find(end - 1) + 1;
 
-        Operation op = Operation(position, removed, OperationType.remove, first);
-        op.removed = table.pieces[first .. last].dup;
+        Operation op = newOperation(position, removed, OperationType.remove, first);
+        recordRemoved(op, table.pieces[first .. last]);
 
         // If the first piece extends before the removal, keep its left portion
         long head = table.start(first);
         if (head < position)
-            op.added ~= trim(table.pieces[first], 0, position - head);
+            recordAdded(op, trim(table.pieces[first], 0, position - head));
 
         // If the last piece extends after the removal, keep its right portion
         long tail_start = table.start(last - 1);
         long tail_end = table.ends[last - 1];
         if (tail_end > end)
-            op.added ~= trim(table.pieces[last - 1], end - tail_start, tail_end - end);
+            recordAdded(op, trim(table.pieces[last - 1], end - tail_start, tail_end - end));
 
         applyOperation(op);
         addOperation(op);
@@ -1430,18 +1501,18 @@ private:
         // and an EOF insertion finds no piece at all.
         size_t at = table.find(position);
 
-        Operation op = Operation(position, piece.size, OperationType.insert, at);
+        Operation op = newOperation(position, piece.size, OperationType.insert, at);
         if (at < table.length && table.start(at) < position)
         {
             // Insertion point is INSIDE this piece: split it in two
             Piece target = table.pieces[at];
             long offset = position - table.start(at);
-            op.removed = [ target ];
-            op.added = [ trim(target, 0, offset), piece, trim(target, offset, target.size - offset) ];
+            recordRemoved(op, target);
+            recordAdded(op, trim(target, 0, offset), piece, trim(target, offset, target.size - offset));
         }
         else // Inserting at a boundary (SOF, EOF, or between pieces)
         {
-            op.added = [ piece ];
+            recordAdded(op, piece);
         }
 
         applyOperation(op);
@@ -1463,18 +1534,18 @@ private:
         size_t first = table.find(position);
         size_t last  = overwritten > 0 ? table.find(end - 1) + 1 : first;
 
-        Operation op = Operation(position, piece.size, OperationType.replace, first);
-        op.removed = table.pieces[first .. last].dup;
+        Operation op = newOperation(position, piece.size, OperationType.replace, first);
+        recordRemoved(op, table.pieces[first .. last]);
 
         // Keep left portion if it exists (before replacement starts)
         if (first < last)
         {
             long head = table.start(first);
             if (head < position)
-                op.added ~= trim(table.pieces[first], 0, position - head);
+                recordAdded(op, trim(table.pieces[first], 0, position - head));
         }
 
-        op.added ~= piece;
+        recordAdded(op, piece);
 
         // Keep right portion if it exists (after replacement ends)
         if (first < last)
@@ -1482,7 +1553,7 @@ private:
             long tail_start = table.start(last - 1);
             long tail_end = table.ends[last - 1];
             if (tail_end > end)
-                op.added ~= trim(table.pieces[last - 1], end - tail_start, tail_end - end);
+                recordAdded(op, trim(table.pieces[last - 1], end - tail_start, tail_end - end));
         }
 
         applyOperation(op);
@@ -1492,15 +1563,15 @@ private:
     /// Apply an operation: its removed pieces become its added pieces.
     void applyOperation(ref Operation op)
     {
-        log("APPLY %s at %u: -%u +%u", op.type, op.index, op.removed.length, op.added.length);
-        table.splice(op.index, op.index + op.removed.length, op.added);
+        log("APPLY %s at %u: -%u +%u", op.type, op.index, op.nremoved, op.nadded);
+        table.splice(op.index, op.index + op.nremoved, addedOf(op));
     }
 
     /// Reverse an operation: its added pieces become its removed pieces.
     void reverseOperation(ref Operation op)
     {
-        log("REVERSE %s at %u: -%u +%u", op.type, op.index, op.added.length, op.removed.length);
-        table.splice(op.index, op.index + op.added.length, op.removed);
+        log("REVERSE %s at %u: -%u +%u", op.type, op.index, op.nadded, op.nremoved);
+        table.splice(op.index, op.index + op.nadded, removedOf(op));
     }
 
     /// Add operation to history list
@@ -1522,20 +1593,19 @@ private:
         // control and old references would be meaningless to undo to.
         if (_track_history == false)
         {
+            pool_used = op.base;
             _edited = true;
             return;
         }
 
-        if (history_index < history.length) // Branching: discard stale redo tail
-        {
-            // If the save point lives in the discarded operations, the saved
-            // state is no longer reachable, so edited() must stay true until
-            // the next markSaved().
-            if (history_saved > history_index)
-                history_saved = size_t.max;
-            history.length = history_index;
-        }
+        // newOperation dropped the redo entries
+        assertion(history_index == history.length, "history_index == history.length");
+
+        import core.memory : GC;
+        Operation *old = history.ptr;
         history ~= op;
+        if (old !is null && old !is history.ptr)
+            GC.free(GC.addrOf(old));
         history_index++;
     }
 
@@ -1596,10 +1666,26 @@ struct AddBuffer
         blocksize = granularity;
     }
 
+    private const(void) *lastpat;   /// Bytes of the last pattern added
+    private size_t lastpatlen;
+
     void clear()
     {
         blocks = null;
         used = 0;
+        lastpat = null;
+        lastpatlen = 0;
+    }
+
+    /// Copy pattern bytes in, or return the last pattern's copy when the
+    /// bytes match, since replace-all passes the same pattern per match.
+    void* addPattern(const(void) *data, size_t len)
+    {
+        if (len == lastpatlen && memcmp(lastpat, data, len) == 0)
+            return cast(void*)lastpat;
+        lastpat = add(data, len);
+        lastpatlen = len;
+        return cast(void*)lastpat;
     }
 
     /// Copy data in and return where it landed.
@@ -3305,8 +3391,8 @@ unittest
         e.patternReplace(pos, 1, b.ptr, b.length);
     e.endGroup();
     assert(e.history.length == 1);
-    assert(e.history[0].removed.length == 1);
-    assert(e.history[0].added.length == 8);
+    assert(e.history[0].nremoved == 1);
+    assert(e.history[0].nadded == 8);
 
     ubyte[16] buffer;
     assert(e.view(0, buffer) == "b-b-b-b-");
@@ -3483,4 +3569,41 @@ unittest
         assert(e.view(0, buffer) == state);
     }
     assert(e.view(0, buffer) == model);
+}
+
+//
+// History pool
+//
+
+/// Repeated patterns share one copy, branching reuses the dropped pieces
+unittest
+{
+    log("TEST-0050");
+
+    scope PieceV5DocumentEditor e = new PieceV5DocumentEditor().open(
+        new MemoryDocument(cast(const(ubyte)[])"a-a-a-a-"));
+    e.coalescing(false);
+    char[1] pat = "b";
+
+    e.patternReplace(0, 1, pat.ptr, pat.length);
+    e.patternReplace(2, 1, pat.ptr, pat.length);
+    pat[0] = 'c';
+    e.patternReplace(4, 1, pat.ptr, pat.length);
+    assert(e.addbuf.used == 2);
+
+    ubyte[16] buffer;
+    assert(e.view(0, buffer) == "b-b-c-a-");
+
+    // Undo two edits and branch off, the new edit takes their pool space
+    size_t used = e.history[1].base;
+    e.undo();
+    e.undo();
+    e.patternReplace(6, 1, pat.ptr, pat.length);
+    assert(e.history.length == 2);
+    assert(e.pool_used == used + e.history[1].nremoved + e.history[1].nadded);
+    assert(e.view(0, buffer) == "b-a-a-c-");
+    assert(e.redo() < 0);
+    assert(e.undo() == 6);
+    assert(e.undo() == 0);
+    assert(e.view(0, buffer) == "a-a-a-a-");
 }
