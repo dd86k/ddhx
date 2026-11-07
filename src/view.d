@@ -58,8 +58,9 @@ private enum CONFIG_CHUNKSIZE      = KiB!128;
 /// overwritten source ranges, save in place but drop undo history rather
 /// than buffering it all in memory.
 private enum CONFIG_INPLACE_STASH_BUDGET = MiB!64;
-/// Artificial needle size limit for find/find-back commands.
+/// Needle size limit for selection searches, at most a chunk for search.
 private enum CONFIG_NEEDLE_LIMIT   = KiB!128;
+static assert(CONFIG_NEEDLE_LIMIT <= CONFIG_CHUNKSIZE, "search reads needles within a chunk");
 /// Rows of context kept around a find result when the view scrolls to it.
 private enum CONFIG_FIND_PADDING   = 1;
 /// Buffer size for diff navigation scans: a chunk, plus room for the one
@@ -3470,22 +3471,25 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
     debug StopWatch sw;
     debug sw.start;
     
+    // Shortest match length, and whether '*' makes it variable
+    long minlen;
+    bool variable;
+    foreach (ushort c; needle.data)
+    {
+        if (c == PATTERN_GLOB_MANY)
+            variable = true;
+        else
+            minlen++;
+    }
+    // A needle of only '*' matches zero bytes, and replacing those never ends
+    if (minlen == 0)
+        throw new Exception(MSG_EMPTY_NEEDLE);
+    // Bytes a window keeps past its last scanned start, room for '*' to grow
+    enum long CHUNK = CONFIG_CHUNKSIZE;
+    long tail = min(variable ? max(minlen, CHUNK / 2) : minlen, CHUNK);
+
     if (flags & SEARCH_REVERSE)
     {
-        // Shortest match length, and whether '*' makes it variable
-        long minlen;
-        bool variable;
-        foreach (ushort c; needle.data)
-        {
-            if (c == PATTERN_GLOB_MANY)
-                variable = true;
-            else
-                minlen++;
-        }
-        // Bytes each window reads past its highest start, room for '*' to grow
-        enum long CHUNK = CONFIG_CHUNKSIZE;
-        long tail = min(variable ? max(minlen, CHUNK / 2) : minlen, CHUNK);
-
         // Highest start whose shortest match still ends by stop, stepped
         // down whole alignments to stay on a boundary
         if (position > stop - minlen)
@@ -3537,23 +3541,24 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
     }
     else // forward
     {
-        do
+        // Each window scans starts up to tail bytes before its end, so a match
+        // fits in it, and the next window begins at the first start left.
+        // The last window, ending at stop, scans every start that fits.
+        while (position < stop)
         {
             if (interactive && cancelling())
                 throw new Exception(MSG_CANCELED);
-            
-            ubyte[] haystack = session.editor.view(position, hay);
-            if (position + cast(long)haystack.length > stop)
-                haystack = haystack[0 .. position < stop ? cast(size_t)(stop - position) : 0];
-            if (haystack.length < needle.length)
+
+            size_t want = cast(size_t) min(CHUNK, stop - position);
+            ubyte[] haystack = session.editor.view(position, hay[0 .. want]);
+            if (haystack.length < minlen)
                 break; // tail shorter than needle
 
-            size_t bound = (needle.flags & PATTERN_HAS_GLOB)
-                ? haystack.length
-                : haystack.length - needle.data.length;
-            for (size_t o; o <= bound; o += alignment, position += alignment)
+            bool last = haystack.length < want || position + want >= stop;
+            long top = cast(long) haystack.length - (last ? minlen : tail);
+            for (long o; o <= top; o += cast(long) alignment, position += cast(long) alignment)
             {
-                ptrdiff_t mlen = matchPattern(haystack, needle, o, 0);
+                ptrdiff_t mlen = matchPattern(haystack, needle, cast(size_t) o, 0);
                 bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
@@ -3561,21 +3566,18 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
                     matched ? cast(long) mlen : cast(long) needle.data.length);
                 if (onhit is null || onhit(hit) == SearchAction.stop)
                     return hit;
-                size_t skip = cast(size_t) resume(hit.len);
+                long skip = resume(hit.len);
                 o += skip;
                 position += skip;
             }
-            
-            // Same as other remark for this
-            // Clamp: with PATTERN_HAS_GLOB, bound==haystack.length lets
-            // position overshoot docsize near EOF.
+
             if (interactive)
-                update_progress(session, position > docsize ? docsize : position, docsize);
+                update_progress(session, min(position, docsize), docsize);
+            if (last)
+                break;
         }
-        while (position < stop);
-        
-        // Scan ended at the end of the document (a tail shorter than the
-        // needle, or glob overshoot, leaves position elsewhere), for SEARCH_LASTPOS
+
+        // Scan ended at the end of the document, for SEARCH_LASTPOS
         position = stop;
     }
     
@@ -3813,6 +3815,67 @@ unittest
     assert(search(&session, big, CONFIG_CHUNKSIZE, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE).pos
         == SEARCH_RESULT_NOT_FOUND);
 }
+// Forward wildcard matches crossing or starting at a window edge are found.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    enum long C = CONFIG_CHUNKSIZE;
+    enum int F = SEARCH_NON_INTERACTIVE;
+    Pattern one  = pattern(Endian.littleEndian, "utf8:A", "?", "utf8:B");
+    Pattern star = pattern(Endian.littleEndian, "utf8:A", "*", "utf8:B");
+    Session session;
+    ubyte[] data = new ubyte[cast(size_t)(C * 3)];
+    foreach (long at; [C - 3, C - 2, C - 1, C, C + 1])
+    {
+        data[] = 0;
+        data[cast(size_t)at .. cast(size_t)at + 3] = cast(ubyte[]) "AxB";
+        session.editor = new DummyDocumentEditor(data.idup);
+        assert(search(&session, one, 0, F) == SearchResult(at, 3));
+        assert(search(&session, star, 0, F) == SearchResult(at, 3));
+
+        data[] = 0;
+        data[cast(size_t)at .. cast(size_t)at + 2] = cast(ubyte[]) "AB";
+        session.editor = new DummyDocumentEditor(data.idup);
+        assert(search(&session, star, 0, F) == SearchResult(at, 2));
+    }
+}
+// A needle as long as a window is found both ways.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    enum size_t C = CONFIG_CHUNKSIZE;
+    ubyte[] data = new ubyte[C * 2];
+    uint x = 1;
+    foreach (ref ubyte b; data) // no repeats at other offsets
+        b = cast(ubyte)((x = x * 1_103_515_245 + 12_345) >> 16);
+    Session session;
+    session.editor = new DummyDocumentEditor(data.idup);
+    Pattern big = Pattern.fromBytes(data[5 .. C + 5]);
+    assert(search(&session, big, 0, SEARCH_NON_INTERACTIVE) == SearchResult(5, C));
+    assert(search(&session, big, C, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE) == SearchResult(5, C));
+}
+// A needle of only '*' is refused, it matches zero bytes everywhere.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "ABCD");
+    foreach (int f; [0, SEARCH_REVERSE])
+    {
+        try
+        {
+            search(&session, pattern(Endian.littleEndian, "*"), 1, f | SEARCH_NON_INTERACTIVE);
+            assert(false);
+        }
+        catch (Exception e)
+            assert(e.msg == MSG_EMPTY_NEEDLE);
+    }
+}
 // Hit callback: matches never overlap, the scan resumes past the match.
 unittest
 {
@@ -4027,7 +4090,7 @@ void move_skip_backward(Session *session, Argument[] args)
     Selection sel = selection(session);
     if (sel.length)
     {
-        if (sel.length > MiB!256)
+        if (sel.length > CONFIG_NEEDLE_LIMIT)
             throw new Exception(MSG_SELECTION_TOO_BIG);
         needle.length = cast(size_t)sel.length;
         needle = session.editor.view(sel.start, needle);
@@ -4073,7 +4136,7 @@ void move_skip_forward(Session *session, Argument[] args)
     Selection sel = selection(session);
     if (sel.length)
     {
-        if (sel.length > MiB!256)
+        if (sel.length > CONFIG_NEEDLE_LIMIT)
             throw new Exception(MSG_SELECTION_TOO_BIG);
         needle.length = cast(size_t)sel.length;
         needle = session.editor.view(sel.start, needle);
