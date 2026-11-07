@@ -5975,7 +5975,7 @@ void find(Session *session, Argument[] args)
     if (args.length > 0)
     {
         g_needle = pattern(session.rc.endian, args);
-        sel.start = session.position_cursor + g_needle.data.length;
+        sel.start = session.position_cursor + 1;
     }
     else if (sel.length) // search by selection
     {
@@ -6022,7 +6022,7 @@ void find_back(Session *session, Argument[] args)
     if (args.length > 0)
     {
         g_needle = pattern(session.rc.endian, args);
-        sel.start = session.position_cursor - g_needle.data.length;
+        sel.start = session.position_cursor - 1;
     }
     else if (sel.length) // selection
     {
@@ -6063,11 +6063,9 @@ void find_next(Session *session, Argument[] args)
     if (g_needle.data is null)
         return;
 
-    // Step from past the end of the active selection so we don't re-find
-    // the current match (neselect lands cursor at end-of-match, which would
-    // otherwise misalign this skip for needles longer than one byte).
+    // Resume past the selection (the current match), or past the cursor
     Selection sel = selection(session);
-    long start = sel.length ? sel.start + sel.length : session.position_cursor + g_needle.data.length;
+    long start = sel.length ? sel.start + sel.length : session.position_cursor + 1;
 
     unselect(session);
 
