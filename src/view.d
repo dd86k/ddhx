@@ -3498,6 +3498,10 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
     // A needle of only '*' matches zero bytes, and replacing those never ends
     if (minlen == 0)
         throw new Exception(MSG_EMPTY_NEEDLE);
+    // Remembers what follows each '*' within a window, see PatternMatcher
+    PatternMatcher matcher;
+    if (variable)
+        matcher = PatternMatcher(needle);
     // Bytes a window keeps past its last scanned start, room for '*' to grow
     enum long CHUNK = CONFIG_CHUNKSIZE;
     long tail = min(variable ? max(minlen, CHUNK / 2) : minlen, CHUNK);
@@ -3525,13 +3529,16 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
             ubyte[] haystack = session.editor.view(base, hay[0 .. cast(size_t)(wend - base)]);
             if (haystack.length < minlen)
                 break; // needle longer than a window
+            if (variable)
+                matcher.reset(haystack);
 
             // Use signed long for o to avoid size_t underflow when
             // alignment > 1 and o < alignment.
             long o = position - base;
             for (; o >= 0; o -= cast(long) alignment, position -= cast(long) alignment)
             {
-                ptrdiff_t mlen = matchPattern(haystack, needle, cast(size_t) o, 0);
+                ptrdiff_t mlen = variable ? matcher.match(cast(size_t) o)
+                    : matchPattern(haystack, needle, cast(size_t) o, 0);
                 bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
@@ -3567,12 +3574,15 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
             ubyte[] haystack = session.editor.view(position, hay[0 .. want]);
             if (haystack.length < minlen)
                 break; // tail shorter than needle
+            if (variable)
+                matcher.reset(haystack);
 
             bool last = haystack.length < want || position + want >= stop;
             long top = cast(long) haystack.length - (last ? minlen : tail);
             for (long o; o <= top; o += cast(long) alignment, position += cast(long) alignment)
             {
-                ptrdiff_t mlen = matchPattern(haystack, needle, cast(size_t) o, 0);
+                ptrdiff_t mlen = variable ? matcher.match(cast(size_t) o)
+                    : matchPattern(haystack, needle, cast(size_t) o, 0);
                 bool matched = mlen >= 0;
                 if ((diff == 0 && !matched) || (diff && matched))
                     continue;
