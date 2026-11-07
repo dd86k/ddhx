@@ -6009,6 +6009,9 @@ void find_replace_all(Session *session, Argument[] args)
     update_status(session);
 
     long count;
+    // One undo step for the whole run, canceled or not
+    session.editor.beginGroup();
+    scope(exit) session.editor.endGroup();
     for (;;)
     {
         // search already checks for cancellation

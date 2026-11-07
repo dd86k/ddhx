@@ -878,6 +878,11 @@ class PieceV3DocumentEditor : IDocumentEditor
         applyOperation( op );
         return op.position + op.affected;
     }
+
+    // NOTE: Edit groups are a piecev5 feature
+    void beginGroup() {}
+    void endGroup() {}
+    bool abortGroup() { return false; }
     
 private:
     /// The piece table indexed using a self-balancing tree.

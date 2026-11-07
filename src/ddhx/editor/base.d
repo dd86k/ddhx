@@ -93,6 +93,16 @@ interface IDocumentEditor
     /// Returns: Postion+Length (end position of affected region) or -1
     long redo();
 
+    /// Open an edit group: edits up to the matching endGroup() undo as one
+    /// step. Groups nest. No-op on editors without group support.
+    void beginGroup();
+    /// Close the group opened by beginGroup(). The outermost one becomes a
+    /// single history entry. No-op without an open group.
+    void endGroup();
+    /// Revert every edit of the open group and close it, nested groups
+    /// included. Returns false when no group is open or edits were kept.
+    bool abortGroup();
+
     // NOTE: This works fine as an isolated property of an editor.
     //       Which leaves to think, should we have a structure,
     //       akin to RC (src/configuration.d), as EditorSettings?

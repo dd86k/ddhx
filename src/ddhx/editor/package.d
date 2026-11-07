@@ -8,6 +8,7 @@ module ddhx.editor;
 public import ddhx.editor.base : IDocumentEditor;
 import ddhx.editor.piecev3 : PieceV3DocumentEditor;
 import ddhx.editor.piecev4 : PieceV4DocumentEditor;
+import ddhx.editor.piecev5 : PieceV5DocumentEditor;
 
 import messages;
 
@@ -24,6 +25,8 @@ IDocumentEditor spawnEditor(string name = null)
     switch (name) { // NOTE: null chooses default backend
     case "piecev4", null:
         return new PieceV4DocumentEditor();
+    case "piecev5":
+        return new PieceV5DocumentEditor();
     case "piecev3":
         return new PieceV3DocumentEditor();
     default:

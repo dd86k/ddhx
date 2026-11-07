@@ -93,6 +93,10 @@ class DummyDocumentEditor : IDocumentEditor
     }
 
     void coalescing(bool) {}
+
+    void beginGroup() {}
+    void endGroup() {}
+    bool abortGroup() { return false; }
     
     void patternInsert(long, long, const(void)*, size_t)
     {

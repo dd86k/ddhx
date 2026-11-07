@@ -1015,6 +1015,11 @@ class PieceV4DocumentEditor : IDocumentEditor
         return op.position + op.affected;
     }
 
+    // NOTE: Edit groups are a piecev5 feature
+    void beginGroup() {}
+    void endGroup() {}
+    bool abortGroup() { return false; }
+
 private:
     /// The piece table, flat and searched by binary search.
     PieceTable table;
