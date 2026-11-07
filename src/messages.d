@@ -78,6 +78,8 @@ static immutable string MSG_NEED_NEEDLE_AND_REPLACEMENT = "Need needle and repla
 static immutable string MSG_MISSING_NEEDLE = "Missing needle";
 static immutable string MSG_MISSING_REPLACEMENT = "Missing replacement";
 static immutable string MSG_EMPTY_NEEDLE = "Empty needle";
+static immutable string MSG_MISSING_PATTERN = "Missing pattern";
+static immutable string MSG_MISSING_RANGE = "Missing range";
 static immutable string MSG_NO_PREVIOUS_FIND_REPLACE = "No previous find-replace to repeat";
 
 // Diff

@@ -2525,6 +2525,20 @@ void realign(Session *session)
 //       are displayed. Right now, only the last message is taken into
 //       account.
 //       Easiest fix would be string[] or something similar.
+/// Position as text in the address format setting, for messages.
+string address_text(Session *session, long pos)
+{
+    ElementText buf = void;
+    return AddressFormatter(session.rc.address_type).textual(buf, pos, 1).idup;
+}
+unittest
+{
+    Session session;
+    assert(address_text(&session, 255) == "ff");
+    session.rc.address_type = AddressType.dec;
+    assert(address_text(&session, 255) == "255");
+}
+
 // Send a message within the editor to be displayed.
 void message(A...)(string fmt, A args)
 {
@@ -4397,26 +4411,24 @@ unittest
     assert(sel.start  == 2);
     assert(sel.end    == 2);
     
-    // Test x16
-    /*
+    // x16: end is the start of the last element, length covers all of it
     session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 0;
     session.position_cursor  = 2;
     session.rc.data_type     = DataType(BaseType.u16, Format.hex);
     sel = selection(&session);
-    assert(sel.length == 2);
+    assert(sel.length == 4);
     assert(sel.start  == 0);
     assert(sel.end    == 2);
     
+    // x16, cursor behind anchor, which is on the partial last element of "hello"
     session.selection.status = SELECT_ACTIVE;
     session.selection.anchor = 4;
     session.position_cursor  = 2;
-    session.rc.data_type     = DataType(BaseType.u16, Format.hex);
     sel = selection(&session);
-    assert(sel.length == 4);
+    assert(sel.length == 3);
     assert(sel.start  == 2);
     assert(sel.end    == 4);
-    */
 }
 // Selection commands stay on element boundaries and within the document.
 unittest
@@ -4744,7 +4756,8 @@ void bookmark_set(Session *session, Argument[] args)
 
     bookmark_insert(session, bk);
     g_status |= UVIEW | USTATUS;
-    message("Bookmark set at 0x%x (%d byte%s)", bk.address, bk.length, bk.length == 1 ? "" : "s");
+    message("Bookmark set at %s (%d byte%s)", address_text(session, bk.address),
+        bk.length, bk.length == 1 ? "" : "s");
 }
 
 // True if any bookmark overlaps [start, start+length).
@@ -4775,7 +4788,7 @@ void bookmark_next(Session *session, Argument[] args)
         if (b.address > cur)
         {
             moveabs(session, b.address);
-            message("Bookmark at 0x%x", b.address);
+            message("Bookmark at %s", address_text(session, b.address));
             return;
         }
     }
@@ -4783,7 +4796,7 @@ void bookmark_next(Session *session, Argument[] args)
     // Wrap
     Bookmark first = session.bookmarks[0];
     moveabs(session, first.address);
-    message("Bookmark at 0x%x (wrapped)", first.address);
+    message("Bookmark at %s (wrapped)", address_text(session, first.address));
 }
 
 // Jump cursor to the last bookmark whose address < current cursor.
@@ -4801,7 +4814,7 @@ void bookmark_prev(Session *session, Argument[] args)
         if (b.address < cur)
         {
             moveabs(session, b.address);
-            message("Bookmark at 0x%x", b.address);
+            message("Bookmark at %s", address_text(session, b.address));
             return;
         }
     }
@@ -4809,7 +4822,7 @@ void bookmark_prev(Session *session, Argument[] args)
     // Wrap
     Bookmark last = session.bookmarks[$ - 1];
     moveabs(session, last.address);
-    message("Bookmark at 0x%x (wrapped)", last.address);
+    message("Bookmark at %s (wrapped)", address_text(session, last.address));
 }
 
 // Toggle: unset overlapping bookmarks if any, otherwise set one.
@@ -5357,7 +5370,7 @@ void diff_next(Session *session, Argument[] args)
     }
 
     moveabs(session, pos);
-    message("Difference at 0x%x", pos);
+    message("Difference at %s", address_text(session, pos));
 }
 
 // Jump the cursor to the start of the previous difference against the diffed file.
@@ -5376,7 +5389,7 @@ void diff_prev(Session *session, Argument[] args)
     }
 
     moveabs(session, pos);
-    message("Difference at 0x%x", pos);
+    message("Difference at %s", address_text(session, pos));
 }
 
 // 
@@ -5422,19 +5435,21 @@ void goto_(Session *session, Argument[] args)
         if (sel.length > long.sizeof)
             throw new Exception(MSG_SELECTION_TOO_LARGE);
         
-        Element e;
-        ubyte[] res = session.editor.view(sel.start, e.raw.ptr, cast(size_t)sel.length);
+        ubyte[8] raw;
+        ubyte[] res = session.editor.view(sel.start, raw.ptr, cast(size_t)sel.length);
         
         absolute = true; // eh, just assuming
         
-        if (res.length > uint.sizeof) // same as selection length but.. size_t
-            position = e.u64;
-        else if (res.length > ushort.sizeof)
-            position = e.u32;
-        else if (res.length > ubyte.sizeof)
-            position = e.u16;
+        import std.system : Endian;
+        // Selected bytes as one unsigned number in the endian setting
+        ulong value;
+        if (session.rc.endian == Endian.bigEndian)
+            foreach (ubyte b; res)
+                value = value << 8 | b;
         else
-            position = e.u8;
+            foreach_reverse (ubyte b; res)
+                value = value << 8 | b;
+        position = cast(long)value;
     }
     else
     {
@@ -5477,7 +5492,8 @@ void goto_(Session *session, Argument[] args)
     // Let's fucking go!
     absolute ? moveabs(session, position) : moverel(session, position);
 }
-// goto takes its argument over the selection, and read-only refuses undo/redo.
+// goto takes its argument over the selection, reads the selection in the
+// endian setting, and read-only refuses undo/redo.
 unittest
 {
     import ddhx.editor.piecev4 : PieceV4DocumentEditor;
@@ -5487,7 +5503,7 @@ unittest
     session.input = new InputFormatter;
     session.rc.columns = 8;
     session.editor = new PieceV4DocumentEditor().open(
-        new MemoryDocument(cast(const(ubyte)[]) "\x03\x00ABCDEFGHIJ"));
+        new MemoryDocument(cast(const(ubyte)[]) "\x03\x00\x05ABCDEFGHI"));
 
     // Selection holds 3 as a u16, the argument wins
     session.selection.status = SELECT_ACTIVE;
@@ -5500,6 +5516,14 @@ unittest
     session.position_cursor  = 1;
     goto_(&session, null);
     assert(session.position_cursor == 3);
+    // Bytes 00 05 are 5 in big endian, past the document in little endian
+    import std.system : Endian;
+    session.rc.endian = Endian.bigEndian;
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = 1;
+    session.position_cursor  = 2;
+    goto_(&session, null);
+    assert(session.position_cursor == 5);
 
     session.editor.replace(4, "z".ptr, 1);
     session.rc.writemode = WritingMode.readonly;
@@ -5657,164 +5681,115 @@ void export_range(Session *session, Argument[] args)
     message("Saved as %s", name); // confirmation
 }
 
-// Replace data using pattern
+/// Data bytes for the replace and insert commands, from pattern arguments,
+/// refusing wildcards with globmsg.
+ubyte[] edit_pattern(Session *session, Argument[] args, string globmsg)
+{
+    if (args.length < 1)
+        throw new Exception(MSG_MISSING_PATTERN);
+    Pattern p = pattern(session.rc.endian, args);
+    if (p.flags & PATTERN_NOT_BYTES)
+        throw new Exception(globmsg);
+    return p.toBytes();
+}
+
+// Replace data using pattern, over the selection or at the cursor
 void replace_(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
+    ubyte[] pb = edit_pattern(session, args, MSG_CANT_REPLACE_GLOBBING);
     Selection sel = selection(session);
     if (sel.length)
-    {
-        if (args.length < 1)
-        {
-            message("Missing pattern");
-            return;
-        }
-        Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_NOT_BYTES)
-            throw new Exception(MSG_CANT_REPLACE_GLOBBING);
-        ubyte[] pb = p.toBytes();
         session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
-        g_status |= UVIEW | UHEADER | USTATUS;
-        return;
-    }
-
-    if (args.length < 1)
-    {
-        message("Missing pattern");
-        return;
-    }
-
-    Pattern p = pattern(session.rc.endian, args);
-    if (p.flags & PATTERN_NOT_BYTES)
-        throw new Exception(MSG_CANT_REPLACE_GLOBBING);
-    ubyte[] pb = p.toBytes();
-    session.editor.patternReplace(session.position_cursor, pb.length, pb.ptr, pb.length);
+    else
+        session.editor.patternReplace(session.position_cursor, pb.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 }
 
-// Insert data using pattern
+// Insert data using pattern, as long as the selection or once at the cursor
 void insert_(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
+    ubyte[] pb = edit_pattern(session, args, MSG_CANT_INSERT_GLOBBING);
     Selection sel = selection(session);
     if (sel.length)
-    {
-        if (args.length < 1)
-        {
-            message("Need pattern");
-            return;
-        }
-        Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_NOT_BYTES)
-            throw new Exception(MSG_CANT_INSERT_GLOBBING);
-        ubyte[] pb = p.toBytes();
         session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
-        g_status |= UVIEW | UHEADER | USTATUS;
-        return;
-    }
-
-    if (args.length < 1)
-    {
-        message("Missing pattern");
-        return;
-    }
-
-    Pattern p = pattern(session.rc.endian, args);
-    if (p.flags & PATTERN_NOT_BYTES)
-        throw new Exception(MSG_CANT_INSERT_GLOBBING);
-    ubyte[] pb = p.toBytes();
-    session.editor.patternInsert(session.position_cursor, pb.length, pb.ptr, pb.length);
+    else
+        session.editor.patternInsert(session.position_cursor, pb.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 }
 
-// Replace data using pattern
+// Replace data in a range using pattern
 void replace_range(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
-    Selection sel = selection(session);
-    if (sel.length)
-    {
-        if (args.length < 1)
-        {
-            message("Missing pattern");
-            return;
-        }
-        Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_NOT_BYTES)
-            throw new Exception(MSG_CANT_REPLACE_GLOBBING);
-        ubyte[] pb = p.toBytes();
-        session.editor.patternReplace(sel.start, sel.length, pb.ptr, pb.length);
-        g_status |= UVIEW | UHEADER | USTATUS;
-        return;
-    }
-
     if (args.length < 1)
-    {
-        message("Missing range");
-        return;
-    }
-    if (args.length < 2)
-    {
-        message("Missing pattern");
-        return;
-    }
-
+        throw new Exception(MSG_MISSING_RANGE);
     Range r = askrange(args, 0, "Range: ");
-    Pattern p = pattern(session.rc.endian, args[1..$]);
-    if (p.flags & PATTERN_NOT_BYTES)
-        throw new Exception(MSG_CANT_REPLACE_GLOBBING);
-    ubyte[] pb = p.toBytes();
+    ubyte[] pb = edit_pattern(session, args[1..$], MSG_CANT_REPLACE_GLOBBING);
     session.editor.patternReplace(r.start, r.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
 }
 
-// Insert data using pattern
+// Insert data as long as a range using pattern, at its start
 void insert_range(Session *session, Argument[] args)
 {
     if (session.rc.writemode == WritingMode.readonly)
         throw new Exception(MSG_CANNOT_EDIT_READONLY);
     
-    Selection sel = selection(session);
-    if (sel.length)
-    {
-        if (args.length < 1)
-        {
-            message("Need pattern");
-            return;
-        }
-        Pattern p = pattern(session.rc.endian, args);
-        if (p.flags & PATTERN_NOT_BYTES)
-            throw new Exception(MSG_CANT_INSERT_GLOBBING);
-        ubyte[] pb = p.toBytes();
-        session.editor.patternInsert(sel.start, sel.length, pb.ptr, pb.length);
-        g_status |= UVIEW | UHEADER | USTATUS;
-        return;
-    }
-
     if (args.length < 1)
-    {
-        message("Missing range");
-        return;
-    }
-    if (args.length < 2)
-    {
-        message("Missing pattern");
-        return;
-    }
-
+        throw new Exception(MSG_MISSING_RANGE);
     Range r = askrange(args, 0, "Range: ");
-    Pattern p = pattern(session.rc.endian, args[1..$]);
-    if (p.flags & PATTERN_NOT_BYTES)
-        throw new Exception(MSG_CANT_INSERT_GLOBBING);
-    ubyte[] pb = p.toBytes();
+    ubyte[] pb = edit_pattern(session, args[1..$], MSG_CANT_INSERT_GLOBBING);
     session.editor.patternInsert(r.start, r.length, pb.ptr, pb.length);
     g_status |= UVIEW | UHEADER | USTATUS;
+}
+// Range commands take their range over the selection, replace and insert
+// take the selection, and all agree on missing argument messages.
+unittest
+{
+    import ddhx.editor.piecev4 : PieceV4DocumentEditor;
+    import ddhx.document.memory : MemoryDocument;
+
+    Session session;
+    session.input = new InputFormatter;
+    session.rc.columns = 8;
+    session.editor = new PieceV4DocumentEditor().open(
+        new MemoryDocument(cast(const(ubyte)[]) "ABCDEF"));
+    Session *saved = g_session;
+    g_session = &session; // for askrange
+    scope(exit) g_session = saved;
+
+    string text()
+    {
+        ubyte[16] buf;
+        return cast(string) session.editor.view(0, buf[]).idup;
+    }
+
+    session.selection.status = SELECT_ACTIVE;
+    session.selection.anchor = 4;
+    session.position_cursor  = 5;
+    replace_range(&session, [ Argument("0:1"), Argument("utf8:z") ]);
+    assert(text() == "zzCDEF");
+    insert_range(&session, [ Argument("2"), Argument("utf8:y") ]);
+    assert(text() == "zzCDEyyF"); // at the cursor, which is 5
+    replace_(&session, [ Argument("utf8:x") ]);
+    assert(text() == "zzCDxxyF"); // over the selection, 4 to 5
+
+    foreach (command_func f; [ &replace_, &insert_, &replace_range, &insert_range ])
+    {
+        try { f(&session, null); assert(false); }
+        catch (Exception e)
+            assert(e.msg == (f == &replace_ || f == &insert_ ? MSG_MISSING_PATTERN : MSG_MISSING_RANGE));
+    }
+    try { replace_range(&session, [ Argument("0:1") ]); assert(false); }
+    catch (Exception e) assert(e.msg == MSG_MISSING_PATTERN);
 }
 
 // Replace data using file
@@ -6289,9 +6264,7 @@ void find(Session *session, Argument[] args)
     neselect(session, r.pos, r.pos + r.len - 1);
     reveal(session, r.pos, r.pos + r.len - 1);
 
-    ElementText buf = void;
-    AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, r.pos, 1));
+    message("Found at %s", address_text(session, r.pos));
 }
 
 //
@@ -6333,9 +6306,7 @@ void find_back(Session *session, Argument[] args)
     neselect(session, r.pos, r.pos + r.len - 1);
     reveal(session, r.pos, r.pos + r.len - 1);
 
-    ElementText buf = void;
-    AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, r.pos, 1));
+    message("Found at %s", address_text(session, r.pos));
 }
 
 //
@@ -6363,9 +6334,7 @@ void find_next(Session *session, Argument[] args)
     neselect(session, r.pos, r.pos + r.len - 1);
     reveal(session, r.pos, r.pos + r.len - 1);
 
-    ElementText buf = void;
-    AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, r.pos, 1));
+    message("Found at %s", address_text(session, r.pos));
 }
 
 //
@@ -6395,9 +6364,7 @@ void find_prev(Session *session, Argument[] args)
     neselect(session, r.pos, r.pos + r.len - 1);
     reveal(session, r.pos, r.pos + r.len - 1);
 
-    ElementText buf = void;
-    AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Found at %s", addr.textual(buf, r.pos, 1));
+    message("Found at %s", address_text(session, r.pos));
 }
 
 // Find every occurrence of a pattern and bookmark each match.
@@ -6546,9 +6513,7 @@ void find_replace(Session *session, Argument[] args)
     neselect(session, r.pos, r.pos + r.len - 1);
     reveal(session, r.pos, r.pos + r.len - 1);
 
-    ElementText buf = void;
-    AddressFormatter addr = AddressFormatter(session.rc.address_type);
-    message("Replaced at %s", addr.textual(buf, r.pos, 1));
+    message("Replaced at %s", address_text(session, r.pos));
 }
 
 //
