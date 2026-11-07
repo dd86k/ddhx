@@ -3419,7 +3419,7 @@ enum SearchAction
 ///     onhit = Called for every match. Returning SearchAction.next resumes
 ///             the scan past the match, so matches never overlap.
 ///             A null callback stops at the first match.
-///     end = Forward only: matches must end before this position (exclusive).
+///     end = Matches must end before this position (exclusive).
 /// Returns: SearchResult with pos=SEARCH_RESULT_NOT_FOUND on no match.
 ///          SEARCH_LASTPOS overrides SEARCH_RESULT_NOT_FOUND. On no-match
 ///          (including LASTPOS), len is 0. When onhit consumed every match,
@@ -3472,37 +3472,45 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
     
     if (flags & SEARCH_REVERSE)
     {
-        long base = position;
-        do
+        // Shortest match length, and whether '*' makes it variable
+        long minlen;
+        bool variable;
+        foreach (ushort c; needle.data)
+        {
+            if (c == PATTERN_GLOB_MANY)
+                variable = true;
+            else
+                minlen++;
+        }
+        // Bytes each window reads past its highest start, room for '*' to grow
+        enum long CHUNK = CONFIG_CHUNKSIZE;
+        long tail = min(variable ? max(minlen, CHUNK / 2) : minlen, CHUNK);
+
+        // Highest start whose shortest match still ends by stop, stepped
+        // down whole alignments to stay on a boundary
+        if (position > stop - minlen)
+        {
+            long over = position - (stop - minlen);
+            long align_ = cast(long)alignment;
+            position -= ((over + align_ - 1) / align_) * align_;
+        }
+
+        // Each window ends past the highest start, so it holds the bytes a
+        // match needs, and overlaps the previous window by that much.
+        while (position >= 0)
         {
             if (interactive && cancelling())
                 throw new Exception(MSG_CANCELED);
-            
-            base -= CONFIG_CHUNKSIZE;
-            if (base < 0)
-                base = 0;
-            
-            ubyte[] haystack = session.editor.view(base, hay);
-            if (haystack.length < needle.length)
-                break; // document smaller than needle
 
-            long o = position - base;
-            // Clamp starting offset so matchPattern cannot read past haystack.
-            size_t clampLen = (needle.flags & PATTERN_HAS_GLOB) ? 0 : needle.data.length;
-            long maxOff = cast(long)(haystack.length - clampLen);
-            if (o > maxOff)
-            {
-                // Step down whole alignments to keep o on a boundary
-                long over = o - maxOff;
-                long align_ = cast(long)alignment;
-                over = ((over + align_ - 1) / align_) * align_;
-                position -= over;
-                o -= over;
-            }
+            long wend = min(position + tail, stop);
+            long base = max(wend - CHUNK, 0L);
+            ubyte[] haystack = session.editor.view(base, hay[0 .. cast(size_t)(wend - base)]);
+            if (haystack.length < minlen)
+                break; // needle longer than a window
+
             // Use signed long for o to avoid size_t underflow when
             // alignment > 1 and o < alignment.
-            // Offset 0 is a candidate like any other: stopping above it made
-            // a needle sitting at the very start of the document unfindable.
+            long o = position - base;
             for (; o >= 0; o -= cast(long) alignment, position -= cast(long) alignment)
             {
                 ptrdiff_t mlen = matchPattern(haystack, needle, cast(size_t) o, 0);
@@ -3523,7 +3531,6 @@ SearchResult search(Session *session, Pattern needle, long position, int flags,
             //    If we wanted a reverse progress bar, just pass base, but would be confusing
             if (interactive) update_progress(session, docsize - base, docsize);
         }
-        while (base > 0);
 
         // Scan ended at the start of the document, for SEARCH_LASTPOS
         position = 0;
@@ -3748,6 +3755,63 @@ unittest
     // Reverse clamp near the end keeps the boundary: 3-byte needle fits at 5 at most
     Pattern three = pattern(Endian.littleEndian, "utf8:AAA");
     assert(search(&session, three, 6, SEARCH_NON_INTERACTIVE | SEARCH_ELEMENT | SEARCH_REVERSE).pos == 4);
+}
+// Reverse past the first window: a match at the start position, and one
+// crossing a window edge, are both found.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    enum long C = CONFIG_CHUNKSIZE;
+    enum int F = SEARCH_REVERSE | SEARCH_NON_INTERACTIVE;
+    ubyte[] data = new ubyte[cast(size_t)(C * 2 + C / 2)];
+    Session session;
+
+    data[cast(size_t)(C + 100)] = 'X';
+    session.editor = new DummyDocumentEditor(data.idup);
+    Pattern x = pattern(Endian.littleEndian, "utf8:X");
+    assert(search(&session, x, C + 100, F).pos == C + 100, "match at start");
+
+    // Every offset as an edge: XY must be found wherever the scan starts
+    data[] = 0;
+    long at = C + 7;
+    data[cast(size_t)at] = 'X'; data[cast(size_t)at + 1] = 'Y';
+    session.editor = new DummyDocumentEditor(data.idup);
+    Pattern xy = pattern(Endian.littleEndian, "utf8:XY");
+    foreach (long start; [at, at + 1, at + C - 2, at + C - 1, at + C, cast(long)data.length - 1])
+        assert(search(&session, xy, start, F).pos == at, "edge crossing");
+    assert(search(&session, xy, at - 1, F).pos == SEARCH_RESULT_NOT_FOUND);
+}
+// Reverse end bound: matches must end by it, '*' ones included.
+unittest
+{
+    import std.system : Endian;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    enum int F = SEARCH_REVERSE | SEARCH_NON_INTERACTIVE;
+    Session session;
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AAAAAAAA");
+    Pattern three = pattern(Endian.littleEndian, "utf8:AAA");
+    assert(search(&session, three, 3, F, null, 4).pos == 1);
+    assert(search(&session, three, 3, F, null, 2).pos == SEARCH_RESULT_NOT_FOUND);
+
+    session.editor = new DummyDocumentEditor(cast(immutable(ubyte)[]) "AXYBAXB.");
+    Pattern glob = pattern(Endian.littleEndian, "utf8:A", "*", "utf8:B");
+    assert(search(&session, glob, 3, F, null, 4) == SearchResult(0, 4));
+    assert(search(&session, glob, 3, F, null, 3).pos == SEARCH_RESULT_NOT_FOUND);
+    assert(search(&session, glob, 7, F).pos == 4);
+}
+// Reverse with a needle longer than a window ends, not found.
+unittest
+{
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(new immutable(ubyte)[CONFIG_CHUNKSIZE * 2]);
+    Pattern big = Pattern.fromBytes(new ubyte[CONFIG_CHUNKSIZE + 1]);
+    assert(search(&session, big, CONFIG_CHUNKSIZE, SEARCH_REVERSE | SEARCH_NON_INTERACTIVE).pos
+        == SEARCH_RESULT_NOT_FOUND);
 }
 // Hit callback: matches never overlap, the scan resumes past the match.
 unittest
@@ -6093,18 +6157,18 @@ void find_prev(Session *session, Argument[] args)
     if (g_needle.data is null)
         return;
 
-    // Step from just before the start of the active selection. Using
-    // position_cursor - 1 would re-find the current match because cursor
-    // sits at end-of-match after neselect.
+    // Search before the selection (the current match), or before the cursor
     Selection sel = selection(session);
     long start = sel.length ? sel.start - 1 : session.position_cursor - 1;
+    long end = sel.length ? sel.start : long.max;
 
     unselect(session);
 
     message("Searching...");
     update_status(session);
 
-    SearchResult r = search(session, g_needle, start, SEARCH_REVERSE | SEARCH_ELEMENT);
+    // Matches never overlap, so one before the selection must end before it
+    SearchResult r = search(session, g_needle, start, SEARCH_REVERSE | SEARCH_ELEMENT, null, end);
     if (r.pos < 0)
     {
         message("Not found");
