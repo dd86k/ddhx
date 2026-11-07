@@ -4907,12 +4907,13 @@ unittest
 }
 
 // Load bookmarks from a file produced by bookmark-save (or compatible).
-// Each non-comment line: "<address> <length>" with address in hex (0x...) or
-// decimal, length in decimal. Loaded entries are merged with existing ones.
+// Each non-comment line: "<address> <length>", both numbers as scan() reads
+// them (0x hex, 0b binary, 0 octal, or decimal). Loaded entries are merged
+// with existing ones.
 void bookmark_load(Session *session, Argument[] args)
 {
     import std.string : strip, stripLeft;
-    import std.conv : parse, ConvException;
+    import std.conv : ConvException;
 
     string path = askstring(args, 0, "Load bookmarks from: ", &complete_path);
 
@@ -4939,7 +4940,7 @@ void bookmark_load(Session *session, Argument[] args)
         try
         {
             bk.address = scan(straddr);
-            bk.length  = parse!long(strlent);
+            bk.length  = scan(strlent);
         }
         catch (ConvException e)
         {
@@ -4954,6 +4955,27 @@ void bookmark_load(Session *session, Argument[] args)
 
     g_status |= UVIEW | USTATUS;
     message("Bookmarks loaded");
+}
+// Bookmark files take any scan() number, and refuse text after one.
+unittest
+{
+    import std.file : remove, tempDir, write;
+    import std.path : buildPath;
+    import std.algorithm.searching : canFind;
+    import ddhx.editor.dummy : DummyDocumentEditor;
+
+    Session session;
+    session.editor = new DummyDocumentEditor(new immutable(ubyte)[64]);
+    string path = buildPath(tempDir, "ddhx-bookmark-unittest");
+    scope(exit) remove(path);
+
+    write(path, "# ddhx bookmarks\n0x10\t0x4\n32 2\n");
+    bookmark_load(&session, [ Argument(path) ]);
+    assert(session.bookmarks == [ Bookmark(0x10, 4), Bookmark(32, 2) ]);
+
+    write(path, "0x10\t4abc\n");
+    try { bookmark_load(&session, [ Argument(path) ]); assert(false); }
+    catch (Exception e) assert(canFind(e.msg, "4abc"), e.msg);
 }
 
 //
